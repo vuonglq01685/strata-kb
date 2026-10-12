@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from typer.core import TyperGroup
 
 from strata_kb import models
+from strata_kb.kinds import HUB_KINDS
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -229,6 +230,78 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
     raise typer.Exit(1)
 
 
+def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
+    """Record a kind on every kind-less federation/registry.yaml entry.
+    Silent when there is nothing to do; never commits."""
+    import difflib
+
+    from strata_kb import registrykind
+    from strata_kb.federation import RegistryError
+
+    fed = hub / "federation"
+    reg_path = fed / "registry.yaml"
+    if not reg_path.is_file():
+        return
+    try:
+        proposals = registrykind.propose(fed)
+    except RegistryError as exc:
+        typer.secho(f"  note     kinds not recorded: {exc}", fg=typer.colors.YELLOW)
+        return
+    if not proposals:
+        return
+    interactive = _stdin_isatty()
+    unresolved = [k for k, v in proposals.items() if not v]
+    if not interactive and (unresolved or not yes):
+        typer.secho(
+            "federation/registry.yaml has entries without a kind: "
+            + ", ".join(unresolved or proposals)
+            + (
+                " (no kind could be inferred — set them by hand)"
+                if unresolved
+                else " — re-run with --yes to record the proposed kinds"
+            ),
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    for key in unresolved:
+        while True:
+            answer = typer.prompt(
+                f"Kind for registry entry {key} (kb, ba, dev; blank to skip)",
+                default="",
+                show_default=False,
+            )
+            answer = answer.strip().lower()
+            if answer in ("", *HUB_KINDS):
+                break
+            typer.secho(
+                f"Error: {answer!r} is not one of kb, ba, dev.", fg=typer.colors.RED
+            )
+        proposals[key] = answer
+    chosen = {k: v for k, v in proposals.items() if v}
+    if not chosen:
+        return
+    old = reg_path.read_bytes().decode("utf-8")
+    try:
+        new = registrykind.apply(old, chosen)
+    except ValueError as exc:
+        typer.secho(f"registry.yaml not changed: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo(
+        "".join(
+            difflib.unified_diff(
+                old.splitlines(keepends=True),
+                new.splitlines(keepends=True),
+                "federation/registry.yaml",
+                "federation/registry.yaml",
+            )
+        )
+    )
+    if not yes and not typer.confirm("Write these kinds to federation/registry.yaml?"):
+        return
+    reg_path.write_bytes(new.encode("utf-8"))
+    typer.echo("next: commit federation/registry.yaml and open a PR")
+
+
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Target directory (default: current)"),
@@ -258,6 +331,11 @@ def init(
         "detectable (repeatable): python, ts, java, go, dotnet, php, rust, "
         "swift, dart, e2e-playwright. Dev kind only; recorded in "
         ".kb/config.yaml so a plain re-init keeps it.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Hub kind only: write the proposed registry kinds without asking.",
     ),
 ) -> None:
     """Scaffold or refresh a KB repo: skills/templates update by default; data is preserved."""
@@ -309,6 +387,8 @@ def init(
         f"kb init ({resolved}): {len(report.created)} created, "
         f"{len(report.updated)} updated, {len(report.skipped)} skipped."
     )
+    if resolved == "hub":
+        _upgrade_registry_kinds(path, yes)
     typer.echo("Next steps:")
     if resolved == "hub":
         typer.echo(

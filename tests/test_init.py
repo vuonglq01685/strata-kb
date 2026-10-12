@@ -3167,3 +3167,93 @@ def test_hub_compose_has_hub_sync_service(tmp_path):
         for want in _HUB_MOUNTS:
             assert want in hub["volumes"], label
         _assert_no_dangling_volumes(doc, label)
+
+
+def _hub_with_kindless_registry(tmp_path: Path) -> tuple[Path, Path]:
+    runner.invoke(app, ["init", str(tmp_path), "--kind", "hub"])
+    leaf = tmp_path / "federation" / "svc"
+    leaf.mkdir(parents=True)
+    (leaf / "_meta.yaml").write_text(
+        "repo_id: svc\nsource_commit: abc\n", encoding="utf-8"
+    )
+    (leaf / "index.yaml").write_text(
+        "docs:\n- {id: svc-code, title: Svc}\n", encoding="utf-8"
+    )
+    registry = tmp_path / "federation" / "registry.yaml"
+    registry.write_text(
+        "repos:\n  # owner: team-x\n  acme/svc: svc\n", encoding="utf-8"
+    )
+    return tmp_path, registry
+
+
+def test_init_hub_upgrade_yes_writes(tmp_path: Path):
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert registry.read_text(encoding="utf-8") == (
+        "repos:\n  # owner: team-x\n  acme/svc: {repo_id: svc, kind: dev}\n"
+    )
+    assert "next: commit federation/registry.yaml and open a PR" in result.output
+    again = runner.invoke(app, ["init", str(hub), "--kind", "hub", "--yes"])
+    assert again.exit_code == 0
+    assert "registry.yaml" not in again.output
+    assert "{repo_id: svc, kind: dev}" in registry.read_text(encoding="utf-8")
+
+
+def test_init_hub_upgrade_noninteractive_needs_yes(tmp_path: Path):
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    before = registry.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub"])
+
+    assert result.exit_code == 1
+    assert "--yes" in result.output
+    assert registry.read_text(encoding="utf-8") == before
+
+
+def test_init_hub_upgrade_yes_unresolved_noninteractive_exits(tmp_path: Path):
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    registry.write_text(
+        "repos:\n  acme/svc: svc\n  acme/gone: gone\n", encoding="utf-8"
+    )
+    before = registry.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub", "--yes"])
+
+    assert result.exit_code == 1
+    assert "acme/gone" in result.output
+    assert registry.read_text(encoding="utf-8") == before
+
+
+def test_init_hub_upgrade_interactive_asks_per_entry_and_confirms(
+    tmp_path: Path, monkeypatch
+):
+    from strata_kb import cli
+
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    registry.write_text("repos:\n  acme/gone: gone\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+
+    result = runner.invoke(
+        app, ["init", str(hub), "--kind", "hub"], input="bogus\nba\ny\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/gone: {repo_id: gone, kind: ba}" in registry.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_init_hub_upgrade_interactive_decline_leaves_file(tmp_path: Path, monkeypatch):
+    from strata_kb import cli
+
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    before = registry.read_text(encoding="utf-8")
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub"], input="n\n")
+
+    assert result.exit_code == 0
+    assert registry.read_text(encoding="utf-8") == before

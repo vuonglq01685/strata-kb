@@ -30,7 +30,12 @@ into it; merging their PRs here is the review gate.
 4. **Register child repos (optional)** — lets child repos publish from CI via
    OIDC with zero secrets, instead of pushing directly. Create
    `federation/registry.yaml` on the hub with one line per child:
-   `owner/repo: repo-id` under a `repos:` key. **This also makes the hub
+   `owner/repo: repo-id` under a `repos:` key, or `owner/repo: {repo_id:
+   repo-id, kind: kb|ba|dev}` to pin what the repo holds (`kb` documents,
+   `ba` tickets, `dev` code; an entry without `kind` has it inferred from
+   what it publishes). On an existing hub, `kb init --kind hub` proposes
+   the kinds for your kind-less entries and writes them with `--yes` (it
+   never commits — open a PR). **This also makes the hub
    *governed*:** once the file is non-empty, `kb publish` on the git path
    refuses any repo-id not listed here and refuses direct pushes — every
    child that publishes over git, not only those using this OIDC
