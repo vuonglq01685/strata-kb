@@ -122,7 +122,7 @@ def _tag_links(
 
     def href_for(new: list[str]) -> str:
         if not q and not new:
-            return "/ui?q="
+            return f"/ui?{urlencode([('q', ''), ('kind', kind)])}" if kind else "/ui?q="
         params: list[tuple[str, str]] = []
         if q:
             params.append(("q", q))
@@ -155,6 +155,9 @@ def _tag_links(
 # screen (overview, top search, errors) shows the tags of all kinds.
 _SCREEN_KIND = {"docs": KB, "plans": BA, "plan": BA, "code": DEV}
 
+# Tag-only browse of one kind renders as that kind's menu: (rail screen, docs.html menu).
+_BROWSE_MENU = {KB: ("docs", "docs"), BA: ("plans", "tickets"), DEV: ("code", "code")}
+
 # Where each kind's menu lives, and the reader's back-link wording.
 MENU_PATH = {KB: "/ui/docs", BA: "/ui/tickets", DEV: "/ui/code"}
 _BACK_LABEL = {KB: "all documents", BA: "all tickets", DEV: "all code"}
@@ -167,25 +170,36 @@ def _shell_ctx(
     raw_tags: str = "",
     budget: int | None = None,
     semantic_on: bool | None = None,
+    href_kind: str | None = None,
 ) -> dict:
     selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
     scope = _SCREEN_KIND.get(screen)
+    # The cloud is scoped by `scope`; hrefs keep the menu's kind, or (on the
+    # top-search screen, cloud global) the kind chip that is on.
+    href_scope = scope or href_kind
     hub = api.hub_handle(config)
     if hub is None:
         return {
             "screen": screen,
+            "menu_kind": scope or "",
             "hub_ok": False,
             "q": q,
             "raw_tags": raw_tags,
             "budget": budget,
             "repo_count": 0,
             "tags": _tag_links(
-                [], selected, q, budget=budget, semantic_on=semantic_on, kind=scope
+                [],
+                selected,
+                q,
+                budget=budget,
+                semantic_on=semantic_on,
+                kind=href_scope,
             ),
             "selected_tags": selected,
         }
     return {
         "screen": screen,
+        "menu_kind": scope or "",
         "hub_ok": True,
         "q": q,
         "raw_tags": raw_tags,
@@ -197,7 +211,7 @@ def _shell_ctx(
             q,
             budget=budget,
             semantic_on=semantic_on,
-            kind=scope,
+            kind=href_scope,
         ),
         "selected_tags": selected,
     }
@@ -213,6 +227,7 @@ def _render_page(
     budget: int | None = None,
     semantic_on: bool | None = None,
     shell_extra: dict | None = None,
+    href_kind: str | None = None,
     **ctx,
 ) -> HTMLResponse:
     # raw_tags/budget/semantic_on are only ever passed by _search_screen
@@ -222,7 +237,13 @@ def _render_page(
     # (meta-line, budget rail form, match-mode rail form) keep working
     # exactly as before this shell plumbing was added.
     shell = _shell_ctx(
-        config, screen, q=q, raw_tags=raw_tags, budget=budget, semantic_on=semantic_on
+        config,
+        screen,
+        q=q,
+        raw_tags=raw_tags,
+        budget=budget,
+        semantic_on=semantic_on,
+        href_kind=href_kind,
     )
     if shell_extra:
         shell.update(shell_extra)
@@ -570,15 +591,22 @@ def build_routes(
             )
         if not q and tags:
             docs = api.list_docs(config) or []
-            if kind:
-                docs = [d for d in docs if d["kind"] == kind]
+            screen, menu = "search", "docs"
+            try:
+                browse_kind = normalize_kinds([kind])[0] if kind else None
+            except UnknownKindError as exc:
+                logger.warning("search screen: %s", exc)
+                docs, browse_kind = [], None
+            if browse_kind:
+                docs = [d for d in docs if d["kind"] == browse_kind]
+                screen, menu = _BROWSE_MENU[browse_kind]
             matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html",
                 config,
-                screen="search",
-                title="Documents",
-                menu="docs",
+                screen=screen,
+                title=MENU[browse_kind or KB],
+                menu=menu,
                 docs=matched,
                 browse_tags=tags,
                 raw_tags=raw_tags,
@@ -609,6 +637,7 @@ def build_routes(
             screen="search",
             title="Search",
             q=q,
+            href_kind=shown,
             results=_hit_cards(hub, listed, terms),
             kind_chips=_kind_chips(request, q, found, shown) if found else [],
             kind=kind,

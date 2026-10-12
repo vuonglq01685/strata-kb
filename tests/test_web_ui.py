@@ -2010,3 +2010,52 @@ def test_kind_param_narrows_a_tag_only_browse(tmp_path):
     assert "billing-svc" in both.text
     none = client.get("/ui", params={"tags": "ledger-only-tag", "kind": "kb"})
     assert "billing-svc" not in _main(none)
+
+
+@pytest.mark.parametrize(
+    "kind, tag, label, path, other_kind",
+    [
+        ("dev", "ledger-only-tag", "Code", "/ui/code", "kb"),
+        ("DEV", "ledger-only-tag", "Code", "/ui/code", "kb"),
+        ("kb", "doc-only-tag", "Document", "/ui/docs", "dev"),
+    ],
+)
+def test_tag_browse_with_kind_stays_in_that_menu(
+    tmp_path, kind, tag, label, path, other_kind
+):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    resp = client.get("/ui", params={"tags": tag, "kind": kind})
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert f"<h1>{label}</h1>" in main
+    assert f'action="{path}"' in main
+    rail = _left_rail_text(resp.text)
+    assert f'<a href="{path}" class="active">{label}<' in rail
+    norm = kind.lower()
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail) + re.findall(
+        r'class="chip on" href="([^"]+)"', main
+    )
+    assert hrefs
+    assert all(f"kind={norm}" in h for h in hrefs), hrefs
+
+
+def test_tag_browse_with_ba_kind_is_the_ticket_menu(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    resp = client.get("/ui", params={"tags": "plan", "kind": "ba"})
+    assert resp.status_code == 200
+    main = _main(resp)
+    assert "<h1>Ticket</h1>" in main and 'action="/ui/tickets"' in main
+    assert "refund-plan" in main
+    rail = _left_rail_text(resp.text)
+    assert '<a href="/ui/tickets" class="active">Ticket<' in rail
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
+    assert hrefs and all("kind=ba" in h for h in hrefs), hrefs
+
+
+def test_search_screen_tag_hrefs_keep_the_kind_chip(tmp_path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    rail = _left_rail_text(
+        client.get("/ui", params={"q": "refund", "kind": "dev"}).text
+    )
+    hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
+    assert hrefs and all("kind=dev" in h for h in hrefs), hrefs

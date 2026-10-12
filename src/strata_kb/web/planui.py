@@ -61,6 +61,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
                 )
         plans, notes = planstatus.hub_plans(hub, repo)
         if repo is None:
+            # no `q` here (handled above): the menu search context is empty
             return _render_page(
                 "plans.html",
                 config,
@@ -68,7 +69,8 @@ def plan_routes(config: ServerConfig) -> list[Route]:
                 title="Tickets",
                 repos=plans,
                 notes=notes,
-                **menu_search(config, request, BA),
+                menu_q="",
+                menu_results=[],
             )
         if not plans:
             return _not_found(f"Unknown plan '{repo}'.")
@@ -131,9 +133,8 @@ def plan_routes(config: ServerConfig) -> list[Route]:
     def plans_moved(request: Request) -> RedirectResponse:
         """/ui/plans… -> /ui/tickets…, keeping the rest of the path and the query."""
         raw = request.scope.get("raw_path") or b""
-        if not raw.startswith(
-            b"/ui/plans"
-        ):  # percent-encoded prefix: use the decoded path
+        # a percent-encoded prefix falls back to the decoded path
+        if not raw.startswith(b"/ui/plans"):
             raw = quote(request.url.path).encode()
         target = "/ui/tickets" + raw.decode("latin-1")[len("/ui/plans") :]
         if request.url.query:
