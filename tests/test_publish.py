@@ -858,6 +858,23 @@ def test_snapshot_records_kind(git_kb, hub_worktree):
     assert meta.kind == "dev"
 
 
+def test_kind_only_change_rewrites_meta_and_commits(git_kb, hub_worktree, run_git):
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    meta_path = hub_worktree / "federation" / "demo-kb" / "_meta.yaml"
+    assert models.load_yaml_model(meta_path, FederationMeta).kind == "kb"
+    before = run_git(hub_worktree, "rev-list", "--count", "HEAD")
+
+    _set_repo_kind(git_kb["kb"], "dev")  # content untouched, kind changes
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+
+    assert models.load_yaml_model(meta_path, FederationMeta).kind == "dev"
+    assert int(run_git(hub_worktree, "rev-list", "--count", "HEAD")) > int(before)
+    # and a third, identical publish is a true no-op again
+    after = run_git(hub_worktree, "rev-list", "--count", "HEAD")
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb", mode="direct")
+    assert run_git(hub_worktree, "rev-list", "--count", "HEAD") == after
+
+
 def test_publish_refuses_unrecorded_kind(tmp_path):
     kb = tmp_path / ".kb"
     kb.mkdir()

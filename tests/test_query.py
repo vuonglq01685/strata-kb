@@ -327,7 +327,13 @@ def _kinds_hub(tmp_path):
         tags=["plan", "generated"],
         l2="## 1.1 Refund\n\nrefund ticket.\n",
     )
-    make_fed_entry(fed, "d-repo", "refund-code", l2="## 1.1 Refund\n\nrefund code.\n")
+    make_fed_entry(
+        fed,
+        "d-repo",
+        "refund-code",
+        tags=["code", "generated"],
+        l2="## 1.1 Refund\n\nrefund code.\n",
+    )
     return HubHandle(root=tmp_path)
 
 
@@ -354,7 +360,11 @@ def test_search_unknown_kind_raises(tmp_path):
 def test_search_nested_non_kb_never_returned(tmp_path):
     hub = _kinds_hub(tmp_path)
     make_fed_entry(
-        tmp_path / "federation" / "mid", "d1", "svc-code", l2="## 1.1 R\n\nrefund.\n"
+        tmp_path / "federation" / "mid",
+        "d1",
+        "svc-code",
+        tags=["code", "generated"],
+        l2="## 1.1 R\n\nrefund.\n",
     )
     assert "mid/d1" not in {r.source for r in search(hub, "refund")}
     assert "mid/d1" not in {r.source for r in search(hub, "refund", kinds=["dev"])}

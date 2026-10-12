@@ -96,8 +96,8 @@ def _tag_links(
 ) -> list[dict]:
     """One toggle link per known tag: clicking adds/removes it from `tags=`.
 
-    Falls back to /ui?q= (the search screen) when toggling off the last tag
-    with no query — a bare /ui would render the overview instead. The
+    Falls back to the menu (`kind` set) or /ui?q= (the search screen) when
+    toggling off the last tag with no query — a bare /ui would render the overview instead. The
     fallback is decided by intent (q and the new tag list both empty), not
     by whether the assembled params list happens to be empty: budget/
     semantic are echoed onto every href and must not, by themselves, turn
@@ -122,7 +122,8 @@ def _tag_links(
 
     def href_for(new: list[str]) -> str:
         if not q and not new:
-            return f"/ui?{urlencode([('q', ''), ('kind', kind)])}" if kind else "/ui?q="
+            # Inside a menu, removing the last tag returns to that menu.
+            return MENU_PATH.get(kind or "", "/ui?q=")
         params: list[tuple[str, str]] = []
         if q:
             params.append(("q", q))

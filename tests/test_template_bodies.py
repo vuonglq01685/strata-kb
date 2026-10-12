@@ -102,6 +102,20 @@ def test_dev_implement_ticket_names_each_kind_it_searches():
         assert kind in text, kind
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        _body("dev-implement-ticket.md"),
+        " ".join(read_template("claude-skill-dev-implement-ticket.md").split()),
+    ],
+    ids=["body", "claude-skill"],
+)
+def test_dev_implement_ticket_restricts_dev_search_to_own_repo(text):
+    for suffix in ("code", "svc"):
+        assert f"--tags <repo_id>-{suffix}" in text
+        assert f'tags=["<repo_id>-{suffix}"]' in text
+
+
 def test_sa_ticket_ground_searches_dev_kind():
     assert "--kind dev" in _body("sa-ticket-ground.md")
 
@@ -127,3 +141,6 @@ def test_kb_publish_confirm_shows_hub_menu_line(name):
     text = " ".join(read_template(name).split())
     assert "hub menu" in text, name
     assert "kb init --kind" in text, name
+    assert "`hub` and `child` repos → Document" in text, name
+    assert "`kind:` in `.kb/config.yaml`" in text, name
+    assert "`[info] kind: …` line `kb doctor` prints" in text, name

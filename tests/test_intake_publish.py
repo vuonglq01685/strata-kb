@@ -387,6 +387,42 @@ def test_intake_publish_after_merge_identical_content_is_noop(hub, monkeypatch):
     assert http2.requests == []
 
 
+def test_intake_publish_kind_only_change_opens_a_pr(hub, monkeypatch):
+    monkeypatch.setattr(intake.ghapp, "_app_jwt", lambda creds: "fake-app-jwt")
+    monkeypatch.setattr(intake.ghapp, "repo_full_from_url", lambda url: "acme/hub")
+    http1 = FakeHTTP(
+        [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/1"})]
+    )
+    intake.intake_publish(
+        _cfg(hub, http1),
+        "flight-docs",
+        "aaa",
+        "acme/flight-docs",
+        [],
+        _kb_archive(),
+        kind="kb",
+    )
+    _git(hub, "merge", "--no-ff", "--no-edit", "publish/flight-docs")
+    http2 = FakeHTTP(
+        [(200, {"id": 9}), (201, {"token": "t"}), (201, {"html_url": "u/pull/2"})]
+    )
+    pr = intake.intake_publish(
+        _cfg(hub, http2),
+        "flight-docs",
+        "aaa",
+        "acme/flight-docs",
+        [],
+        _kb_archive(),
+        kind="dev",
+    )
+    assert pr == "u/pull/2"  # same content, new kind: a real change
+    _git(hub, "checkout", "publish/flight-docs")
+    meta = (hub / "federation" / "flight-docs" / "_meta.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "kind: dev" in meta
+
+
 def test_intake_publish_filters_non_allowlisted_files(hub, monkeypatch):
     """F-D9 finding 6: intake_publish's own allowlist call (intake.py's
     pubgate.split_allowlist, guarding uploads from the child's CI the same

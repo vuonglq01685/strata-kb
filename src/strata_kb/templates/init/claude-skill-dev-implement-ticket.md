@@ -75,7 +75,8 @@ edit above it.
   already chosen; then `kb_search` (`kinds=["dev"]`; CLI: `kb query --kind dev`) both
   own-repo documents, budgeted at 500–800 tokens for broad discovery —
   `<repo_id>-code` for structure and `<repo_id>-svc` for responsibility,
-  each restricted with `--tags <repo_id>-code` / `--tags <repo_id>-svc` —
+  each restricted with `--tags <repo_id>-code` / `--tags <repo_id>-svc`
+  (MCP: `tags=["<repo_id>-code"]` / `tags=["<repo_id>-svc"]`) —
   and then read the actual code. State the rule: *knowledge orients, code
   decides* — skip whichever document is missing and read the code
   directly for that half. A `<repo_id>-code` missing from the hub is not

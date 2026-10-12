@@ -30,9 +30,10 @@ seeing the diff, that the current .kb/ state should be published.
    `STRATA_KB_HUB` if set) and that a publish PR will be opened on it
    (direct is picked for a hub with no git remote). Also state the repo's kind
    and the hub menu it lands in, as `kb publish` prints it:
-   `kind: <hub kind> → hub menu: <Document|Ticket|Code>` (`kb` and `child`
-   repos → Document, `ba` → Ticket, `dev` → Code). If the kind is
-   unrecorded, stop: tell the user to run `kb init --kind <child|ba|dev|hub>`
+   `kind: <hub kind> → hub menu: <Document|Ticket|Code>` (`hub` and `child`
+   repos → Document, `ba` → Ticket, `dev` → Code). Read the kind from
+   `kind:` in `.kb/config.yaml`, or the `[info] kind: …` line `kb doctor`
+   prints. If the kind is unrecorded, stop: tell the user to run `kb init --kind <child|ba|dev|hub>`
    first. Ask for one explicit go/no-go and wait.
 4. **Execute** (only after confirmation): `kb publish`. Relay the result:
    the `kind: … → hub menu: …` line, repo-id, source commit, doc count, and the **PR URL** — remind the user

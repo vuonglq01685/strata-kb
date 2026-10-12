@@ -2375,15 +2375,15 @@ def _set_kind(entry: Path, kind: str) -> None:
 
 def test_leaf_kind_recorded_beats_inferred(tmp_path):
     fed = tmp_path / "federation"
-    _set_kind(make_fed_entry(fed, "r1", "x-code"), "kb")
-    make_fed_entry(fed, "r2", "y-code")
+    _set_kind(make_fed_entry(fed, "r1", "x-code", tags=["code", "generated"]), "kb")
+    make_fed_entry(fed, "r2", "y-code", tags=["code", "generated"])
     kinds_by_id = {r.meta.repo_id: r.kind for r in federation.load_federation(fed)}
     assert kinds_by_id == {"r1": "kb", "r2": "dev"}
 
 
 def test_nested_non_kb_leaf_is_ignored(tmp_path):
     fed = tmp_path / "federation"
-    make_fed_entry(fed / "mid", "d1", "svc-code")
+    make_fed_entry(fed / "mid", "d1", "svc-code", tags=["code", "generated"])
     make_fed_entry(fed / "mid", "k1", "notes")
     ids = [r.meta.repo_id for r in federation.load_federation(fed)]
     assert ids == ["mid/k1"]
@@ -2391,10 +2391,38 @@ def test_nested_non_kb_leaf_is_ignored(tmp_path):
 
 def test_resolve_leaf_kind_sees_nested_non_kb(tmp_path):
     fed = tmp_path / "federation"
-    d1 = make_fed_entry(fed / "mid", "d1", "svc-code")
+    d1 = make_fed_entry(fed / "mid", "d1", "svc-code", tags=["code", "generated"])
     k1 = make_fed_entry(fed / "mid", "k1", "notes")
     assert federation.resolve_leaf_kind(d1) == "dev"
     assert federation.resolve_leaf_kind(k1) == "kb"
     assert federation.resolve_leaf_kind(fed / "nope") is None
     (k1 / "index.yaml").write_text("docs: [", encoding="utf-8")
     assert federation.resolve_leaf_kind(k1) is None
+
+
+def test_wrong_case_recorded_kind_is_normalised(tmp_path):
+    fed = tmp_path / "federation"
+    _set_kind(make_fed_entry(fed, "r1", "notes"), "DEV")
+    _set_kind(make_fed_entry(fed, "r2", "other"), " Kb ")
+    kinds_by_id = {r.meta.repo_id: r.kind for r in federation.load_federation(fed)}
+    assert kinds_by_id == {"r1": "dev", "r2": "kb"}
+
+
+def test_unknown_recorded_kind_falls_back_to_inference_and_warns(tmp_path, caplog):
+    fed = tmp_path / "federation"
+    _set_kind(make_fed_entry(fed, "r1", "x-code", tags=["code", "generated"]), "Code")
+    _set_kind(make_fed_entry(fed, "r2", "notes"), "bogus")
+    with caplog.at_level("WARNING", logger="strata_kb.federation"):
+        kinds_by_id = {r.meta.repo_id: r.kind for r in federation.load_federation(fed)}
+    assert kinds_by_id == {"r1": "dev", "r2": "kb"}  # inferred, not "Code"/"bogus"
+    assert any("unknown kind 'Code'" in r.message for r in caplog.records)
+
+
+def test_nested_non_kb_warning_is_logged_once_per_process(tmp_path, caplog):
+    fed = tmp_path / "federation"
+    make_fed_entry(fed / "mid", "d1", "svc-code", tags=["code", "generated"])
+    with caplog.at_level("WARNING", logger="strata_kb.federation"):
+        federation.load_federation(fed)
+        federation.load_federation(fed)
+    nested = [r for r in caplog.records if "nested dev entry" in r.message]
+    assert len(nested) == 1

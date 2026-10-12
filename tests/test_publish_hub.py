@@ -344,6 +344,14 @@ def test_cli_hub_to_hub_publish_error_is_one_line_not_a_traceback(mid_hub, root_
 # --- a child hub publishes only its kb leaves upward ------------------------
 
 
+_CODE_TAGS = {"tags": ["code", "generated"]}
+# keyed by the last five characters of the doc id: "-plan" / "-code"
+_MIXED_KWARGS = {
+    "-plan": {"title": "T — plan", "tags": ["plan", "generated"]},
+    "-code": _CODE_TAGS,
+}
+
+
 def _mixed_hub(tmp_path: Path, run_git, leaves: dict[str, str]) -> Path:
     """Hub git repo whose federation/ holds one leaf per `{path-id: doc-id}`;
     a `-code` doc id makes a leaf infer to `dev`, a `-plan` one to `ba`."""
@@ -351,12 +359,7 @@ def _mixed_hub(tmp_path: Path, run_git, leaves: dict[str, str]) -> Path:
     (root / ".kb").mkdir(parents=True)
     fed = root / "federation"
     for rid, doc_id in leaves.items():
-        kwargs = (
-            {"title": "T — plan", "tags": ["plan", "generated"]}
-            if doc_id.endswith("-plan")
-            else {}
-        )
-        make_fed_entry(fed, rid, doc_id, **kwargs)
+        make_fed_entry(fed, rid, doc_id, **_MIXED_KWARGS.get(doc_id[-5:], {}))
     (root / ".kb" / "config.yaml").write_text(
         "kind: hub\nrepo_id: mid\n", encoding="utf-8"
     )
@@ -387,7 +390,9 @@ def test_publish_federation_removes_previously_pushed_non_kb(
 ):
     src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc", "d1": "d1-code"})
     fed = root_hub / "federation"
-    make_fed_entry(fed / "mid", "d1", "d1-code")  # pushed by an older release
+    make_fed_entry(
+        fed / "mid", "d1", "d1-code", **_CODE_TAGS
+    )  # pushed by an older release
     run_git(root_hub, "add", "-A")
     run_git(root_hub, "commit", "-m", "old publish")
 
@@ -404,16 +409,22 @@ def test_publish_federation_removes_previously_pushed_non_kb(
 def test_publish_federation_all_non_kb_with_existing_dest_refuses(
     tmp_path, run_git, root_hub
 ):
-    src = _mixed_hub(tmp_path, run_git, {"d1": "d1-code"})
+    src = _mixed_hub(tmp_path, run_git, {"d1": "d1-code", "b1": "b1-plan"})
     fed = root_hub / "federation"
     make_fed_entry(fed / "mid", "k1", "k1-doc")
     run_git(root_hub, "add", "-A")
     run_git(root_hub, "commit", "-m", "old publish")
 
-    with pytest.raises(publish.PublishError, match="refusing to wipe"):
+    with pytest.raises(publish.PublishError, match="refusing to wipe") as exc:
         publish.publish_federation(
             src / ".kb", str(root_hub), repo_id="mid", mode="direct"
         )
+
+    # names the held-back leaves with their kinds, not a misleading "empty"
+    msg = str(exc.value)
+    assert "b1 (ba)" in msg and "d1 (dev)" in msg
+    assert "only kb leaves go upward" in msg
+    assert "is empty" not in msg
 
     assert (fed / "mid" / "k1").exists()
 
@@ -422,7 +433,7 @@ def test_publish_federation_does_not_send_a_nested_non_kb_leaf(
     tmp_path, run_git, root_hub
 ):
     src = _mixed_hub(tmp_path, run_git, {"k1": "k1-doc"})
-    make_fed_entry(src / "federation" / "old-hub", "d2", "d2-code")
+    make_fed_entry(src / "federation" / "old-hub", "d2", "d2-code", **_CODE_TAGS)
     run_git(src, "add", "-A")
     run_git(src, "commit", "-m", "grandchild")
 
@@ -460,7 +471,9 @@ def test_publish_federation_drops_the_parents_asset_record_of_a_non_kb_leaf(
     run_git(src, "add", "-A")
     run_git(src, "commit", "-m", "record")
     fed = root_hub / "federation"
-    make_fed_entry(fed / "mid", "d1", "d1-code")  # pushed by an older release
+    make_fed_entry(
+        fed / "mid", "d1", "d1-code", **_CODE_TAGS
+    )  # pushed by an older release
     models.save_yaml_model(fed / "mid" / "d1" / assetstore.RECORD_NAME, record)
     run_git(root_hub, "add", "-A")
     run_git(root_hub, "commit", "-m", "old publish")
@@ -479,3 +492,38 @@ def test_publish_federation_drops_the_parents_asset_record_of_a_non_kb_leaf(
     publish.publish_federation(src / ".kb", str(root_hub), repo_id="mid", mode="direct")
     assert run_git(root_hub, "rev-parse", "HEAD") == head
     assert not (fed / "mid" / "d1").exists()
+
+
+def _pin_registry(root_hub: Path, run_git, kind: str) -> None:
+    (root_hub / "federation" / "registry.yaml").write_text(
+        yaml.safe_dump({"repos": {"org/mid": {"repo_id": "mid", "kind": kind}}}),
+        encoding="utf-8",
+        newline="\n",
+    )
+    run_git(root_hub, "add", "-A")
+    run_git(root_hub, "commit", "-m", "register org/mid")
+
+
+def test_publish_federation_refuses_a_parent_pin_other_than_kb(
+    mid_hub, root_hub, run_git
+):
+    _pin_registry(root_hub, run_git, "ba")
+    run_git(mid_hub, "remote", "add", "origin", "https://github.com/org/mid.git")
+
+    with pytest.raises(publish.PublishError, match="kind mismatch.*'ba'.*'kb'"):
+        publish.publish_federation(
+            mid_hub / ".kb", str(root_hub), repo_id=None, mode="direct"
+        )
+
+    assert not (root_hub / "federation" / "mid").exists()
+
+
+def test_publish_federation_accepts_a_kb_pin(mid_hub, root_hub, run_git):
+    _pin_registry(root_hub, run_git, "kb")
+    run_git(mid_hub, "remote", "add", "origin", "https://github.com/org/mid.git")
+
+    report = publish.publish_federation(
+        mid_hub / ".kb", str(root_hub), repo_id=None, mode="direct"
+    )
+
+    assert report.repo_id == "mid"

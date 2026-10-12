@@ -251,18 +251,25 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
         return
     interactive = _stdin_isatty()
     unresolved = [k for k, v in proposals.items() if not v]
-    if (unresolved and yes) or (not interactive and not yes):
+    if unresolved and yes:
         typer.secho(
             "federation/registry.yaml has entries without a kind: "
-            + ", ".join(unresolved or proposals)
-            + (
-                " (no kind could be inferred — set them by hand)"
-                if unresolved
-                else " — re-run with --yes to record the proposed kinds"
-            ),
+            + ", ".join(unresolved)
+            + " (no kind could be inferred — set them by hand)",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
+    if not interactive and not yes:
+        # An automated hub upgrade must not fail during the window before
+        # every publisher is upgraded (README "Upgrade order"): warn, write
+        # nothing, exit 0.
+        typer.secho(
+            "warning: federation/registry.yaml has entries without a kind: "
+            + ", ".join(proposals)
+            + " — re-run `kb init --kind hub --yes` once publishers are upgraded",
+            fg=typer.colors.YELLOW,
+        )
+        return
     for key in unresolved:
         while True:
             answer = typer.prompt(

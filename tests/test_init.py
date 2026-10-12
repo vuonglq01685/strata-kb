@@ -3177,7 +3177,8 @@ def _hub_with_kindless_registry(tmp_path: Path) -> tuple[Path, Path]:
         "repo_id: svc\nsource_commit: abc\n", encoding="utf-8"
     )
     (leaf / "index.yaml").write_text(
-        "docs:\n- {id: svc-code, title: Svc}\n", encoding="utf-8"
+        "docs:\n- {id: svc-code, title: Svc, tags: [code, generated]}\n",
+        encoding="utf-8",
     )
     registry = tmp_path / "federation" / "registry.yaml"
     registry.write_text(
@@ -3208,8 +3209,24 @@ def test_init_hub_upgrade_noninteractive_needs_yes(tmp_path: Path):
 
     result = runner.invoke(app, ["init", str(hub), "--kind", "hub"])
 
-    assert result.exit_code == 1
-    assert "--yes" in result.output
+    assert result.exit_code == 0, result.output
+    assert "acme/svc" in result.output
+    assert "kb init --kind hub --yes" in result.output
+    assert "once publishers are upgraded" in result.output
+    assert registry.read_text(encoding="utf-8") == before
+
+
+def test_init_hub_upgrade_noninteractive_warns_for_unresolved_too(tmp_path: Path):
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    registry.write_text(
+        "repos:\n  acme/svc: svc\n  acme/gone: gone\n", encoding="utf-8"
+    )
+    before = registry.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub"])
+
+    assert result.exit_code == 0, result.output
+    assert "acme/svc" in result.output and "acme/gone" in result.output
     assert registry.read_text(encoding="utf-8") == before
 
 

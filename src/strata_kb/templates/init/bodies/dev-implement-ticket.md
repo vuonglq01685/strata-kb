@@ -73,7 +73,8 @@ edit above it.
   discovery — `<repo_id>-code` for
   structure and `<repo_id>-svc` for responsibility, each restricted with
   `--tags <repo_id>-code` / `--tags <repo_id>-svc` — (or the `kb_search`
-  MCP tool with `kinds=["dev"]` when available) and then read the actual code. State the rule:
+  MCP tool with `kinds=["dev"]` and `tags=["<repo_id>-code"]` /
+  `tags=["<repo_id>-svc"]` when available) and then read the actual code. State the rule:
   *knowledge orients, code decides* — skip whichever document is missing
   and read the code directly for that half.
   A `<repo_id>-code` missing from the hub is not yet published — CI

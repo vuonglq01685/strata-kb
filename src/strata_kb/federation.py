@@ -41,7 +41,7 @@ class RegistryError(RuntimeError):
     """federation/registry.yaml is unreadable — intake must fail closed.
 
     Deliberately stays out of the KbError family: not CLI-reachable -- both
-    callers (publish's _governed_registry, intake's authorize path) already
+    callers (publish's _load_hub_registry, intake's authorize path) already
     convert it to their own message/HTTP response themselves, fail-closed by
     design.
     """
@@ -298,12 +298,41 @@ def _with_manifest_revisions(index: models.KBIndex, entry_dir: Path) -> models.K
     return index
 
 
+_warned: set[str] = set()
+
+
+def _warn_once(key: str, message: str, *args: object) -> None:
+    """Log a warning once per process per `key` -- load_federation runs on
+    every request, and a standing hub problem must not flood the log."""
+    if key in _warned:
+        return
+    _warned.add(key)
+    logger.warning(message, *args)
+
+
+def _recorded_leaf_kind(meta: FederationMeta, child: Path) -> str:
+    """The kind `_meta.yaml` records, normalised (stripped, lowercased); "" when
+    unrecorded or not in the hub vocabulary, so readers fall back to
+    inference instead of crashing on a hand-edited value. `kb doctor` still
+    flags the raw value."""
+    recorded = meta.kind.strip().lower()
+    if recorded and recorded not in kinds.HUB_KINDS:
+        _warn_once(
+            f"kind:{child}",
+            "federation leaf %s records unknown kind '%s' -- inferring its kind",
+            child,
+            meta.kind,
+        )
+        return ""
+    return recorded
+
+
 def _read_leaf(child: Path) -> tuple[FederationMeta, models.KBIndex, str]:
     """A leaf's `_meta.yaml`, `index.yaml` and resolved kind (the recorded one,
     else inferred from the index). Raises on a broken file."""
     meta = models.load_yaml_model(child / ENTRY_META_NAME, FederationMeta)
     index = models.load_yaml_model(child / ENTRY_INDEX_NAME, models.KBIndex)
-    return meta, index, meta.kind or kinds.infer_kind(index.docs)
+    return meta, index, _recorded_leaf_kind(meta, child) or kinds.infer_kind(index.docs)
 
 
 def resolve_leaf_kind(entry_dir: Path) -> str | None:
@@ -341,7 +370,8 @@ def _load_entry(path_id: str, child: Path) -> FederatedRepo | None:
         logger.warning("federation/%s is broken — skipping: %s", path_id, exc)
         return None
     if "/" in path_id and kind != kinds.KB:
-        logger.warning(
+        _warn_once(
+            f"nested:{child}",
             "federation/%s is a nested %s entry — only kb entries may nest; ignoring",
             path_id,
             kind,

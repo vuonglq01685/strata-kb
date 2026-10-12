@@ -453,6 +453,20 @@ def _restore_federation_after_store_failure(
         )
 
 
+def kind_drifted(dest: Path, kind: str) -> bool:
+    """True when `dest` already holds a leaf whose recorded kind is not `kind`
+    (a blank `kind` never drifts: nothing to record)."""
+    if not kind or not (dest / "_meta.yaml").is_file():
+        return False
+    try:
+        recorded = models.load_yaml_model(
+            dest / "_meta.yaml", federation.FederationMeta
+        )
+    except (OSError, yaml.YAMLError, ValidationError, ValueError):
+        return False
+    return recorded.kind != kind
+
+
 def _snapshot(
     kb_abs: Path,
     handle: hub_mod.HubHandle,
@@ -471,7 +485,9 @@ def _snapshot(
     changed=False: content on the hub already matches the local snapshot byte
     for byte — nothing is written, not even _meta.yaml (published_at only
     moves when content actually changed, so a back-to-back 2nd publish is a
-    true no-op: no commit, no PR).
+    true no-op: no commit, no PR). The one exception: the kind to record
+    differs from the leaf's recorded kind -- only _meta.yaml is rewritten
+    (changed=True).
 
     The aggregate index.yaml is NOT written here — see publish()/_publish_direct():
     index.yaml is committed separately from the <rid>/ commit so that two repos
@@ -511,18 +527,22 @@ def _snapshot(
         dest_man.update(assetstore.synthesized_asset_entries(dest))
     changed, deleted = hashsync.diff_manifests(local_man, dest_man)
     if not changed and not deleted:
-        return len(local_index.docs), False, skipped
-    hashsync.apply_sync(kb_abs, dest, changed, deleted)
-    if active_store is not None:
-        try:
-            assetstore.divert_and_record(dest, active_store, deleted)
-        except assetstore.AssetStoreError:
-            # apply_sync above already wrote asset bytes (and any other
-            # changed/deleted files) into the hub clone's working tree
-            # before this failed -- see _restore_federation_after_store_failure
-            # for why an uncleaned failure here is unrecoverable.
-            _restore_federation_after_store_failure(handle, dest)
-            raise
+        # Content is in sync, but a kind change (registry pin, repo kind) is
+        # still a real change: the leaf's _meta.yaml must record it.
+        if not kind_drifted(dest, kind):
+            return len(local_index.docs), False, skipped
+    else:
+        hashsync.apply_sync(kb_abs, dest, changed, deleted)
+        if active_store is not None:
+            try:
+                assetstore.divert_and_record(dest, active_store, deleted)
+            except assetstore.AssetStoreError:
+                # apply_sync above already wrote asset bytes (and any other
+                # changed/deleted files) into the hub clone's working tree
+                # before this failed -- see _restore_federation_after_store_failure
+                # for why an uncleaned failure here is unrecoverable.
+                _restore_federation_after_store_failure(handle, dest)
+                raise
     meta = federation.FederationMeta(
         repo_id=rid,
         source_url=(
@@ -1040,6 +1060,15 @@ def _snapshot_federation(
         synthesized_src_only,
         dest_raw_assets,
     ) = _prepare_hub_to_hub_manifests(fed_src, dest, active_store, keep_local)
+    if not src_man and dest_man and non_kb:
+        held = ", ".join(f"{leaf} ({kind})" for leaf, kind in sorted(non_kb.items()))
+        raise PublishError(
+            f"source federation/ has no kb leaves: {held} stay here, because "
+            "only kb leaves go upward -- but the hub already holds earlier-pushed "
+            f"entries under '{rid}', and publishing would remove them all; "
+            f"refusing to wipe a whole namespace -- delete federation/{rid} on "
+            "the hub manually if that is really intended"
+        )
     if not src_man and dest_man:
         raise PublishError(
             "source federation/ is empty but the hub already holds entries under "
@@ -1190,13 +1219,6 @@ def _load_hub_registry(handle: hub_mod.HubHandle, hub_label: str) -> models.Regi
             f"{exc} -- fix the file on hub '{hub_label}', or ask the hub "
             "owner to fix it"
         ) from exc
-
-
-def _governed_registry(
-    handle: hub_mod.HubHandle, hub_label: str
-) -> dict[str, str] | None:
-    """{owner/repo: repo_id} when the hub carries a non-empty registry, else None."""
-    return federation.registry_map(_load_hub_registry(handle, hub_label)) or None
 
 
 def kind_line(repo_kind: str) -> str:
@@ -1489,13 +1511,17 @@ def publish_federation(
     if handle is None:
         raise PublishError(f"could not reach hub '{gitio.redact_url(hub_ref)}'")
     hub_label = gitio.redact_url(hub_ref)
-    registry_map = _governed_registry(handle, hub_label)
+    registry = _load_hub_registry(handle, hub_label)
+    registry_map = federation.registry_map(registry) or None
     rid = repo_id or source_root.name
     if registry_map is not None:
         rid = pubgate.resolve_identity(
             registry_map, gitio.remote_url(source_root), repo_id, hub_label
         )
     rid = pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
+    # A hub is a `kb` repo to its parent: refuse before any write when the
+    # parent's registry pins this hub as ba or dev.
+    _publish_kind("hub", registry, rid)
     try:
         dest_rid = config_mod.load_config(handle.kb_dir).repo_id or None
     except Exception as exc:

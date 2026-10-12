@@ -1885,7 +1885,10 @@ def _kinds_client_with_svc(tmp_path):
 
     hub = make_kinds_hub(tmp_path)
     make_fed_entry(
-        hub / "federation", "s-repo", "billing-svc", tags=["ledger-only-tag"]
+        hub / "federation",
+        "s-repo",
+        "billing-svc",
+        tags=["code", "curated", "ledger-only-tag"],
     )
     make_fed_entry(hub / "federation", "e-repo", "refund-extra", tags=["doc-only-tag"])
     return _menus_client(hub), hub
@@ -2036,7 +2039,8 @@ def test_tag_browse_with_kind_stays_in_that_menu(
         r'class="chip on" href="([^"]+)"', main
     )
     assert hrefs
-    assert all(f"kind={norm}" in h for h in hrefs), hrefs
+    # removing the last selected tag goes back to the menu itself
+    assert all(f"kind={norm}" in h or h == path for h in hrefs), hrefs
 
 
 def test_tag_browse_with_ba_kind_is_the_ticket_menu(tmp_path):
@@ -2049,7 +2053,7 @@ def test_tag_browse_with_ba_kind_is_the_ticket_menu(tmp_path):
     rail = _left_rail_text(resp.text)
     assert '<a href="/ui/tickets" class="active">Ticket<' in rail
     hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
-    assert hrefs and all("kind=ba" in h for h in hrefs), hrefs
+    assert hrefs and all("kind=ba" in h or h == "/ui/tickets" for h in hrefs), hrefs
 
 
 def test_search_screen_tag_hrefs_keep_the_kind_chip(tmp_path):
@@ -2059,3 +2063,27 @@ def test_search_screen_tag_hrefs_keep_the_kind_chip(tmp_path):
     )
     hrefs = re.findall(r'data-tag-chip[^>]*href="([^"]+)"', rail)
     assert hrefs and all("kind=dev" in h for h in hrefs), hrefs
+
+
+@pytest.mark.parametrize("recorded", ["Code", "DEV"])
+def test_reader_survives_a_wrong_case_recorded_kind(tmp_path, recorded):
+    client, hub = _kinds_client(tmp_path)
+    meta = hub / "federation" / "d-repo" / "_meta.yaml"
+    meta.write_text(
+        meta.read_text(encoding="utf-8") + f"kind: {recorded}\n", encoding="utf-8"
+    )
+    resp = client.get("/ui/docs/refund-code")
+    assert resp.status_code == 200
+    # "DEV" is normalised; "Code" is unknown and falls back to inference (dev)
+    assert 'class="tree-back" href="/ui/code"' in resp.text
+
+
+@pytest.mark.parametrize(
+    "kind, tag, path",
+    [("dev", "ledger-only-tag", "/ui/code"), ("kb", "doc-only-tag", "/ui/docs")],
+)
+def test_removing_the_last_tag_in_a_menu_returns_to_the_menu(tmp_path, kind, tag, path):
+    client, _ = _kinds_client_with_svc(tmp_path)
+    main = _main(client.get("/ui", params={"tags": tag, "kind": kind}))
+    on = re.findall(r'class="chip on" href="([^"]+)"', main)
+    assert on == [path], on

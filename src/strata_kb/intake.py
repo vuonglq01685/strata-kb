@@ -1822,7 +1822,7 @@ def _publish_in_worktree(
             _restore_worktree_federation(work)
             raise IntakeError(502, f"asset store upload failed: {exc}") from exc
     dirty = gitio._run(work, "status", "--porcelain", "--", "federation").stdout.strip()
-    if not dirty:
+    if not dirty and not publish_mod.kind_drifted(dest, kind):
         return ""  # nothing changed
     meta = federation.FederationMeta(
         repo_id=rid,

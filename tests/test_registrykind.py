@@ -86,14 +86,14 @@ def _leaf(fed: Path, path_id: str, doc_id: str, title: str = "T", tags=()) -> No
 
 def test_propose_from_published(tmp_path: Path):
     fed = tmp_path / "federation"
-    _leaf(fed, "x", "svc-code")
+    _leaf(fed, "x", "svc-code", tags=["code", "curated"])
     _leaf(fed, "p", "m1", "Mission — plan", ["plan", "generated"])
     _leaf(fed, "k", "guide")
     _leaf(fed, "mid/inner", "guide")
     _leaf(fed, "allba/a", "m1", "Mission — plan", ["plan", "generated"])
     _leaf(fed, "allba/b", "m2", "Mission — plan", ["plan", "generated"])
     _leaf(fed, "mixed/a", "guide")
-    _leaf(fed, "mixed/b", "svc-code")
+    _leaf(fed, "mixed/b", "svc-code", tags=["code", "curated"])
     (fed / "registry.yaml").write_text(
         "repos:\n"
         "  o/x: x\n  o/p: p\n  o/k: k\n  o/mid: mid\n  o/gone: gone\n"

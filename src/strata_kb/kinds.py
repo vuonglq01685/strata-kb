@@ -46,8 +46,8 @@ class KindMismatchError(KbError):
 
 
 def is_plan(title: str, tags: Iterable[str]) -> bool:
-    """A document `kb plan-ingest` generated: shown under Plans, never under
-    Documents."""
+    """A document `kb plan-ingest` generated: shown under Ticket, never under
+    Document."""
     return title.endswith(PLAN_TITLE_SUFFIX) and {"plan", "generated"} <= set(tags)
 
 
@@ -71,10 +71,13 @@ def normalize_kinds(values: Iterable[str] | None) -> list[str]:
 
 
 def infer_kind(docs: Iterable[models.IndexEntry]) -> str:
+    """Kind of a leaf with none recorded. `-code`/`-svc` count as dev only with
+    the `code` tag both code-ingest documents carry (`-code`: code+generated,
+    `-svc`: code+curated), so a kb doc named `civil-code` stays Document."""
     docs = list(docs)
     if any(is_plan(d.title, d.tags) for d in docs):
         return BA
-    if any(d.id.endswith(("-code", "-svc")) for d in docs):
+    if any(d.id.endswith(("-code", "-svc")) and "code" in d.tags for d in docs):
         return DEV
     return KB
 

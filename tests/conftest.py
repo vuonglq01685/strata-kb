@@ -404,7 +404,13 @@ def make_kinds_hub(tmp_path: Path) -> Path:
         tags=["plan", "generated"],
         l2="## 1.1 Refund\n\nrefund ticket.\n",
     )
-    make_fed_entry(fed, "d-repo", "refund-code", l2="## 1.1 Refund\n\nrefund code.\n")
+    make_fed_entry(
+        fed,
+        "d-repo",
+        "refund-code",
+        tags=["code", "generated"],
+        l2="## 1.1 Refund\n\nrefund code.\n",
+    )
     return tmp_path
 
 

@@ -32,10 +32,16 @@ def test_normalize_kinds():
 def test_infer_kind():
     plan = _doc("ba-one", f"ba-one {planingest.TITLE_SUFFIX}", ["plan", "generated"])
     assert kinds.infer_kind([plan]) == "ba"
-    assert kinds.infer_kind([_doc("x-code")]) == "dev"
-    assert kinds.infer_kind([_doc("x-svc")]) == "dev"
+    assert kinds.infer_kind([_doc("x-code", tags=["code", "generated"])]) == "dev"
+    assert kinds.infer_kind([_doc("x-svc", tags=["code", "curated"])]) == "dev"
     assert kinds.infer_kind([_doc("release-plan")]) == "kb"
     assert kinds.infer_kind([]) == "kb"
+
+
+def test_infer_kind_needs_the_code_tag_for_code_and_svc_suffixes():
+    # a hand-made kb document that merely ends in -code / -svc
+    assert kinds.infer_kind([_doc("civil-code")]) == "kb"
+    assert kinds.infer_kind([_doc("billing-svc", tags=["finance"])]) == "kb"
 
 
 def test_plan_marker_is_single_sourced():

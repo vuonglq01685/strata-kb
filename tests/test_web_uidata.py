@@ -174,7 +174,12 @@ def test_all_tags_scoped_to_kinds(tmp_path):
     from tests.conftest import make_kinds_hub
 
     hub = _hub(make_kinds_hub(tmp_path))
-    make_fed_entry(hub.root / "federation", "s-repo", "billing-svc", tags=["ledger"])
+    make_fed_entry(
+        hub.root / "federation",
+        "s-repo",
+        "billing-svc",
+        tags=["code", "curated", "ledger"],
+    )
     assert "ledger" in uidata.all_tags(hub)
     assert "ledger" in uidata.all_tags(hub, kinds=["dev"])
     assert "ledger" not in uidata.all_tags(hub, kinds=["kb"])
