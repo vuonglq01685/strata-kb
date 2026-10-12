@@ -97,7 +97,11 @@ def test_scaffold_doc_refuses_authored_doc(fixture_kb):
     assert _snapshot(fixture_kb) == before
 
 
-def test_summarize_redo_allowed_on_authored_doc(fixture_kb):
+def test_summarize_redo_allowed_on_authored_doc(fixture_kb, monkeypatch):
+    import strata_kb.llm as llm_mod
+
+    # CI runners have no claude/copilot CLI; --dry-run never calls the runner.
+    monkeypatch.setattr(llm_mod, "detect_runner", lambda choice, cfg: object())
     set_authored(fixture_kb, DOC, True)
 
     result = runner.invoke(
@@ -115,6 +119,7 @@ def test_summarize_redo_allowed_on_authored_doc(fixture_kb):
     )
 
     assert result.exit_code == 0, result.output
+    assert "will be reset" in result.output
 
 
 def test_cli_authored_toggles(fixture_kb):
