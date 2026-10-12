@@ -1,22 +1,26 @@
-"""planui — the Plans menu: `/ui/plans/*` pages for BA missions and tickets.
+"""planui — the Ticket menu: `/ui/tickets/*` pages for BA missions and tickets.
 
 Status is derived and read-only (`planstatus`). The repo rides in `?repo=`
 because a nested federation id (`mid/ba-x`) contains `/`; it is only compared
 with federation ids, never joined into a path. Mission and ticket ids are
-checked with `planstatus.safe_name` before any lookup.
+checked with `planstatus.safe_name` before any lookup. The menu was once
+`/ui/plans/*`; those URLs answer 301 to the same path under `/ui/tickets`.
 """
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from starlette.requests import Request
-from starlette.responses import HTMLResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Route
 
 from strata_kb import planstatus
+from strata_kb.kinds import BA
 from strata_kb.serving.config import ServerConfig
 from strata_kb.web import api, uidata
 from strata_kb.web.mdrender import render as md_render
-from strata_kb.web.ui import _render_page, render_error_page
+from strata_kb.web.ui import _render_page, menu_search, render_error_page
 
 
 def plan_routes(config: ServerConfig) -> list[Route]:
@@ -43,15 +47,28 @@ def plan_routes(config: ServerConfig) -> list[Route]:
         hub = api.hub_handle(config)
         if hub is None:
             return _hub_unreachable()
+        if repo is None:
+            search_ctx = menu_search(config, request, BA)
+            if search_ctx["menu_q"]:
+                return _render_page(
+                    "plans.html",
+                    config,
+                    screen="plans",
+                    title="Tickets",
+                    repos=[],
+                    notes=[],
+                    **search_ctx,
+                )
         plans, notes = planstatus.hub_plans(hub, repo)
         if repo is None:
             return _render_page(
                 "plans.html",
                 config,
                 screen="plans",
-                title="Plans",
+                title="Tickets",
                 repos=plans,
                 notes=notes,
+                **menu_search(config, request, BA),
             )
         if not plans:
             return _not_found(f"Unknown plan '{repo}'.")
@@ -59,7 +76,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             "plan_repo.html",
             config,
             screen="plan",
-            title=f"Plans · {repo}",
+            title=f"Tickets · {repo}",
             plan=plans[0],
             notes=notes,
             group=planstatus.TICKETS_GROUP,
@@ -80,7 +97,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             "plan_mission.html",
             config,
             screen="plan",
-            title=f"{mission_id} — Plans",
+            title=f"{mission_id} — Tickets",
             mission=holders[0],
         )
 
@@ -101,7 +118,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             "plan_ticket.html",
             config,
             screen="plan",
-            title=f"{story} — Plans",
+            title=f"{story} — Tickets",
             repo=found_repo,
             group=group,
             mission_linked=group != planstatus.TICKETS_GROUP,
@@ -111,8 +128,22 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             toc=toc,
         )
 
+    def plans_moved(request: Request) -> RedirectResponse:
+        """/ui/plans… -> /ui/tickets…, keeping the rest of the path and the query."""
+        raw = request.scope.get("raw_path") or b""
+        if not raw.startswith(
+            b"/ui/plans"
+        ):  # percent-encoded prefix: use the decoded path
+            raw = quote(request.url.path).encode()
+        target = "/ui/tickets" + raw.decode("latin-1")[len("/ui/plans") :]
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=301)
+
     return [
-        Route("/ui/plans", plans_page, methods=["GET"]),
-        Route("/ui/plans/{mission}", plan_mission_page, methods=["GET"]),
-        Route("/ui/plans/{mission}/{story}", plan_ticket_page, methods=["GET"]),
+        Route("/ui/tickets", plans_page, methods=["GET"]),
+        Route("/ui/tickets/{mission}", plan_mission_page, methods=["GET"]),
+        Route("/ui/tickets/{mission}/{story}", plan_ticket_page, methods=["GET"]),
+        Route("/ui/plans", plans_moved, methods=["GET"]),
+        Route("/ui/plans/{rest:path}", plans_moved, methods=["GET"]),
     ]

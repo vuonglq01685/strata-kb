@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_partials/status.html" import status %}
+{% from "_partials/cards.html" import result_card %}
 {% block main %}
 <noscript><style>[data-toggle-card],[data-copy-text],[data-density] { display:none }</style></noscript>
 <div class="stack-md">
@@ -14,32 +14,18 @@
     {% endfor %}
     {% if not active_tags %}<span>none — searching the whole store</span>{% endif %}
   </div>
+  {% if kind_chips %}
+  <div class="kind-chips" role="group" aria-label="Filter by kind">
+    {% for c in kind_chips %}<a class="kind-chip{{ ' on' if c.on else '' }}" href="{{ c.href }}">{{ c.label }} {{ c.count }}</a>{% endfor %}
+  </div>
+  {% endif %}
   <div class="seg-row" data-density role="group" aria-label="Result density">
     <button type="button" class="seg on" data-density-btn="compact" aria-pressed="true">Compact</button>
     <button type="button" class="seg" data-density-btn="full" aria-pressed="false">Full text</button>
   </div>
   <div class="stack-md" style="gap:10px">
     {% for r in results %}
-    <article class="result-card">
-      <header>
-        <a class="cite" href="{{ r.href }}">{{ r.citation }}</a>
-        {{ status(r.status) }}
-        <span class="badge badge-mode">{{ r.match_mode }}</span>
-        <span class="tk">{{ r.tokens }} tk
-          <span class="score-track"><span class="score-fill" style="width:{{ r.score_pct }}%"></span></span>
-        </span>
-      </header>
-      <h2>{{ r.title }}</h2>
-      <div class="body">{{ r.body_html | safe }}</div>
-      <footer>
-        <button type="button" data-toggle-card aria-expanded="false">expand</button>
-        <span class="sep">|</span>
-        <button type="button" data-copy-text="{{ r.citation }}">copy citation</button>
-        <span class="sep">|</span>
-        <a href="{{ r.href }}">open reader</a>
-        <span class="file">{{ r.file }}</span>
-      </footer>
-    </article>
+    {{ result_card(r) }}
     {% else %}
     <div class="empty-state">
       {% if not shell.hub_ok %}
@@ -59,6 +45,7 @@
   <form method="get" action="/ui">
     <input type="hidden" name="q" value="{{ q }}">
     {% if raw_tags %}<input type="hidden" name="tags" value="{{ raw_tags }}">{% endif %}
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
     <input type="range" name="budget" min="200" max="8000" step="100"
            value="{{ budget }}" style="width:100%; accent-color:#1349a5"
            aria-label="Token budget"
@@ -73,6 +60,7 @@
   <form method="get" action="/ui">
     <input type="hidden" name="q" value="{{ q }}">
     {% if raw_tags %}<input type="hidden" name="tags" value="{{ raw_tags }}">{% endif %}
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
     <input type="hidden" name="budget" value="{{ budget }}">
     <label class="check"><input type="checkbox" checked disabled>keyword (FTS5)</label>
     <input type="hidden" name="semantic" value="0">

@@ -2,9 +2,9 @@
 {% block main %}
 <div class="reader">
   <div class="page-head">
-    <p class="crumbs"><a href="/ui/plans">Plans</a> <span class="sep">/</span>
-      <a href="/ui/plans?repo={{ repo | urlencode }}">{{ repo }}</a> <span class="sep">/</span>
-      {% if mission_linked %}<a href="/ui/plans/{{ group | urlencode }}?repo={{ repo | urlencode }}">{{ group }}</a>
+    <p class="crumbs"><a href="/ui/tickets">Tickets</a> <span class="sep">/</span>
+      <a href="/ui/tickets?repo={{ repo | urlencode }}">{{ repo }}</a> <span class="sep">/</span>
+      {% if mission_linked %}<a href="/ui/tickets/{{ group | urlencode }}?repo={{ repo | urlencode }}">{{ group }}</a>
       <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
     <h1 style="font-size:26px">{{ ticket.title }}</h1>
   </div>

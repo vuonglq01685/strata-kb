@@ -3,8 +3,8 @@
 {% block main %}
 <div class="stack-md">
   <div class="page-head">
-    <p class="crumbs"><a href="/ui/plans">Plans</a> <span class="sep">/</span>
-      <a href="/ui/plans?repo={{ mission.repo | urlencode }}">{{ mission.repo }}</a>
+    <p class="crumbs"><a href="/ui/tickets">Tickets</a> <span class="sep">/</span>
+      <a href="/ui/tickets?repo={{ mission.repo | urlencode }}">{{ mission.repo }}</a>
       <span class="sep">/</span> {{ mission.mission_id }}</p>
     <h1 style="font-size:26px">{{ mission.title }}</h1>
     {% if mission.summary %}<p class="lede">{{ mission.summary }}</p>{% endif %}
@@ -20,7 +20,7 @@
       <span class="title">{{ s.title }}</span>
       <span class="sum">{{ s.reasons | join('; ') }}</span>
       <span>{{ plan_status(s.status) }}</span>
-      <span class="tk">{% if s.us_id in mission.tickets %}<a href="/ui/plans/{{ mission.mission_id | urlencode }}/{{ s.us_id | urlencode }}?repo={{ mission.repo | urlencode }}">open</a>{% else %}—{% endif %}</span>
+      <span class="tk">{% if s.us_id in mission.tickets %}<a href="/ui/tickets/{{ mission.mission_id | urlencode }}/{{ s.us_id | urlencode }}?repo={{ mission.repo | urlencode }}">open</a>{% else %}—{% endif %}</span>
     </div>
     {% else %}
     <div class="empty-state">This mission has no backlog table.</div>

@@ -1,17 +1,19 @@
 <aside class="rail rail-left" aria-label="Navigation">
   <noscript><style>.rail-left [data-filter-list] { display: none }</style></noscript>
+  {# the menu a page belongs to: its own kind on a menu screen, the doc's kind in the reader #}
+  {% set menu = shell.tree_doc.kind if shell.tree_doc else {'docs': 'kb', 'plans': 'ba', 'plan': 'ba', 'code': 'dev'}.get(shell.screen, '') %}
   <nav class="nav" aria-label="Main navigation">
     <a href="/ui" class="{{ 'active' if shell.screen == 'overview' else '' }}">Overview</a>
-    <a href="/ui?q=" class="{{ 'active' if shell.screen == 'search' else '' }}">Search</a>
-    <a href="/ui/docs" class="{{ 'active' if shell.screen in ('docs', 'doc') else '' }}">Documents</a>
-    <a href="/ui/plans"{% if shell.screen in ('plans', 'plan') %} class="active"{% endif %}>Plans</a>
+    <a href="/ui/docs" class="{{ 'active' if menu == 'kb' else '' }}">Document<span class="k">kb</span></a>
+    <a href="/ui/tickets" class="{{ 'active' if menu == 'ba' else '' }}">Ticket<span class="k">ba</span></a>
+    <a href="/ui/code" class="{{ 'active' if menu == 'dev' else '' }}">Code<span class="k">dev</span></a>
     {% if shell.screen == 'section' %}<a href="#" class="active">Reader</a>{% endif %}
     <a href="/ui/login">Sign in</a>
   </nav>
 
   {% if shell.tree %}
   <div class="rail-group">
-    <a class="tree-back" href="/ui/docs">← all documents</a>
+    <a class="tree-back" href="{{ shell.tree_doc.back_href }}">← {{ shell.tree_doc.back_label }}</a>
     <a class="tree-doc" href="/ui/docs/{{ shell.tree_doc.id | urlencode }}?repo={{ shell.tree_doc.repo | urlencode }}">
       <span class="name">{{ shell.tree_doc.name }}</span>
       <span class="meta">{{ shell.tree_doc.meta }}</span>

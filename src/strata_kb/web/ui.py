@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import tempfile
+from collections import Counter
 from importlib import resources
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -29,6 +30,15 @@ from starlette.routing import Route
 from strata_kb import assetstore, planstatus, searchdb
 from strata_kb import hub as hub_mod
 from strata_kb.federation import load_federation
+from strata_kb.kinds import (
+    BA,
+    DEV,
+    HUB_KINDS,
+    KB,
+    MENU,
+    UnknownKindError,
+    normalize_kinds,
+)
 from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
 from strata_kb.serving.auth import (
     COOKIE_NAME,
@@ -82,6 +92,7 @@ def _tag_links(
     q: str,
     budget: int | None = None,
     semantic_on: bool | None = None,
+    kind: str | None = None,
 ) -> list[dict]:
     """One toggle link per known tag: clicking adds/removes it from `tags=`.
 
@@ -104,6 +115,9 @@ def _tag_links(
     Any `selected` tag absent from `all_tags` (unknown to the hub, or the
     hub is down and `all_tags` is empty) still gets a chip so it stays
     visible and removable instead of rendering as a blank row.
+
+    `kind` (a menu's own kind) is echoed onto every href so a tag clicked
+    inside Document/Ticket/Code stays in that kind.
     """
 
     def href_for(new: list[str]) -> str:
@@ -118,6 +132,8 @@ def _tag_links(
             params.append(("budget", str(budget)))
         if semantic_on is not None:
             params.append(("semantic", "1" if semantic_on else "0"))
+        if kind:
+            params.append(("kind", kind))
         return f"/ui?{urlencode(params)}"
 
     out: list[dict] = []
@@ -135,6 +151,15 @@ def _tag_links(
     return out
 
 
+# The kind whose tags the left rail shows on each menu screen; every other
+# screen (overview, top search, errors) shows the tags of all kinds.
+_SCREEN_KIND = {"docs": KB, "plans": BA, "plan": BA, "code": DEV}
+
+# Where each kind's menu lives, and the reader's back-link wording.
+MENU_PATH = {KB: "/ui/docs", BA: "/ui/tickets", DEV: "/ui/code"}
+_BACK_LABEL = {KB: "all documents", BA: "all tickets", DEV: "all code"}
+
+
 def _shell_ctx(
     config: ServerConfig,
     screen: str,
@@ -144,6 +169,7 @@ def _shell_ctx(
     semantic_on: bool | None = None,
 ) -> dict:
     selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
+    scope = _SCREEN_KIND.get(screen)
     hub = api.hub_handle(config)
     if hub is None:
         return {
@@ -153,7 +179,9 @@ def _shell_ctx(
             "raw_tags": raw_tags,
             "budget": budget,
             "repo_count": 0,
-            "tags": _tag_links([], selected, q, budget=budget, semantic_on=semantic_on),
+            "tags": _tag_links(
+                [], selected, q, budget=budget, semantic_on=semantic_on, kind=scope
+            ),
             "selected_tags": selected,
         }
     return {
@@ -164,7 +192,12 @@ def _shell_ctx(
         "budget": budget,
         "repo_count": len(load_federation(hub.federation_dir)),
         "tags": _tag_links(
-            uidata.all_tags(hub), selected, q, budget=budget, semantic_on=semantic_on
+            uidata.all_tags(hub, kinds=[scope] if scope else None),
+            selected,
+            q,
+            budget=budget,
+            semantic_on=semantic_on,
+            kind=scope,
         ),
         "selected_tags": selected,
     }
@@ -265,7 +298,20 @@ async def static_file(request: Request) -> Response:
     )
 
 
-def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
+def _kind_counts(by_kind: dict[str, int]) -> list[dict]:
+    return [
+        {"kind": k, "label": MENU[k], "count": by_kind.get(k, 0)} for k in HUB_KINDS
+    ]
+
+
+def _kind_of(config: ServerConfig, rid: str) -> str:
+    hub = api.hub_handle(config)
+    return uidata.repo_kind(hub, rid) if hub is not None else KB
+
+
+def _tree_extra(
+    manifest, doc_id: str, rid: str, kind: str = KB, active: str = ""
+) -> dict:
     meta = f"{len(manifest.sections)} sections"
     if manifest.revision:
         meta = f"{manifest.revision} · {meta}"
@@ -277,8 +323,126 @@ def _tree_extra(manifest, doc_id: str, rid: str, active: str = "") -> dict:
             "name": manifest.title,
             "meta": meta,
             "active": active,
+            "kind": kind,
+            "back_href": MENU_PATH[kind],
+            "back_label": _BACK_LABEL[kind],
         },
     }
+
+
+def _budget(request: Request) -> int:
+    try:
+        b = int(request.query_params.get("budget", "2000"))
+    except ValueError:
+        b = 2000
+    return max(200, min(b, 8000))
+
+
+def _use_semantic(request: Request) -> bool:
+    vals = request.query_params.getlist("semantic")
+    return ("1" in vals) if vals else True
+
+
+def _hits(
+    request: Request,
+    hub,
+    q: str,
+    tags: list[str],
+    kinds: list[str] | None = None,
+) -> list:
+    """`search()` for a screen: a caller error (too many tags, busy index,
+    unknown kind) degrades to no hits -- the templates have no slot for the
+    message -- and is logged; a corrupt snapshot is the 503 page."""
+    try:
+        return search(
+            hub,
+            q,
+            tags=tags or None,
+            budget=_budget(request),
+            use_semantic=_use_semantic(request),
+            kinds=kinds,
+        )
+    except (
+        searchdb.TooManyTagsError,
+        searchdb.IndexBusyError,
+        UnknownKindError,
+    ) as exc:
+        logger.warning("search screen: %s", exc)
+        return []
+    except (yaml.YAMLError, ValidationError, ValueError) as exc:
+        # Same as api.py's api_search: search() syncs every federated repo's
+        # manifest before searching, so a corrupt manifest anywhere surfaces
+        # here with no single doc_id to name.
+        raise api.SnapshotCorruptError("", " ".join(str(exc).split())) from exc
+
+
+def _hit_cards(hub, found: list, terms: set[str]) -> list[dict]:
+    """Template rows of search hits; a `ba` hit links to its Ticket page."""
+    smap = uidata.status_map(hub)
+    plan_paths = planstatus.section_paths(hub) if found else {}
+    top = max((r.score for r in found), default=1.0) or 1.0
+    return [
+        {
+            "citation": r.citation,
+            "title": r.title,
+            "kind": r.kind,
+            "kind_label": MENU.get(r.kind, r.kind),
+            "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
+            "match_mode": r.match_mode,
+            # content_tokens, not tokens: the rendered card shows only
+            # r.content (via md_render below), never r.snippet.
+            "tokens": r.content_tokens,
+            "score_pct": round(100 * r.score / top),
+            "body_html": md_render(r.content, terms=terms),
+            "file": f"{r.doc_id}/{r.section_id}",
+            "href": (planstatus.hit_href(plan_paths, r) if r.kind == BA else None)
+            or (
+                f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
+                f"?repo={quote(r.source)}"
+            ),
+        }
+        for r in found
+    ]
+
+
+def menu_search(config: ServerConfig, request: Request, kind: str) -> dict:
+    """Template context for a menu's own search box (`?q=` on /ui/docs,
+    /ui/tickets, /ui/code): hits of that kind only, rendered inside the menu.
+    `menu_q` is "" when the box was not used."""
+    q = request.query_params.get("q", "").strip()
+    out: dict = {"menu_q": q, "menu_results": [], "menu_label": MENU[kind]}
+    hub = api.hub_handle(config) if q else None
+    if hub is not None:
+        found = _hits(request, hub, q, [], kinds=[kind])
+        out["menu_results"] = _hit_cards(hub, found, set(tokenize(q)))
+    return out
+
+
+def _kind_chips(request: Request, q: str, found: list, shown: str | None) -> list[dict]:
+    """ "All n" plus one chip per kind. Counts come from the unfiltered hits;
+    "All" carries no `kind` param (an empty one is an unknown kind)."""
+    counts = Counter(r.kind for r in found)
+    base = [("q", q)]
+    if raw_tags := request.query_params.get("tags", "").strip():
+        base.append(("tags", raw_tags))
+    base += [
+        ("budget", str(_budget(request))),
+        ("semantic", "1" if _use_semantic(request) else "0"),
+    ]
+
+    def chip(label: str, count: int, kind: str | None) -> dict:
+        params = [*base, ("kind", kind)] if kind else base
+        return {
+            "label": label,
+            "count": count,
+            "href": f"/ui?{urlencode(params)}",
+            "on": kind == shown,
+        }
+
+    return [
+        chip("All", len(found), None),
+        *(chip(MENU[k], counts[k], k) for k in HUB_KINDS),
+    ]
 
 
 def build_routes(
@@ -384,15 +548,9 @@ def build_routes(
         resp.delete_cookie("center_kb_session", path="/")
         return resp
 
-    def _budget(request: Request) -> int:
-        try:
-            b = int(request.query_params.get("budget", "2000"))
-        except ValueError:
-            b = 2000
-        return max(200, min(b, 8000))
-
     def _search_screen(request: Request, q: str, raw_tags: str) -> HTMLResponse:
         tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        kind = request.query_params.get("kind", "").strip()
         hub = api.hub_handle(config)
         if hub is None:
             return _render_page(
@@ -402,6 +560,8 @@ def build_routes(
                 title="Search",
                 q=q,
                 results=[],
+                kind_chips=[],
+                kind=kind,
                 budget=_budget(request),
                 active_tags=tags,
                 raw_tags=raw_tags,
@@ -409,80 +569,53 @@ def build_routes(
                 semantic_on=True,
             )
         if not q and tags:
-            docs = planstatus.without_plans(api.list_docs(config) or [])
+            docs = api.list_docs(config) or []
+            if kind:
+                docs = [d for d in docs if d["kind"] == kind]
             matched = _match_tags(docs, tags)
             return _render_page(
                 "docs.html",
                 config,
-                screen="docs",
+                screen="search",
                 title="Documents",
+                menu="docs",
                 docs=matched,
                 browse_tags=tags,
                 raw_tags=raw_tags,
-                filter_value="",
+                menu_q="",
+                menu_results=[],
                 total_docs=len(docs),
             )
         budget = _budget(request)
         terms = set(tokenize(q))
-        # An empty query with no tags (e.g. the nav "Search" link, `/ui?q=`)
-        # has nothing to search for — skip the lookup and render the search
-        # screen's empty state rather than asking search() to match on "".
-        sem_vals = request.query_params.getlist("semantic")
-        use_semantic = ("1" in sem_vals) if sem_vals else True
+        # An empty query with no tags has nothing to search for -- skip the
+        # lookup and render the search screen's empty state rather than
+        # asking search() to match on "".
+        use_semantic = _use_semantic(request)
+        # The unfiltered hits feed the chip counts; `kind` only narrows what
+        # is listed, so the counts stay put when a chip is chosen.
+        shown = None
+        found: list = []
         try:
-            found = (
-                search(
-                    hub, q, tags=tags or None, budget=budget, use_semantic=use_semantic
-                )
-                if q
-                else []
-            )
-        except (searchdb.TooManyTagsError, searchdb.IndexBusyError) as exc:
-            # search.html has no slot for a caller-error message (only the
-            # hub_ok / empty-results branches) — degrade to the normal empty
-            # state rather than a 500; the reason is still logged server-side.
+            shown = normalize_kinds([kind])[0] if kind else None
+        except UnknownKindError as exc:
             logger.warning("search screen: %s", exc)
-            found = []
-        except (yaml.YAMLError, ValidationError, ValueError) as exc:
-            # Same as api.py's api_search: search() syncs every federated
-            # repo's manifest before searching, so a corrupt manifest
-            # anywhere surfaces here with no single doc_id to name.
-            raise api.SnapshotCorruptError("", " ".join(str(exc).split())) from exc
-        docs_count = len({r.doc_id for r in found})
-        smap = uidata.status_map(hub)
-        plan_paths = planstatus.section_paths(hub) if found else {}
-        top = max((r.score for r in found), default=1.0) or 1.0
-        results = [
-            {
-                "citation": r.citation,
-                "title": r.title,
-                "status": smap.get((r.source, r.doc_id, r.section_id), "pending"),
-                "match_mode": r.match_mode,
-                # content_tokens, not tokens: the rendered card shows only
-                # r.content (via md_render below), never r.snippet.
-                "tokens": r.content_tokens,
-                "score_pct": round(100 * r.score / top),
-                "body_html": md_render(r.content, terms=terms),
-                "file": f"{r.doc_id}/{r.section_id}",
-                "href": planstatus.hit_href(plan_paths, r)
-                or (
-                    f"/ui/docs/{quote(r.doc_id)}/{quote(r.section_id)}"
-                    f"?repo={quote(r.source)}"
-                ),
-            }
-            for r in found
-        ]
+        else:
+            found = _hits(request, hub, q, tags) if q else []
+        listed = [r for r in found if shown in (None, r.kind)]
         return _render_page(
             "search.html",
             config,
             screen="search",
             title="Search",
             q=q,
-            results=results,
+            results=_hit_cards(hub, listed, terms),
+            kind_chips=_kind_chips(request, q, found, shown) if found else [],
+            kind=kind,
             budget=budget,
             active_tags=tags,
             raw_tags=raw_tags,
-            docs_count=docs_count,
+            docs_count=len({r.doc_id for r in listed}),
             semantic_on=use_semantic,
         )
 
@@ -502,6 +635,7 @@ def build_routes(
                 screen="overview",
                 title="Overview",
                 stats=uidata.StoreStats(0, 0, 0, 0),
+                kind_counts=_kind_counts({}),
                 queue=[],
                 pending_total=0,
                 awaiting_total=0,
@@ -519,6 +653,7 @@ def build_routes(
             screen="overview",
             title="Overview",
             stats=stats,
+            kind_counts=_kind_counts(stats.by_kind),
             queue=queue,
             pending_total=pending_total,
             awaiting_total=awaiting_total,
@@ -526,28 +661,25 @@ def build_routes(
             publish=uidata.last_publish(hub),
         )
 
-    def docs_page(request: Request) -> HTMLResponse:
-        all_docs = planstatus.without_plans(api.list_docs(config) or [])
-        filter_raw = request.query_params.get("filter", "").strip()
-        fq = filter_raw.lower()
-        docs = [
-            d
-            for d in all_docs
-            if not fq
-            or fq in d["id"].lower()
-            or fq in (d.get("title") or "").lower()
-            or any(fq in t.lower() for t in d["tags"])
-        ]
+    def _menu_docs_page(request: Request, kind: str, menu: str) -> HTMLResponse:
+        all_docs = [d for d in api.list_docs(config) or [] if d["kind"] == kind]
         return _render_page(
             "docs.html",
             config,
-            screen="docs",
-            title="Documents",
-            docs=docs,
+            screen=menu,
+            title=MENU[kind],
+            menu=menu,
+            docs=all_docs,
             browse_tags=[],
-            filter_value=filter_raw,
             total_docs=len(all_docs),
+            **menu_search(config, request, kind),
         )
+
+    def docs_page(request: Request) -> HTMLResponse:
+        return _menu_docs_page(request, KB, "docs")
+
+    def code_page(request: Request) -> HTMLResponse:
+        return _menu_docs_page(request, DEV, "code")
 
     def doc_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
@@ -595,7 +727,7 @@ def build_routes(
             filter_value=filter_raw,
             status_q=status_q,
             files=files,
-            shell_extra=_tree_extra(manifest, doc_id, rid),
+            shell_extra=_tree_extra(manifest, doc_id, rid, _kind_of(config, rid)),
         )
 
     def section_page(request: Request) -> HTMLResponse:
@@ -647,7 +779,11 @@ def build_routes(
                 (s for s in manifest.sections if s.id == result.section_id), None
             )
             shell_extra = _tree_extra(
-                manifest, result.doc_id, result.source, active=result.section_id
+                manifest,
+                result.doc_id,
+                result.source,
+                _kind_of(config, result.source),
+                active=result.section_id,
             )
         content_html, toc = uidata.inject_heading_anchors(md_render(result.content))
         return _render_page(
@@ -781,6 +917,7 @@ def build_routes(
         Route("/ui/login", login_post, methods=["POST"]),
         Route("/ui/logout", logout_post, methods=["POST"]),
         Route("/ui/docs", docs_page, methods=["GET"]),
+        Route("/ui/code", code_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),
         Route("/ui/docs/{doc}/{section}", section_page, methods=["GET"]),
         Route("/ui/static/{path:path}", static_file, methods=["GET"]),

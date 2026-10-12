@@ -10,15 +10,15 @@ from __future__ import annotations
 import html
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 from strata_kb import gitio, models
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
+from strata_kb.kinds import DEV, KB
 from strata_kb.mdutils import count_tokens
 from strata_kb.models import Manifest, SectionEntry
-from strata_kb.planstatus import is_plan
 from strata_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("strata_kb.web.uidata")
@@ -59,6 +59,7 @@ class StoreStats:
     sections: int
     repos: int
     l0_tokens: int
+    by_kind: dict[str, int] = field(default_factory=dict)  # kind -> doc count
 
 
 @dataclass(frozen=True)
@@ -95,27 +96,37 @@ _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
+# Review work (catalog, queue) skips `ba` repos: their generated plan documents
+# live under the Ticket menu and have no section review.
+_REVIEWED_KINDS = (KB, DEV)
+
+
 def _iter_manifests(
-    hub: HubHandle, *, plans: bool = False
-) -> Iterator[tuple[str, Manifest]]:
-    """Every published document's manifest. Generated plan documents live under the
-    Plans menu, so they are left out unless `plans` asks for them."""
+    hub: HubHandle, *, kinds: Iterable[str] | None = _REVIEWED_KINDS
+) -> Iterator[tuple[str, str, Manifest]]:
+    """(repo id, repo kind, manifest) of every published document of a repo
+    whose kind is in `kinds` (None = every kind)."""
+    wanted = None if kinds is None else set(kinds)
     for repo in load_federation(hub.federation_dir):
+        if wanted is not None and repo.kind not in wanted:
+            continue
         for doc in repo.index.docs:
-            if is_plan(doc.title, doc.tags) and not plans:
-                continue
             path = repo.kb_dir / doc.id / "_manifest.yaml"
             if not path.exists():
                 continue
             try:
-                yield repo.meta.repo_id, models.load_yaml_model(path, Manifest)
+                yield (
+                    repo.meta.repo_id,
+                    repo.kind,
+                    models.load_yaml_model(path, Manifest),
+                )
             except Exception as exc:  # noqa: BLE001 -- malformed manifest: skip, keep the page up
                 logger.warning("skipping manifest %s: %s", path, exc)
 
 
 def catalog(hub: HubHandle) -> list[CatalogDoc]:
     out: list[CatalogDoc] = []
-    for repo_id, m in _iter_manifests(hub):
+    for repo_id, _, m in _iter_manifests(hub):
         counts = {"reviewed": 0, "summarized": 0, "pending": 0}
         total = 0
         for s in m.sections:
@@ -139,12 +150,14 @@ def catalog(hub: HubHandle) -> list[CatalogDoc]:
     return out
 
 
-def all_tags(hub: HubHandle) -> list[str]:
+def all_tags(hub: HubHandle, kinds: Iterable[str] | None = None) -> list[str]:
+    """Every tag on the hub, or only those of repos of `kinds`."""
+    wanted = None if kinds is None else set(kinds)
     tags = {
         t
         for repo in load_federation(hub.federation_dir)
+        if wanted is None or repo.kind in wanted
         for doc in repo.index.docs
-        if not is_plan(doc.title, doc.tags)
         for t in doc.tags
     }
     return sorted(tags)
@@ -155,7 +168,7 @@ def review_queue(hub: HubHandle, limit: int = 8) -> list[QueueItem]:
         QueueItem(
             repo=repo_id, doc_id=m.id, section_id=s.id, title=s.title, status=s.status
         )
-        for repo_id, m in _iter_manifests(hub)
+        for repo_id, _, m in _iter_manifests(hub)
         for s in m.sections
         if s.status != "reviewed" and not s.id.startswith(MACHINE_SECTION_PREFIX)
     ]
@@ -167,16 +180,20 @@ def store_stats(hub: HubHandle) -> StoreStats:
     repos = load_federation(hub.federation_dir)
     docs = 0
     sections = 0
-    for _, m in _iter_manifests(hub):
+    by_kind: dict[str, int] = {}
+    for _, kind, m in _iter_manifests(hub, kinds=None):
         docs += 1
         sections += len(m.sections)
+        by_kind[kind] = by_kind.get(kind, 0) + 1
     index_path = hub.federation_dir / "index.yaml"
     l0 = (
         count_tokens(index_path.read_text(encoding="utf-8"))
         if index_path.exists()
         else 0
     )
-    return StoreStats(docs=docs, sections=sections, repos=len(repos), l0_tokens=l0)
+    return StoreStats(
+        docs=docs, sections=sections, repos=len(repos), l0_tokens=l0, by_kind=by_kind
+    )
 
 
 def last_publish(hub: HubHandle) -> PublishInfo:
@@ -262,6 +279,18 @@ def prev_next(
 def status_map(hub: HubHandle) -> dict[tuple[str, str, str], str]:
     return {
         (repo_id, m.id, s.id): s.status
-        for repo_id, m in _iter_manifests(hub, plans=True)
+        for repo_id, _, m in _iter_manifests(hub, kinds=None)
         for s in m.sections
     }
+
+
+def repo_kind(hub: HubHandle, repo_id: str) -> str:
+    """Hub kind of a federated repo; `kb` when the id is unknown."""
+    return next(
+        (
+            r.kind
+            for r in load_federation(hub.federation_dir)
+            if r.meta.repo_id == repo_id
+        ),
+        KB,
+    )

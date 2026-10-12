@@ -78,7 +78,7 @@ def list_docs(config: ServerConfig) -> list[dict] | None:
     if hub is None:
         return None
     return [
-        {**d.model_dump(), "repo": repo.meta.repo_id}
+        {**d.model_dump(), "repo": repo.meta.repo_id, "kind": repo.kind}
         for repo in load_federation(hub.federation_dir)
         for d in repo.index.docs
     ]

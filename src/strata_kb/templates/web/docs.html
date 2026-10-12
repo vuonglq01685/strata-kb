@@ -1,22 +1,34 @@
 {% extends "base.html" %}
-{% from "_partials/cards.html" import doc_card %}
+{% from "_partials/cards.html" import doc_card, menu_hits %}
+{# Document (menu "docs") and Code (menu "code") share this page. #}
+{% set menu = menu | default("docs") %}
+{% set page = {
+  "docs": {"label": "Document", "path": "/ui/docs", "kicker": "Catalog", "noun": "documents",
+           "empty": "Ingest and publish a document to see it here."},
+  "code": {"label": "Code", "path": "/ui/code", "kicker": "Code", "noun": "documents",
+           "empty": "A Dev repo publishes its code documents with kb publish."}
+}[menu] %}
 {% block main %}
 <div class="stack-md">
   <div class="page-head">
-    <p class="kicker accent">Catalog</p>
-    <h1>Documents</h1>
+    <p class="kicker accent">{{ page.kicker }}</p>
+    <h1>{{ page.label }}</h1>
   </div>
-  <form class="filter-bar" method="get" action="/ui/docs">
-    <input type="search" name="filter" value="{{ filter_value }}"
-           placeholder="Filter documents by name, id or tag…"
-           aria-label="Filter documents" data-filter-list="[data-doc-card]">
+  <form class="filter-bar menu-search" method="get" action="{{ page.path }}">
+    <input type="search" name="q" value="{{ menu_q }}"
+           placeholder="Search in {{ page.label }}…"
+           aria-label="Search in {{ page.label }}"
+           {% if not menu_q %}data-filter-list="[data-doc-card]"{% endif %}>
     {% for t in shell.tags if t.on %}
     <a class="chip on" href="{{ t.href }}">{{ t.label }} <span class="x">✕</span></a>
     {% endfor %}
-    <span class="shown" data-filter-count data-total="{{ total_docs }}"
-          data-noun="documents">{{ docs | length }} of {{ total_docs }} documents</span>
-    <noscript><button type="submit" class="seg">Apply</button></noscript>
+    {% if not menu_q %}<span class="shown" data-filter-count data-total="{{ total_docs }}"
+          data-noun="{{ page.noun }}">{{ docs | length }} of {{ total_docs }} {{ page.noun }}</span>{% endif %}
+    <noscript><button type="submit" class="seg">Search</button></noscript>
   </form>
+  {% if menu_q %}
+  {{ menu_hits(menu_q, menu_results, page.label, page.path) }}
+  {% else %}
   <div class="stack-md" style="gap:10px">
     {% for d in docs %}{{ doc_card(d) }}
     {% else %}
@@ -26,10 +38,11 @@
       <p>Check the tag spelling or browse all documents.</p>
       {% else %}
       <p>No documents in the store yet.</p>
-      <p>Ingest and publish a document to see it here.</p>
+      <p>{{ page.empty }}</p>
       {% endif %}
     </div>
     {% endfor %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

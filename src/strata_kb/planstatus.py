@@ -7,7 +7,7 @@ found from the mission's `Grounded on:` line exactly as `kb mission next`
 does. The status rules are `missionnext.statuses`: the hub cannot see a
 `draft`, since such a ticket is not published.
 
-Feeds `kb mission next --from-hub` and the web UI's Plans menu.
+Feeds `kb mission next --from-hub` and the web UI's Ticket menu.
 """
 
 from __future__ import annotations
@@ -42,11 +42,6 @@ _SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 def safe_name(name: str) -> bool:
     return _SAFE_NAME_RE.fullmatch(name) is not None and name not in (".", "..")
-
-
-def without_plans(docs: list[dict]) -> list[dict]:
-    """Documents for the catalog: generated plan documents live under Plans."""
-    return [d for d in docs if not is_plan(d.get("title") or "", d.get("tags") or [])]
 
 
 @dataclass(frozen=True)
@@ -240,14 +235,14 @@ def ticket_holders(
 
 
 def plan_href(repo: str, group: str, section_id: str) -> str:
-    """Plans page of a plan section: the mission page when it is the group's
+    """Ticket page of a plan section: the mission page when it is the group's
     own section, else the ticket page. The repo rides in `?repo=` since a
     nested federation id contains `/`."""
     q = f"?repo={quote(repo, safe='')}"
     seg = quote(group, safe="")
     if group == section_id:
-        return f"/ui/plans/{seg}{q}"
-    return f"/ui/plans/{seg}/{quote(section_id, safe='')}{q}"
+        return f"/ui/tickets/{seg}{q}"
+    return f"/ui/tickets/{seg}/{quote(section_id, safe='')}{q}"
 
 
 def section_paths(hub: HubHandle) -> dict[tuple[str, str, str], str]:
@@ -261,7 +256,7 @@ def section_paths(hub: HubHandle) -> dict[tuple[str, str, str], str]:
 
 
 def hit_href(paths: dict[tuple[str, str, str], str], hit) -> str | None:
-    """Plans page of a search hit in a generated plan document (`paths` from
+    """Ticket page of a search hit in a generated plan document (`paths` from
     `section_paths`); None for any other hit."""
     group = paths.get((hit.source, hit.doc_id, hit.section_id))
     return None if group is None else plan_href(hit.source, group, hit.section_id)

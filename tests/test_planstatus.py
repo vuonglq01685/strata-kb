@@ -221,14 +221,15 @@ def test_nested_ba_leaf_is_not_served(plan_hub, tmp_path):
 def test_plan_href_puts_the_repo_in_the_query():
     assert (
         planstatus.plan_href("mid/ba-x", "M-a", "M-a")
-        == "/ui/plans/M-a?repo=mid%2Fba-x"
+        == "/ui/tickets/M-a?repo=mid%2Fba-x"
     )
     assert (
-        planstatus.plan_href("ba", "M-a", "M-a-US1") == "/ui/plans/M-a/M-a-US1?repo=ba"
+        planstatus.plan_href("ba", "M-a", "M-a-US1")
+        == "/ui/tickets/M-a/M-a-US1?repo=ba"
     )
     assert (
         planstatus.plan_href("ba", "tickets", "TAL-1")
-        == "/ui/plans/tickets/TAL-1?repo=ba"
+        == "/ui/tickets/tickets/TAL-1?repo=ba"
     )
 
 
@@ -260,5 +261,3 @@ def test_only_generated_plan_documents_are_plans():
     assert not planstatus.is_plan("Release plan", ["plan", "generated"])
     assert not planstatus.is_plan("ba-one — plan", ["plan"])
     assert not planstatus.is_plan("ba-one — plan", ["generated"])
-    docs = [{"id": "release-plan", "title": "Release plan", "tags": ["ops"]}]
-    assert planstatus.without_plans(docs) == docs

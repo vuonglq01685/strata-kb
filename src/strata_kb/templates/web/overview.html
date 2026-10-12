@@ -12,7 +12,8 @@
   <div class="stat-grid">
     <div class="stat-card"><span class="kicker">Documents</span>
       <span class="value">{{ stats.docs }}</span>
-      <span class="note">across {{ stats.repos }} repos</span></div>
+      <span class="note">across {{ stats.repos }} repos</span>
+      <span class="kind-counts">{% for k in kind_counts %}<span class="kind-count kc-{{ k.kind }}">{{ k.label }} <b>{{ k.count }}</b></span>{% endfor %}</span></div>
     <div class="stat-card"><span class="kicker">Sections</span>
       <span class="value">{{ stats.sections }}</span>
       <span class="note">L2 + L3 indexed</span></div>
