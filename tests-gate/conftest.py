@@ -444,6 +444,20 @@ def legacy_kb(tmp_path: Path, run_git, bare_hub) -> dict:
     return {"tag": "legacy-format", "repo": repo, "kb": kb, "hub": bare_hub}
 
 
+@pytest.fixture
+def upgraded_legacy_kb(legacy_kb, kb_run, run_git) -> dict:
+    """`legacy_kb` after the documented 1.20.0 upgrade step.
+
+    Since 1.20.0 `kb publish` refuses a repo with no recorded kind (the hub
+    files each repo under a menu by kind), so the one thing a user must run
+    after `pip install -U` is `kb init --kind child`. The .kb content itself
+    is untouched; only `kind:` lands in config.yaml."""
+    kb_run("init", str(legacy_kb["repo"]), "--kind", "child", cwd=legacy_kb["repo"])
+    run_git(legacy_kb["repo"], "add", "-A")
+    run_git(legacy_kb["repo"], "commit", "-m", "kb init --kind child")
+    return legacy_kb
+
+
 # ---- Golden baseline: one fixed, already-published synthetic store ----
 
 
@@ -455,7 +469,8 @@ def published_kb(tmp_path: Path, run_git, kb_run, bare_hub) -> dict:
     kb = _copy_legacy_kb(repo)
 
     (kb / "config.yaml").write_text(
-        f'hub: "{bare_hub.as_posix()}"\nrepo_id: "golden"\n', encoding="utf-8"
+        f'hub: "{bare_hub.as_posix()}"\nrepo_id: "golden"\nkind: child\n',
+        encoding="utf-8",
     )
     run_git(repo, "init", "-b", "main")
     run_git(repo, "add", "-A")

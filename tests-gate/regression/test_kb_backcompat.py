@@ -1,5 +1,9 @@
 """The NEW version must be able to read a .kb/ produced by an OLD version.
 
+Since 1.20.0 the one documented upgrade step, `kb init --kind child`, runs
+first (fixture `upgraded_legacy_kb`): publish refuses a repo with no recorded
+kind. That refusal is pinned by the last test in this file.
+
 This is the most expensive contract the project has: users have committed .kb/
 into their own repos. Changing the schema without migrating breaks all of them.
 
@@ -46,7 +50,7 @@ def _clone_hub(hub: Path, dest: Path) -> Path:
     return dest
 
 
-def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
+def test_new_binary_publishes_a_legacy_kb(upgraded_legacy_kb, kb_run, tmp_path: Path):
     """Publish must not merely exit 0 — it must MIRROR the source .kb onto the hub.
 
     `kb_run` defaults to check=True, so asserting returncode==0 would be dead
@@ -55,6 +59,7 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
     or writing a truncated entry — so this test reads back the very copy
     published on the hub and compares it against the source.
     """
+    legacy_kb = upgraded_legacy_kb
     kb_run(
         "publish",
         "--direct",
@@ -134,7 +139,9 @@ def test_new_binary_publishes_a_legacy_kb(legacy_kb, kb_run, tmp_path: Path):
             )
 
 
-def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_warning):
+def test_new_binary_runs_doctor_on_a_legacy_kb(
+    upgraded_legacy_kb, kb_run, strip_kind_warning
+):
     """Merely "no Traceback" is far too low a bar: a schema-reading failure that
     the product catches and reports cleanly as `[error] ...` also prints no
     Traceback, exits 1, and still passes that test. We must assert that doctor
@@ -156,6 +163,7 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_war
     `kind:` is the DESIGNED upgrade nudge, not a mis-read — see KIND_WARNING
     in tests-gate/conftest.py.
     """
+    legacy_kb = upgraded_legacy_kb
     kb_run(
         "publish",
         "--direct",
@@ -201,7 +209,8 @@ def test_new_binary_runs_doctor_on_a_legacy_kb(legacy_kb, kb_run, strip_kind_war
     )
 
 
-def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
+def test_new_binary_queries_a_legacy_kb(upgraded_legacy_kb, kb_run):
+    legacy_kb = upgraded_legacy_kb
     kb_run(
         "publish",
         "--direct",
@@ -228,3 +237,24 @@ def test_new_binary_queries_a_legacy_kb(legacy_kb, kb_run):
         f"query against the .kb of {legacy_kb['tag']} returned nothing — were "
         "sections silently swallowed?"
     )
+
+
+def test_new_binary_refuses_to_publish_an_unupgraded_legacy_kb(legacy_kb, kb_run):
+    """1.20.0 contract change, deliberate and visible: a .kb with no recorded
+    kind is refused with the upgrade step to run, before anything is written."""
+    proc = kb_run(
+        "publish",
+        "--direct",
+        "--hub",
+        str(legacy_kb["hub"]),
+        "--repo-id",
+        "legacy",
+        "--kb-dir",
+        str(legacy_kb["kb"]),
+        cwd=legacy_kb["repo"],
+        check=False,
+    )
+    assert proc.returncode != 0, "publish of a kind-less .kb must be refused"
+    out = proc.stdout + proc.stderr
+    assert "repo kind is not recorded" in out and "kb init --kind" in out, out
+    assert "Traceback" not in out, out
