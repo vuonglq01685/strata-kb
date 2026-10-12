@@ -1,6 +1,6 @@
 # Hub kinds — Document / Ticket / Code menus and kind-filtered search
 
-Status: draft for builder check · 2026-10-12
+Status: builder-checked, awaiting owner approval · 2026-10-12
 
 ## 1. Intent
 
@@ -34,15 +34,18 @@ an agent asks for the kind it needs and gets nothing else.
 Goals
 
 1. **Registry has kind.** `federation/registry.yaml` entries carry `kind`
-   (`kb | ba | dev`). The hub declares each repo's kind.
+   (`kb | ba | dev`, plus `hub` for a mid-tier hub — §5). The hub declares
+   each repo's kind.
 2. **Kind travels with content.** Every federation leaf records its kind, so
    nested hubs (child-hub published into a root hub) keep the kinds of the
    repos inside them, which the root registry does not list.
 3. **Publish enforces kind.** A publish whose repo kind (from the publisher's
    config) disagrees with the registry entry's kind is rejected.
 4. **Upgrade path.** Re-running `kb init --kind hub` on an existing hub fills
-   in `kind` for registry entries that lack it and back-fills leaves that lack
-   it, then asks the operator to confirm. No directory moves.
+   in `kind` for registry entries that lack it, after the operator confirms.
+   Existing leaves are not rewritten: a leaf without a recorded kind gets it
+   inferred at read time (§5), so the UI and search are correct immediately.
+   No directory moves.
 5. **UI menus.** Left rail becomes: Overview · Document · Ticket · Code.
    - Plans is renamed Ticket (same pages).
    - The separate "Search" rail item is removed; the top search box stays.
@@ -55,14 +58,20 @@ Goals
 7. **Query filter.** `kb query --kind <kb|ba|dev>` (repeatable), MCP
    `kb_search(..., kinds=[...])`, and REST `/api/search?kind=` filter by kind.
    No filter = all kinds, exactly as today.
-8. **Agents pick the kind.** Skill bodies pass the right filter:
-   - BA (`ba-mission-plan`, `ba-ticket-author`): `kb` + `dev` — knowledge plus
-     code so tickets are grounded in real code.
-   - Dev (`dev-implement-ticket`, `dev-design`, `dev-plan`, `dev-execute`):
-     `dev` (own repo's `-code`/`-svc`), `ba`, `kb`.
-   - SA (`sa-ticket-ground`): `dev`.
-   - Code-sync (`kb-code-sync`): searches `kb` only, since it may only edit
-     Document content.
+8. **Agents pick the kind.** Skill bodies pass the right filter. Only bodies
+   that already search change; no new search steps are added elsewhere.
+   - BA (`ba-mission-plan`, `ba-ticket-author`): `--kind kb --kind dev` —
+     knowledge plus code so tickets are grounded in real code.
+   - Dev (`dev-implement-ticket`): its existing own-repo search becomes
+     `--kind dev` **plus** the existing doc-id restriction to its own
+     `<repo_id>-code` / `<repo_id>-svc` (code = own repo only, as agreed). It
+     also gains one `--kind ba` lookup for the ticket/mission and one
+     `--kind kb` lookup for knowledge, each as its own query.
+   - SA (`sa-ticket-ground`): `--kind dev` **plus** the existing restriction
+     to the target `<repo-id>-code`. Kind narrows; the doc-id tag still picks
+     the one repo. No new `--repo` filter.
+   - Code-sync (`kb-code-sync`): searches `--kind kb` only, since it may only
+     edit Document content.
 
 Non-goals
 
@@ -127,7 +136,9 @@ Anti-goals (a failure even if it "works")
 - Upgrade happens by re-running `kb init` on the hub; it must leave the
   federation showing correctly in the UI and in kind-filtered search.
 - Menu set Overview · Document · Ticket · Code, Plans renamed Ticket,
-  separate Search item removed (mockup approved).
+  separate Search item removed. Approved mockup:
+  `docs/superpowers/specs/2026-10-12-hub-kind-menus-mockup.html` (section 1
+  = menus + per-menu search; section 2 option A = top search).
 - Per-menu search searches that kind only; top search searches all kinds,
   displayed as option A (mixed list, kind badges, kind chips).
 - Agent filters per role as in Goal 8. No filter = all kinds.
@@ -141,19 +152,41 @@ Anti-goals (a failure even if it "works")
 - **No directory restructure.** Kind is recorded, not encoded in paths:
   moving leaves would break nested-hub paths, digest checks
   (`content_sha256`) and code-sync's manifest regex.
-- **Kind is recorded in each leaf's `_meta.yaml`** (`kind:` optional, default
-  inferred) and carried into the search DB per section. Registry kind wins on
-  a governed hub; an ungoverned hub (empty registry) takes the publisher's
-  config kind; legacy leaves without it are inferred from doc-id suffix.
+- **Kind is recorded in each leaf's `_meta.yaml`** (`kind:` optional) and
+  carried into the search DB per section. Resolution order for a leaf:
+  1. recorded `kind` in its `_meta.yaml`;
+  2. else inferred from doc-id suffix (`-plan` → `ba`; `-code`/`-svc` →
+     `dev`; else `kb`).
+  On publish, the hub writes the leaf's `kind` from the registry entry
+  (governed hub) or from the publisher's config kind mapped per §1
+  (ungoverned hub).
+- **Registry kinds are `kb | ba | dev | hub`.** `hub` is the entry kind for a
+  mid-tier hub that publishes a whole federation (`publish_federation`,
+  `publish.py:1357`). Its own top-level leaf is `kb`; leaves nested under it
+  (`federation/<mid>/<rid>/…`) keep the kinds the mid hub recorded (the mid
+  hub enforced its own registry when they were published to it). This is
+  the one place the root trusts recorded kinds from a publisher, and it
+  already trusts that registered hub with the content itself.
 - **Mismatch rejects the publish** with a message naming both kinds and the
-  registry line to fix. Applies to both the intake route and the local
+  registry line to fix: a repo whose config kind maps to something other
+  than its registry kind (`child`/`hub` config vs `kb`/`hub` entry both
+  pass; `ba` vs `dev` fails). Applies to the intake route and the local
   snapshot route where the registry is consulted today.
-- **Upgrade = `kb init --kind hub` re-run**: for each registry entry without
-  `kind`, propose one from what that repo has published (suffix inference),
-  print the proposed registry diff, and write it only after the operator
-  confirms (interactive prompt; `--yes` for CI). Leaves are back-filled the
-  same way. A registry entry that becomes `kind`-bearing switches to the
-  mapping form `{repo_id, kind, workflow?}`.
+- **Upgrade = `kb init --kind hub` re-run**, same contract as today's
+  `kb init` (writes files, never commits): for each registry entry without
+  `kind`, propose one from what that repo has published (suffix inference;
+  a repo id that is a nested-federation container → `hub`; mixed or empty →
+  ask), print the proposed diff, write after the operator confirms
+  (interactive; `--yes` for CI). It edits `registry.yaml` line by line so
+  operator comments survive. The operator commits/PRs it like any hub
+  change; until then, read-time inference already shows content correctly.
+  A plain-string entry that gains `kind` switches to the mapping form
+  `{repo_id, kind, workflow?}`. Leaves are never back-filled.
+- **Left-rail tag cloud follows the menu**: inside Document/Ticket/Code it
+  shows that kind's tags; on Overview and the top-search screen it stays
+  global.
+- **Dev bodies `dev-design`, `dev-plan`, `dev-execute` are not changed**:
+  they do not search today.
 - **Routes:** `/ui/tickets…` replaces `/ui/plans…`; old `/ui/plans…` URLs
   redirect (301) so existing links keep working. Code gets `/ui/code`; doc and
   section reader pages are shared by all three menus.

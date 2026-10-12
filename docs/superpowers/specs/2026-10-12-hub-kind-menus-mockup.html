@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hub Menu Mockup</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fff;--ink:#1d1d1b;--mute:#6b6a66;--line:#dedbd4;--acc:#1349a5;--doc:#1a6e3c;--tic:#92600a;--code:#6a3fb5;--soft:#eef2fb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17171a;--panel:#212126;--ink:#ecebe7;--mute:#a09e98;--line:#34343b;--acc:#7aa2f7;--doc:#5ec08a;--tic:#e0a84a;--code:#b28cf2;--soft:#262b38}}
+:root[data-theme="dark"]{--bg:#17171a;--panel:#212126;--ink:#ecebe7;--mute:#a09e98;--line:#34343b;--acc:#7aa2f7;--doc:#5ec08a;--tic:#e0a84a;--code:#b28cf2;--soft:#262b38}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 6px}
+.sub{color:var(--mute);margin:0 0 12px}
+.frame{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.top{display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font-weight:700}
+.gsearch{flex:1;min-width:180px;border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--mute);background:var(--bg)}
+.cols{display:flex;min-height:220px}
+.rail{width:150px;border-right:1px solid var(--line);padding:10px;flex-shrink:0}
+.rail a{display:block;padding:5px 8px;border-radius:5px;color:var(--ink);text-decoration:none;margin-bottom:2px}
+.rail a.on{background:var(--soft);color:var(--acc);font-weight:600}
+.rail .k{font-size:11px;color:var(--mute);margin-left:4px}
+.main{flex:1;padding:12px;min-width:0}
+.lsearch{border:1px dashed var(--acc);border-radius:6px;padding:6px 10px;color:var(--mute);margin-bottom:10px}
+.row{border-bottom:1px solid var(--line);padding:7px 0}
+.row b{font-weight:600}.row .m{color:var(--mute);font-size:12px}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;border:1px solid currentColor;margin-right:6px}
+.b-doc{color:var(--doc)}.b-tic{color:var(--tic)}.b-code{color:var(--code)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px solid var(--line);border-radius:12px;padding:2px 10px;font-size:12px}
+.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.grp{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 2px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:760px){.split{grid-template-columns:1fr}.rail{width:110px}}
+.opt{border:2px solid var(--line);border-radius:10px;padding:10px;background:var(--panel)}
+.opt h3{margin:0 0 4px;font-size:15px}.opt p{margin:0 0 8px;color:var(--mute);font-size:13px}
+.note{background:var(--soft);border-radius:8px;padding:8px 12px;font-size:13px}
+</style>
+</head>
+<body>
+<h1>Hub: chia menu theo kind</h1>
+<p class="sub">Bản phác thảo (wireframe). Dữ liệu chỉ là ví dụ.</p>
+
+<h2>1. Thanh menu mới, đang mở menu Code</h2>
+<p class="sub">Menu "Search" riêng bị bỏ, vì ô search trên cùng đã tìm toàn bộ. Plans được đổi tên thành Ticket. Ô search viền nét đứt chỉ tìm trong kind <code>dev</code>.</p>
+<div class="frame">
+  <div class="top"><span class="brand">KB·CENTER</span><span class="gsearch">Search tất cả (Document + Ticket + Code)…</span></div>
+  <div class="cols">
+    <nav class="rail">
+      <a>Overview</a>
+      <a>Document <span class="k">kb</span></a>
+      <a>Ticket <span class="k">ba</span></a>
+      <a class="on">Code <span class="k">dev</span></a>
+    </nav>
+    <div class="main">
+      <div class="lsearch">Tìm trong Code…</div>
+      <div class="row"><b>payment-svc-code</b> <span class="m">· generated · api, db, services, deps…</span></div>
+      <div class="row"><b>payment-svc-svc</b> <span class="m">· curated · svc.* + hist.* (lịch sử ticket theo service)</span></div>
+      <div class="row"><b>order-svc-code</b> <span class="m">· generated</span></div>
+      <div class="row"><b>order-svc-svc</b> <span class="m">· curated · hist.order: 14 ticket</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>2. Kết quả của ô search trên cùng: chọn kiểu hiển thị</h2>
+<p class="sub">Search: "refund timeout"</p>
+<div class="split">
+  <div class="opt">
+    <h3>A. Danh sách trộn, có nhãn kind và chip lọc</h3>
+    <p>Xếp theo độ liên quan. Bấm chip để thu hẹp mà không cần đổi menu.</p>
+    <div class="chips"><span class="chip on">Tất cả 9</span><span class="chip">Document 3</span><span class="chip">Ticket 2</span><span class="chip">Code 4</span></div>
+    <div class="row"><span class="badge b-code">Code</span><b>payment-svc-svc §hist.refund</b><div class="m">TCK-212 tăng timeout refund lên 30s…</div></div>
+    <div class="row"><span class="badge b-tic">Ticket</span><b>TCK-212 Refund timeout</b><div class="m">mission M-07 · done</div></div>
+    <div class="row"><span class="badge b-doc">Document</span><b>payment-spec §4.3</b><div class="m">Refund phải hoàn tất trong…</div></div>
+    <div class="row"><span class="badge b-code">Code</span><b>payment-svc-code §api</b><div class="m">POST /refunds…</div></div>
+  </div>
+  <div class="opt">
+    <h3>B. Gom theo nhóm kind</h3>
+    <p>Mỗi nhóm hiện vài kết quả tốt nhất, kèm link "xem thêm" dẫn sang search của menu đó.</p>
+    <div class="grp" style="color:var(--doc)">Document · 3</div>
+    <div class="row"><b>payment-spec §4.3</b><div class="m">Refund phải hoàn tất trong…</div></div>
+    <div class="grp" style="color:var(--tic)">Ticket · 2</div>
+    <div class="row"><b>TCK-212 Refund timeout</b><div class="m">mission M-07 · done</div></div>
+    <div class="grp" style="color:var(--code)">Code · 4</div>
+    <div class="row"><b>payment-svc-svc §hist.refund</b><div class="m">TCK-212 tăng timeout refund lên 30s…</div></div>
+    <div class="row"><b>payment-svc-code §api</b><div class="m">POST /refunds… <span style="color:var(--acc)">xem thêm 2 →</span></div></div>
+  </div>
+</div>
+
+<h2>Còn mở</h2>
+<div class="note">Overview giữ như cũ (thống kê, review queue, lần publish gần nhất), nhưng các con số được chia theo từng kind.</div>
+</body>
+</html>
