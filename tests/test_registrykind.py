@@ -90,10 +90,16 @@ def test_propose_from_published(tmp_path: Path):
     _leaf(fed, "p", "m1", "Mission — plan", ["plan", "generated"])
     _leaf(fed, "k", "guide")
     _leaf(fed, "mid/inner", "guide")
+    _leaf(fed, "allba/a", "m1", "Mission — plan", ["plan", "generated"])
+    _leaf(fed, "allba/b", "m2", "Mission — plan", ["plan", "generated"])
+    _leaf(fed, "mixed/a", "guide")
+    _leaf(fed, "mixed/b", "svc-code")
     (fed / "registry.yaml").write_text(
         "repos:\n"
         "  o/x: x\n  o/p: p\n  o/k: k\n  o/mid: mid\n  o/gone: gone\n"
-        "  o/up: ../up\n  o/pinned: {repo_id: k, kind: dev}\n",
+        "  o/up: ../up\n  o/allba: allba\n  o/mixed: mixed\n"
+        '  o/dot: "."\n  o/blank: ""\n'
+        "  o/pinned: {repo_id: k, kind: dev}\n",
         encoding="utf-8",
     )
 
@@ -104,16 +110,33 @@ def test_propose_from_published(tmp_path: Path):
         "o/mid": "kb",
         "o/gone": "",
         "o/up": "",
+        "o/allba": "kb",
+        "o/mixed": "kb",
+        "o/dot": "",
+        "o/blank": "",
     }
 
 
-def test_propose_mixed_nested_leaves_asks(tmp_path: Path):
-    fed = tmp_path / "federation"
-    _leaf(fed, "mid/a", "guide")
-    _leaf(fed, "mid/b", "svc-code")
-    (fed / "registry.yaml").write_text("repos:\n  o/mid: mid\n", encoding="utf-8")
+def test_apply_fills_explicit_empty_kind_in_place():
+    text = (
+        "repos:\n"
+        '  a/flow: {repo_id: f, kind: ""}\n'
+        "  a/block:\n"
+        "    repo_id: b\n"
+        "    kind: ''\n"
+        "    workflow: w.yml\n"
+    )
 
-    assert registrykind.propose(fed) == {"o/mid": ""}
+    out = registrykind.apply(text, {"a/flow": "dev", "a/block": "ba"})
+
+    assert out == (
+        "repos:\n"
+        "  a/flow: {repo_id: f, kind: dev}\n"
+        "  a/block:\n"
+        "    repo_id: b\n"
+        "    kind: ba\n"
+        "    workflow: w.yml\n"
+    )
 
 
 def test_propose_bad_registry_raises(tmp_path: Path):

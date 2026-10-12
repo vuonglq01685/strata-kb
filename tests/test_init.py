@@ -3257,3 +3257,29 @@ def test_init_hub_upgrade_interactive_decline_leaves_file(tmp_path: Path, monkey
 
     assert result.exit_code == 0
     assert registry.read_text(encoding="utf-8") == before
+
+
+def test_init_hub_upgrade_yes_never_prompts_in_a_tty(tmp_path: Path, monkeypatch):
+    from strata_kb import cli
+
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    registry.write_text("repos:\n  acme/gone: gone\n", encoding="utf-8")
+    before = registry.read_text(encoding="utf-8")
+    monkeypatch.setattr(cli, "_stdin_isatty", lambda: True)
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub", "--yes"])
+
+    assert result.exit_code == 1
+    assert "acme/gone" in result.output
+    assert "Kind for registry entry" not in result.output
+    assert registry.read_text(encoding="utf-8") == before
+
+
+def test_init_hub_upgrade_invalid_registry_exits_1(tmp_path: Path):
+    hub, registry = _hub_with_kindless_registry(tmp_path)
+    registry.write_text("repos: [oops\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(hub), "--kind", "hub", "--yes"])
+
+    assert result.exit_code == 1
+    assert "registry.yaml is invalid" in result.output

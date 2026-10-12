@@ -245,13 +245,13 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
     try:
         proposals = registrykind.propose(fed)
     except RegistryError as exc:
-        typer.secho(f"  note     kinds not recorded: {exc}", fg=typer.colors.YELLOW)
-        return
+        typer.secho(f"{exc} — kinds not recorded", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
     if not proposals:
         return
     interactive = _stdin_isatty()
     unresolved = [k for k, v in proposals.items() if not v]
-    if not interactive and (unresolved or not yes):
+    if (unresolved and yes) or (not interactive and not yes):
         typer.secho(
             "federation/registry.yaml has entries without a kind: "
             + ", ".join(unresolved or proposals)

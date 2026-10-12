@@ -26,8 +26,8 @@ def _entry_kind(federation_dir: Path, repo_id: str) -> str:
     """Proposed kind for the published tree at federation/<repo_id>, or ""
     (ask) when there is nothing, or nothing unambiguous, to read."""
     rid = PurePosixPath(repo_id)
-    if rid.is_absolute() or ".." in rid.parts:
-        return ""  # never read outside federation/
+    if rid.is_absolute() or not rid.parts or ".." in rid.parts:
+        return ""  # never read outside federation/, never federation/ itself
     entry_dir = federation_dir.joinpath(*rid.parts)
     if not entry_dir.is_dir():
         return ""
@@ -35,9 +35,9 @@ def _entry_kind(federation_dir: Path, repo_id: str) -> str:
         entry_dir / ENTRY_INDEX_NAME
     ).exists():
         return resolve_leaf_kind(entry_dir) or ""
-    # A namespace holding nested leaves is a child hub, registered as kb.
-    leaf_kinds = {resolve_leaf_kind(d) for _, d in iter_entry_dirs(entry_dir)}
-    return kinds.KB if leaf_kinds == {kinds.KB} else ""
+    # A namespace holding any nested leaf is a child hub, registered as kb
+    # (R10): any other pin is rejected by the kind check on its next publish.
+    return kinds.KB if iter_entry_dirs(entry_dir) else ""
 
 
 def propose(federation_dir: Path) -> dict[str, str]:
@@ -50,6 +50,19 @@ def propose(federation_dir: Path) -> dict[str, str]:
         if entry is not None and not entry.kind:
             out[key] = _entry_kind(federation_dir, entry.repo_id)
     return out
+
+
+def _empty_kind_node(mapping: MappingNode) -> ScalarNode | None:
+    """The value node of an explicit empty `kind:` key, which is replaced in
+    place -- inserting a second `kind` key would be a duplicate."""
+    for k, v in mapping.value:
+        if (
+            isinstance(k, ScalarNode)
+            and k.value == "kind"
+            and isinstance(v, ScalarNode)
+        ):
+            return v if not v.value else None
+    return None
 
 
 def _edits(text: str, kinds_by_key: dict[str, str]) -> list[tuple[int, int, str]]:
@@ -88,6 +101,9 @@ def _edits(text: str, kinds_by_key: dict[str, str]) -> list[tuple[int, int, str]
                     f"{{repo_id: {rid}, kind: {kind}}}",
                 )
             )
+        elif isinstance(val, MappingNode) and (node := _empty_kind_node(val)):
+            start, end = node.start_mark.index, node.end_mark.index
+            edits.append((start, end, kind if end > start else f" {kind}"))
         elif isinstance(val, MappingNode) and val.flow_style:
             at = val.end_mark.index - 1  # the closing brace
             edits.append((at, at, f", kind: {kind}"))
