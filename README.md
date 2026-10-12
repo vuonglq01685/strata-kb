@@ -595,9 +595,11 @@ entry with no `kind` still publishes: the repo's own kind is recorded.
 Leaves published before 1.20.0 have no recorded kind. They are not rewritten
 and nothing moves under `federation/`: the kind is inferred when read (a
 generated plan document, with a plan title and the `plan`/`generated` tags, is
-`ba`; a `-code` or `-svc` document with the `code` tag is `dev`; anything else is `kb`), so the Web UI and kind-filtered search are right immediately. The
-inferred kind is recorded the next time the repo's content changes and is
-published.
+`ba`; a `-code` or `-svc` document with the `code` tag is `dev`; anything
+else is `kb`), so the Web UI and kind-filtered search are right immediately.
+The kind is recorded on the repo's next publish that carries one (the registry
+pin, or an upgraded publisher's own kind), even with unchanged content: that
+publish opens one PR that only updates `_meta.yaml`.
 
 **`kb init --kind hub`** on an existing hub fills in the missing registry kinds.
 It proposes one per kind-less entry from what that repo has published, a
