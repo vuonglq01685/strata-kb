@@ -254,7 +254,7 @@ revision moves with every commit you merge, so a mismatch alone never fails:
 
 ### What a ticket's status means to you
 
-The hub's **Plans** menu (`/ui/plans`) and `kb mission next --from-hub
+The hub's **Ticket** menu (`/ui/tickets`) and `kb mission next --from-hub
 [--repo <ba-repo>]` show every story of a published mission as **done** (its id is
 in a `hist.*` row of your `-svc`, which `kb svc note` writes at handover),
 **ready** (its ticket is published), **not ready** (no published ticket yet) or

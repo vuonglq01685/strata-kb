@@ -326,11 +326,21 @@ The intake accepts a publish only from a repository listed in the hub's
 
 ```yaml
 repos:
-  acme/safety-docs: safety               # a child
-  acme/payments: payments                # a dev repo: -code and -svc
-  acme/requirements:                     # a ba repo: -plan
+  acme/safety-docs: {repo_id: safety, kind: kb}            # a child: Document menu
+  acme/payments: {repo_id: payments, kind: dev}            # a dev repo: -code and -svc, Code menu
+  acme/requirements:                                       # a ba repo: -plan, Ticket menu
     repo_id: acme-requirements
+    kind: ba
 ```
+
+- `kind` is `kb`, `ba` or `dev` and decides the hub menu (Document, Ticket,
+  Code). The registry wins: a publish whose repo kind maps to something else is
+  refused (the intake answers `403` and names both kinds). An entry without
+  `kind` still works, and the repo's own kind is recorded. On an existing hub,
+  `kb init --kind hub` fills the missing kinds and asks first; it never
+  commits. Upgrade the hub and every local or direct publisher before you
+  commit `kind:` — an older strata-kb rejects the registry. Intake-route
+  publishers are unaffected.
 
 - The `repo_id` must equal `repo_id:` in that repo's `.kb/config.yaml`. It also
   names the published documents: a `ba` repo with `repo_id: acme-requirements`
@@ -347,7 +357,7 @@ repos:
   `ba` repo adds it by hand and re-runs `kb init --kind ba`).
 
 A published `<repo>-plan` document appears in the federation like `-code`: in the
-aggregate index, to `kb query` and to MCP (tagged `plan, generated`), and under the **Plans**
+aggregate index, to `kb query` and to MCP (tagged `plan, generated`), and under the **Ticket**
 menu of the web UI (§10.2). The hub PR it opens is reviewed and merged like any
 other. If a PR is closed or merged and its `publish/<repo-id>` branch deleted, the
 next publish opens a fresh PR; this fix ships with 1.17.0, so **redeploy the
@@ -390,9 +400,9 @@ docker compose run --rm hub kb ingest source/handbook.pdf --id hr-handbook
 On a child, `kb docker-setup` pulls the ingest image so ingestion needs no local
 Python at all.
 
-## 10.2 The Plans menu
+## 10.2 The Ticket menu
 
-The web UI has a **Plans** menu beside Documents. It shows what `ba` repos publish
+The web UI has a **Ticket** menu beside Documents. It shows what `ba` repos publish
 as `<repo>-plan` documents, with a status per story derived from the hub alone:
 **done** (the id is in a `hist.*` row of the Dev repo's `-svc`), **ready** (its
 ticket is published), **not ready** (no published ticket yet) or **blocked** (with
@@ -400,14 +410,14 @@ reasons). Nothing new is stored and there is no write path.
 
 | Route | Shows |
 |---|---|
-| `/ui/plans` | Every BA repo and its missions, with status counts. `?repo=<id>` for one repo |
-| `/ui/plans/{mission}?repo=<id>` | The mission summary and backlog table |
-| `/ui/plans/{mission}/{story}?repo=<id>` | The ticket. A ticket with no mission is `/ui/plans/tickets/{story}?repo=<id>` |
+| `/ui/tickets` | Every BA repo and its missions, with status counts. `?repo=<id>` for one repo |
+| `/ui/tickets/{mission}?repo=<id>` | The mission summary and backlog table |
+| `/ui/tickets/{mission}/{story}?repo=<id>` | The ticket. A ticket with no mission is `/ui/tickets/tickets/{story}?repo=<id>` |
 
 The repo is a query parameter because nested federation ids contain `/`. Without
 `?repo=` the one repo that holds the id is used; if several do, the page is a 404
 naming them. `*-plan` documents are left out of Documents, the overview counts and
-the tag rail; a search hit inside one links to its Plans page. The CLI twin is
+the tag rail; a search hit inside one links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>]`.
 
 ## 10.3 Before you expose it

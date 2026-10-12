@@ -382,7 +382,7 @@ marked `done` until the hub can answer.
 the hub alone: no `missions/` or `tickets/` needed. A story whose ticket is
 published is `ready`; `to-draft` reads `not ready (no published ticket)`; the
 repo-only states (`draft`, the revision demotion) cannot be seen from the hub,
-because such tickets are not published. The hub's Plans menu (§5.3) shows the
+because such tickets are not published. The hub's Ticket menu (§5.3) shows the
 same thing in a browser.
 
 ---
@@ -467,14 +467,14 @@ The L3 text is your source with the title line dropped, the headings demoted one
 level, and the two BA-internal sections removed. `## Open questions` stays. The
 L2 text keeps every table byte for byte, plus the mission's summary and business
 goal or the ticket's story and acceptance criteria. Agents search it with
-`kb_search`; people read it in the web UI under **Plans**, a menu beside
+`kb_search`; people read it in the web UI under **Ticket**, a menu beside
 Documents:
 
 | Page | Shows |
 |---|---|
-| `/ui/plans` | Every BA repo and its missions, with counts per status. `?repo=<id>` for one repo, including its "tickets without mission" |
-| `/ui/plans/<mission>?repo=<id>` | The mission summary and backlog: each story's status, its reasons, a link to its ticket |
-| `/ui/plans/<mission>/<story>?repo=<id>` | The ticket itself |
+| `/ui/tickets` | Every BA repo and its missions, with counts per status. `?repo=<id>` for one repo, including its "tickets without mission" |
+| `/ui/tickets/<mission>?repo=<id>` | The mission summary and backlog: each story's status, its reasons, a link to its ticket |
+| `/ui/tickets/<mission>/<story>?repo=<id>` | The ticket itself |
 
 Status is derived and read-only: **done** (the story is in the Dev repo's `-svc`
 history), **ready** (its ticket is published), **not ready** (no published

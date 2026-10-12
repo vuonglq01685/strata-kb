@@ -256,7 +256,7 @@ mỗi commit bạn merge, nên chỉ lệch revision thì không bao giờ fail:
 
 ### Trạng thái của ticket nghĩa là gì với bạn
 
-Menu **Plans** của hub (`/ui/plans`) và `kb mission next --from-hub
+Menu **Ticket** của hub (`/ui/tickets`) và `kb mission next --from-hub
 [--repo <ba-repo>]` hiển thị mọi story của một mission đã publish là **done** (id
 của nó nằm trong một dòng `hist.*` của `-svc` của bạn, do `kb svc note` ghi lúc
 handover), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã
