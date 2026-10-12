@@ -3848,7 +3848,10 @@ def doctor(
     issues = kind_issues + result.issues
 
     for issue in issues:
-        color = typer.colors.RED if issue.level == "error" else typer.colors.YELLOW
+        color = {
+            "error": typer.colors.RED,
+            "warning": typer.colors.YELLOW,
+        }.get(issue.level)
         typer.secho(f"[{issue.level}] {issue.message}", fg=color)
     if any(i.level == "error" for i in issues):
         raise typer.Exit(1)
