@@ -13,9 +13,10 @@ to the mission layer.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket check` has no MCP tool and stays CLI.
+reached. The gate is `kb_ticket_check`; `kb ticket check` is its CLI
+fallback.
 
 ## Workflow
 
@@ -120,8 +121,12 @@ reached. `kb ticket check` has no MCP tool and stays CLI.
    a duplicated heading, but the grep is yours to run first: the gate
    reads the FIRST copy, so a duplicate can pass a stale section while
    the Dev reads the new one.
-5. **Gate** — run `kb ticket check <file> [--missions-dir <dir>]` (CLI;
-   there is no MCP fallback); for a mission,
+5. **Gate** — run the MCP tool `kb_ticket_check` with the file's text as
+   `ticket_markdown` and, when the parent mission file exists locally, its
+   text as `mission_markdown` (a local edit wins over the hub copy) (a mission plan: its own text
+   with `heading` `## Services & order`). Fall back to
+   `kb ticket check <file> [--missions-dir <dir>]` (CLI) when the client
+   does not expose it; for a mission,
    `kb ticket check --heading "## Services & order" <file>`.
    `--missions-dir` defaults to the ticket's sibling `missions/`
    directory — pass it when the missions live elsewhere. Fix every
@@ -181,8 +186,8 @@ reached. `kb ticket check` has no MCP tool and stays CLI.
 - Never write internal flow; never write failure modes — the document
   cannot prove either. Those questions go to `Open decisions` for the
   Dev, who has the code and GitNexus.
-- `kb ticket check` failing to RUN is not a PASS. No CLI → tell the BA
-  to install `strata-kb`; never hand over an unchecked section as
+- The gate failing to RUN is not a PASS. No MCP tool and no CLI → tell
+  the BA to connect the `strata-kb` MCP server or install `strata-kb`; never hand over an unchecked section as
   checked.
 - Never tick a Definition of Ready checkbox; only the BA confirms DoR.
 - English headings stay English; write the section's free text in the

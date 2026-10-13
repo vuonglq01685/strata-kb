@@ -370,7 +370,7 @@ def _judge_new(
                 issues,
                 Issue(
                     "error",
-                    f"parent mission '{decisions.mission_id}' not found under missions/ or in the hub's plan — pass --missions-dir, or write [NEW: <reason>] (line {lineno})",
+                    f"parent mission '{decisions.mission_id}' not found under missions/ or in the hub's plan — pass the mission (CLI --missions-dir, MCP mission_markdown), or write [NEW: <reason>] (line {lineno})",
                     code=DECISION,
                 ),
             )
@@ -455,7 +455,7 @@ def check(
         issues.append(
             Issue(
                 "error",
-                f"{doc_id} not found under --kb-dir or on the hub ({where}) — "
+                f"{doc_id} not found on the hub or under --kb-dir ({where}) — "
                 "is the -code document published, and is the id spelled as "
                 f"`<repo-id>-code`? (line {line})",
             )

@@ -1,7 +1,8 @@
 """mcp — the Strata MCP server (`python -m strata_kb.mcp`).
 
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
-kb_resolve and kb_ticket_lint tools over the hub federation; every tool body
+kb_resolve, kb_ticket_lint, kb_ticket_check and kb_mission_next tools over
+the hub federation; every tool body
 runs on a worker thread and resolves the hub under one lock. `main()` serves
 stdio by default; `--transport http` mounts the same server inside the
 token-guarded `web.app` and refuses a weak STRATA_KB_HTTP_TOKEN.
@@ -69,6 +70,25 @@ def _known_docs(hub) -> str:
         for r in load_federation(hub.federation_dir)
         for d in r.index.docs
     )
+
+
+def _mission_loader(hub, mission_markdown: str | None):
+    """Mission text by id for the ticket tools: the client's
+    `mission_markdown` when its `> Mission:` line names that id, else the
+    mission's section of the hub's plan, else None."""
+    from strata_kb import mission, ticketfetch
+
+    def load(mission_id: str) -> str | None:
+        if mission_markdown:
+            m = mission.MISSION_LINE_RE.search(mission_markdown)
+            if m is not None and m.group(1) == mission_id:
+                return mission_markdown
+        try:
+            return ticketfetch.render(hub, mission_id)
+        except ticketfetch.TicketFetchError:
+            return None
+
+    return load
 
 
 HUB_DOWN = (
@@ -281,23 +301,83 @@ def create_server(config: ServerConfig) -> MCPServer:
 
     @mcp.tool()
     @_canonical_docstring
-    async def kb_ticket_lint(ticket_markdown: str) -> str:
+    async def kb_ticket_lint(
+        ticket_markdown: str,
+        ticket_id: str | None = None,
+        mission_markdown: str | None = None,
+    ) -> str:
         """Lint a draft ticket against the Definition of Ready: required
         structure, story format, ACs, Mermaid diagrams, kb-context refs
         resolving at their pinned version, and the optional
-        '> Parent mission:' back-link's id format. Over MCP the back-link's
-        existence and backlog-membership checks are skipped (no repo
-        filesystem access to the sibling missions/ directory) and reported
-        as a note, not a failure — run the CLI (`kb ticket lint`) for the
-        full check. Run this before handing the ticket to the BA; fix
-        errors and re-run until PASS."""
+        '> Parent mission:' back-link. For the back-link's existence and
+        backlog-membership checks pass `ticket_id` (the ticket file name
+        without .md, e.g. M-checkout-US1) and, whenever the mission file
+        exists locally, `mission_markdown` (its text; it wins over the hub's
+        plan). Without `ticket_id` they are skipped with a note; with it, a
+        mission neither passed nor on the hub is an error. Run this before handing the ticket to
+        the BA; fix errors and re-run until PASS."""
 
         def _run() -> str:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            report = lint_ticket(ticket_markdown, hub)
+            report = lint_ticket(
+                ticket_markdown,
+                hub,
+                ticket_id=ticket_id or None,
+                load_mission=_mission_loader(hub, mission_markdown),
+            )
             return stale_hub_note(hub) + report.render()
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_ticket_check(
+        ticket_markdown: str,
+        mission_markdown: str | None = None,
+        heading: str = "## Technical grounding",
+    ) -> str:
+        """SA grounding gate, the `kb ticket check` report: every id in
+        '## Technical grounding' exists in the hub's -code document,
+        columns/routes/commands/files match it, a moved `Grounded on:`
+        revision is judged by its cited facts, `[NEW: D<n>]` points at a
+        DECIDED row of the parent mission's Technology decisions, and Open
+        decisions is empty. The mission is `mission_markdown` (pass the
+        mission file's text whenever it exists locally — it wins over the
+        hub), else the hub's plan. `heading="## Services & order"` checks a mission plan instead
+        (decisions read from the same text). The -code document is read
+        from the hub only — no local fallback."""
+
+        def _run() -> str:
+            from strata_kb import ticketcheck, ticketstale
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            load_mission = _mission_loader(hub, mission_markdown)
+
+            def load_doc(repo, doc):
+                return ticketcheck.load_from_hub(hub.federation_dir, repo, doc)
+
+            def load_drift(repo, doc, rev):
+                ids = ticketstale.cited_ids(ticket_markdown)
+                return ticketstale.drift_refs(hub, repo, doc, rev, ids) if ids else []
+
+            def load_decisions(mission_id):
+                text = load_mission(mission_id)
+                if text is None:
+                    return None
+                return ticketcheck.parse_decisions(text, f"mission {mission_id}")
+
+            report = ticketcheck.check(
+                ticket_markdown,
+                load_doc=load_doc,
+                heading=heading,
+                load_decisions=load_decisions,
+                load_drift=load_drift,
+            )
+            return stale_hub_note(hub) + report.render("Grounding")
 
         return await anyio.to_thread.run_sync(_run)
 

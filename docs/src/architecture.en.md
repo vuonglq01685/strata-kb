@@ -255,8 +255,8 @@ that order — and the server refuses to start without one. It searches only the
 hub's `federation/`, never its own working `.kb/`. That single rule is what makes
 "published" mean something.
 
-Five MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
-`kb_resolve` and `kb_ticket_lint`.
+Seven MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check` and `kb_mission_next`.
 
 ---
 

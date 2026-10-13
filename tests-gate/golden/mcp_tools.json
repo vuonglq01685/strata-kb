@@ -217,10 +217,80 @@
       "type": "object"
     }
   },
-  "kb_ticket_lint": {
-    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link's id format. Over MCP the back-link's\nexistence and backlog-membership checks are skipped (no repo\nfilesystem access to the sibling missions/ directory) and reported\nas a note, not a failure \u2014 run the CLI (`kb ticket lint`) for the\nfull check. Run this before handing the ticket to the BA; fix\nerrors and re-run until PASS.",
+  "kb_ticket_check": {
+    "description": "SA grounding gate, the `kb ticket check` report: every id in\n'## Technical grounding' exists in the hub's -code document,\ncolumns/routes/commands/files match it, a moved `Grounded on:`\nrevision is judged by its cited facts, `[NEW: D<n>]` points at a\nDECIDED row of the parent mission's Technology decisions, and Open\ndecisions is empty. The mission is `mission_markdown` (pass the\nmission file's text whenever it exists locally \u2014 it wins over the\nhub), else the hub's plan. `heading=\"## Services & order\"` checks a mission plan instead\n(decisions read from the same text). The -code document is read\nfrom the hub only \u2014 no local fallback.",
     "inputSchema": {
       "properties": {
+        "heading": {
+          "default": "## Technical grounding",
+          "title": "Heading",
+          "type": "string"
+        },
+        "mission_markdown": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mission Markdown"
+        },
+        "ticket_markdown": {
+          "title": "Ticket Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket_markdown"
+      ],
+      "title": "kb_ticket_checkArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_ticket_checkOutput",
+      "type": "object"
+    }
+  },
+  "kb_ticket_lint": {
+    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link. For the back-link's existence and\nbacklog-membership checks pass `ticket_id` (the ticket file name\nwithout .md, e.g. M-checkout-US1) and, whenever the mission file\nexists locally, `mission_markdown` (its text; it wins over the hub's\nplan). Without `ticket_id` they are skipped with a note; with it, a\nmission neither passed nor on the hub is an error. Run this before handing the ticket to\nthe BA; fix errors and re-run until PASS.",
+    "inputSchema": {
+      "properties": {
+        "mission_markdown": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mission Markdown"
+        },
+        "ticket_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ticket Id"
+        },
         "ticket_markdown": {
           "title": "Ticket Markdown",
           "type": "string"

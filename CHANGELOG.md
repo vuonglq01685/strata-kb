@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.22.0 — 2026-10-13
+
+`kb ticket check` has an MCP twin, and `kb_ticket_lint` checks the parent-mission back-link over MCP, so the BA and SA skills no longer need a local hub clone for either gate.
+
+- **MCP `kb_ticket_check`.** A seventh MCP tool runs the SA grounding gate, the same engine as `kb ticket check`: ids, columns, routes, commands and files against the hub's `-code` document, and a moved `Grounded on:` revision judged from the hub's history. `[NEW: D<n>]` reads the parent mission from `mission_markdown` (the client passes the local mission file's text whenever there is one; it wins over the hub copy), else from the hub's plan. `heading: "## Services & order"` checks a mission plan. Over MCP the `-code` document comes from the hub only; the CLI's local `--kb-dir` fallback stays CLI.
+- **`kb_ticket_lint` back-link checks.** New optional `ticket_id` (the ticket file name without `.md`) and `mission_markdown`. With `ticket_id`, the `> Parent mission:` checks (the mission exists, the story is in its backlog) run over MCP against `mission_markdown`, else the mission on the hub's plan. Without `ticket_id` they are skipped with a note, as before; with it, a mission neither passed nor on the hub is an error, like the CLI's missing mission file. Existing calls behave as before.
+- **Skills: ticket check MCP first.** `sa-ticket-ground`, `ba-ticket-author` and `ba-mission-plan` run `kb_ticket_check` and fall back to the CLI; `ba-ticket-author` passes `ticket_id` and `mission_markdown` to `kb_ticket_lint` instead of a final CLI lint. `dev-implement-ticket` stays CLI first (it wants the local fallback) and names `kb_ticket_check` as the no-CLI path.
+- **Upgrade.** Re-run `kb init` in `ba` and `dev` repos to pick up the skills. Restart the MCP server so clients see the new tool.
+
 ## 1.21.0 — 2026-10-12
 
 `/mcp` works behind a reverse proxy, a dev repo's publish job can succeed, the skills reach the hub through MCP first, and `kb mission next` has an MCP twin.

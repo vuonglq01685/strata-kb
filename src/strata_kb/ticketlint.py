@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -503,7 +504,12 @@ def _check_dor_checklist(text: str) -> list[Issue]:
 
 
 def check_parent_mission(
-    text: str, path: Path | None, missions_dir: Path | None
+    text: str,
+    path: Path | None,
+    missions_dir: Path | None,
+    *,
+    ticket_id: str | None = None,
+    load_mission: Callable[[str], str | None] | None = None,
 ) -> tuple[list[Issue], list[str]]:
     """Check 10. Only fires when the OPTIONAL '> Parent mission:' line is
     present — pre-existing tickets carry no such line and are unaffected.
@@ -512,6 +518,10 @@ def check_parent_mission(
     is the point where both artifacts exist: a mission is authored before
     its tickets, so a mission-side existence check would fail every
     freshly written mission.
+
+    Without repo paths (MCP), `ticket_id` + `load_mission` stand in for the
+    file name and the missions/ directory: the loader returns the mission's
+    text (passed by the client, or from the hub's plan) or None.
     """
     m = ticket.PARENT_MISSION_RE.search(text)
     if m is None:
@@ -541,10 +551,24 @@ def check_parent_mission(
         ], []
 
     if path is None or missions_dir is None:
-        return [], [
-            "parent-mission existence and backlog checks skipped — no repo "
-            "paths supplied"
-        ]
+        if ticket_id is None or load_mission is None:
+            return [], [
+                "parent-mission existence and backlog checks skipped — no repo "
+                "paths supplied"
+            ]
+        loaded = load_mission(mission_id)
+        if loaded is None:
+            return [
+                Issue(
+                    "error",
+                    f"parent mission '{mission_id}' not found — pass its text "
+                    f"(its '> Mission:' line must name '{mission_id}') or "
+                    "publish the plan; the ticket declares it as its parent",
+                )
+            ], []
+        return _check_backlog_membership(
+            ticket_id, mission_id, loaded, f"hub:{mission_id}"
+        )
 
     mission_path = missions_dir / f"{mission_id}.md"
     if not mission_path.is_file():
@@ -574,6 +598,12 @@ def check_parent_mission(
                 f"could not read mission file '{mission_path}': {exc}",
             )
         ], []
+    return _check_backlog_membership(us_id, mission_id, mission_text, mission_path)
+
+
+def _check_backlog_membership(
+    us_id: str, mission_id: str, mission_text: str, mission_path: Path | str
+) -> tuple[list[Issue], list[str]]:
     backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
         return [
@@ -614,6 +644,8 @@ def lint(
     path: Path | None = None,
     missions_dir: Path | None = None,
     fail_on_stale: bool = False,
+    ticket_id: str | None = None,
+    load_mission: Callable[[str], str | None] | None = None,
 ) -> LintReport:
     # NFC-normalize once, at the one entry point every check reads from:
     # `acquality`'s bilingual regexes (GWT_RE, _WEASEL_RE, _PLACEHOLDER_RE,
@@ -660,7 +692,9 @@ def lint(
     issues += planrev.check_revision(text)
     issues += lintcore.check_review_record(text)
 
-    pm_issues, pm_notes = check_parent_mission(text, path, missions_dir)
+    pm_issues, pm_notes = check_parent_mission(
+        text, path, missions_dir, ticket_id=ticket_id, load_mission=load_mission
+    )
     issues += pm_issues
     notes += pm_notes
 

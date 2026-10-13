@@ -50,7 +50,7 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_six_tools(fed_hub):
+async def test_lists_exactly_seven_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
@@ -60,6 +60,7 @@ async def test_lists_exactly_six_tools(fed_hub):
             "kb_mission_next",
             "kb_resolve",
             "kb_search",
+            "kb_ticket_check",
             "kb_ticket_lint",
         ]
 
@@ -153,12 +154,16 @@ async def test_context_new_and_resolve_roundtrip(fed_hub):
         assert "status=ok" in _text(resolved)
 
 
-def _golden_ticket(fed_hub) -> str:
+def _golden_ticket_block(fed_hub) -> str:
     block, warning = build_context_block(
         HubHandle(root=fed_hub), REFS, tags=["airspace"]
     )
     assert warning is None
-    return _build_ticket(block)
+    return block
+
+
+def _golden_ticket(fed_hub) -> str:
+    return _build_ticket(_golden_ticket_block(fed_hub))
 
 
 @pytest.mark.anyio
@@ -606,3 +611,147 @@ async def test_kb_mission_next_hub_unreachable_returns_guidance(tmp_path, monkey
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_mission_next", {})
         assert "hub unreachable" in _text(result)
+
+
+# --- kb_ticket_check: `kb ticket check` over MCP, hub only ------------------
+
+
+def _grounding_ticket(rev: str, **overrides) -> str:
+    from tests.test_ticketcheck import grounding, ticket
+
+    return ticket(grounding(rev, **overrides))
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_check_reads_the_code_doc_from_the_hub(
+    code_doc, fed_hub, run_git
+):
+    from tests.test_cli_ticket_check import _publish_to_hub
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        ok = _text(
+            await client.call_tool(
+                "kb_ticket_check", {"ticket_markdown": _grounding_ticket(rev)}
+            )
+        )
+        bad = _text(
+            await client.call_tool(
+                "kb_ticket_check",
+                {"ticket_markdown": _grounding_ticket(rev, Service="svc.nope")},
+            )
+        )
+    assert "[note] demo-code read from hub federation/demo" in ok
+    assert ok.rstrip().endswith("Grounding: PASS")
+    assert "[error] unknown id 'svc.nope'" in bad
+    assert bad.rstrip().endswith("Grounding: FAIL")
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_check_judges_a_moved_revision_from_hub_history(
+    code_doc, fed_hub, run_git
+):
+    from tests.test_cli_ticket_check import _publish_to_hub, _republish_moved
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(
+            await client.call_tool(
+                "kb_ticket_check", {"ticket_markdown": _grounding_ticket(rev)}
+            )
+        )
+    assert "cited sections unchanged" in out
+    assert out.rstrip().endswith("Grounding: PASS")
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_check_new_marker_reads_the_passed_mission(
+    code_doc, fed_hub, run_git
+):
+    from tests.test_cli_ticket_check import _publish_to_hub
+    from tests.test_ticketcheck import MISSION, grounding, ticket
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    text = ticket(
+        grounding(
+            rev,
+            Service="svc.billing [NEW: D1]",
+            Volumes=None,
+            Healthchecks=None,
+            Devices=None,
+        ),
+        parent="M-demo",
+    )
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        without = _text(
+            await client.call_tool("kb_ticket_check", {"ticket_markdown": text})
+        )
+        other = _text(
+            await client.call_tool(
+                "kb_ticket_check",
+                {
+                    "ticket_markdown": text,
+                    "mission_markdown": MISSION.replace("M-demo", "M-other"),
+                },
+            )
+        )
+        passed = _text(
+            await client.call_tool(
+                "kb_ticket_check",
+                {"ticket_markdown": text, "mission_markdown": MISSION},
+            )
+        )
+    assert "parent mission 'M-demo' not found" in without
+    assert "parent mission 'M-demo' not found" in other  # wrong id is ignored
+    assert "D1 (DECIDED" in passed
+    assert passed.rstrip().endswith("Grounding: PASS")
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_check_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_ticket_check", {"ticket_markdown": "# T\n"})
+        assert "hub unreachable" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_checks_the_back_link_with_ticket_id(fed_hub):
+    from tests.test_ticketlint import DEFAULT_TITLE, _mission_doc
+
+    text = _build_ticket(
+        _golden_ticket_block(fed_hub),
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+    mission = _mission_doc("M-airspace-filter", ["M-airspace-filter-US2"])
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        skipped = _text(
+            await client.call_tool("kb_ticket_lint", {"ticket_markdown": text})
+        )
+        failed = _text(
+            await client.call_tool(
+                "kb_ticket_lint",
+                {
+                    "ticket_markdown": text,
+                    "ticket_id": "M-airspace-filter-US1",
+                    "mission_markdown": mission,
+                },
+            )
+        )
+    assert "checks skipped" in skipped
+    assert "'M-airspace-filter-US1' is not in the backlog" in failed
