@@ -528,7 +528,7 @@ class TestBaPlanRefresh:
             root,
             {
                 "M-demo.md": mission_text(block).replace("M-airspace-filter", "M-demo"),
-                "M-held.md": mission_text(block, ticked=False).replace(
+                "M-held.md": mission_text(block, skip="## Scope").replace(
                     "M-airspace-filter", "M-held"
                 ),
             },

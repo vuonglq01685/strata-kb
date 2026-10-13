@@ -1,8 +1,8 @@
 """planingest — `kb plan-ingest`: the `<repo_id>-plan` hub document.
 
-The `ba` twin of `kb code-ingest`. It turns the missions and tickets a BA has
-finished (lint-clean offline, Definition of Ready ticked, not demoted by a
-newer mission revision) into `.kb/<repo_id>-plan/`: one group file per mission
+The `ba` twin of `kb code-ingest`. It turns the missions that lint clean offline
+and the tickets a BA has finished (lint-clean offline, Definition of Ready
+ticked, not demoted by a newer mission revision) into `.kb/<repo_id>-plan/`: one group file per mission
 (the mission plus its tickets) and one `tickets` group for the rest. No LLM,
 no hub, and no clock: the output is a pure function of the working tree.
 """
@@ -251,10 +251,10 @@ def _select(
         text = _read(path)
         mission_texts[path.stem] = text
         file = _rel(path, root)
-        reason = (
-            _lint_reason(missionlint.lint(text, None, path=path))
-            or _fence_reason(text)
-            or _dor_reason(text)
+        # No DoR gate for a mission: it ships as soon as it lints, and every
+        # amend republishes it. Its tickets keep theirs (published = ready).
+        reason = _lint_reason(missionlint.lint(text, None, path=path)) or _fence_reason(
+            text
         )
         if reason:
             report.skipped.append((file, reason))

@@ -353,8 +353,8 @@ Mọi story trong backlog của toàn bộ `missions/` được báo là một t
 | `done` | Id của nó nằm trong một dòng `hist.*` của `<repo>-svc` trên hub — thứ `kb svc note` ghi lúc lập trình viên bàn giao và CI publish khi merge |
 | `ready` | Đã có file ticket và mọi ô `## Definition of Ready` đã được tick |
 | `draft` | Đã có file ticket nhưng còn ô DoR chưa tick, hoặc không có mục DoR, hoặc mission cha đã đi tiếp (xem dưới) |
-| `to-draft` | Chưa có ticket, mọi story trong `Depends on` đã `done`, mọi dòng D chặn nó đã `DECIDED` |
-| `blocked` | Nêu rõ lý do: `US <id> not done`, `D<n> OPEN (owner: <x>)` |
+| `to-draft` | Chưa có ticket, mọi story trong `Depends on` đã `done`, mọi dòng D chặn nó đã `DECIDED`, không còn open question chưa tick nào ghi nó trong `blocks:` |
+| `blocked` | Nêu rõ lý do: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)`. Lý do D-row hay open question cũng làm `kb ticket lint` fail ticket của story đó |
 
 Báo cáo kết thúc bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không kèm
 tham số sẽ chạy lệnh này trước và đề xuất đúng story đó. Một phụ thuộc mới chỉ
@@ -395,13 +395,13 @@ cần hub, và chạy offline. Nó publish:
 
 | Mục | Được publish khi |
 |---|---|
-| Mission | `kb mission lint` không báo lỗi cấu trúc **và** mọi ô dưới `## Definition of Ready` đã được tick |
-| Ticket | `kb ticket lint` không báo lỗi cấu trúc **và** mọi ô DoR đã được tick **và** `kb mission next` sẽ không hạ nó xuống `draft` (mục 4.4) |
+| Mission | `kb mission lint` không báo lỗi cấu trúc. `## Definition of Ready` của mission **không** phải là cổng publish: xong đến đâu publish đến đó, mỗi lần sửa đổi lại publish lại |
+| Ticket | `kb ticket lint` không báo lỗi cấu trúc (gồm cả: không còn D-row chưa DECIDED hay open question chưa tick nào của mission chặn story này) **và** mọi ô DoR đã được tick **và** `kb mission next` sẽ không hạ nó xuống `draft` (mục 4.4) |
 
 Việc một trích dẫn còn phân giải được hay không **không** phải là cổng publish:
 việc đó cần hub, và `kb-ticket-lint` đã chặn pull request vì nó rồi. Bản nháp
 không bao giờ được publish. Hai mục `## Review record` và `## Definition of Ready`
-của bạn cũng không được publish: có mặt trên hub nghĩa là DoR đã được tick đủ.
+của bạn cũng không được publish: một ticket có mặt trên hub nghĩa là DoR của nó đã được tick đủ.
 
 Mọi thứ còn lại bị bỏ ra ngoài, và mỗi mục in một dòng:
 
@@ -414,7 +414,7 @@ Các lý do bạn có thể gặp:
 | Lý do | Làm gì |
 |---|---|
 | `lint error: <first error>` (`(+N more)` khi có nhiều lỗi) | Chạy `kb mission lint` hoặc `kb ticket lint` trên file đó rồi sửa |
-| `Definition of Ready not fully ticked (<ticked>/<total>)` | Hoàn tất review, rồi tick các ô. Chỉ bạn được tick |
+| `Definition of Ready not fully ticked (<ticked>/<total>)` (chỉ ticket) | Hoàn tất review, rồi tick các ô. Trợ lý chỉ tick các ô mà một công cụ chứng minh được (mục 6); các ô cần phán đoán là của bạn |
 | `parent mission rev <M> affects this story` | Mission đã đổi sau khi ticket được viết: sửa đổi ticket (mục 6.2) |
 | `fenced line starting with '## ' would split the section — indent it inside the fence` | Một khối code trong file có dòng bắt đầu bằng `## `. Hãy thụt dòng đó vào trong khối code |
 | `id contains whitespace` | Tên file có dấu cách. Đổi tên file |
@@ -770,7 +770,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket stale [paths]` | Mọi ticket và mission có trích dẫn mà hub đã dịch chuyển, `kb-context` và `architecture` (`--md`, `--json`) | `0` còn mới, `2` chỉ cũ, `1` hỏng |
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
-| `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
+| `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.

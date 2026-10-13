@@ -85,14 +85,12 @@ def test_publishes_lint_clean_mission_with_ticked_dor(tmp_path: Path, block: str
     assert f"## {MISSION_ID} Filter and display controlled airspace" in l3
 
 
-def test_skips_mission_with_unticked_dor(tmp_path: Path, block: str):
+def test_publishes_mission_with_unticked_dor(tmp_path: Path, block: str):
+    """A mission ships as soon as it lints: its DoR is not a publish gate."""
     write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block, ticked=False)}, {})
     report = run_plan(tmp_path)
-    assert report.published == []
-    assert len(report.skipped) == 1
-    assert (
-        "DoR" in report.skipped[0][1] or "Definition of Ready" in report.skipped[0][1]
-    )
+    assert report.published == [MISSION_ID]
+    assert report.skipped == []
 
 
 def test_skips_mission_failing_offline_lint(tmp_path: Path, block: str):
@@ -125,7 +123,7 @@ def test_unparented_ticket_goes_in_tickets_group(tmp_path: Path, block: str):
 def test_ticket_of_skipped_mission_goes_in_tickets_group(tmp_path: Path, block: str):
     write_repo(
         tmp_path,
-        {f"{MISSION_ID}.md": mission_text(block, ticked=False)},
+        {f"{MISSION_ID}.md": mission_text(block, skip="## Scope")},
         {f"{US1}.md": ticket_text(block)},
     )
     report = run_plan(tmp_path)
@@ -266,7 +264,7 @@ def test_nothing_qualifies_removes_doc_and_index_entry(tmp_path: Path, block: st
     write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block)}, {})
     run_plan(tmp_path)
     assert (tmp_path / ".kb/demo-plan").is_dir()
-    write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block, ticked=False)}, {})
+    write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block, skip="## Scope")}, {})
     report = run_plan(tmp_path)
     assert report.published == [] and report.files_written == []
     assert not (tmp_path / ".kb/demo-plan").exists()

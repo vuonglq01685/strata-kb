@@ -1725,7 +1725,7 @@ def plan_ingest(
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
 ) -> None:
-    """Build .kb/<repo_id>-plan/ from ready missions and tickets — deterministic,
+    """Build .kb/<repo_id>-plan/ from missions and ready tickets — deterministic,
     offline, no LLM. Items that are not ready are listed as skipped."""
     from strata_kb import cipublish, config, planingest
 
