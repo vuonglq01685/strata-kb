@@ -417,3 +417,90 @@ def test_refresh_agent_files_leaves_ci_and_config_alone(tmp_path):
     assert wf.read_text(encoding="utf-8") == "custom ci\n"
     assert cfg.read_text(encoding="utf-8") == "kind: ba\nintake: https://x\n"
     assert all(r.startswith(initcmd.AGENT_FILE_PREFIXES) for r in report.updated)
+
+
+def _mcp_cli(git_kb, hub_worktree, monkeypatch, hub_version=None):
+    """A published ba repo whose doctor talks to `hub_worktree` over a fake MCP."""
+    kb = _published_ba(git_kb, hub_worktree)
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv(remote.UPGRADED_ENV, raising=False)
+    monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub:8321")
+    monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", "tok")
+
+    def fake_fetch(url, token, args):
+        facts = remote.hub_facts(HubHandle(root=hub_worktree), **args)
+        return {**facts, "hub_version": hub_version or facts["hub_version"]}
+
+    monkeypatch.setattr(remote, "fetch_facts", fake_fetch)
+    return kb
+
+
+def _doctor(kb):
+    return runner.invoke(app, ["doctor", "--kb-dir", str(kb), "--no-refresh"])
+
+
+def test_a_mismatch_installs_the_hub_version_and_reruns(
+    git_kb, hub_worktree, monkeypatch
+):
+    import strata_kb
+    from strata_kb import cli
+
+    kb = _mcp_cli(git_kb, hub_worktree, monkeypatch, hub_version="9.9.9")
+    seen = {}
+    monkeypatch.setattr(
+        remote, "install_version", lambda v: seen.setdefault("v", v) and None
+    )
+    monkeypatch.setattr(
+        cli,
+        "_rerun_doctor",
+        lambda kb_dir, ctx, no_refresh, env: seen.update(env=env, nr=no_refresh) or 0,
+    )
+    result = _doctor(kb)
+    assert result.exit_code == 0, result.output
+    assert seen["v"] == "9.9.9"
+    assert seen["env"][remote.UPGRADED_ENV] == strata_kb.__version__
+    assert seen["nr"] is True
+    assert f"strata-kb {strata_kb.__version__} → 9.9.9" in result.output
+
+
+def test_a_failed_install_reports_the_mismatch(git_kb, hub_worktree, monkeypatch):
+    kb = _mcp_cli(git_kb, hub_worktree, monkeypatch, hub_version="9.9.9")
+    monkeypatch.setattr(remote, "install_version", lambda v: "no network")
+    result = _doctor(kb)
+    assert result.exit_code == 1
+    assert "could not install strata-kb==9.9.9: no network" in result.output
+    assert "pip install strata-kb==9.9.9" in result.output
+
+
+@pytest.mark.parametrize("env", ["CI", remote.UPGRADED_ENV])
+def test_no_install_in_ci_or_after_an_upgrade(git_kb, hub_worktree, monkeypatch, env):
+    kb = _mcp_cli(git_kb, hub_worktree, monkeypatch, hub_version="9.9.9")
+    monkeypatch.setenv(env, "1")
+
+    def never(v):
+        raise AssertionError("must not install")
+
+    monkeypatch.setattr(remote, "install_version", never)
+    result = _doctor(kb)
+    assert result.exit_code == 1
+    assert "pip install strata-kb==9.9.9" in result.output
+
+
+def test_a_matching_version_refreshes_skills_and_commands(
+    git_kb, hub_worktree, monkeypatch
+):
+    kb = _mcp_cli(git_kb, hub_worktree, monkeypatch)
+    root = kb.resolve().parent
+    skill = root / ".claude" / "skills" / "kb-publish" / "SKILL.md"
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "kb-publish.yml").write_text("custom\n", encoding="utf-8")
+
+    result = _doctor(kb)
+
+    assert result.exit_code == 0, result.output
+    assert skill.is_file()
+    assert "updated skills/commands for strata-kb" in result.output
+    assert (wf / "kb-publish.yml").read_text(encoding="utf-8") == "custom\n"
+    assert "updated skills/commands" not in _doctor(kb).output  # nothing left to do
