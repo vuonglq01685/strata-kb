@@ -9,6 +9,7 @@ without anything having lagged.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -96,15 +97,40 @@ def _worktree_db_paths(
     return tuple(out)
 
 
+def section_digests(doc_dir: Path) -> dict[str, str]:
+    """`l3_sections` as sha256 digests -- what the hub sends over MCP."""
+    return {
+        sid: hashlib.sha256(body.encode("utf-8")).hexdigest()
+        for sid, body in l3_sections(doc_dir).items()
+    }
+
+
+def hub_code_digests(federation_dir: Path, repo_id: str) -> dict[str, str] | None:
+    """The hub's `<repo_id>-code` L3 digests; None when it has none yet."""
+    hub_doc = federation_dir / repo_id / f"{repo_id}-code"
+    if not (hub_doc / "_manifest.yaml").exists():
+        return None
+    return section_digests(hub_doc)
+
+
 def check(
     repo_root: Path, kb_dir: Path, federation_dir: Path, repo_id: str
 ) -> LagReport:
+    return check_against(
+        repo_root, kb_dir, repo_id, hub_code_digests(federation_dir, repo_id)
+    )
+
+
+def check_against(
+    repo_root: Path, kb_dir: Path, repo_id: str, hub: dict[str, str] | None
+) -> LagReport:
+    """`check` with the hub side already reduced to `hub_code_digests` --
+    a local hub checkout, or the hub's answer over MCP."""
     doc_id = f"{repo_id}-code"
     pin_note = sync.version_note(repo_root)
     if pin_note:
         return LagReport("unknown", reason=pin_note)
-    hub_doc = federation_dir / repo_id / doc_id
-    if not (hub_doc / "_manifest.yaml").exists():
+    if hub is None:
         return LagReport("unknown", reason=f"the hub has no {doc_id} yet")
     if not gitio.has_remote(repo_root):
         return LagReport(
@@ -145,7 +171,7 @@ def check(
                     tags=base.tags,
                 )
             )
-            main = l3_sections(work / ".kb" / doc_id)
+            main = section_digests(work / ".kb" / doc_id)
         except core.CodeIngestError as exc:
             return LagReport(
                 "unknown",
@@ -166,7 +192,6 @@ def check(
             )
         finally:
             gitio.worktree_remove(repo_root, work)
-    hub = l3_sections(hub_doc)
     only_main = sorted(main.keys() - hub.keys())
     only_hub = sorted(hub.keys() - main.keys())
     changed = sorted(k for k in main.keys() & hub.keys() if main[k] != hub[k])

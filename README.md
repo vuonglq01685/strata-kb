@@ -280,7 +280,7 @@ that follows it.
 | `kb publish` | Mirror `.kb/` (L0→L3) to the hub's `federation/<repo-id>/` and rebuild the index; `--branch <name>` (hub self-publish only) commits the mirror on that checked-out branch and opens or reuses its PR |
 | `kb ci-publish` | Publish from a child's or `ba` repo's GitHub Actions job via OIDC, no secrets |
 | `kb reindex` | Rebuild `federation/index.yaml` when it has drifted |
-| `kb doctor` | Store health check; `--context` also checks citation staleness |
+| `kb doctor` | Store health check; `--context` also checks citation staleness. A `child`, `ba` or `dev` repo with `kb mcp-setup` done checks the hub over its MCP, no hub clone, and fails when its strata-kb (installed, or pinned in `.github/workflows/`) is not the hub's version |
 | `kb context new` | Generate a `kb-context` citation block pinned at the hub's current commit |
 | `kb resolve` | Resolve a `kb-context` block — sections at the pinned version, plus freshness |
 | `kb diff` | Diff added/removed/changed sections between the worktree and a git rev |
@@ -826,7 +826,7 @@ links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
 `kb_mission_next`.
 
-### The seven MCP tools
+### The eight MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -837,6 +837,7 @@ links to its Ticket page. The CLI twin is
 | `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket. The `> Parent mission:` back-link is checked when `ticket_id` is passed: against `mission_markdown`, else the mission on the hub's plan | `ticket_markdown`, `ticket_id`, `mission_markdown` |
 | `kb_ticket_check` | Run the SA grounding gate (`kb ticket check`) against the hub's `-code` document, a moved revision judged from hub history. `[NEW: D<n>]` reads `mission_markdown`, else the hub's plan; no local `-code` fallback | `ticket_markdown`, `mission_markdown`, `heading` |
 | `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
+| `kb_doctor_hub` | The hub's side of `kb doctor` for a child, ba or dev repo, as JSON: the hub's strata-kb version, whether `federation/<repo_id>` is published and its digest, the hub's `-code` section digests, the registry's kind pin, citation checks. Called by the CLI, not meant for agents | `kind`, `repo_id`, `remote_url`, `dir_name`, `kb_context` |
 
 ### Security
 

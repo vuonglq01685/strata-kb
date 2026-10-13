@@ -549,8 +549,10 @@ tiering change shows up in the report the next ticket generates.
 - `kb plan waves <plan-file> [--json]` — dependency waves of a dev plan;
   exit 1 on a shared file without a dependency, a cycle, or a missing
   `Depends on:` line
-- `kb doctor --hub <url>` — check the hub is reachable and
-  `.kb/config.yaml` is valid
+- `kb doctor` — check `.kb/`, `<repo_id>-code` and what the hub has of
+  this repo (published snapshot, hub lag, registry kind). With `kb
+  mcp-setup` done it asks the hub over MCP and needs no hub clone;
+  otherwise it clones the git hub from `hub:` / `--hub <url>`
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code

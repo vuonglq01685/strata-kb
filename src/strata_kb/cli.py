@@ -3877,6 +3877,110 @@ def approve(
             raise typer.Exit(1)
 
 
+def _config_kind(kb_dir: Path) -> str:
+    from strata_kb.config import load_config
+
+    try:
+        return load_config(kb_dir).kind
+    except (*_CONFIG_READ_ERRORS, OSError):
+        return ""
+
+
+def _rerun_doctor(
+    kb_dir: Path, context_text: str | None, no_refresh: bool, env: dict[str, str]
+) -> int:
+    """`kb doctor` again in a fresh interpreter: the one just upgraded."""
+    import subprocess
+    import tempfile
+
+    args = ["doctor", "--kb-dir", str(kb_dir)]
+    if no_refresh:
+        args.append("--no-refresh")
+    with tempfile.TemporaryDirectory() as tmp:
+        if context_text is not None:
+            ctx = Path(tmp) / "context.md"
+            ctx.write_text(context_text, encoding="utf-8", newline="\n")
+            args += ["--context", str(ctx)]
+        cmd = [sys.executable, "-c", "from strata_kb.cli import app; app()", *args]
+        # fixed argv, no shell
+        return subprocess.run(cmd, env=env, check=False).returncode  # noqa: S603
+
+
+def _match_hub_version(
+    kb_dir: Path,
+    kind: str,
+    hub_version: str,
+    context_text: str | None,
+    no_refresh: bool,
+) -> list[str]:
+    """Bring this repo to the hub's strata-kb: install it and re-run doctor
+    with it, then set the `strata-kb==X` pins in CI workflows to it (that
+    string only) and refresh skills and commands for `kind` (config and
+    settings stay as they are). Not in CI, where the workflow pin decides
+    the version. Returns what changed."""
+    import strata_kb
+    from strata_kb import initcmd
+    from strata_kb.doctor import remote
+
+    if not hub_version or os.environ.get("CI"):
+        return []
+    if strata_kb.__version__ != hub_version:
+        if os.environ.get(remote.UPGRADED_ENV):
+            return []  # the install did not take: version_issues reports it
+        typer.echo(
+            f"strata-kb {strata_kb.__version__} → {hub_version} "
+            "(the hub's version): installing…"
+        )
+        error = remote.install_version(hub_version)
+        if error:
+            typer.secho(
+                f"[error] could not install strata-kb=={hub_version}: {error}",
+                fg=typer.colors.RED,
+            )
+            return []
+        env = {**os.environ, remote.UPGRADED_ENV: strata_kb.__version__}
+        raise typer.Exit(_rerun_doctor(kb_dir, context_text, no_refresh, env))
+    root = kb_dir.resolve().parent
+    changed = remote.fix_pins(root, hub_version)
+    report = initcmd.refresh_agent_files(root, kind)
+    agent_files = report.created + report.updated
+    if agent_files:
+        changed.append(
+            f"skills/commands for strata-kb {hub_version}: {', '.join(agent_files)}"
+        )
+    return changed
+
+
+def _doctor_over_mcp(kb_dir: Path, context_text: str | None, no_refresh: bool):
+    """A child/ba/dev repo with the hub's MCP configured (`kb mcp-setup`)
+    checks the hub over MCP -- BA and Dev have no git access to the hub to
+    clone it, and only the hub server knows its strata-kb version.
+    None = not configured: the caller uses the git hub as before."""
+    from strata_kb import gitio
+    from strata_kb.doctor import remote
+
+    kind = _config_kind(kb_dir)
+    if kind not in remote.REMOTE_KINDS:
+        return None
+    try:
+        target = remote.mcp_target(kb_dir.resolve().parent)
+        if target is None:
+            return None
+        url, token = target
+        facts = remote.fetch_facts(
+            url, token, remote.request_args(kb_dir, kind, context_text)
+        )
+    except remote.RemoteDoctorError as exc:
+        typer.secho(f"[error] {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    changed = _match_hub_version(
+        kb_dir, kind, facts.get("hub_version") or "", context_text, no_refresh
+    )
+    result = remote.run(kb_dir, facts, gitio.redact_url(url))
+    result.issues += [remote.Issue("info", f"updated {c} — commit it") for c in changed]
+    return result
+
+
 @app.command()
 def doctor(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -3915,7 +4019,6 @@ def doctor(
     # repo without a -code document.
     if not no_refresh:
         _refresh_dev_code(kb_dir)
-    handle = _hub_or_exit(hub, kb_dir)
     context_text = None
     if context is not None:
         context_text = (
@@ -3923,7 +4026,28 @@ def doctor(
             if context == "-"
             else Path(context).read_text(encoding="utf-8")
         )
-    result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+    # An explicit hub (--hub / STRATA_KB_HUB) wins over the MCP in .env.
+    result = None if hub else _doctor_over_mcp(kb_dir, context_text, no_refresh)
+    if result is None:
+        handle, reason = _hub_or_reason(hub, kb_dir)
+        if handle is None:
+            typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
+            if _config_kind(kb_dir) in ("ba", "dev"):
+                typer.secho(
+                    "a ba or dev repo needs no hub clone: run `kb mcp-setup` "
+                    "and `kb doctor` checks the hub over its MCP",
+                    fg=typer.colors.YELLOW,
+                )
+            raise typer.Exit(1)
+        result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+        if _config_kind(kb_dir) not in ("", "hub"):
+            result.issues.append(
+                doctor_mod.Issue(
+                    "info",
+                    "strata-kb version not checked against the hub — run "
+                    "`kb mcp-setup` so kb doctor asks the hub over MCP",
+                )
+            )
     issues = kind_issues + result.issues
 
     for issue in issues:

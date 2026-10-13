@@ -10,6 +10,7 @@ from strata_kb import gitio
 from strata_kb.doctor.issues import Issue
 
 if TYPE_CHECKING:
+    from strata_kb.codeingest.hublag import LagReport
     from strata_kb.hub import HubHandle
 
 _DB_FLAG_RE = re.compile(r"kb code-ingest[^\n]*--db")
@@ -72,6 +73,10 @@ def check_hub_lag(
     from strata_kb.codeingest import hublag
 
     report = hublag.check(repo_root, kb_dir, handle.federation_dir, repo_id)
+    return lag_issues(report, repo_id)
+
+
+def lag_issues(report: LagReport, repo_id: str) -> list[Issue]:
     if report.state == "in-sync":
         return []
     if report.state == "unknown":

@@ -94,7 +94,8 @@ the hub's `federation/`.
   `.kb/config.yaml` or `--hub`); opens a PR on the hub by default
   (in your assistant: `/kb-publish` runs diff → confirm → publish)
 - `kb resolve <file>` — resolve a kb-context block and check freshness
-- `kb doctor` — sanity-check the setup
+- `kb doctor` — sanity-check the setup; with `kb mcp-setup` done it also
+  checks that this repo runs the hub's strata-kb version
 - `kb ticket lint <file|->` — Definition-of-Ready gate for BA tickets (in
   your assistant: part of /ba-ticket-author)
 - `kb tags` — list every tag published on the hub federation

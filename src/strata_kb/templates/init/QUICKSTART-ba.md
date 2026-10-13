@@ -601,9 +601,10 @@ tiering change shows up in the report the next ticket generates.
   mission (an epic or feature slug). Idempotent, never overwrites
 - `kb tags [--hub <url>]` — list every tag published on the hub, i.e. the
   tags a `kb-context` block may carry
-- `kb doctor --hub <url>` — check the hub is reachable and
-  `.kb/config.yaml` is valid (some diagnostics assume a `child`-style
-  local KB and don't apply here — safe to ignore for a `ba` repo)
+- `kb doctor` — check `.kb/` and what the hub has of this repo (published
+  snapshot, registry kind, `--context` citations). With `kb mcp-setup`
+  done it asks the hub over MCP and needs no hub clone; otherwise it
+  clones the git hub from `hub:` / `--hub <url>`
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code

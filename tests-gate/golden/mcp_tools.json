@@ -46,6 +46,62 @@
       "type": "object"
     }
   },
+  "kb_doctor_hub": {
+    "description": "For `kb doctor` in a child, ba or dev repo, which reaches the hub\nover MCP: the hub's side of the checks as JSON -- its strata-kb\nversion (every repo on the hub must run the same), whether\nfederation/<repo_id> is published and its content digest, the hub's\n`<repo_id>-code` section digests (dev), the registry's kind pin for\nthis repo (`remote_url` and `dir_name` identify it as `kb publish`\nwould), and the citation checks of `kb_context`. The CLI calls this;\nan agent wanting a health check runs `kb doctor` instead.",
+    "inputSchema": {
+      "properties": {
+        "dir_name": {
+          "default": "",
+          "title": "Dir Name",
+          "type": "string"
+        },
+        "kb_context": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kb Context"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "remote_url": {
+          "default": "",
+          "title": "Remote Url",
+          "type": "string"
+        },
+        "repo_id": {
+          "title": "Repo Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "repo_id"
+      ],
+      "title": "kb_doctor_hubArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_doctor_hubOutput",
+      "type": "object"
+    }
+  },
   "kb_get_section": {
     "description": "Fetch exactly one section: level 'l2' (condensed) or 'l3' (verbatim).\n`doc` accepts 'repo:doc' form; pass `repo` when the doc id alone is\nambiguous across federation repos.",
     "inputSchema": {
