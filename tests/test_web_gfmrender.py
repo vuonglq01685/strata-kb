@@ -29,3 +29,20 @@ def test_raw_html_comments_and_script_links_never_reach_the_page():
     )
     assert "guidance" not in out and "<script" not in out and "<b>" not in out
     assert 'href="javascript' not in out
+
+
+def test_loose_task_lists_render_checkboxes_too():
+    out = render("- [ ] a\n\n- [x] b\n")
+    assert "[ ]" not in out and "[x]" not in out
+    assert out.count('<input type="checkbox"') == 2
+
+
+def test_inline_html_is_shown_as_text_and_br_breaks_the_line():
+    out = render("| a |\n|---|\n| x<br>y |\n\ntext <b>bold</b>\n")
+    assert "x<br />\ny" in out
+    assert "&lt;b&gt;bold&lt;/b&gt;" in out
+
+
+def test_an_html_block_never_swallows_the_markdown_after_it():
+    out = render("<div>\n- [ ] item\n**bold**\n")
+    assert "item" in out and "bold" in out and "<div>" not in out

@@ -265,8 +265,9 @@ Change rules:
   is a title, not a drafted ticket.
 - Close the `## Definition of Ready` boxes a tool proves, yourself, just
   before handover and on the final text: tick a box only when its
-  evidence below came from a tool run in this session after your last
-  edit. Never tick a box on your own reading, never tick one the map
+  evidence below holds after your last edit — a tool run in this session,
+  or the count or tick check the row names. Never tick a box on your own
+  judgement, never tick one the map
   leaves to the BA, and never tick an open-question checkbox — its owner
   closes it. List each box you ticked, with its evidence, in the handover.
   The mission DoR does not gate publishing; it tells the team how ready

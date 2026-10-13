@@ -84,9 +84,9 @@ the base one, same for `docs/ac-quality.md` and
 review rounds 2 and 3 are a single `gap-verifier` pass over the still-open
 gaps and the sections that changed, never a re-read of the whole draft;
 never push to Jira — the BA publishes. Tick a Definition of Ready box
-yourself only when a tool run after your last edit proves it (the skill's
-evidence map: lint `DoR: PASS`, `kb_ticket_stale` clean, `kb_ticket_check`
-PASS, …); never tick one on your own reading, never the AC-quality box,
+yourself only when the skill's evidence map holds after your last edit
+(lint `DoR: PASS`, `kb_ticket_stale` clean, `kb_ticket_check` PASS, at
+most 10 ACs, …); never tick one on your own judgement, never the AC-quality box,
 and never an open-question checkbox. Name each box you ticked and its
 evidence in the handover.
 

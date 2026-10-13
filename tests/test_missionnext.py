@@ -384,8 +384,9 @@ def test_to_json_shape():
 
 def test_statuses_demoted_ready_becomes_draft():
     why = "parent mission rev 3 affects this story"
+    decided = PLATFORM.replace("| OPEN | Alice |", "| DECIDED | Alice |")
     got = missionnext.statuses(
-        [missionnext.parse_mission(PLATFORM)],
+        [missionnext.parse_mission(decided)],
         {"M-platform-US1": (2, 2), "M-platform-US2": (2, 2)},
         set(),
         {"M-platform-US1": why},
@@ -442,3 +443,35 @@ def test_an_open_question_makes_an_undrafted_story_blocked():
     by_id = {r.us_id: r for r in missionnext.statuses(parsed, {}, {"x"})}
     assert by_id["M-platform-US3"].status == "blocked"
     assert by_id["M-platform-US3"].reasons == ("Q1 open (owner: Bob)",)
+
+
+def _oq(rows: str) -> dict[str, tuple[str, ...]]:
+    _mid, stories, _d = missionnext.parse_mission(
+        PLATFORM + "\n## Open questions\n" + rows
+    )
+    return {s.us_id: s.open_questions for s in stories}
+
+
+def test_open_question_tags_are_case_insensitive_and_any_dash_separates():
+    got = _oq("- [ ] Q3 — Retry? - owner: PO - Blocks: US1 – impact: US2\n")
+    assert got["M-platform-US1"] == ("Q3 open (owner: PO)",)
+    assert got["M-platform-US2"] == ()
+
+
+def test_unblocks_text_and_hidden_rows_block_nothing():
+    got = _oq(
+        "- [ ] Q4 — this unblocks: US3 — owner: A\n"
+        "<!--\n- [ ] Q5 — owner: A — blocks: US1\n-->\n"
+        "```\n- [ ] Q6 — owner: A — blocks: US2\n```\n"
+    )
+    assert got == {"M-platform-US1": (), "M-platform-US2": (), "M-platform-US3": ()}
+
+
+def test_a_drafted_story_its_mission_blocks_reads_draft():
+    parsed = [missionnext.parse_mission(OQ_MISSION)]
+    by_id = {
+        r.us_id: r
+        for r in missionnext.statuses(parsed, {"M-platform-US1": (2, 2)}, set())
+    }
+    assert by_id["M-platform-US1"].status == "draft"
+    assert by_id["M-platform-US1"].reasons == ("Q1 open (owner: Bob)",)

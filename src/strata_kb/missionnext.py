@@ -16,6 +16,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
+from strata_kb.mdmask import _blank_invisible
 from strata_kb.mdutils import _SEP_ROW_RE
 from strata_kb.svcnote import _ESCAPED_PIPE_SENTINEL, ROW_RE
 from strata_kb.ticketcheck import (
@@ -110,14 +111,22 @@ def parse_mission(text: str) -> ParsedMission:
 
 
 _QID_RE = re.compile(r"^(Q\d+)\b")
-_OWNER_RE = re.compile(r"owner:\s*([^—]+?)\s*(?:—|$)")
-_BLOCKS_RE = re.compile(r"blocks:\s*([^—]+)")
+# Tags end at a spaced dash of any kind (—, –, -, --) or at the row's end.
+_OWNER_RE = re.compile(r"\bowner:\s*(.+?)\s*(?:\s(?:—|–|--?)\s|$)", re.I)
+# Only the id list right after `blocks:` — never ids later in the row.
+_BLOCKS_RE = re.compile(
+    r"\bblocks:\s*((?:(?:M-[a-z0-9]+(?:-[a-z0-9]+)*-)?US\d+(?:\s*(?:,|&|\band\b)\s*)?)+)",
+    re.I,
+)
 
 
 def _open_question_blocks(text: str, mission_id: str) -> list[tuple[str, set[str]]]:
     """(reason, US ids) per UNTICKED `## Open questions` row with a
     `blocks:` tag. A ticked row is closed and blocks nothing."""
-    body = lintcore.section_body(text, lintcore.OPEN_QUESTIONS_HEADING)
+    # blanked view: a row inside a comment or a fence is not a question
+    body = lintcore.section_body(
+        _blank_invisible(text), lintcore.OPEN_QUESTIONS_HEADING
+    )
     out: list[tuple[str, set[str]]] = []
     for line in (body or "").splitlines():
         m = lintcore.CHECKBOX_STATE_RE.match(line.strip())
@@ -262,6 +271,16 @@ def statuses(
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "done", ()))
                 continue
             if s.us_id in drafted:
+                # a ticket whose story the mission still blocks fails lint
+                blockers = (
+                    *_undecided(s.us_id, blocking, decisions),
+                    *s.open_questions,
+                )
+                if blockers:
+                    out.append(
+                        StoryStatus(s.us_id, s.mission_id, s.title, "draft", blockers)
+                    )
+                    continue
                 ticked, total = drafted[s.us_id]
                 if total and ticked == total:
                     if s.us_id in demoted_map:
