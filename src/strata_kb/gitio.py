@@ -158,6 +158,15 @@ def head_commit(root: Path) -> str:
     return proc.stdout.strip()
 
 
+def head_summary(root: Path) -> tuple[str, str]:
+    """(short sha, committer date as ISO 8601) of HEAD."""
+    proc = _run(root, "log", "-1", "--format=%h %cI")
+    if proc.returncode != 0 or " " not in proc.stdout.strip():
+        raise GitError(f"could not read HEAD: {proc.stderr.strip()}")
+    sha, date = proc.stdout.strip().split(" ", 1)
+    return sha, date
+
+
 def rev_exists(root: Path, rev: str) -> bool:
     proc = _run(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
     return proc.returncode == 0

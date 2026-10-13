@@ -11,6 +11,7 @@ the handle. Also owns the hub service's auto-pull thread (`pull_once`,
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -30,6 +31,9 @@ DEFAULT_PULL_INTERVAL_SECONDS = (
     300  # hub service auto-pull — env STRATA_KB_HUB_PULL_INTERVAL, 0 = off
 )
 PULL_TIMEOUT_SECONDS = 300  # a stalled fetch must not park the auto-pull thread forever
+# Last pull outcome, for the hub UI. Under .git/: never committed, and it
+# survives a hub service restart.
+PULL_STATUS_FILE = "strata-kb-pull.json"
 
 
 @dataclass
@@ -172,6 +176,36 @@ def _touch_marker(marker: Path) -> None:
     marker.write_text(str(time.time()), encoding="utf-8")
 
 
+def read_pull_status(root: Path) -> dict | None:
+    """{"ok_at": epoch} of the last good pull, plus "error"/"error_at" when a
+    later pull failed. None = never recorded (or not readable)."""
+    try:
+        data = json.loads(
+            (root / ".git" / PULL_STATUS_FILE).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def record_pull(root: Path, error: str | None = None) -> None:
+    """Persist a pull's outcome; a success clears any earlier error. Never raises."""
+    now = time.time()
+    if error is None:
+        status: dict = {"ok_at": now}
+    else:
+        status = {**(read_pull_status(root) or {}), "error_at": now, "error": error}
+    path = root / ".git" / PULL_STATUS_FILE
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(json.dumps(status), encoding="utf-8", newline="\n")
+        os.replace(tmp, path)
+    except (
+        OSError
+    ) as exc:  # .git is a file (worktree) or read-only -- the UI just shows less
+        logger.debug("could not record hub pull status in %s: %s", root, exc)
+
+
 _cache_locks: dict[str, threading.Lock] = {}
 _cache_locks_guard = threading.Lock()
 
@@ -228,6 +262,7 @@ def _resolve_cached(hub: str, cache: Path, token: str | None) -> HubHandle | Non
             return None
         strip_remote_credentials(cache)
         _touch_marker(marker)
+        record_pull(cache)
         return HubHandle(root=cache, token=token)
 
     strip_remote_credentials(cache)
@@ -237,8 +272,10 @@ def _resolve_cached(hub: str, cache: Path, token: str | None) -> HubHandle | Non
     try:
         gitio.pull(cache, hub)
         _touch_marker(marker)
+        record_pull(cache)
         return HubHandle(root=cache, age_seconds=0.0, token=token)
     except gitio.GitError as exc:
+        record_pull(cache, error=str(exc))
         logger.warning(
             "could not pull hub (offline?) — using stale cache (age ~%s seconds): %s",
             f"{age:.0f}" if age is not None else "?",
@@ -274,7 +311,12 @@ def pull_once(hub: str) -> bool:
     if handle is None or not gitio.has_remote(handle.root):
         return False
     before = gitio.head_commit(handle.root)
-    gitio.pull(handle.root, token=handle.token, timeout=PULL_TIMEOUT_SECONDS)
+    try:
+        gitio.pull(handle.root, token=handle.token, timeout=PULL_TIMEOUT_SECONDS)
+    except gitio.GitError as exc:
+        record_pull(handle.root, error=str(exc))
+        raise
+    record_pull(handle.root)
     after = gitio.head_commit(handle.root)
     if after == before:
         return False

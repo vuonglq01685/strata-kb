@@ -2087,3 +2087,24 @@ def test_removing_the_last_tag_in_a_menu_returns_to_the_menu(tmp_path, kind, tag
     main = _main(client.get("/ui", params={"tags": tag, "kind": kind}))
     on = re.findall(r'class="chip on" href="([^"]+)"', main)
     assert on == [path], on
+
+
+def test_topbar_shows_version_hub_commit_and_last_pull(fed_hub, run_git):
+    import strata_kb
+    from strata_kb import hub as hubmod
+
+    sha = run_git(fed_hub, "rev-parse", "--short", "HEAD").strip()
+    c = _client(fed_hub / ".kb", str(fed_hub))
+
+    resp = c.get("/ui/docs")
+    assert f"strata-kb {strata_kb.__version__}" in resp.text
+    assert sha in resp.text
+    assert "pulled" not in resp.text  # never pulled: no pull chip
+
+    hubmod.record_pull(fed_hub)
+    assert "pulled just now" in c.get("/ui/docs").text
+
+    hubmod.record_pull(fed_hub, error="pull failed: not possible to fast-forward")
+    resp = c.get("/ui/docs")
+    assert "pull failed just now" in resp.text
+    assert "not possible to fast-forward" in resp.text
