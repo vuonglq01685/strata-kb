@@ -1,6 +1,6 @@
 [project]
 name = "strata-kb"
-version = "1.23.0"
+version = "1.24.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -25,6 +25,9 @@ dependencies = [
     "starlette>=0.37",
     "uvicorn>=0.30",
     "jinja2>=3.1",
+    # mission/ticket pages (web/gfmrender.py); both already came in via typer -> rich
+    "markdown-it-py>=3.0",
+    "pygments>=2.17",
 ]
 
 [project.optional-dependencies]

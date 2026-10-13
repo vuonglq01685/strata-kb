@@ -11,9 +11,11 @@ Print every `conflict:` and `note:` line of `kb ticket tidy` to the BA
 as well. Print every `note:` line of `kb mission next` to the BA verbatim, before
 the table, and propose the first `to-draft` story; for every `unsorted:`
 line ask the BA for its folder and run
-`kb ticket tidy --into <folder> <file>`. A `blocked` story may be drafted
-only with its reasons acknowledged by the BA and carried into the
-handover.
+`kb ticket tidy --into <folder> <file>`. A `blocked` story whose reason is a
+D-row or an open question is not drafted: `kb ticket lint` fails a ticket
+its parent mission still blocks. One blocked only by unfinished
+dependencies may be, with its reasons acknowledged by the BA and carried
+into the handover.
 
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
 read the ticket and its `kb_ticket_stale` findings (CLI: `kb ticket stale
@@ -25,10 +27,10 @@ only when the check FAILs with `re-run /sa-ticket-ground`; any other FAIL goes t
 append a `## Change log` row (`Affected` = section names), run `kb_ticket_lint` (CLI
 fallback `kb ticket lint`) until `DoR: PASS`, review the changed sections only (one round, scores
 in the row's `Review` cell, never in `## Review record`), untick the DoR
-boxes whose evidence changed and update the `@ rev` pin. A `done` story's
+boxes whose evidence changed (re-tick only what a tool proves again) and update the `@ rev` pin. A `done` story's
 ticket is frozen: new work gets the next free US number. A `DECIDED` row is
 superseded, never edited (a superseded row still cited by a `[NEW: D<k>]`
-forces the `architecture` trigger). The agent never ticks DoR, commits or pushes.
+forces the `architecture` trigger). The agent never commits or pushes.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
@@ -81,8 +83,12 @@ the base one, same for `docs/ac-quality.md` and
 `docs/ac-quality.local.md`;
 review rounds 2 and 3 are a single `gap-verifier` pass over the still-open
 gaps and the sections that changed, never a re-read of the whole draft;
-never push to Jira — the BA publishes; never tick a Definition of Ready
-checkbox yourself — only the BA confirms DoR items.
+never push to Jira — the BA publishes. Tick a Definition of Ready box
+yourself only when the skill's evidence map holds after your last edit
+(lint `DoR: PASS`, `kb_ticket_stale` clean, `kb_ticket_check` PASS, at
+most 10 ACs, …); never tick one on your own judgement, never the AC-quality box,
+and never an open-question checkbox. Name each box you ticked and its
+evidence in the handover.
 
 Code-level detail is not yours to ground: write
 `%%TODO: verify against codebase%%` where a service, table, route or

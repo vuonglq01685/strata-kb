@@ -53,6 +53,7 @@ class PlanMission:
     summary: str
     stories: list[missionnext.StoryStatus]
     tickets: frozenset[str] = field(default_factory=frozenset)  # published ticket ids
+    markdown: str = ""  # the mission L3, headings promoted back to `##`
 
     @property
     def counts(self) -> Counter[str]:
@@ -186,6 +187,7 @@ def _plan_repo(
             summary=titles[mid][1],
             stories=[r for r in results if r.mission_id == (p[0] or mid)],
             tickets=frozenset(tickets_of.get(mid, ())),
+            markdown=texts[mid],
         )
         for mid, p in zip(texts, parsed, strict=True)
     ]

@@ -46,8 +46,13 @@ it reads this repo's unpublished `missions/` and `tickets/`, which
    `done: unknown` note means a `draft` or `ready` row may be a merged
    story — say so. Then show the table: propose the first `to-draft`
    story; the BA may pick another. A `draft` or `ready` story points at
-   its existing file. A `blocked` story may be drafted only with its
-   reasons acknowledged by the BA — carry those reasons into the handover
+   its existing file. A `blocked` story whose reason is a
+   Technology-decisions row (`D<n> OPEN`) or an unticked open question
+   (`Q<n> open`) is NOT drafted: `kb ticket lint` fails a ticket its parent
+   mission still blocks. Name those rows to the BA — they are decided or
+   closed in the mission first. A story blocked only by unfinished
+   dependencies (`US … not done`) may be drafted with its reasons
+   acknowledged by the BA — carry those reasons into the handover
    verbatim.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
@@ -275,12 +280,12 @@ change is recorded in `## Change log`.
    scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
    never into `## Review record`.
 9. **Untick** the `## Definition of Ready` box(es) whose evidence changed;
-   only the BA re-ticks. Set the pin to the mission's current revision,
+   re-tick only what the evidence map proves again. Set the pin to the mission's current revision,
    `> Parent mission: M-<slug> @ rev <N>`, once the ticket reflects every
    change-log row since its old pin that lists this story; otherwise
    leave the pin and tell the BA why.
-10. **Hand the diff to the BA.** The agent never ticks a DoR box, commits
-    or pushes. The BA's next `kb publish` ships the amended ticket.
+10. **Hand the diff to the BA.** The agent ticks only the DoR boxes the
+    evidence map proves; it never commits or pushes. The BA's next `kb publish` ships the amended ticket.
 
 Change rules:
 
@@ -319,10 +324,24 @@ Change rules:
 - Never write a `## Sequence diagram` the story does not need, and
   never fill one with `%%TODO%%` participants — delete the section; the
   Dev draws the code-level sequence at dev-design.
-- Never tick a Definition of Ready checkbox yourself — only the BA
-  confirms DoR items. Fixing a lint error is not the same as confirming
-  DoR; leave every `## Definition of Ready` checkbox unchecked for the
-  BA.
+- Close the `## Definition of Ready` boxes a tool proves, yourself, just
+  before handover and on the final text: tick a box only when its
+  evidence below holds after your last edit — a tool run in this session,
+  or the count or tick check the row names. Never tick a box on your own
+  judgement, never tick one the map
+  leaves to the BA, and never tick an open-question checkbox — its owner
+  closes it. List each box you ticked, with its evidence, in the handover.
+
+  | DoR box | Tick it when |
+  |---|---|
+  | Story, ACs, use cases, business flow present | `kb_ticket_lint` (CLI `kb ticket lint`) reports `DoR: PASS` |
+  | Every citation resolves at the pinned version | that PASS ran against the hub, not with the hub check skipped |
+  | No stale refs | `kb_ticket_stale` (CLI `kb ticket stale --md`) reports nothing for the file |
+  | One user story and at most 10 acceptance criteria | the file holds one user story and at most 10 `AC<n>` rows |
+  | Dependencies and Out of scope filled …; extended sections filled or deleted | lint PASS with no empty-section warning |
+  | Every open question has an owner | lint PASS with no open-question owner warning |
+  | Technical grounding filled by SA; kb ticket check PASS; Open decisions empty … | `kb_ticket_check` (CLI `kb ticket check`) PASS and `Open decisions` empty |
+  | Every AC is Given/When/Then and acceptance-testable … | never — the BA's judgement |
 - English template headings are never localized; write the ticket body
   in the BA's working language.
 - Report to the BA the count of ACs without citations, with reasons.

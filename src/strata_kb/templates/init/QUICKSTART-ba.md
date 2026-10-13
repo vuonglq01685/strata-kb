@@ -4,7 +4,7 @@ This repo is a **requirements** repo: it reads the shared knowledge base
 to ground tickets in cited, versioned facts, and it versions the tickets
 themselves under `tickets/`. It never ingests or summarizes KB content —
 that happens in `child` repos, reviewed on the `hub`. It publishes only its
-own **plan**, the ready missions and tickets, as the `<repo_id>-plan`
+own **plan**, its missions and ready tickets, as the `<repo_id>-plan`
 document, so other repos can read them from the hub.
 
 ## Setup once
@@ -48,7 +48,11 @@ document, so other repos can read them from the hub.
       from `missions/` and `tickets/` with `kb plan-ingest`, builds it, tags
       the commit, and CI sends it to the hub as a pull request. Items it
       leaves out print as `skipped:` lines. Run `kb plan-ingest` first to
-      preview the same diff.
+      preview the same diff. A mission ships as soon as it lints offline:
+      its Definition of Ready is not a publish gate, so whatever is done
+      ships and every amend republishes it. A ticket ships only once its
+      Definition of Ready is fully ticked and its mission no longer blocks
+      it.
 
       **Or just merge.** A push to `main` that changes `missions/` or
       `tickets/` publishes too: `kb-publish-request.yml` tags the merged
@@ -213,8 +217,8 @@ is reported as one of five states, and the report ends with
 | `done` | the ticket id is in a `hist.*` row of the hub's `-svc` document — the Dev ran `kb svc note` at handover and ran `kb publish` after the merge |
 | `ready` | the ticket file exists and every `## Definition of Ready` box is ticked — waiting for a Dev |
 | `draft` | the ticket file exists and a DoR box is still unticked (`DoR 5/8 ticked`), or it has no DoR section |
-| `to-draft` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
-| `blocked` | the reasons are named: `US <id> not done`, `US <id> unknown`, `D<n> OPEN (owner: <x>)` |
+| `to-draft` | no ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED`, no unticked open question names it in `blocks:` |
+| `blocked` | the reasons are named: `US <id> not done`, `US <id> unknown`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)`. A D-row or open-question reason also fails `kb ticket lint` on the story's ticket |
 
 `/ba-ticket-author` with no argument runs `kb ticket tidy`, then this, and
 proposes the first `to-draft` story. A story whose dependency is only
@@ -366,8 +370,13 @@ In a mission's `Affected` cell it writes full story ids
   in `## Review record`.
 - A ticket whose mission moved on past its `@ rev` pin, with a change-log row
   listing its story, shows as `draft` in `kb mission next`.
-- The agent never ticks a Definition of Ready box, commits or pushes: you
-  re-tick, review the diff and commit. The next `kb publish` ships it.
+- The agent ticks the Definition of Ready boxes a tool proves after its
+  last edit (lint `DoR: PASS` against the hub, a clean `kb_ticket_stale`,
+  `kb_ticket_check` PASS, `kb mission next`, …) and names each with its
+  evidence. The judgement boxes (AC quality on a ticket, "backlog reviewed
+  with the team" on a mission) and open questions stay yours. It never
+  commits or pushes: you review the diff, tick what is left and commit.
+  The next `kb publish` ships it.
 
 ## Upgrading an existing BA repo
 
@@ -582,7 +591,7 @@ tiering change shows up in the report the next ticket generates.
 ## CLI reference
 
 - `kb init --kind ba` — scaffold or refresh this repo
-- `kb plan-ingest` — build `.kb/<repo_id>-plan/` from the ready missions and
+- `kb plan-ingest` — build `.kb/<repo_id>-plan/` from the missions and ready
   tickets (deterministic, offline). `kb publish` runs it for you
 - `kb publish` (in your assistant: `/kb-publish`) — rebuild the plan, then
   tag and let CI send it to the hub

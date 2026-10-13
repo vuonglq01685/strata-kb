@@ -51,7 +51,7 @@ def test_json_output_has_doc_id_published_and_skipped(tmp_path: Path, block: str
         tmp_path,
         {
             f"{MISSION_ID}.md": mission_text(block),
-            "M-held.md": mission_text(block, ticked=False).replace(
+            "M-held.md": mission_text(block, skip="## Scope").replace(
                 MISSION_ID, "M-held"
             ),
         },
@@ -71,7 +71,7 @@ def test_text_report_prints_skipped_lines_and_step_summary(
 ):
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block, ticked=False)}, {})
+    write_repo(tmp_path, {f"{MISSION_ID}.md": mission_text(block, skip="## Scope")}, {})
     result = _invoke(tmp_path)
     assert result.exit_code == 0, result.output
     assert f"skipped: missions/{MISSION_ID}.md — " in result.output

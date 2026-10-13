@@ -46,4 +46,4 @@ file's text as `mission_markdown` when it exists locally), CLI fallback
 a `[warn] grounded @…` is a PASS, a FAIL carrying `re-run /sa-ticket-ground`
 means re-ground on the current `-code`; failing to RUN is not a PASS; the handover ends with the fixed
 `## Needs input` block naming every decision still waiting for a human;
-never tick a Definition of Ready checkbox — only the BA confirms DoR.
+never tick a Definition of Ready checkbox — the BA flow ticks what its tools prove.

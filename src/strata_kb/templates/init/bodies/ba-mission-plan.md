@@ -216,8 +216,8 @@ recorded in `## Change log`. A new mission is never created by `--amend`.
    rubric and the same two perspectives as step 8 of the workflow. Write
    the scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
    never into `## Review record`.
-9. **Hand the diff to the BA.** The agent never ticks a DoR box, commits
-   or pushes. The BA's next `kb publish` ships the amended mission.
+9. **Hand the diff to the BA.** The agent ticks only the DoR boxes the
+   evidence map proves; it never commits or pushes. The BA's next `kb publish` ships the amended mission.
 
 Change rules:
 
@@ -263,8 +263,25 @@ Change rules:
 - **Never auto-generate ticket files from the backlog.** Each story goes
   through `/ba-ticket-author` with its own grounding pass — a backlog row
   is a title, not a drafted ticket.
-- Never tick a Definition of Ready checkbox yourself — only the BA
-  confirms DoR items.
+- Close the `## Definition of Ready` boxes a tool proves, yourself, just
+  before handover and on the final text: tick a box only when its
+  evidence below holds after your last edit — a tool run in this session,
+  or the count or tick check the row names. Never tick a box on your own
+  judgement, never tick one the map
+  leaves to the BA, and never tick an open-question checkbox — its owner
+  closes it. List each box you ticked, with its evidence, in the handover.
+  The mission DoR does not gate publishing; it tells the team how ready
+  the mission is.
+
+  | DoR box | Tick it when |
+  |---|---|
+  | Business goal, scope, L1 + L2 diagrams, backlog present | `kb_mission_lint` (CLI `kb mission lint`) reports `DoR: PASS` |
+  | Every citation resolves at the pinned version | that PASS ran against the hub, not with the hub check skipped |
+  | Backlog reviewed with the team; no known missing slice | never — the BA's judgement |
+  | Every `%%TODO%%` has an owned row in Technology decisions | lint PASS with no placeholder or ownerless-decision warning |
+  | Sequencing covers the whole backlog | lint PASS with no sequencing-coverage warning |
+  | Every D-row blocking a story with no dependency is DECIDED | `kb_mission_next` (CLI `kb mission next`) shows each such story `to-draft`, not `blocked` by a D-row |
+  | Architecture-impacting open questions closed | every `## Open questions` row with `impact: architecture` is ticked |
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - English template headings are never localized; write the mission body in
   the BA's working language.

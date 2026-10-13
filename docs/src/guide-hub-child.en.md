@@ -13,7 +13,7 @@ covered together. Where a step applies to only one, it says so.
 
 Two other repository kinds publish to the same hub and have their own guides: a
 `dev` repo publishes knowledge about its own code (`<repo>-code`, `<repo>-svc`),
-and a `ba` repo publishes its plan (`<repo>-plan`: the ready missions and
+and a `ba` repo publishes its plan (`<repo>-plan`: its missions and ready
 tickets). As the hub operator you register both like any child (§9.3).
 
 You do not need to read the architecture document first. You do need to

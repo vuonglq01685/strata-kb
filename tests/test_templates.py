@@ -3156,9 +3156,9 @@ def test_ba_ticket_wrappers_run_kb_mission_next_at_intake():
             in text
         ), name
         assert (
-            "A `blocked` story may be drafted only with its reasons acknowledged by the BA"
-            in text
+            "`kb ticket lint` fails a ticket its parent mission still blocks" in text
         ), name
+        assert "with its reasons acknowledged by the BA" in text, name
 
 
 def test_ba_ticket_full_wrappers_point_a_draft_or_ready_story_at_its_file():

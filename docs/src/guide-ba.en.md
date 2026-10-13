@@ -359,8 +359,8 @@ Every backlog story across `missions/` comes back as one of five states:
 | `done` | Its id is in a `hist.*` row of the hub's `<repo>-svc`, which `kb svc note` writes at the developer's handover and CI publishes on merge |
 | `ready` | The ticket file exists and every `## Definition of Ready` box is ticked |
 | `draft` | The ticket file exists but a DoR box is unticked, or there is no DoR section, or the parent mission moved on (below) |
-| `to-draft` | No ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED` |
-| `blocked` | The reasons are named: `US <id> not done`, `D<n> OPEN (owner: <x>)` |
+| `to-draft` | No ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED`, no unticked open question names it in `blocks:` |
+| `blocked` | The reasons are named: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)`. A D-row or open-question reason also fails `kb ticket lint` on the story's ticket |
 
 The report ends with `Next: <us-id> — <title>`; `/ba-ticket-author` with no
 argument runs it first and proposes that story. A dependency that is only `draft`
@@ -400,13 +400,13 @@ offline. It publishes:
 
 | Item | Published when |
 |---|---|
-| Mission | `kb mission lint` finds no structural error **and** every box under `## Definition of Ready` is ticked |
-| Ticket | `kb ticket lint` finds no structural error **and** every DoR box is ticked **and** `kb mission next` would not demote it to `draft` (§4.4) |
+| Mission | `kb mission lint` finds no structural error. Its `## Definition of Ready` is **not** a publish gate: whatever is done ships, and every amend republishes it |
+| Ticket | `kb ticket lint` finds no structural error (that includes: no undecided D-row and no unticked open question of its mission blocks the story) **and** every DoR box is ticked **and** `kb mission next` would not demote it to `draft` (§4.4) |
 
 Whether a citation still resolves is **not** a publish gate: that needs the hub,
 and `kb-ticket-lint` already gates the pull request on it. Drafts are never
 published. Your `## Review record` and `## Definition of Ready` sections are not
-published either: being on the hub means the DoR was fully ticked.
+published either: a ticket on the hub had its DoR fully ticked.
 
 Everything else is left out, and each one prints a line:
 
@@ -419,7 +419,7 @@ The reasons you can see:
 | Reason | What to do |
 |---|---|
 | `lint error: <first error>` (`(+N more)` when there are several) | Run `kb mission lint` or `kb ticket lint` on the file and fix it |
-| `Definition of Ready not fully ticked (<ticked>/<total>)` | Finish the review, then tick the boxes. Only you tick them |
+| `Definition of Ready not fully ticked (<ticked>/<total>)` (tickets only) | Finish the review, then tick the boxes. The assistant ticks only the boxes a tool proves (§6.2); the judgement boxes are yours |
 | `parent mission rev <M> affects this story` | The mission changed after the ticket was written: amend the ticket (§6.2) |
 | `fenced line starting with '## ' would split the section — indent it inside the fence` | A code fence in the file holds a line that starts with `## `. Indent that line inside the fence |
 | `id contains whitespace` | The file name has a space in it. Rename the file |
@@ -546,8 +546,17 @@ Neither starts from Intake, creates a file, or renames anything. The agent:
 
 Amending a ticket also **un-ticks** the Definition of Ready box(es) whose
 evidence changed, and updates the `@ rev` pin once the ticket reflects every
-change-log row since its old pin that lists it. The agent never ticks a DoR box,
-and never commits or pushes. You read the diff, re-tick, commit, and `kb publish`
+change-log row since its old pin that lists it. The agent never commits or pushes.
+
+**Who ticks the Definition of Ready.** The agent ticks, on its own, every DoR box
+a tool proves after its last edit, and names each one with its evidence in the
+handover: `DoR: PASS` from lint (run against the hub), a clean `kb_ticket_stale`,
+`kb_ticket_check` PASS with `Open decisions` empty, at most 10 ACs; for a mission,
+`kb mission next` showing no story blocked by a D-row, and every
+`impact: architecture` open question ticked. The judgement boxes stay yours:
+"every AC is Given/When/Then and acceptance-testable" on a ticket, and "backlog
+reviewed with the team" on a mission. The agent never ticks an open question; its
+owner closes it. You read the diff, tick what is left, commit, and `kb publish`
 to ship it.
 
 ## 6.3 Change rules
@@ -780,7 +789,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket stale [paths]` | Every ticket and mission whose citations the hub moved, `kb-context` and `architecture` (`--md`, `--json`) | `0` current, `2` stale only, `1` broken |
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
-| `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the ready missions and tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
+| `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
 **Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.

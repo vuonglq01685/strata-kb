@@ -13,7 +13,7 @@ nhau. Chỗ nào chỉ áp dụng cho một vai trò sẽ được nói rõ.
 
 Có hai loại repository khác cũng publish lên cùng hub và có tài liệu hướng dẫn
 riêng: repo `dev` publish tri thức về chính code của nó (`<repo>-code`,
-`<repo>-svc`), và repo `ba` publish plan của nó (`<repo>-plan`: các mission và
+`<repo>-svc`), và repo `ba` publish plan của nó (`<repo>-plan`: các mission và các
 ticket đã sẵn sàng). Là người vận hành hub, bạn đăng ký cả hai như một child bất
 kỳ (mục 9.3).
 

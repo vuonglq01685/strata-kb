@@ -3,3 +3,5 @@
 *.png binary
 *.jpg binary
 *.tar binary
+# vendored mermaid 11.17.2 (MIT, see mermaid.LICENSE.txt next to it)
+src/strata_kb/templates/web/static/mermaid.min.js -diff linguist-vendored

@@ -259,7 +259,7 @@ def _default_sections(block: str) -> dict[str, str]:
             f"| {MISSION_ID}-US2 | {MISSION_ID}-US1 | S | |"
         ),
         "## Open questions": (
-            "- [ ] Q1 — Confirm map tile provider quota — "
+            "- [x] Q1 — Confirm map tile provider quota — "
             "owner: tech-lead — impact: cost — blocks: "
             f"{MISSION_ID}-US1"
         ),

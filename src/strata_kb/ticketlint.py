@@ -14,7 +14,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import acquality, lintcore, mission, missionlint, planrev, ticket
+from strata_kb import (
+    acquality,
+    lintcore,
+    mission,
+    missionlint,
+    missionnext,
+    planrev,
+    ticket,
+)
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 
@@ -634,7 +642,16 @@ def _check_backlog_membership(
                 f"'kb mission lint {mission_path}'",
             )
         ], []
-    return [], []
+    # A story the mission still blocks (an undecided D-row or an unticked
+    # open question naming it) gets no ticket: the answer may change it.
+    return [
+        Issue(
+            "error",
+            f"'{us_id}' is blocked by mission '{mission_id}': {reason} — "
+            "close it in the mission before drafting this ticket",
+        )
+        for reason in missionnext.story_blockers(mission_text, us_id)
+    ], []
 
 
 def lint(

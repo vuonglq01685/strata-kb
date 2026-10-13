@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="reader">
   <div class="page-head">
@@ -8,7 +9,7 @@
       <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
     <h1 style="font-size:26px">{{ ticket.title }}</h1>
   </div>
-  <article class="reader-body">{{ content_html | safe }}</article>
+  <article class="reader-body md-body">{{ content_html | safe }}</article>
 </div>
 {% endblock %}
 {% block rail %}

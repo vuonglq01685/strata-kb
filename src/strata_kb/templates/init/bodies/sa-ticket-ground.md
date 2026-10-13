@@ -189,7 +189,7 @@ fallback.
 - The gate failing to RUN is not a PASS. No MCP tool and no CLI → tell
   the BA to connect the `strata-kb` MCP server or install `strata-kb`; never hand over an unchecked section as
   checked.
-- Never tick a Definition of Ready checkbox; only the BA confirms DoR.
+- Never tick a Definition of Ready checkbox; the BA flow ticks what its tools prove.
 - English headings stay English; write the section's free text in the
   BA's working language.
 - A thing the code does not have yet is a design decision, not missing

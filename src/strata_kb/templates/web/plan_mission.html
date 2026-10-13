@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_partials/status.html" import plan_status %}
+{% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="stack-md">
   <div class="page-head">
@@ -26,9 +27,18 @@
     <div class="empty-state">This mission has no backlog table.</div>
     {% endfor %}
   </div>
+  {% if content_html %}<article class="reader-body md-body">{{ content_html | safe }}</article>{% endif %}
 </div>
 {% endblock %}
 {% block rail %}
+{% if toc %}
+<div class="rail-block">
+  <p class="kicker">On this page</p>
+  {% for t in toc %}
+  <a class="toc-link" href="#{{ t.anchor }}">{{ t.label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="rail-block">
   <p class="kicker">Source</p>
   <div class="rail-kv"><span>Document</span><span class="v">{{ mission.doc }}</span></div>

@@ -255,3 +255,12 @@ document.addEventListener("keydown", (e) => {
     if (btn) { btn.click(); e.preventDefault(); }
   }
 });
+
+// Mission / ticket pages: gfmrender emits ```mermaid fences as <pre class="mermaid">
+// and the page loads mermaid.min.js (deferred, before this file) only when one exists.
+// securityLevel "strict": no click handlers, no HTML in labels.
+document.addEventListener("DOMContentLoaded", () => {
+  if (!window.mermaid || !document.querySelector("pre.mermaid")) return;
+  window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+  window.mermaid.run({ querySelector: "pre.mermaid", suppressErrors: true });
+});
