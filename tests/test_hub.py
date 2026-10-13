@@ -2,6 +2,7 @@ import os
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -376,3 +377,58 @@ def test_concurrent_resolves_never_pull_one_cache_twice_at_once(
         t.join()
     assert pulls[0] == 6
     assert overlaps[0] == 0
+
+
+def test_pull_once_records_a_successful_pull(tmp_path, hub_with_origin, run_git):
+    serving = _serving_clone(tmp_path, hub_with_origin, run_git)
+    _push_new_commit(hub_with_origin, run_git)
+    assert hub.read_pull_status(serving) is None  # never pulled yet
+
+    hub.pull_once(str(serving))
+
+    status = hub.read_pull_status(serving)
+    assert status is not None
+    assert status["ok_at"] == pytest.approx(time.time(), abs=60)
+    assert "error" not in status
+
+
+def test_failed_tick_records_the_error_and_a_later_success_clears_it(
+    tmp_path, hub_with_origin, run_git
+):
+    serving = _serving_clone(tmp_path, hub_with_origin, run_git)
+    hub.pull_once(str(serving))
+    ok_at = hub.read_pull_status(serving)["ok_at"]
+    (serving / "local.txt").write_text("y", encoding="utf-8")
+    run_git(serving, "add", "-A")
+    run_git(serving, "commit", "-m", "hand edit on the hub")
+    _push_new_commit(hub_with_origin, run_git)
+
+    hub._auto_pull_tick(str(serving))
+
+    status = hub.read_pull_status(serving)
+    assert "pull failed" in status["error"]
+    assert status["error_at"] >= ok_at
+    assert status["ok_at"] == ok_at  # the last good pull is kept
+
+    run_git(serving, "reset", "--hard", "origin/HEAD")
+    hub.pull_once(str(serving))
+    assert "error" not in hub.read_pull_status(serving)
+
+
+def test_cached_hub_records_clone_and_offline_pull(
+    monkeypatch, tmp_path, hub_worktree, run_git
+):
+    _use_cache(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRATA_KB_HUB_TTL", "0")
+    bare = tmp_path / "hub.git"
+    bare.mkdir()
+    run_git(bare, "init", "--bare")
+    run_git(hub_worktree, "remote", "add", "origin", str(bare))
+    run_git(hub_worktree, "push", "origin", "HEAD")
+    h1 = hub.resolve_hub(str(bare))
+    assert "ok_at" in hub.read_pull_status(h1.root)
+
+    _force_rmtree(bare)  # simulate "offline"
+    h2 = hub.resolve_hub(str(bare))
+
+    assert "error" in hub.read_pull_status(h2.root)

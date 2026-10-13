@@ -24,7 +24,14 @@
     {% else %}
     <span class="hub-chip hub-offline"><span class="dot"></span>hub offline</span>
     {% endif %}
+    {% if shell.pull %}
+    <span class="hub-chip {{ 'hub-warn' if shell.pull.failed else 'hub-pulled' }}" title="{{ shell.pull.title }}"><span class="dot"></span>{{ shell.pull.label }}</span>
+    {% endif %}
+    {% if shell.commit %}
+    <span class="topbar-fed" title="{{ shell.commit.title }}">@{{ shell.commit.sha }} · {{ shell.commit.date }}</span>
+    {% endif %}
     <span class="topbar-fed">federation · {{ shell.repo_count }} repos</span>
+    <span class="topbar-fed" title="strata-kb version this hub runs">strata-kb {{ shell.version }}</span>
   </div>
   {# ponytail: shown unconditionally (no shell.authenticated context yet) --
      harmless when logged out, just clears a cookie that isn't set. Add a

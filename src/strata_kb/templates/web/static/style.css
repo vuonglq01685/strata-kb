@@ -106,6 +106,10 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 .hub-online .dot { background: var(--ok); }
 .hub-offline { color: var(--err); background: var(--err-bg); border-color: var(--err-line); }
 .hub-offline .dot { background: var(--err); }
+.hub-pulled { color: var(--muted); background: transparent; border-color: var(--line); }
+.hub-pulled .dot { background: var(--ok); }
+.hub-warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+.hub-warn .dot { background: var(--warn); }
 .topbar-fed { font: 400 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
 
 .columns { flex: 1; display: grid; grid-template-columns: 248px minmax(0,1fr) 292px;

@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from collections import Counter
 from importlib import resources
 from pathlib import Path
@@ -27,7 +28,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from strata_kb import assetstore, planstatus, searchdb
+import strata_kb
+from strata_kb import assetstore, gitio, planstatus, searchdb
 from strata_kb import hub as hub_mod
 from strata_kb.federation import load_federation
 from strata_kb.kinds import (
@@ -164,6 +166,52 @@ MENU_PATH = {KB: "/ui/docs", BA: "/ui/tickets", DEV: "/ui/code"}
 _BACK_LABEL = {KB: "all documents", BA: "all tickets", DEV: "all code"}
 
 
+def _ago(ts: float) -> str:
+    secs = max(0, int(time.time() - ts))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if secs >= size:
+            return f"{secs // size}{unit} ago"
+    return "just now"
+
+
+def _utc(ts: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts))
+
+
+def _hub_state(root: Path) -> dict:
+    """Topbar: the hub checkout's HEAD and its last pull, so a child repo can
+    tell whether its publish has landed (and the pull is not failing)."""
+    state: dict = {}
+    try:
+        sha, date = gitio.head_summary(root)
+        state["commit"] = {
+            "sha": sha,
+            "date": date[:10],
+            "title": f"hub HEAD {sha} · {date}",
+        }
+    except gitio.GitError:
+        pass  # a plain-directory hub: no commit to show
+    status = hub_mod.read_pull_status(root) or {}
+    last_ok = (
+        f"last good pull {_utc(status['ok_at'])}"
+        if "ok_at" in status
+        else "no good pull recorded"
+    )
+    if "error_at" in status:
+        state["pull"] = {
+            "failed": True,
+            "label": f"pull failed {_ago(status['error_at'])}",
+            "title": f"{_utc(status['error_at'])}: {status.get('error', '')} — {last_ok}",
+        }
+    elif "ok_at" in status:
+        state["pull"] = {
+            "failed": False,
+            "label": f"pulled {_ago(status['ok_at'])}",
+            "title": last_ok,
+        }
+    return state
+
+
 def _shell_ctx(
     config: ServerConfig,
     screen: str,
@@ -184,6 +232,7 @@ def _shell_ctx(
             "screen": screen,
             "menu_kind": scope or "",
             "hub_ok": False,
+            "version": strata_kb.__version__,
             "q": q,
             "raw_tags": raw_tags,
             "budget": budget,
@@ -202,6 +251,8 @@ def _shell_ctx(
         "screen": screen,
         "menu_kind": scope or "",
         "hub_ok": True,
+        "version": strata_kb.__version__,
+        **_hub_state(hub.root),
         "q": q,
         "raw_tags": raw_tags,
         "budget": budget,
