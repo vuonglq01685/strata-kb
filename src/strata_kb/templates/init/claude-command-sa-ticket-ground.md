@@ -9,9 +9,10 @@ through when given.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket check` has no MCP tool and stays CLI.
+reached. The gate is `kb_ticket_check`; `kb ticket check` is its CLI
+fallback.
 
 Pipeline: Intake → Load → Fill → Gate → Handover. Hard rules the skill
 enforces: every line of the SA-owned section (`## Technical grounding`,
@@ -38,7 +39,9 @@ never edit a BA-owned section — a contradiction is quoted there, not
 corrected; `Grounded on: <repo-id>:<doc-id> @ <revision>` is the first
 line, copied from the hub document's manifest revision; never write
 internal flow or failure modes — the document cannot prove them; the
-gate is `kb ticket check <file> [--missions-dir <dir>]`, or
+gate is `kb_ticket_check` (the ticket's text, plus the parent mission's
+file's text as `mission_markdown` when it exists locally), CLI fallback
+`kb ticket check <file> [--missions-dir <dir>]`, or
 `kb ticket check --heading "## Services & order" <file>` for a mission,
 a `[warn] grounded @…` is a PASS, a FAIL carrying `re-run /sa-ticket-ground`
 means re-ground on the current `-code`; failing to RUN is not a PASS; the handover ends with the fixed

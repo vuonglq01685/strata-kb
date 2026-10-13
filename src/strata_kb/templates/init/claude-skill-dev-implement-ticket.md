@@ -63,7 +63,7 @@ edit above it.
   the ticket is not Ready.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
   section, run `kb ticket check docs/impl/<id>/ticket.md` (your
-  `<ticket-file>`). PASS → show every `[warn]` (a diff, or facts that could
+  `<ticket-file>`; no CLI → `kb_ticket_check` with its text). PASS → show every `[warn]` (a diff, or facts that could
   not be verified), the Dev decides, continue. FAIL with `re-run
   /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
   current `-code`) — unless the run also printed the local-fallback note

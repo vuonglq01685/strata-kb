@@ -83,8 +83,8 @@ document, so other repos can read them from the hub.
       `kb_context_new` and embeds the returned `## KB context` block.
    6. **Lint** — it runs the MCP tool `kb_ticket_lint` (the `kb ticket lint`
       CLI is the fallback) and fixes errors until it reports `DoR: PASS`.
-      With a `> Parent mission:` line it also runs the CLI once for the
-      full back-link check.
+      With a `> Parent mission:` line it passes the ticket id and the
+      mission's text, so the back-link check runs over MCP too.
    7. **Ground technical** — it saves the draft and invokes
       `/sa-ticket-ground` on it as a separate run (no shared context).
       That fills the SA-owned `## Technical grounding` section from the hub's

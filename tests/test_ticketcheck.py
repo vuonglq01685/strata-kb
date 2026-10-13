@@ -909,7 +909,8 @@ def test_decision_reference_with_no_loader_is_treated_as_not_found(code_doc):
     report = run(text, kb_dir)  # load_decisions=None: caller supplied no missions dir
     assert any("parent mission 'M-demo' not found" in e for e in errors(report))
     assert any(
-        "not found under missions/ or in the hub's plan — pass --missions-dir" in e
+        "not found under missions/ or in the hub's plan — pass the mission "
+        "(CLI --missions-dir, MCP mission_markdown)" in e
         for e in errors(report)
     )
 

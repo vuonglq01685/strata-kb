@@ -14,10 +14,12 @@ spans several User Stories — small work goes straight to
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb mission lint`, `kb ticket check`, `kb ticket stale` and `kb
-publish` have no MCP tool and stay CLI. `kb mission next` stays CLI too:
+reached. `kb mission lint`, `kb ticket stale` and `kb publish` have no MCP
+tool and stay CLI. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
+(the ticket's text; the local parent mission file's text, when there is
+one, as `mission_markdown`), the CLI as the fallback. `kb mission next` stays CLI too:
 it reads this repo's unpublished `missions/` and `tickets/`, which
 `kb_mission_next` (the published plan only) cannot see.
 

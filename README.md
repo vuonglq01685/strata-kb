@@ -826,7 +826,7 @@ links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
 `kb_mission_next`.
 
-### The six MCP tools
+### The seven MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -834,7 +834,8 @@ links to its Ticket page. The CLI twin is
 | `kb_get_section` | Fetch exactly one section | `doc`, `section`, `level` |
 | `kb_context_new` | Pin a `kb-context` citation block at the hub's current commit, from confirmed refs | `refs`, `tags` |
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
-| `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket | `ticket_markdown` |
+| `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket. The `> Parent mission:` back-link is checked when `ticket_id` is passed: against `mission_markdown`, else the mission on the hub's plan | `ticket_markdown`, `ticket_id`, `mission_markdown` |
+| `kb_ticket_check` | Run the SA grounding gate (`kb ticket check`) against the hub's `-code` document, a moved revision judged from hub history. `[NEW: D<n>]` reads `mission_markdown`, else the hub's plan; no local `-code` fallback | `ticket_markdown`, `mission_markdown`, `heading` |
 | `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 
 ### Security
@@ -1034,12 +1035,13 @@ story in `Affected`, `kb mission next` reports the ticket `draft` with reason
 | `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]` | Read-only: every backlog story across `missions/` as `done` (its id is in a `hist.*` row of the hub's `-svc` document), `ready` (a ticket file exists under `tickets/` — flat or `tickets/<mission-id>/` — with every `## Definition of Ready` box ticked), `draft` (a ticket file with an unticked box, reason `DoR n/m ticked`, or no `## Definition of Ready` section, reason `no Definition of Ready section`), `to-draft` (no ticket, every `Depends on` done, every D-row that `Blocks` it `DECIDED`) or `blocked` (reasons named); ends with `Next: <us-id> — <title>` naming the first `to-draft` story. The `-svc` document is derived from the missions' `Grounded on:` line (a comma-separated list is read, the `-code` entry wins; `<x>-code` → `<x>-svc`, `--repo-id` overrides); `--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second; no `Grounded on:` line, an unconfigured or unreachable hub, a `-svc` not on the hub, and a missing tickets dir are each a `note:` line, never a red line | `0` after a report; `1` for a bad directory flag or a malformed `.kb/config.yaml` |
 | `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]` | Move each flat `tickets/*.md` whose `> Parent mission: M-x [@ rev N]` line is valid to `tickets/M-x/<name>`; print `moved:` per file, `conflict:` when the destination exists (nothing is overwritten), `unsorted:` for a file without a parent mission, `note:` for an unreadable file or a FILE under `--into` that is not a flat file directly under tickets/. With `--into`, move the named files into `tickets/<folder>/` instead. Idempotent; no git — commit the renames yourself | `0` after a report; `1` for a bad `--tickets-dir`, a bad `--into` name, FILES without `--into`, or `--into` without files |
 
-Mission lint and ticket check are deliberately **CLI-only** — mission lint's
-distinguishing checks need filesystem access to the sibling `tickets/`
-directory that a shared MCP server does not have, and ticket check's
-local fallback reads `--kb-dir`. `kb ticket lint --missions-dir` and
-`kb mission lint --tickets-dir` point either gate at a non-sibling folder. `kb_ticket_lint` remains the
-only lint tool over MCP.
+Mission lint is deliberately **CLI-only**: its distinguishing checks need
+filesystem access to the sibling `tickets/` directory that a shared MCP server
+does not have. Ticket lint and ticket check run over MCP too
+(`kb_ticket_lint`, `kb_ticket_check`); the client passes the mission's text
+(`mission_markdown`) when it is not on the hub yet. Only the CLI's local
+`-code` fallback (`--kb-dir`) has no MCP twin. `kb ticket lint --missions-dir`
+and `kb mission lint --tickets-dir` point either gate at a non-sibling folder.
 
 Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml`.
 The trigger is deliberately **not** `paths`-filtered: GitHub never synthesises a

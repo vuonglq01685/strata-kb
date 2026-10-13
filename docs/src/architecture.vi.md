@@ -254,8 +254,8 @@ tự đó — và server từ chối khởi động nếu không có. Nó chỉ 
 của hub, không bao giờ tìm trong `.kb/` làm việc của chính nó. Chính quy tắc đó
 làm cho từ "đã publish" có ý nghĩa.
 
-Năm MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
-`kb_resolve` và `kb_ticket_lint`.
+Bảy MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check` và `kb_mission_next`.
 
 ---
 

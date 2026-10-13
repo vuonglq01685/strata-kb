@@ -920,6 +920,52 @@ def test_parent_mission_without_paths_degrades_to_a_note(
     assert any("parent-mission" in n for n in report.notes)
 
 
+def _mcp_lint(fed_hub: Path, golden_block: str, ticket_id: str, mission: str | None):
+    """The MCP shape: no repo paths, a ticket id and a mission loader."""
+    text = _build_ticket(
+        golden_block,
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+    return ticketlint.lint(
+        text,
+        _hub(fed_hub),
+        ticket_id=ticket_id,
+        load_mission=lambda mid: mission if mid == "M-airspace-filter" else None,
+    )
+
+
+def test_loaded_mission_with_the_ticket_in_its_backlog_passes(
+    fed_hub: Path, golden_block: str
+):
+    mission = _mission_doc("M-airspace-filter", ["M-airspace-filter-US1"])
+    report = _mcp_lint(fed_hub, golden_block, "M-airspace-filter-US1", mission)
+    assert report.passed is True, _errors(report)
+    assert report.notes == []
+
+
+def test_loaded_mission_without_the_ticket_in_its_backlog_errors(
+    fed_hub: Path, golden_block: str
+):
+    mission = _mission_doc("M-airspace-filter", ["M-airspace-filter-US2"])
+    report = _mcp_lint(fed_hub, golden_block, "M-airspace-filter-US1", mission)
+    assert report.passed is False
+    assert any(
+        "'M-airspace-filter-US1' is not in the backlog" in e
+        and "hub:M-airspace-filter" in e
+        for e in _errors(report)
+    )
+
+
+def test_mission_the_loader_cannot_find_errors(fed_hub: Path, golden_block: str):
+    """Like the CLI's missing mission file: with `ticket_id` the caller asked
+    for the back-link checks, so a mission found nowhere fails them."""
+    report = _mcp_lint(fed_hub, golden_block, "M-airspace-filter-US1", None)
+    assert report.passed is False
+    assert any(
+        "parent mission 'M-airspace-filter' not found" in e for e in _errors(report)
+    )
+
+
 # --- new-template warnings (BA upgrade v2) ---
 
 

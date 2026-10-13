@@ -31,10 +31,12 @@ forces the `architecture` trigger). The agent never ticks DoR, commits or pushes
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket tidy`, `kb ticket check`, `kb ticket stale`, `kb
-ticket export` and `kb publish` have no MCP tool and stay CLI. `kb
+reached. `kb ticket tidy`, `kb ticket stale`, `kb ticket export` and `kb
+publish` have no MCP tool and stay CLI. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
+(the ticket's text; the local parent mission file's text, when there is
+one, as `mission_markdown`), the CLI as the fallback. `kb
 mission next` stays CLI too: it reads this repo's unpublished
 `missions/` and `tickets/`, which `kb_mission_next` (the published plan
 only) cannot see.
@@ -63,10 +65,10 @@ validated against the hub vocabulary and an unknown one is an error,
 and the BA's intake tags are search keywords for `kb query --tags`,
 nothing more;
 code detail becomes `%%TODO: verify against codebase%%`, never
-invented, never looked up by you; `kb_ticket_lint` (CLI fallback `kb ticket lint`) must report `DoR: PASS` before handover — over MCP the
-`> Parent mission:` back-link checks are skipped, so with that line run
-`kb ticket lint <file>` once before handover (no CLI → tell the BA the
-back-link was not verified; CI runs the full check on the PR);
+invented, never looked up by you; `kb_ticket_lint` (CLI fallback `kb ticket lint`) must report `DoR: PASS` before handover — with a
+`> Parent mission:` line pass `ticket_id` (file name without `.md`) and the
+mission's text as `mission_markdown`, so the back-link checks run over MCP
+too (CI runs the full check on the PR);
 report the authoring cost at handover with `kb usage report --ticket
 <ticket-id> --md`, reporting `no usage recorded yet` as-is rather than
 guessing a number;
