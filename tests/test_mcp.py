@@ -50,7 +50,7 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_eight_tools(fed_hub):
+async def test_lists_exactly_eleven_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
@@ -58,11 +58,14 @@ async def test_lists_exactly_eight_tools(fed_hub):
             "kb_context_new",
             "kb_doctor_hub",
             "kb_get_section",
+            "kb_mission_lint",
             "kb_mission_next",
             "kb_resolve",
             "kb_search",
             "kb_ticket_check",
+            "kb_ticket_fetch",
             "kb_ticket_lint",
+            "kb_ticket_stale",
         ]
 
 
@@ -756,3 +759,129 @@ async def test_kb_ticket_lint_checks_the_back_link_with_ticket_id(fed_hub):
         )
     assert "checks skipped" in skipped
     assert "'M-airspace-filter-US1' is not in the backlog" in failed
+
+
+# --- kb_ticket_stale: `kb ticket stale` over MCP, one file per call ---------
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_stale_reports_a_moved_citation(fed_hub):
+    from tests.conftest import make_stale
+
+    text = f"# T-1\n\n{_golden_ticket_block(fed_hub)}\n"
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        args = {"markdown": text, "file_name": "tickets/T-1.md"}
+        current = _text(await client.call_tool("kb_ticket_stale", args))
+        make_stale(fed_hub)
+        stale = _text(await client.call_tool("kb_ticket_stale", args))
+    assert "Every ticket and mission cites current hub content." in current
+    assert "| `tickets/T-1.md` | kb-context | icao-kb:icao-annex-2 §1.1" in stale
+    assert "| stale |" in stale
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_stale_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_ticket_stale", {"markdown": "# T\n", "file_name": "T.md"}
+        )
+        assert "hub unreachable" in _text(result)
+
+
+# --- kb_mission_lint: `kb mission lint` over MCP, no local tickets/ ---------
+
+
+def _golden_mission(fed_hub) -> str:
+    from tests.test_missionlint import REFS as MISSION_REFS
+    from tests.test_missionlint import _build_mission
+
+    block, warning = build_context_block(
+        HubHandle(root=fed_hub), MISSION_REFS, tags=["airspace"]
+    )
+    assert warning is None
+    return _build_mission(block)
+
+
+@pytest.mark.anyio
+async def test_kb_mission_lint_golden_mission_passes(fed_hub):
+    from tests.test_missionlint import MISSION_ID
+
+    text = _golden_mission(fed_hub)
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        ok = _text(
+            await client.call_tool(
+                "kb_mission_lint",
+                {"mission_markdown": text, "mission_id": MISSION_ID},
+            )
+        )
+        renamed = _text(
+            await client.call_tool(
+                "kb_mission_lint",
+                {"mission_markdown": text, "mission_id": "M-other"},
+            )
+        )
+    assert "DoR: PASS" in ok
+    assert "coverage check skipped" in ok
+    assert "DoR: FAIL" in renamed
+
+
+@pytest.mark.anyio
+async def test_kb_mission_lint_broken_ref_fails(fed_hub):
+    import shutil
+
+    text = _golden_mission(fed_hub)
+    shutil.rmtree(fed_hub / "federation" / "arinc-kb" / "arinc-424")
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(
+            await client.call_tool("kb_mission_lint", {"mission_markdown": text})
+        )
+    assert "DoR: FAIL" in out
+
+
+@pytest.mark.anyio
+async def test_kb_mission_lint_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool(
+            "kb_mission_lint", {"mission_markdown": "# M\n"}
+        )
+        assert "hub unreachable" in _text(result)
+
+
+# --- kb_ticket_fetch: `kb ticket fetch` over MCP, the text only -------------
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_fetch_returns_the_published_ticket(plan_hub):
+    from tests.test_planstatus import US
+
+    server = create_server(_config(plan_hub.root))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(await client.call_tool("kb_ticket_fetch", {"ticket": US[1]}))
+        missing = _text(
+            await client.call_tool("kb_ticket_fetch", {"ticket": "M-nope-US9"})
+        )
+        bad = _text(await client.call_tool("kb_ticket_fetch", {"ticket": "../x"}))
+    assert out.startswith("# ")
+    assert f"> Fetched from hub: ba-one:ba-one-plan §{US[1]} @ " in out
+    assert "## Acceptance Criteria" in out
+    assert "M-nope-US9 is not on the hub" in missing
+    assert "is not a ticket id" in bad
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_fetch_hub_unreachable_returns_guidance(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    config = ServerConfig(kb_dir=tmp_path / ".kb", hub=str(tmp_path / "missing"))
+    server = create_server(config)
+    async with connect_client(server, raise_exceptions=True) as client:
+        result = await client.call_tool("kb_ticket_fetch", {"ticket": "M-a-US1"})
+        assert "hub unreachable" in _text(result)

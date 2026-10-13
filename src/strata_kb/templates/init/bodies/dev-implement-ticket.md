@@ -13,10 +13,12 @@ and subagent-driven-development.*
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_fetch`,
+`kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket fetch`, `kb ticket check`, `kb impl tidy`, `kb svc
-note` and the cache-writing `kb resolve --status-only --cache` /
+reached. `kb ticket fetch` runs as `kb_ticket_fetch`: save the text it returns
+as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb ticket check` runs as `kb_ticket_check` (the ticket's text), the CLI as
+the fallback. `kb impl tidy`, `kb svc note` and the cache-writing `kb resolve --status-only --cache` /
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
@@ -42,12 +44,10 @@ edit above it.
 
 - **Intake** — run `kb impl tidy` first (it moves an old flat
   `docs/impl/<id>-*` layout into `docs/impl/<id>/` — commit the renames on
-  their own before the first task; no CLI → move them by hand); get the ticket: given only an id, run
-  `kb ticket fetch <id>` first — the hub is the source of truth; it writes
-  `docs/impl/<id>/ticket.md`, your `<ticket-file>` (no CLI → MCP
-  `kb_get_section` `<doc> §<id>` at `l3`, saved to that path with headings
-  promoted one level and the provenance line `> Fetched from hub:
-  <repo>:<doc> §<id> @ <rev> — do not edit; amend in the BA repo.`); a
+  their own before the first task; no CLI → move them by hand); get the ticket: given only an id, fetch
+  it first — the hub is the source of truth: MCP `kb_ticket_fetch` `<id>`,
+  its text saved as `docs/impl/<id>/ticket.md`, your `<ticket-file>` (CLI
+  fallback: `kb ticket fetch <id>` writes that file); a
   path or a pasted body is the fallback when the hub has no copy or is
   unreachable. A fetched ticket has no `## Definition of Ready`: being on
   the hub means DoR passed, so do not stop on its absence. Confirm
@@ -58,8 +58,9 @@ edit above it.
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
-  section, run `kb ticket check docs/impl/<id>/ticket.md` (your
-  `<ticket-file>`; no CLI → `kb_ticket_check` with its text). PASS → show every `[warn]` (a diff, or facts that could
+  section, run MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
+  fallback: `kb ticket check docs/impl/<id>/ticket.md`, which reads the
+  local `-code` only when the hub holds none). PASS → show every `[warn]` (a diff, or facts that could
   not be verified), the Dev decides, continue. FAIL with `re-run
   /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
   current `-code`) — unless the run also printed the local-fallback note
@@ -67,7 +68,7 @@ edit above it.
   changes may cause it, so re-run once the hub is reachable and holds the
   -code. FAIL without that line
   → report the errors to the BA and STOP. No `## Technical grounding` →
-  skip, with a note. No CLI → skip, with a note.
+  skip, with a note. Neither MCP nor CLI → skip, with a note.
 - **Resolve** — triage exactly as in the Freshness re-check above:
   `broken` → stop and report to the BA; `stale` → show both versions and
   let the Dev decide; `ok` → continue. A full resolve is

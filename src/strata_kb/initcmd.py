@@ -114,6 +114,7 @@ BA_TEMPLATES: dict[str, str] = {
     ".github/prompts/kb-publish.prompt.md": "copilot-kb-publish.prompt.md",
     ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
     ".github/workflows/kb-publish.yml": "kb-publish-ba.yml",
+    ".github/workflows/kb-publish-request.yml": "kb-publish-request.yml",
     ".claude/skills/ba-ticket-author/SKILL.md": "claude-skill-ba-ticket-author.md",
     ".claude/commands/ba-ticket-author.md": "claude-command-ba-ticket-author.md",
     ".github/prompts/ba-ticket-author.prompt.md": "copilot-ba-ticket-author.prompt.md",

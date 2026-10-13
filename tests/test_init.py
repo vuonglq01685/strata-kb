@@ -3027,6 +3027,7 @@ def test_scaffolded_workflow_names_cover_every_kind():
 
     assert {
         "kb-publish.yml",
+        "kb-publish-request.yml",
         "kb-ticket-lint.yml",
         "kb-code.yml",
         "kb-pr-lint.yml",

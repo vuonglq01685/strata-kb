@@ -18,12 +18,12 @@ and `requesting-code-review` folded in.*
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_fetch`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket fetch`, `kb plan waves`, `kb svc note` and the
-cache-writing `kb resolve --status-only --cache` / `--write-cache` stay
-CLI-first; where a step below names an MCP path for one, it is only the
-no-CLI fallback.
+reached. `kb ticket fetch` runs as `kb_ticket_fetch`: save the text it returns
+as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb plan waves`, `kb svc note` and the cache-writing `kb resolve --status-only --cache` /
+`--write-cache` stay CLI-first; where a step below names an MCP path for
+one, it is only the no-CLI fallback.
 
 ## Freshness re-check (run this FIRST, every time)
 
@@ -44,7 +44,8 @@ edit above it.
 - **ok** → continue.
 
 `<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
-`kb ticket fetch <ticket-id>` wrote from the hub.
+`kb_ticket_fetch` (CLI: `kb ticket fetch <ticket-id>`) fetched from the
+hub.
 
 Steps the skill enforces: **Isolate** the work onto a dedicated branch and,
 where the environment supports it, a git worktree named from the ticket id.

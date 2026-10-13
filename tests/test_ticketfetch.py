@@ -180,3 +180,13 @@ def test_find_ignores_a_symlinked_plan_folder(plan_hub, tmp_path):
     add_symlinked_plan(plan_hub.root / "federation/ba-one", tmp_path / "outside")
     # followed, the copy would make US1 ambiguous between two plan documents
     assert ticketfetch.find(plan_hub, US1)[:2] == ("ba-one", "ba-one-plan")
+
+
+def test_unreadable_section_file_names_no_hub_path(plan_hub):
+    # kb_ticket_fetch returns this message to a remote MCP client.
+    _, _, l3 = ticketfetch.find(plan_hub, US1)
+    l3.unlink()
+    with pytest.raises(ticketfetch.TicketFetchError) as exc:
+        ticketfetch.render(plan_hub, US1)
+    assert f"/{l3.name}" in str(exc.value)
+    assert str(plan_hub.root) not in str(exc.value)

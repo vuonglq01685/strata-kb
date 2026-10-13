@@ -30,7 +30,10 @@ seeing the diff, that the current .kb/ state should be published.
    and gitignored there.
 3. **Confirm — the gate.** State where it goes. With `intake:` in `.kb/config.yaml`,
    `kb publish` pushes a `kb-publish/*` tag, CI uploads to that intake URL
-   and the hub opens the PR: no hub clone and no `hub:` needed. Otherwise
+   and the hub opens the PR: no hub clone and no `hub:` needed. In a `ba`
+   repo a push to `main` that changes `missions/` or `tickets/` also
+   publishes (`kb-publish-request.yml` tags the merged commit), so a
+   merged PR needs no `kb publish`. Otherwise
    state the hub (from `.kb/config.yaml`, or `STRATA_KB_HUB` if set) and
    that a publish PR will be opened on it (direct is picked for a hub with
    no git remote). Also state the repo's kind
@@ -51,4 +54,8 @@ seeing the diff, that the current .kb/ state should be published.
      the hub sets `intake:` instead.
    - `gh` missing in PR mode → install GitHub CLI, or `kb publish --direct`
      only if direct pushes are allowed for this hub.
+   - Tag push refused (e.g. HTTP 403 where only the branch may be pushed,
+     as in a cloud session) in a `ba` repo → nothing was published; merge
+     the change into `main`, which publishes it, or run
+     `kb-publish-request.yml` by hand on `main`.
    - Other git/hub errors → show the stderr and suggest `kb doctor`.

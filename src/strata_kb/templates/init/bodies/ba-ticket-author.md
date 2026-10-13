@@ -8,15 +8,17 @@ citation block — saved to `tickets/<folder>/<ticket-id>.md`. The output is a
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`,
+`kb_ticket_stale`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket tidy`, `kb ticket stale`, `kb ticket export` and `kb
-publish` have no MCP tool and stay CLI. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
+reached. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
 (the ticket's text; the local parent mission file's text, when there is
-one, as `mission_markdown`), the CLI as the fallback. `kb
-mission next` stays CLI too: it reads this repo's unpublished
-`missions/` and `tickets/`, which `kb_mission_next` (the published plan
-only) cannot see.
+one, as `mission_markdown`), every `kb ticket stale` as `kb_ticket_stale` (the file's text and its
+repo-relative path, e.g. `tickets/<M-id>/<us-id>.md`); the CLI is the fallback.
+`kb ticket tidy`, `kb ticket export` and `kb publish` have no MCP tool and
+stay CLI. `kb mission next` stays CLI too:
+it reads this repo's unpublished `missions/` and `tickets/`, which
+`kb_mission_next` (the published plan only) cannot see.
 
 ## Workflow
 
@@ -219,7 +221,8 @@ only) cannot see.
 workflow above from Intake: the ticket keeps its id and path, and every
 change is recorded in `## Change log`.
 
-1. **Read** the ticket and run `kb ticket stale --md <file>`; read the
+1. **Read** the ticket and run `kb_ticket_stale` on it (CLI: `kb ticket
+   stale --md <file>`); read the
    findings for it (kind: the `Kind` column, `kb-context` or `architecture`).
    With a
    `> Parent mission:` line, read the mission's `## Change log` rows after

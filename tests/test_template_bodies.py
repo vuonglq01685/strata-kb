@@ -180,6 +180,74 @@ def test_hub_reading_skills_reach_the_hub_through_mcp_first(name):
     assert "`kb_ticket_lint` as a fallback" not in text, name
 
 
+# Every hub-reading command a skill runs has an MCP tool: MCP first, the CLI
+# only as the fallback.
+_MCP_TWINS = {
+    "kb mission lint": "kb_mission_lint",
+    "kb ticket stale": "kb_ticket_stale",
+    "kb ticket fetch": "kb_ticket_fetch",
+    "kb ticket check": "kb_ticket_check",
+}
+
+
+def _hub_access_rule(text: str) -> str:
+    start = text.index("Hub access — MCP first")
+    return text[start : text.index("##", start)]
+
+
+@pytest.mark.parametrize("name", [n for s in HUB_READERS for n in _rendered_copies(s)])
+def test_hub_commands_name_their_mcp_tool_first(name):
+    text = " ".join(read_template(name).split())
+    rule = _hub_access_rule(text)
+    for cli, tool in _MCP_TWINS.items():
+        if cli in text:
+            assert tool in rule, (name, tool)
+    cli_only = [
+        sentence
+        for sentence in rule.split(". ")
+        if "no MCP tool" in sentence
+        or "CLI-first" in sentence
+        or "stay CLI" in sentence
+    ]
+    for sentence in cli_only:
+        for cli in _MCP_TWINS:
+            assert f"`{cli}" not in sentence, (name, cli, sentence)
+    assert "There is no MCP fallback" not in text, name
+
+
+def _mcp_before_cli(text: str, step: str, tool: str, cli: str, name: str) -> None:
+    at = text.index(step)
+    assert text.index(tool, at) < text.index(cli, at), (name, step)
+
+
+@pytest.mark.parametrize("name", _stepped_copies("ba-mission-plan"))
+def test_ba_mission_plan_lints_and_sweeps_through_mcp_first(name):
+    text = " ".join(read_template(name).split())
+    _mcp_before_cli(text, "**Lint**", "kb_mission_lint", "kb mission lint", name)
+    amend = text.index("## Amend mode")
+    _mcp_before_cli(
+        text[amend:], "**Read**", "kb_ticket_stale", "kb ticket stale", name
+    )
+
+
+@pytest.mark.parametrize("name", _stepped_copies("ba-ticket-author"))
+def test_ba_ticket_author_sweeps_through_mcp_first(name):
+    text = " ".join(read_template(name).split())
+    amend = text.index("## Amend mode")
+    _mcp_before_cli(
+        text[amend:], "**Read**", "kb_ticket_stale", "kb ticket stale", name
+    )
+
+
+@pytest.mark.parametrize("name", _stepped_copies("dev-implement-ticket"))
+def test_dev_implement_ticket_fetches_and_checks_through_mcp_first(name):
+    text = " ".join(read_template(name).split())
+    _mcp_before_cli(text, "get the ticket", "kb_ticket_fetch", "kb ticket fetch", name)
+    _mcp_before_cli(
+        text, "**Check the grounding**", "kb_ticket_check", "kb ticket check", name
+    )
+
+
 @pytest.mark.parametrize("name", _stepped_copies("ba-ticket-author"))
 def test_ba_ticket_author_lints_through_mcp_before_the_cli(name):
     text = " ".join(read_template(name).split())
