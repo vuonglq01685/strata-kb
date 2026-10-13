@@ -18,10 +18,10 @@ seeing the diff, that the current .kb/ state should be published.
    /kb-summarize command).
 2. **Show what will be published.** Run `kb doctor` — it reports whether
    local .kb differs from the published snapshot. In a `ba` or `dev` repo
-   it asks the hub over MCP once `kb mcp-setup` is done, with no hub clone.
-   If `kb doctor` cannot reach the hub (no MCP configured, no access to
-   clone it), say so and carry on with `kb diff` below: `kb doctor` is a
-   preview, not a gate, and a repo with `intake:` publishes without the hub. For each doc with
+   it asks the hub over MCP (`kb mcp-setup`), never a hub clone. If it
+   cannot reach the hub, stop: the user runs `kb mcp-setup` (in a cloud
+   session: sets `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the
+   environment, since `.env` is not committed), then publish again. For each doc with
    changes, run `kb diff <doc-id> --against HEAD` (use another git rev if
    the user names one) and present the added/changed sections.
    In a `ba` repo, `kb publish` first regenerates `<repo_id>-plan` with
