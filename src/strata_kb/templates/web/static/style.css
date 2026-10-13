@@ -346,3 +346,26 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
   color: var(--body-c); }
 .check input { accent-color: var(--accent); }
+/* Mission / ticket pages (gfmrender): GitHub-like prose, task lists,
+   highlighted code and mermaid diagrams drawn by app.js. */
+.md-body h1 { font-size: 30px; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+.md-body h2 { padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
+.md-body h4 { font-size: 16px; margin: 18px 0 6px; }
+.md-body blockquote { margin: 12px 0; padding: 2px 14px; color: var(--muted);
+  border-left: 3px solid var(--line); }
+.md-body blockquote p { margin: 4px 0; }
+.md-body table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+.md-body th { font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: inherit; }
+.md-body tbody tr:nth-child(2n) { background: var(--surface-alt); }
+.md-body :not(pre) > code { font: 400 0.88em/1.4 var(--mono); padding: 1px 5px;
+  background: var(--field); border-radius: 4px; }
+.md-body li.task { list-style: none; margin-left: -1.3em; }
+.md-body li.task input { margin: 0 6px 0 0; vertical-align: middle; }
+.md-body pre.mermaid { background: var(--surface); text-align: center; white-space: pre; }
+.md-body pre.mermaid svg { max-width: 100%; height: auto; }
+.md-body [class^="hl-c"] { color: #6e7781; font-style: italic; }
+.md-body [class^="hl-k"], .md-body .hl-nt { color: #cf222e; }
+.md-body [class^="hl-s"] { color: #0a3069; }
+.md-body [class^="hl-m"], .md-body .hl-kc { color: #0550ae; }
+.md-body .hl-na, .md-body .hl-nf, .md-body .hl-nc { color: #8250df; }

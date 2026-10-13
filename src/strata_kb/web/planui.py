@@ -19,7 +19,8 @@ from strata_kb import planstatus
 from strata_kb.kinds import BA
 from strata_kb.serving.config import ServerConfig
 from strata_kb.web import api, uidata
-from strata_kb.web.mdrender import render as md_render
+from strata_kb.web.gfmrender import has_mermaid
+from strata_kb.web.gfmrender import render as md_render
 from strata_kb.web.ui import _render_page, menu_search, render_error_page
 
 
@@ -95,12 +96,19 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             return _not_found(f"Unknown mission '{mission_id}'.")
         if len(holders) > 1:
             return _ambiguous(mission_id, [m.repo for m in holders])
+        mission = holders[0]
+        # the page head already shows the title: drop the restored `# <title>` line
+        body = mission.markdown.removeprefix(f"# {mission.title}\n")
+        content_html, toc = uidata.inject_heading_anchors(md_render(body))
         return _render_page(
             "plan_mission.html",
             config,
             screen="plan",
             title=f"{mission_id} — Tickets",
-            mission=holders[0],
+            mission=mission,
+            content_html=content_html,
+            toc=toc,
+            mermaid=has_mermaid(content_html),
         )
 
     def plan_ticket_page(request: Request) -> HTMLResponse:
@@ -128,6 +136,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             ticket=ticket,
             content_html=content_html,
             toc=toc,
+            mermaid=has_mermaid(content_html),
         )
 
     def plans_moved(request: Request) -> RedirectResponse:

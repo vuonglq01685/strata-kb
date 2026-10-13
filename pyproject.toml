@@ -25,6 +25,9 @@ dependencies = [
     "starlette>=0.37",
     "uvicorn>=0.30",
     "jinja2>=3.1",
+    # mission/ticket pages (web/gfmrender.py); both already came in via typer -> rich
+    "markdown-it-py>=3.0",
+    "pygments>=2.17",
 ]
 
 [project.optional-dependencies]

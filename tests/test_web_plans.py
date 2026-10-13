@@ -269,3 +269,19 @@ def test_ticket_menu_search_box_and_search(plan_hub):
     assert f'href="/ui/tickets/{MISSION_ID}?repo=ba-one"' in hit.text
     assert "/ui/docs/arinc-424" not in hit.text
     assert "/ui/docs/icao-annex-2" not in hit.text
+
+
+def test_mission_page_renders_the_mission_body_with_diagrams(plan_hub):
+    text = _client(plan_hub).get(f"/ui/tickets/{MISSION_ID}?repo=ba-one").text
+    assert 'class="reader-body md-body"' in text
+    assert '<pre class="mermaid">' in text
+    assert '<script src="/ui/static/mermaid.min.js" defer></script>' in text
+    assert "On this page" in text
+
+
+def test_mermaid_script_loads_only_with_a_diagram_and_is_served(plan_hub):
+    client = _client(plan_hub)
+    assert "mermaid.min.js" not in client.get("/ui/tickets").text
+    resp = client.get("/ui/static/mermaid.min.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/javascript")

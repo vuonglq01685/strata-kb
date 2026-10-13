@@ -44,6 +44,7 @@ WHEEL_DIST_INFO_SUFFIX = ".dist-info"
 WHEEL_REQUIRED_STATIC = [
     f"{WHEEL_PACKAGE_DIR}/templates/web/static/style.css",
     f"{WHEEL_PACKAGE_DIR}/templates/web/static/app.js",
+    f"{WHEEL_PACKAGE_DIR}/templates/web/static/mermaid.min.js",
 ]
 WHEEL_REQUIRED_FONT_DIR = f"{WHEEL_PACKAGE_DIR}/templates/web/static/fonts/"
 
