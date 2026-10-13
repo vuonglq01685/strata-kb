@@ -19,16 +19,23 @@ seeing the diff, that the current .kb/ state should be published.
    stop and tell the user to summarize first (`kb summarize`, or the
    kb-summarize skill).
 2. **Show what will be published.** Run `kb doctor` — it reports whether
-   local .kb differs from the published snapshot. For each doc with
+   local .kb differs from the published snapshot. In a `ba` or `dev` repo
+   it asks the hub over MCP once `kb mcp-setup` is done, with no hub clone.
+   If `kb doctor` cannot reach the hub (no MCP configured, no access to
+   clone it), say so and carry on with `kb diff` below: `kb doctor` is a
+   preview, not a gate, and a repo with `intake:` publishes without the hub. For each doc with
    changes, run `kb diff <doc-id> --against HEAD` (use another git rev if
    the user names one) and present the added/changed sections.
    In a `ba` repo, `kb publish` first regenerates `<repo_id>-plan` with
    `kb plan-ingest`; run `kb plan-ingest` to see what will ship and what is
    skipped (`kb doctor` does not diff `-plan`). Both `.kb/<repo_id>-plan/` and `.kb/index.yaml` are generated
    and gitignored there.
-3. **Confirm — the gate.** State the hub (from `.kb/config.yaml`, or
-   `STRATA_KB_HUB` if set) and that a publish PR will be opened on it
-   (direct is picked for a hub with no git remote). Also state the repo's kind
+3. **Confirm — the gate.** State where it goes. With `intake:` in `.kb/config.yaml`,
+   `kb publish` pushes a `kb-publish/*` tag, CI uploads to that intake URL
+   and the hub opens the PR: no hub clone and no `hub:` needed. Otherwise
+   state the hub (from `.kb/config.yaml`, or `STRATA_KB_HUB` if set) and
+   that a publish PR will be opened on it (direct is picked for a hub with
+   no git remote). Also state the repo's kind
    and the hub menu it lands in, as `kb publish` prints it:
    `kind: <hub kind> → hub menu: <Document|Ticket|Code>` (`hub` and `child`
    repos → Document, `ba` → Ticket, `dev` → Code). Read the kind from
@@ -41,7 +48,9 @@ seeing the diff, that the current .kb/ state should be published.
 5. **Errors.**
    - Kind unrecorded (message mentions `kb init --kind`) → stop; the user
      runs `kb init --kind <child|ba|dev|hub>`, then publishes again.
-   - Missing hub config → tell the user to fill `hub:` in `.kb/config.yaml`.
+   - Missing hub config (only without `intake:`) → tell the user to fill
+     `hub:` in `.kb/config.yaml`; a ba/dev repo whose people cannot clone
+     the hub sets `intake:` instead.
    - `gh` missing in PR mode → install GitHub CLI, or `kb publish --direct`
      only if direct pushes are allowed for this hub.
    - Other git/hub errors → show the stderr and suggest `kb doctor`.
