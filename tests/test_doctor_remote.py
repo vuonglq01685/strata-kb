@@ -504,3 +504,24 @@ def test_a_matching_version_refreshes_skills_and_commands(
     assert "updated skills/commands for strata-kb" in result.output
     assert (wf / "kb-publish.yml").read_text(encoding="utf-8") == "custom\n"
     assert "updated skills/commands" not in _doctor(kb).output  # nothing left to do
+
+
+def test_doctor_sets_a_stale_workflow_pin_to_the_hub_version(
+    git_kb, hub_worktree, monkeypatch
+):
+    import strata_kb
+
+    kb = _mcp_cli(git_kb, hub_worktree, monkeypatch)
+    wf = kb.resolve().parent / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    body = "    runs-on: self-hosted\n      - run: pip install strata-kb==1.0.0\n"
+    (wf / "kb-publish.yml").write_text(body, encoding="utf-8")
+
+    result = _doctor(kb)
+
+    assert result.exit_code == 0, result.output
+    v = strata_kb.__version__
+    assert (wf / "kb-publish.yml").read_text(encoding="utf-8") == body.replace(
+        "1.0.0", v
+    )
+    assert f"kb-publish.yml: strata-kb==1.0.0 → {v} — commit it" in result.output

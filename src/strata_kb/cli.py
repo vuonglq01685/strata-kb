@@ -3914,9 +3914,10 @@ def _match_hub_version(
     no_refresh: bool,
 ) -> list[str]:
     """Bring this repo to the hub's strata-kb: install it and re-run doctor
-    with it, then refresh skills and commands for `kind` (CI workflows and
-    config stay as they are). Not in CI, where the workflow pin decides the
-    version. Returns what changed."""
+    with it, then set the `strata-kb==X` pins in CI workflows to it (that
+    string only) and refresh skills and commands for `kind` (config and
+    settings stay as they are). Not in CI, where the workflow pin decides
+    the version. Returns what changed."""
     import strata_kb
     from strata_kb import initcmd
     from strata_kb.doctor import remote
@@ -3939,11 +3940,15 @@ def _match_hub_version(
             return []
         env = {**os.environ, remote.UPGRADED_ENV: strata_kb.__version__}
         raise typer.Exit(_rerun_doctor(kb_dir, context_text, no_refresh, env))
-    report = initcmd.refresh_agent_files(kb_dir.resolve().parent, kind)
-    changed = report.created + report.updated
-    if not changed:
-        return []
-    return [f"skills/commands for strata-kb {hub_version}: {', '.join(changed)}"]
+    root = kb_dir.resolve().parent
+    changed = remote.fix_pins(root, hub_version)
+    report = initcmd.refresh_agent_files(root, kind)
+    agent_files = report.created + report.updated
+    if agent_files:
+        changed.append(
+            f"skills/commands for strata-kb {hub_version}: {', '.join(agent_files)}"
+        )
+    return changed
 
 
 def _doctor_over_mcp(kb_dir: Path, context_text: str | None, no_refresh: bool):
