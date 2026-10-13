@@ -388,7 +388,14 @@ def install_version(version: str) -> str | None:
     error = ""
     for cmd in commands:
         # argv list, no shell; the version was matched against _VERSION_RE above.
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        proc = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
         if proc.returncode == 0:
             return None
         error = _flatten(
