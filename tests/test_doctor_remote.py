@@ -357,3 +357,63 @@ def test_git_path_says_the_version_was_not_checked(git_kb, fed_hub, monkeypatch)
         app, ["doctor", "--kb-dir", str(git_kb["kb"]), "--hub", str(fed_hub)]
     )
     assert "[info] strata-kb version not checked against the hub" in result.output
+
+
+def test_fix_pins_rewrites_only_the_version_string(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    body = "    runs-on: self-hosted\n      - run: pip install strata-kb==1.0.0\n"
+    (wf / "kb-publish.yml").write_text(body, encoding="utf-8")
+    changed = remote.fix_pins(tmp_path, "1.22.1")
+    assert changed == [".github/workflows/kb-publish.yml: strata-kb==1.0.0 → 1.22.1"]
+    assert (wf / "kb-publish.yml").read_text(encoding="utf-8") == body.replace(
+        "1.0.0", "1.22.1"
+    )
+    assert remote.fix_pins(tmp_path, "1.22.1") == []
+
+
+@pytest.mark.parametrize("bad", ["1.0 --index-url http://evil", "../x", "", "1.0;rm"])
+def test_install_version_refuses_a_bad_hub_version(bad, monkeypatch):
+    def never(*_a, **_k):
+        raise AssertionError("must not run pip")
+
+    monkeypatch.setattr(remote.subprocess, "run", never)
+    assert "invalid version" in (remote.install_version(bad) or "")
+
+
+def test_install_version_falls_back_to_uv(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **_k):
+        calls.append(cmd)
+        ok = cmd[0] == "/usr/bin/uv"
+        return remote.subprocess.CompletedProcess(
+            cmd, 0 if ok else 1, "", "No module named pip"
+        )
+
+    monkeypatch.setattr(remote.subprocess, "run", fake_run)
+    monkeypatch.setattr(remote.shutil, "which", lambda _: "/usr/bin/uv")
+    assert remote.install_version("1.22.1") is None
+    assert calls[0][1:4] == ["-m", "pip", "install"]
+    assert calls[1][:3] == ["/usr/bin/uv", "pip", "install"]
+    assert calls[1][-1] == "strata-kb==1.22.1"
+
+
+def test_refresh_agent_files_leaves_ci_and_config_alone(tmp_path):
+    from strata_kb import initcmd
+
+    initcmd.init_repo(tmp_path, "ba")
+    wf = tmp_path / ".github" / "workflows" / "kb-publish.yml"
+    cfg = tmp_path / ".kb" / "config.yaml"
+    skill = tmp_path / ".claude" / "skills" / "kb-publish" / "SKILL.md"
+    wf.write_text("custom ci\n", encoding="utf-8")
+    cfg.write_text("kind: ba\nintake: https://x\n", encoding="utf-8")
+    skill.write_text("stale\n", encoding="utf-8")
+
+    report = initcmd.refresh_agent_files(tmp_path, "ba")
+
+    assert ".claude/skills/kb-publish/SKILL.md" in report.updated
+    assert skill.read_text(encoding="utf-8") != "stale\n"
+    assert wf.read_text(encoding="utf-8") == "custom ci\n"
+    assert cfg.read_text(encoding="utf-8") == "kind: ba\nintake: https://x\n"
+    assert all(r.startswith(initcmd.AGENT_FILE_PREFIXES) for r in report.updated)

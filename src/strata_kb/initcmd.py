@@ -535,6 +535,40 @@ def record_asset_store(config_path: Path, mode: str) -> str:
     return "recorded"
 
 
+def _write_scaffold(dest: Path, rel: str, text: str, report: InitReport) -> None:
+    if dest.exists():
+        if dest.read_text(encoding="utf-8") == text:
+            return
+        dest.write_text(text, encoding="utf-8", newline="\n")
+        report.updated.append(rel)
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8", newline="\n")
+    report.created.append(rel)
+
+
+# The assistant's skills and commands: what `kb doctor` refreshes after it
+# moved a repo to the hub's strata-kb. CI workflows, config and settings are
+# the repo's own and stay as they are.
+AGENT_FILE_PREFIXES = (
+    ".claude/skills/",
+    ".claude/commands/",
+    ".github/prompts/",
+    ".cursor/commands/",
+)
+
+
+def refresh_agent_files(target: Path, kind: str) -> InitReport:
+    """`kb init` for `kind`, limited to AGENT_FILE_PREFIXES."""
+    repo_id = target.resolve().name
+    report = InitReport()
+    for rel, resource_name in template_map(kind).items():
+        if rel.startswith(AGENT_FILE_PREFIXES):
+            text = _render(resource_name, read_template(resource_name), repo_id)
+            _write_scaffold(target / rel, rel, text, report)
+    return report
+
+
 def init_repo(
     target: Path,
     kind: str,
@@ -559,18 +593,10 @@ def init_repo(
         if rel == ".gitignore":
             _apply_gitignore(dest, text, report)
             continue
-        if dest.exists():
-            if rel in PROTECTED_FILES and not force:
-                report.skipped.append(rel)
-                continue
-            if dest.read_text(encoding="utf-8") == text:
-                continue
-            dest.write_text(text, encoding="utf-8", newline="\n")
-            report.updated.append(rel)
+        if dest.exists() and rel in PROTECTED_FILES and not force:
+            report.skipped.append(rel)
             continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8", newline="\n")
-        report.created.append(rel)
+        _write_scaffold(dest, rel, text, report)
     if _record_kind(target / ".kb" / "config.yaml", kind):
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")

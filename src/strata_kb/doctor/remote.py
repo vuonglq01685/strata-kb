@@ -14,6 +14,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,6 +42,13 @@ if TYPE_CHECKING:
 
 TOOL = "kb_doctor_hub"
 REMOTE_KINDS = ("child", "ba", "dev")
+# The hub's version goes into a pip command: a plain release string only.
+_VERSION_RE = re.compile(
+    r"[0-9]+(\.[0-9]+)*([a-z]+[0-9]*)?(\.post[0-9]+)?(\.dev[0-9]+)?"
+)
+# Set on the `kb doctor` that runs after an install, so a failed upgrade
+# cannot loop.
+UPGRADED_ENV = "STRATA_KB_DOCTOR_UPGRADED"
 # `pip install strata-kb==X` in a repo's CI workflows (codeingest.sync's pin).
 _PIN_RE = re.compile(r"strata-kb==([^\s\"']+)")
 CONNECT_TIMEOUT = 30  # a human is waiting on `kb doctor`
@@ -359,3 +369,59 @@ def version_issues(repo_root: Path | None, hub_version: str | None) -> list[Issu
             if pin != hub_version
         ]
     return issues
+
+
+def install_version(version: str) -> str | None:
+    """Install strata-kb==`version` into this interpreter: pip, else uv (a
+    uv-made venv has no pip). None on success, else the last error."""
+    if not _VERSION_RE.fullmatch(version):
+        return f"the hub reported an invalid version '{version}'"
+    # shortcut: installs the base package only; extras ([ingest], [embed])
+    # keep their installed deps -- upgrade those by hand if a release needs it.
+    spec = f"strata-kb=={version}"
+    commands = [[sys.executable, "-m", "pip", "install", "--quiet", spec]]
+    uv = shutil.which("uv")
+    if uv:
+        commands.append(
+            [uv, "pip", "install", "--quiet", "--python", sys.executable, spec]
+        )
+    error = ""
+    for cmd in commands:
+        # argv list, no shell; the version was matched against _VERSION_RE above.
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        if proc.returncode == 0:
+            return None
+        error = _flatten(
+            Exception(proc.stderr or proc.stdout or f"exit {proc.returncode}")
+        )
+    return error
+
+
+def fix_pins(repo_root: Path | None, hub_version: str) -> list[str]:
+    """Rewrite each `strata-kb==X` pin in the repo's CI workflows to the hub's
+    version -- that string only, nothing else in the file. Returns what changed."""
+    workflows = repo_root / ".github" / "workflows" if repo_root else None
+    if (
+        workflows is None
+        or not workflows.is_dir()
+        or not _VERSION_RE.fullmatch(hub_version)
+    ):
+        return []
+    changed: list[str] = []
+    for wf in sorted(workflows.glob("*.y*ml")):
+        try:
+            text = wf.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        old = sorted({p for p in _PIN_RE.findall(text) if p != hub_version})
+        if not old:
+            continue
+        new_text = _PIN_RE.sub(f"strata-kb=={hub_version}", text)
+        try:
+            wf.write_text(new_text, encoding="utf-8", newline="\n")
+        except OSError:
+            continue
+        changed.append(
+            f".github/workflows/{wf.name}: strata-kb=={', '.join(old)} → {hub_version}"
+        )
+    return changed
