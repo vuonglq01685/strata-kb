@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.22.1 — 2026-10-13
+
+`kb doctor` in a ba or dev repo checks the hub over its MCP, with no hub clone, and the hub UI shows when it last pulled and which strata-kb it runs.
+
+- **`kb doctor` over MCP (ba, dev).** BA and Dev people usually have no git access to the hub, so `kb doctor` could not clone it. A `ba` or `dev` repo with `kb mcp-setup` done (`STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the environment or `.env`) now asks the hub through a new MCP tool, `kb_doctor_hub`, and never clones it. The hub returns whether `federation/<repo_id>` is published and its content digest, its `<repo_id>-code` section digests, the registry's kind pin for this repo and the `--context` citation checks; the repo compares them with its own `.kb/`. The published-snapshot, hub-lag, registry-kind and citation results are the same as before. Hub-wide federation checks (stray files, `federation/index.yaml` sync) stay with the hub maintainer's own `kb doctor`. Without `kb mcp-setup`, `kb doctor` clones the git hub as before, and when that fails it says to run `kb mcp-setup`. An MCP error (unreachable hub, wrong token, a hub without the tool) is reported and exits 1; it never falls back to a clone.
+- **Hub UI: last pull, pull failures, hub commit, version.** The topbar shows `pulled Nm ago`, or a warning chip `pull failed Nh ago` with the git error and the last good pull on hover, the hub's `HEAD` commit and date, and `strata-kb <version>`. Each hub pull (TTL pull, clone, auto-pull) records its outcome in `.git/strata-kb-pull.json`, never committed. `/api/health` is unchanged: it is unauthenticated.
+- **Upgrade.** Upgrade and restart the **hub** first: a hub older than 1.22.1 has no `kb_doctor_hub`, and `kb doctor` in a ba/dev repo says so. Then upgrade ba and dev repos; run `kb mcp-setup` in any that has not.
+
 ## 1.22.0 — 2026-10-13
 
 `kb ticket check` has an MCP twin, and `kb_ticket_lint` checks the parent-mission back-link over MCP, so the BA and SA skills no longer need a local hub clone for either gate.

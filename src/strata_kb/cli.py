@@ -3877,6 +3877,39 @@ def approve(
             raise typer.Exit(1)
 
 
+def _config_kind(kb_dir: Path) -> str:
+    from strata_kb.config import load_config
+
+    try:
+        return load_config(kb_dir).kind
+    except (*_CONFIG_READ_ERRORS, OSError):
+        return ""
+
+
+def _doctor_over_mcp(kb_dir: Path, context_text: str | None):
+    """A ba/dev repo with the hub's MCP configured (`kb mcp-setup`) checks the
+    hub over MCP -- BA and Dev have no git access to the hub to clone it.
+    None = not configured: the caller uses the git hub as before."""
+    from strata_kb import gitio
+    from strata_kb.doctor import remote
+
+    kind = _config_kind(kb_dir)
+    if kind not in remote.REMOTE_KINDS:
+        return None
+    try:
+        target = remote.mcp_target(kb_dir.resolve().parent)
+        if target is None:
+            return None
+        url, token = target
+        facts = remote.fetch_facts(
+            url, token, remote.request_args(kb_dir, kind, context_text)
+        )
+    except remote.RemoteDoctorError as exc:
+        typer.secho(f"[error] {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    return remote.run(kb_dir, facts, gitio.redact_url(url))
+
+
 @app.command()
 def doctor(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -3915,7 +3948,6 @@ def doctor(
     # repo without a -code document.
     if not no_refresh:
         _refresh_dev_code(kb_dir)
-    handle = _hub_or_exit(hub, kb_dir)
     context_text = None
     if context is not None:
         context_text = (
@@ -3923,7 +3955,19 @@ def doctor(
             if context == "-"
             else Path(context).read_text(encoding="utf-8")
         )
-    result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+    result = _doctor_over_mcp(kb_dir, context_text)
+    if result is None:
+        handle, reason = _hub_or_reason(hub, kb_dir)
+        if handle is None:
+            typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
+            if _config_kind(kb_dir) in ("ba", "dev"):
+                typer.secho(
+                    "a ba or dev repo needs no hub clone: run `kb mcp-setup` "
+                    "and `kb doctor` checks the hub over its MCP",
+                    fg=typer.colors.YELLOW,
+                )
+            raise typer.Exit(1)
+        result = doctor_mod.run(kb_dir, handle, context_text=context_text)
     issues = kind_issues + result.issues
 
     for issue in issues:

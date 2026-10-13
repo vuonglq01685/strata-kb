@@ -59,14 +59,9 @@ class DoctorResult:
     stale: bool
 
 
-def run(
-    kb_dir: Path, handle: HubHandle, *, context_text: str | None = None
-) -> DoctorResult:
-    """The `kb doctor` checks after `check_kind` passed and the hub resolved:
-    the KB itself, the asset store, tracked sources and credentials, the
-    kind's own checks (usage for ba/dev, hub and federation publish for a
-    hub, sync and hub lag for dev), and the kb-context citations when
-    `context_text` is given. Printing and exit codes stay in the CLI."""
+def local_issues(kb_dir: Path, handle: HubHandle | None) -> list[Issue]:
+    """The checks that need only this repo: the KB, the asset store, tracked
+    sources and committed credentials."""
     issues = check_kb(kb_dir) + check_asset_store(kb_dir, handle)
     try:
         repo_root = gitio.git_root(kb_dir.resolve())
@@ -75,6 +70,18 @@ def run(
     if repo_root is not None:
         issues += check_source_dirs(repo_root)
         issues += check_config_credentials(kb_dir, repo_root)
+    return issues
+
+
+def run(
+    kb_dir: Path, handle: HubHandle, *, context_text: str | None = None
+) -> DoctorResult:
+    """The `kb doctor` checks after `check_kind` passed and the hub resolved:
+    the KB itself, the asset store, tracked sources and credentials, the
+    kind's own checks (usage for ba/dev, hub and federation publish for a
+    hub, sync and hub lag for dev), and the kb-context citations when
+    `context_text` is given. Printing and exit codes stay in the CLI."""
+    issues = local_issues(kb_dir, handle)
 
     cfg_kind = ""
     try:

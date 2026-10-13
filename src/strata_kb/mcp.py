@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import logging
 import os
 import re
@@ -401,6 +402,42 @@ def create_server(config: ServerConfig) -> MCPServer:
             results, notes = planstatus.next_from_hub(hub, repo or None)
             return stale_hub_note(hub) + missionnext.render(
                 results, notes, planstatus.FROM_HUB_LABELS
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_doctor_hub(
+        kind: str,
+        repo_id: str,
+        remote_url: str = "",
+        dir_name: str = "",
+        kb_context: str | None = None,
+    ) -> str:
+        """For `kb doctor` in a ba or dev repo, which reaches the hub only
+        over MCP: the hub's side of the checks as JSON -- whether
+        federation/<repo_id> is published and its content digest, the hub's
+        `<repo_id>-code` section digests (dev), the registry's kind pin for
+        this repo (`remote_url` and `dir_name` identify it as `kb publish`
+        would), and the citation checks of `kb_context`. The CLI calls this;
+        an agent wanting a health check runs `kb doctor` instead."""
+
+        def _run() -> str:
+            from strata_kb.doctor import remote
+
+            hub = _hub()
+            if hub is None:
+                return json.dumps({"error": HUB_DOWN})
+            return json.dumps(
+                remote.hub_facts(
+                    hub,
+                    kind=kind,
+                    repo_id=repo_id,
+                    remote_url=remote_url,
+                    dir_name=dir_name,
+                    kb_context=kb_context,
+                )
             )
 
         return await anyio.to_thread.run_sync(_run)

@@ -19,6 +19,8 @@ from strata_kb.federation import (  # noqa: F401 -- _FED_TOP_SKIP re-exported
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from strata_kb.hub import HubHandle
 
 
@@ -171,7 +173,7 @@ def check_hub(
     published-snapshot digest: it is regenerated per branch and CI publishes
     it.
     """
-    from strata_kb.federation import build_federation_index, load_federation
+    from strata_kb.federation import build_federation_index
 
     if handle is None:
         return (
@@ -504,59 +506,82 @@ def check_hub(
         is_self_hub = handle.kb_dir.resolve() == kb_dir.resolve()
         if not entry.is_dir():
             if not is_self_hub:
-                issues.append(
-                    Issue(
-                        "warning",
-                        f"repo '{repo_id}' has not published to the hub yet — run `kb publish`",
-                    )
-                )
+                issues.append(unpublished_issue(repo_id))
         else:
-            from strata_kb import assetstore
-
-            # The hub-side digest must see a diverted asset the same way
-            # publish._snapshot does -- assetstore.store_for_hub reads the HUB's
-            # own config (handle.kb_dir), the exact source _snapshot itself
-            # resolves from when no store override is passed. A
-            # corrupt/unreachable config is reported separately by
-            # check_asset_store; here it just means "no store known" -- no
-            # synthesis, same as before.
-            synthesized: dict[str, str] = {}
-            try:
-                active_store = assetstore.store_for_hub(handle)
-            except (yaml.YAMLError, ValidationError, assetstore.AssetStoreError):
-                active_store = None
-            if active_store is not None:
-                synthesized = assetstore.synthesized_asset_entries(entry)
             skip = frozenset({code_doc}) if code_doc else frozenset()
-            if _kb_tree_digest(kb_dir.resolve(), exclude_docs=skip) != _kb_tree_digest(
-                entry, synthesized, exclude_docs=skip
-            ):
-                # dev's -code is published by CI on push to the default branch;
-                # a ba repo's -plan only goes out when the BA runs `kb publish`.
-                advice = (
-                    "merge to the default branch; CI publishes it"
-                    if code_doc and code_doc.endswith("-code")
-                    else "run `kb publish`"
-                )
-                issues.append(
-                    Issue(
-                        "warning",
-                        f"local .kb differs from the published snapshot "
-                        f"federation/{repo_id} — {advice}",
-                    )
-                )
+            issues += snapshot_drift_issues(
+                _kb_tree_digest(kb_dir.resolve(), exclude_docs=skip),
+                published_digest(handle, entry, skip),
+                repo_id,
+                code_doc,
+            )
+
+    issues += duplicate_doc_id_issues(fed)
+    return issues, hub_stale
+
+
+def published_digest(handle: HubHandle, entry: Path, skip: frozenset[str]) -> str:
+    """`_kb_tree_digest` of the hub's federation/<rid> entry, as publish sees it."""
+    from strata_kb import assetstore
+
+    # The hub-side digest must see a diverted asset the same way
+    # publish._snapshot does -- assetstore.store_for_hub reads the HUB's
+    # own config (handle.kb_dir), the exact source _snapshot itself
+    # resolves from when no store override is passed. A
+    # corrupt/unreachable config is reported separately by
+    # check_asset_store; here it just means "no store known" -- no
+    # synthesis, same as before.
+    synthesized: dict[str, str] = {}
+    try:
+        active_store = assetstore.store_for_hub(handle)
+    except (yaml.YAMLError, ValidationError, assetstore.AssetStoreError):
+        active_store = None
+    if active_store is not None:
+        synthesized = assetstore.synthesized_asset_entries(entry)
+    return _kb_tree_digest(entry, synthesized, exclude_docs=skip)
+
+
+def snapshot_drift_issues(
+    local: str, published: str, repo_id: str, code_doc: str | None
+) -> list[Issue]:
+    if local == published:
+        return []
+    # dev's -code is published by CI on push to the default branch;
+    # a ba repo's -plan only goes out when the BA runs `kb publish`.
+    advice = (
+        "merge to the default branch; CI publishes it"
+        if code_doc and code_doc.endswith("-code")
+        else "run `kb publish`"
+    )
+    return [
+        Issue(
+            "warning",
+            f"local .kb differs from the published snapshot "
+            f"federation/{repo_id} — {advice}",
+        )
+    ]
+
+
+def unpublished_issue(repo_id: str) -> Issue:
+    return Issue(
+        "warning",
+        f"repo '{repo_id}' has not published to the hub yet — run `kb publish`",
+    )
+
+
+def duplicate_doc_id_issues(fed: Path) -> list[Issue]:
+    from strata_kb.federation import load_federation
 
     counts = Counter(d.id for r in load_federation(fed) for d in r.index.docs)
-    for doc_id, n in sorted(counts.items()):
-        if n > 1:
-            issues.append(
-                Issue(
-                    "warning",
-                    f"doc-id '{doc_id}' appears in {n} federation repos — "
-                    "refs must be repo-qualified (repo:doc)",
-                )
-            )
-    return issues, hub_stale
+    return [
+        Issue(
+            "warning",
+            f"doc-id '{doc_id}' appears in {n} federation repos — "
+            "refs must be repo-qualified (repo:doc)",
+        )
+        for doc_id, n in sorted(counts.items())
+        if n > 1
+    ]
 
 
 _ENTRY_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -739,7 +764,7 @@ def check_published_kind(kb_dir: Path, handle: HubHandle, cfg_kind: str) -> list
     catch a registry pin that `kb publish` would refuse. The rid comes from
     `publish.resolve_publish_identity`, the very call `publish` makes."""
     from strata_kb import config as config_mod
-    from strata_kb import pubgate, publish
+    from strata_kb import publish
 
     try:
         issues = [Issue("info", publish.kind_line(cfg_kind))]
@@ -752,16 +777,39 @@ def check_published_kind(kb_dir: Path, handle: HubHandle, cfg_kind: str) -> list
         return issues  # no repo to identify, so no registry entry to compare
     if handle.root.resolve() == source_root.resolve():
         return issues  # self-publish is exempt from the registry
+    return issues + registry_kind_issues(
+        handle,
+        repo_kind,
+        remote_url=lambda: gitio.remote_url(source_root),
+        repo_id=config_mod.effective_repo_id("", kb_dir),
+        dir_name=source_root.name,
+    )
+
+
+def registry_kind_issues(
+    handle: HubHandle,
+    repo_kind: str,
+    *,
+    remote_url: Callable[[], str],
+    repo_id: str | None,
+    dir_name: str,
+) -> list[Issue]:
+    """Registry pin vs this repo's kind -- from the source repo's facts, so
+    the hub can answer it over MCP for a repo it has no checkout of."""
+    from strata_kb import pubgate, publish
+
     try:
-        registry, rid = publish.resolve_publish_identity(
+        registry, rid = publish.resolve_identity_for(
             handle,
             gitio.redact_url(str(handle.root)),
-            source_root,
-            config_mod.effective_repo_id("", kb_dir),
+            remote_url=remote_url,
+            repo_id=repo_id,
+            dir_name=dir_name,
             is_self=False,
         )
     except (publish.PublishError, pubgate.GateError) as exc:
-        return [*issues, Issue("error", _flatten(exc))]
+        return [Issue("error", _flatten(exc))]
+    issues: list[Issue] = []
     if registry is None or not federation.registry_map(registry):
         return issues  # ungoverned hub: nothing is pinned
     registry_kind = _casefolded(federation.registry_kinds(registry)).get(

@@ -50,12 +50,13 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_seven_tools(fed_hub):
+async def test_lists_exactly_eight_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
         assert sorted(t.name for t in tools.tools) == [
             "kb_context_new",
+            "kb_doctor_hub",
             "kb_get_section",
             "kb_mission_next",
             "kb_resolve",

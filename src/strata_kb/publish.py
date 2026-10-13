@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1265,15 +1266,35 @@ def resolve_publish_identity(
     """(registry, repo-id) a publish from `source_root` to `handle` uses: a
     governed hub's registry decides the id; otherwise `repo_id` or the repo
     directory name. Shared with `kb doctor` so both see the same id."""
+    return resolve_identity_for(
+        handle,
+        hub_label,
+        remote_url=lambda: gitio.remote_url(source_root),
+        repo_id=repo_id,
+        dir_name=source_root.name,
+        is_self=is_self,
+    )
+
+
+def resolve_identity_for(
+    handle: hub_mod.HubHandle,
+    hub_label: str,
+    *,
+    remote_url: Callable[[], str],
+    repo_id: str | None,
+    dir_name: str,
+    is_self: bool,
+) -> tuple[models.Registry | None, str]:
+    """`resolve_publish_identity` from the source repo's facts instead of its
+    checkout -- the hub answers `kb doctor` over MCP with no clone of it.
+    `remote_url` is only called on a governed hub."""
     registry = None if is_self else _load_hub_registry(handle, hub_label)
     registry_map = (
         (federation.registry_map(registry) or None) if registry is not None else None
     )
-    rid = repo_id or source_root.name
+    rid = repo_id or dir_name
     if registry_map is not None:
-        rid = pubgate.resolve_identity(
-            registry_map, gitio.remote_url(source_root), repo_id, hub_label
-        )
+        rid = pubgate.resolve_identity(registry_map, remote_url(), repo_id, hub_label)
     return registry, pubgate.normalize_repo_id(rid, _existing_entry_names(handle))
 
 
