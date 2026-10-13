@@ -3955,7 +3955,8 @@ def doctor(
             if context == "-"
             else Path(context).read_text(encoding="utf-8")
         )
-    result = _doctor_over_mcp(kb_dir, context_text)
+    # An explicit hub (--hub / STRATA_KB_HUB) wins over the MCP in .env.
+    result = None if hub else _doctor_over_mcp(kb_dir, context_text)
     if result is None:
         handle, reason = _hub_or_reason(hub, kb_dir)
         if handle is None:

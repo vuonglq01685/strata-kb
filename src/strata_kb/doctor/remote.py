@@ -67,28 +67,33 @@ def hub_facts(
 ) -> dict[str, Any]:
     """What the hub tells a ba/dev repo's `kb doctor`. `repo_id` is the
     repo's configured id ('' = unset: the registry decides, as for `kb
-    publish`); its entry is federation/<repo_id or dir_name>. Both come from
-    the client, so the entry name is checked before it becomes a path."""
+    publish`); its entry is federation/<repo_id or dir_name>. `dir_name` is
+    '' when the repo is not a git repo: no registry identity then, as in
+    `check_published_kind`. Both come from the client, so the entry name is
+    checked before it becomes a path."""
     from strata_kb.codeingest import hublag
 
     if kind not in REMOTE_KINDS:
         return {"error": f"kind must be one of {', '.join(REMOTE_KINDS)}, not '{kind}'"}
     entry_id = repo_id or dir_name
-    if not _ENTRY_SEGMENT_RE.fullmatch(entry_id):
+    if entry_id and not _ENTRY_SEGMENT_RE.fullmatch(entry_id):
         return {"error": f"invalid repo_id '{entry_id}'"}
     fed = handle.federation_dir
-    entry = fed / entry_id
+    entry = fed / entry_id if entry_id else None
     code_doc = generated_doc(kind, entry_id)
     skip = frozenset({code_doc}) if code_doc else frozenset()
-    published = entry.is_dir()
+    published = entry is not None and entry.is_dir()
 
-    issues = registry_kind_issues(
-        handle,
-        kinds.hub_kind(kind),
-        remote_url=lambda: remote_url,
-        repo_id=repo_id or None,
-        dir_name=entry_id,
-    )
+    issues: list[Issue] = []
+    if dir_name:
+        issues += registry_kind_issues(
+            handle,
+            kinds.hub_kind(kind),
+            remote_url=lambda: remote_url,
+            repo_id=repo_id or None,
+            dir_name=dir_name,
+            hub_label="the hub",
+        )
     issues += duplicate_doc_id_issues(fed)
     context_stale = False
     if kb_context is not None:
@@ -104,10 +109,14 @@ def hub_facts(
         "stale": handle.stale,
         "age_seconds": handle.age_seconds,
         "published": published,
-        "snapshot_digest": published_digest(handle, entry, skip) if published else None,
-        "code_sections": hublag.hub_code_digests(fed, repo_id)
-        if kind == "dev"
-        else None,
+        "snapshot_digest": (
+            published_digest(handle, entry, skip) if entry and published else None
+        ),
+        "code_sections": (
+            hublag.hub_code_digests(fed, entry_id)
+            if kind == "dev" and entry_id
+            else None
+        ),
         "issues": [asdict(i) for i in issues],
         "context_stale": context_stale,
     }
@@ -142,7 +151,7 @@ def request_args(kb_dir: Path, kind: str, kb_context: str | None) -> dict[str, A
     try:
         repo_root = gitio.git_root(kb_dir.resolve())
     except gitio.GitError:
-        remote, dir_name = "", kb_dir.resolve().parent.name
+        remote, dir_name = "", ""  # no git repo: no registry identity
     else:
         remote = gitio.split_credentials(gitio.remote_url(repo_root))[0]
         dir_name = repo_root.name
@@ -208,9 +217,12 @@ def fetch_facts(url: str, token: str, args: dict[str, Any]) -> dict[str, Any]:
         leaf = _leaf(exc)
         if isinstance(leaf, RemoteDoctorError):
             raise leaf from None
+        # httpx repeats the URL in its errors: redact the whole message.
         raise RemoteDoctorError(
-            f"could not reach the hub's MCP at {gitio.redact_url(url)}/mcp: "
-            f"{_flatten(Exception(leaf))}"
+            gitio.redact_url(
+                f"could not reach the hub's MCP at {url}/mcp: "
+                f"{_flatten(Exception(leaf))}"
+            )
         ) from None
 
 
@@ -254,8 +266,10 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
         issues.append(
             Issue("warning", f"hub cache is stale (pull failed, age {age_text})")
         )
-    code_doc = generated_doc(kind, repo_id)
-    if not facts.get("published"):
+    code_doc = generated_doc(kind, repo_id or "")
+    if not repo_id:
+        pass  # no id and no git repo: nothing on the hub to compare, as in doctor.run
+    elif not facts.get("published"):
         issues.append(unpublished_issue(repo_id))
     else:
         skip = frozenset({code_doc}) if code_doc else frozenset()
@@ -266,25 +280,31 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
             code_doc,
         )
     issues.append(Issue("info", publish.kind_line(kind)))
-    issues += [Issue(**i) for i in facts.get("issues", [])]
+    # Only the fields this client knows: a newer hub may send more.
+    issues += [
+        Issue(i["level"], i["message"], i.get("code", ""))
+        for i in facts.get("issues", [])
+    ]
     if kind == "dev":
         repo_root = kb_dir.resolve().parent
         issues += check_dev_sync(kb_dir, repo_root, repo_id)
-        report = hublag.check_against(
-            repo_root, kb_dir, repo_id, facts.get("code_sections")
-        )
-        issues += lag_issues(report, repo_id)
+        if repo_id:
+            report = hublag.check_against(
+                repo_root, kb_dir, repo_id, facts.get("code_sections")
+            )
+            issues += lag_issues(report, repo_id)
     return DoctorResult(
         issues=issues, stale=hub_stale or bool(facts.get("context_stale"))
     )
 
 
-def repo_id_for(kb_dir: Path) -> str:
-    """The repo id `doctor.run` uses: config's, else the git root's name."""
+def repo_id_for(kb_dir: Path) -> str | None:
+    """The repo id `doctor.run` uses: config's, else the git root's name,
+    else None."""
     repo_id = config_mod.effective_repo_id("", kb_dir)
     if repo_id:
         return repo_id
     try:
         return gitio.git_root(kb_dir.resolve()).name
     except gitio.GitError:
-        return kb_dir.resolve().parent.name
+        return None

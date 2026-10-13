@@ -195,6 +195,7 @@ def test_cli_doctor_uses_mcp_and_never_the_git_hub(git_kb, hub_worktree, monkeyp
 
     monkeypatch.setattr(remote, "fetch_facts", fake_fetch)
     result = runner.invoke(app, ["doctor", "--kb-dir", str(kb), "--no-refresh"])
+    assert result.exit_code == 0, result.output
     assert seen == {"url": "http://hub:8321", "token": "tok"}
     assert "hub checked over MCP at http://hub:8321" in result.output
     assert "differs from the published snapshot" not in result.output
@@ -225,3 +226,66 @@ def test_cli_doctor_reports_an_mcp_failure(git_kb, monkeypatch):
     result = runner.invoke(app, ["doctor", "--kb-dir", str(kb), "--no-refresh"])
     assert result.exit_code == 1
     assert "[error] could not reach the hub's MCP" in result.output
+
+
+def test_dev_repo_with_unset_repo_id_reads_the_dir_named_code_doc(git_kb, hub_worktree):
+    kb = git_kb["kb"]
+    (kb / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+    rid = git_kb["root"].name
+    code = hub_worktree / "federation" / rid / f"{rid}-code"
+    code.mkdir(parents=True)
+    (code / "_manifest.yaml").write_text("id: x\n", encoding="utf-8")
+    (code / "code.raw.md").write_text("## svc.api API\nGET /x\n", encoding="utf-8")
+    facts = _facts(hub_worktree, kb, "dev")
+    assert facts["code_sections"] is not None
+    assert set(facts["code_sections"]) == {"svc.api"}
+
+
+def test_an_explicit_hub_wins_over_the_mcp_in_env(git_kb, hub_worktree, monkeypatch):
+    kb = _published_ba(git_kb, hub_worktree)
+    monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub:8321")
+    monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", "tok")
+
+    def no_mcp(*_):
+        raise AssertionError("MCP must not be called with an explicit hub")
+
+    monkeypatch.setattr(remote, "fetch_facts", no_mcp)
+    result = runner.invoke(
+        app,
+        ["doctor", "--kb-dir", str(kb), "--hub", str(hub_worktree), "--no-refresh"],
+    )
+    assert "hub checked over MCP" not in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+@pytest.mark.anyio
+async def test_a_hub_side_refusal_reaches_the_client_as_an_error(hub_worktree):
+    server = create_server(
+        ServerConfig(kb_dir=hub_worktree / ".kb", hub=str(hub_worktree))
+    )
+    async with connect_client(server) as client:
+        with pytest.raises(remote.RemoteDoctorError, match="kind must be one of"):
+            await remote.call_facts(client, {"kind": "child", "repo_id": "x"})
+
+
+def test_outside_a_git_repo_nothing_on_the_hub_is_compared(tmp_path, hub_worktree):
+    kb = tmp_path / "loose" / ".kb"
+    kb.mkdir(parents=True)
+    (kb / "config.yaml").write_text("kind: ba\n", encoding="utf-8")
+    facts = _facts(hub_worktree, kb, "ba")
+    assert facts["published"] is False and facts["snapshot_digest"] is None
+    msgs = _msgs(remote.run(kb, facts, "http://hub"))
+    assert not any("published" in m and "kind:" not in m for _, m in msgs)
+
+
+def test_a_newer_hub_issue_field_does_not_crash_the_client(git_kb, hub_worktree):
+    kb = _published_ba(git_kb, hub_worktree)
+    facts = _facts(hub_worktree, kb, "ba")
+    facts["issues"] = [{"level": "warning", "message": "m", "code": "", "new": 1}]
+    assert ("warning", "m") in _msgs(remote.run(kb, facts, "http://hub"))
+
+
+def test_a_credential_in_the_hub_url_never_reaches_the_error():
+    with pytest.raises(remote.RemoteDoctorError) as err:
+        remote.fetch_facts("http://u:s3cretpw@127.0.0.1:9", "t" * 32, {"kind": "ba"})
+    assert "s3cretpw" not in str(err.value)

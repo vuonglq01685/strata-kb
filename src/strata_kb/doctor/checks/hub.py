@@ -793,15 +793,18 @@ def registry_kind_issues(
     remote_url: Callable[[], str],
     repo_id: str | None,
     dir_name: str,
+    hub_label: str | None = None,
 ) -> list[Issue]:
     """Registry pin vs this repo's kind -- from the source repo's facts, so
-    the hub can answer it over MCP for a repo it has no checkout of."""
+    the hub can answer it over MCP for a repo it has no checkout of. Over MCP
+    `hub_label` stands in for the hub's own path, which is not the caller's
+    business."""
     from strata_kb import pubgate, publish
 
     try:
         registry, rid = publish.resolve_identity_for(
             handle,
-            gitio.redact_url(str(handle.root)),
+            hub_label or gitio.redact_url(str(handle.root)),
             remote_url=remote_url,
             repo_id=repo_id,
             dir_name=dir_name,
