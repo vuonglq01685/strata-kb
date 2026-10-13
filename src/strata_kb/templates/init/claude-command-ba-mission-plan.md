@@ -14,12 +14,17 @@ spans several User Stories — small work goes straight to
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`,
+`kb_mission_lint`, `kb_ticket_stale`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb mission lint`, `kb ticket stale` and `kb publish` have no MCP
-tool and stay CLI. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
-(the ticket's text; the local parent mission file's text, when there is
-one, as `mission_markdown`), the CLI as the fallback. `kb mission next` stays CLI too:
+reached. Every `kb mission lint` below runs as the MCP tool `kb_mission_lint` (the
+mission's text, its file name without `.md` as `mission_id`; it skips the
+ticket-coverage warning, which only the CLI reads from `tickets/`), every `kb ticket stale` as `kb_ticket_stale` (the file's text and its
+repo-relative path, e.g. `missions/<M-id>.md`),
+every `kb ticket check` as `kb_ticket_check` (the ticket's text; the
+local parent mission file's text, when there is one, as
+`mission_markdown`); the CLI is the
+fallback. `kb publish` has no MCP tool and stays CLI. `kb mission next` stays CLI too:
 it reads this repo's unpublished `missions/` and `tickets/`, which
 `kb_mission_next` (the published plan only) cannot see.
 
@@ -131,7 +136,8 @@ it reads this repo's unpublished `missions/` and `tickets/`, which
    validated against the hub vocabulary and an unknown one is an error.
    The tags the BA gave at intake are search keywords for
    `kb query --tags`, nothing more.
-7. **Lint** — run `kb mission lint <file>` against the draft. Fix every
+7. **Lint** — run `kb_mission_lint` (CLI: `kb mission lint <file>`)
+   against the draft. Fix every
    error and re-run until it reports `DoR: PASS`. A coverage warning of
    `0/N US drafted` is EXPECTED at creation time — the tickets do not
    exist yet. Report remaining warnings to the BA; they are the BA's
@@ -155,7 +161,7 @@ it reads this repo's unpublished `missions/` and `tickets/`, which
    and a gap list where every gap names the section it lives in and a
    proposed fix.
 
-   Apply the fixes, re-run `kb mission lint`, then review again — at
+   Apply the fixes, re-run `kb_mission_lint`, then review again — at
    most 3 rounds total; stop early when both axes score ≥ 4.
 
    **Rounds 2 and 3 are not a re-read.** When your runtime can
@@ -191,8 +197,8 @@ it reads this repo's unpublished `missions/` and `tickets/`, which
 from Intake: the mission keeps its id and filename, and every change is
 recorded in `## Change log`. A new mission is never created by `--amend`.
 
-1. **Read** `missions/<M-id>.md`, then run `kb ticket stale --md
-   missions/<M-id>.md` and read the findings for it (kind: the
+1. **Read** `missions/<M-id>.md`, then run `kb_ticket_stale` on it (CLI:
+   `kb ticket stale --md missions/<M-id>.md`) and read the findings for it (kind: the
    `Kind` column, `kb-context` or `architecture`). Run `kb mission next` as well, to see
    which stories are `done`.
 2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
@@ -217,7 +223,8 @@ recorded in `## Change log`. A new mission is never created by `--amend`.
    Trigger | What changed | Affected | Review |`. In `Affected` write FULL
    story ids (`M-<slug>-US<n>`), comma-separated, or `-` — a bare `US<n>`
    is not matched by `kb mission next`, so a ticket would never be flagged.
-7. **Lint** — `kb mission lint <file>` until it reports `DoR: PASS`.
+7. **Lint** — `kb_mission_lint` (CLI: `kb mission lint <file>`) until it
+   reports `DoR: PASS`.
 8. **Maturity review of the changed sections only** — one round, the same
    rubric and the same two perspectives as step 8 of the workflow. Write
    the scores into the new row's `Review` cell (e.g. `B4 D4 (agent)`) —
@@ -259,10 +266,11 @@ Change rules:
   `Depends on` cell) and the architecture document, and appends an
   `OPEN` decision row for every service the mission will create. Never
   read `<repo>-code` or `<repo>-svc` yourself.
-- **`kb mission lint` failing to RUN is not a PASS.** There is no MCP
-  fallback for this gate. If the `kb` command is unavailable, tell the BA
-  to install `strata-kb` — never skip the lint step, and never hand over a
-  mission you could not lint.
+- **The mission lint failing to RUN is not a PASS.** If neither
+  `kb_mission_lint` nor the `kb` command can run, tell the BA to connect
+  the `strata-kb` MCP server (`kb mcp-setup`) or install `strata-kb` —
+  never skip the lint step, and never hand over a mission you could not
+  lint.
 - Lint must report `DoR: PASS` before handover; report remaining warnings
   to the BA — do not hand over a failing mission silently.
 - **Never auto-generate ticket files from the backlog.** Each story goes

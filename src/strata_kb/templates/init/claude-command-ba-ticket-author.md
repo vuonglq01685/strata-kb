@@ -16,7 +16,8 @@ only with its reasons acknowledged by the BA and carried into the
 handover.
 
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
-read the ticket and its `kb ticket stale --md` findings, ask the BA for the
+read the ticket and its `kb_ticket_stale` findings (CLI: `kb ticket stale
+--md <file>`), ask the BA for the
 trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
 `kb_context_new` (FULL ref list, whole block replaced), run `kb ticket check`
 on every amend (`/sa-ticket-ground` first for an `architecture` trigger, else
@@ -31,15 +32,17 @@ forces the `architecture` trigger). The agent never ticks DoR, commits or pushes
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
-`kb_ticket_lint`, `kb_ticket_check`) whenever your client exposes them; fall back to the
+`kb_ticket_lint`, `kb_ticket_check`,
+`kb_ticket_stale`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
-reached. `kb ticket tidy`, `kb ticket stale`, `kb ticket export` and `kb
-publish` have no MCP tool and stay CLI. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
+reached. Every `kb ticket check` below runs as the MCP tool `kb_ticket_check`
 (the ticket's text; the local parent mission file's text, when there is
-one, as `mission_markdown`), the CLI as the fallback. `kb
-mission next` stays CLI too: it reads this repo's unpublished
-`missions/` and `tickets/`, which `kb_mission_next` (the published plan
-only) cannot see.
+one, as `mission_markdown`), every `kb ticket stale` as `kb_ticket_stale` (the file's text and its
+repo-relative path, e.g. `tickets/<M-id>/<us-id>.md`); the CLI is the fallback.
+`kb ticket tidy`, `kb ticket export` and `kb publish` have no MCP tool and
+stay CLI. `kb mission next` stays CLI too:
+it reads this repo's unpublished `missions/` and `tickets/`, which
+`kb_mission_next` (the published plan only) cannot see.
 
 Pipeline: Intake → Parent mission → Ground → Draft → Pin → Lint → Ground technical → Maturity review → Review → save,
 to `tickets/<mission-id>/<mission-id>-US<n>.md` under a parent mission, so

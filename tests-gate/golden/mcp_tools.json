@@ -146,6 +146,47 @@
       "type": "object"
     }
   },
+  "kb_mission_lint": {
+    "description": "Lint a mission plan against its Definition of Ready, the `kb\nmission lint` report: structure, C4 diagrams, US backlog and\nsequencing, Technology decisions, kb-context refs resolving at\ntheir pinned version, revision and review record. Pass `mission_id`\n(the file name without .md, e.g. M-checkout) to check it matches the\n'> Mission:' line. The ticket-coverage warning needs the local\ntickets/ folder, so it is skipped here with a note. Run it until\n`DoR: PASS`.",
+    "inputSchema": {
+      "properties": {
+        "mission_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mission Id"
+        },
+        "mission_markdown": {
+          "title": "Mission Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mission_markdown"
+      ],
+      "title": "kb_mission_lintArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_mission_lintOutput",
+      "type": "object"
+    }
+  },
   "kb_mission_next": {
     "description": "Which story next, from the plans BA repos published to the hub\n(`<ba-repo>-plan`): every backlog story as done / ready / not ready\n(no published ticket) / blocked, then the next one to take. Done comes\nfrom the product repo's -svc history; a story with a published ticket\nis ready. `repo` limits it to one BA repo's plan. Same report as `kb\nmission next --from-hub`; a BA's unpublished missions/ and tickets/\ndrafts need the CLI (`kb mission next` in the BA repo).",
     "inputSchema": {
@@ -319,6 +360,35 @@
       "type": "object"
     }
   },
+  "kb_ticket_fetch": {
+    "description": "The `kb ticket fetch` text: a ticket the BA published, read from\nthe hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos\nhold it), restored to its ticket shape with a `> Fetched from hub:`\nline. Write it to docs/impl/<id>/ticket.md yourself; the BA's repo\nstays the place to amend it.",
+    "inputSchema": {
+      "properties": {
+        "ticket": {
+          "title": "Ticket",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket"
+      ],
+      "title": "kb_ticket_fetchArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_ticket_fetchOutput",
+      "type": "object"
+    }
+  },
   "kb_ticket_lint": {
     "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link. For the back-link's existence and\nbacklog-membership checks pass `ticket_id` (the ticket file name\nwithout .md, e.g. M-checkout-US1) and, whenever the mission file\nexists locally, `mission_markdown` (its text; it wins over the hub's\nplan). Without `ticket_id` they are skipped with a note; with it, a\nmission neither passed nor on the hub is an error. Run this before handing the ticket to\nthe BA; fix errors and re-run until PASS.",
     "inputSchema": {
@@ -369,6 +439,40 @@
         "result"
       ],
       "title": "kb_ticket_lintOutput",
+      "type": "object"
+    }
+  },
+  "kb_ticket_stale": {
+    "description": "The `kb ticket stale --md` report for one ticket or mission: its\nkb-context citations the hub has amended (stale) or lost (broken)\nsince they were pinned, and the `-code` sections it is grounded on\nthat changed since that revision (architecture). Pass the file's\ntext and its repo-relative path (e.g. tickets/M-x/M-x-US1.md): the\npath labels the row and its name is the story id the delivery check\nreads. One file per call; an empty report means every citation is\ncurrent.",
+    "inputSchema": {
+      "properties": {
+        "file_name": {
+          "title": "File Name",
+          "type": "string"
+        },
+        "markdown": {
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown",
+        "file_name"
+      ],
+      "title": "kb_ticket_staleArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_ticket_staleOutput",
       "type": "object"
     }
   }

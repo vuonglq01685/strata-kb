@@ -826,7 +826,7 @@ links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
 `kb_mission_next`.
 
-### The eight MCP tools
+### The eleven MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -836,6 +836,9 @@ links to its Ticket page. The CLI twin is
 | `kb_resolve` | Resolve a `kb-context` block (or a ticket containing one) — sections at the pinned version plus freshness | `kb_context` |
 | `kb_ticket_lint` | Run the Definition-of-Ready gate over a draft ticket. The `> Parent mission:` back-link is checked when `ticket_id` is passed: against `mission_markdown`, else the mission on the hub's plan | `ticket_markdown`, `ticket_id`, `mission_markdown` |
 | `kb_ticket_check` | Run the SA grounding gate (`kb ticket check`) against the hub's `-code` document, a moved revision judged from hub history. `[NEW: D<n>]` reads `mission_markdown`, else the hub's plan; no local `-code` fallback | `ticket_markdown`, `mission_markdown`, `heading` |
+| `kb_ticket_stale` | The `kb ticket stale --md` report for one ticket or mission: kb-context citations the hub amended (stale) or lost (broken) since they were pinned, and moved `-code` sections it is grounded on (architecture) | `markdown`, `file_name` |
+| `kb_mission_lint` | Run the mission Definition-of-Ready gate (`kb mission lint`). `mission_id` checks the file name against the `> Mission:` line; the ticket-coverage warning needs the local `tickets/` and is skipped with a note | `mission_markdown`, `mission_id` |
+| `kb_ticket_fetch` | A ticket a BA published, read from the hub's `<ba-repo>-plan` by id — the text `kb ticket fetch` writes; the client saves it to `docs/impl/<id>/ticket.md` | `ticket` |
 | `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 | `kb_doctor_hub` | The hub's side of `kb doctor` for a child, ba or dev repo, as JSON: the hub's strata-kb version, whether `federation/<repo_id>` is published and its digest, the hub's `-code` section digests, the registry's kind pin, citation checks. Called by the CLI, not meant for agents | `kind`, `repo_id`, `remote_url`, `dir_name`, `kb_context` |
 

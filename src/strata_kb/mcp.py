@@ -1,8 +1,9 @@
 """mcp — the Strata MCP server (`python -m strata_kb.mcp`).
 
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
-kb_resolve, kb_ticket_lint, kb_ticket_check and kb_mission_next tools over
-the hub federation; every tool body
+kb_resolve, kb_ticket_lint, kb_ticket_check, kb_ticket_stale,
+kb_ticket_fetch, kb_mission_lint, kb_mission_next and kb_doctor_hub tools
+over the hub federation; every tool body
 runs on a worker thread and resolves the hub under one lock. `main()` serves
 stdio by default; `--transport http` mounts the same server inside the
 token-guarded `web.app` and refuses a weak STRATA_KB_HTTP_TOKEN.
@@ -379,6 +380,79 @@ def create_server(config: ServerConfig) -> MCPServer:
                 load_drift=load_drift,
             )
             return stale_hub_note(hub) + report.render("Grounding")
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_ticket_stale(markdown: str, file_name: str) -> str:
+        """The `kb ticket stale --md` report for one ticket or mission: its
+        kb-context citations the hub has amended (stale) or lost (broken)
+        since they were pinned, and the `-code` sections it is grounded on
+        that changed since that revision (architecture). Pass the file's
+        text and its repo-relative path (e.g. tickets/M-x/M-x-US1.md): the
+        path labels the row and its name is the story id the delivery check
+        reads. One file per call; an empty report means every citation is
+        current."""
+
+        def _run() -> str:
+            from strata_kb import ticketstale
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            finding = ticketstale.scan_text(Path(file_name), markdown, hub)
+            return stale_hub_note(hub) + ticketstale.render_markdown(
+                [finding] if finding else []
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_ticket_fetch(ticket: str) -> str:
+        """The `kb ticket fetch` text: a ticket the BA published, read from
+        the hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos
+        hold it), restored to its ticket shape with a `> Fetched from hub:`
+        line. Write it to docs/impl/<id>/ticket.md yourself; the BA's repo
+        stays the place to amend it."""
+
+        def _run() -> str:
+            from strata_kb import ticketfetch
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            try:
+                return ticketfetch.render(hub, ticket)
+            except ticketfetch.TicketFetchError as exc:
+                return str(exc)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_mission_lint(
+        mission_markdown: str, mission_id: str | None = None
+    ) -> str:
+        """Lint a mission plan against its Definition of Ready, the `kb
+        mission lint` report: structure, C4 diagrams, US backlog and
+        sequencing, Technology decisions, kb-context refs resolving at
+        their pinned version, revision and review record. Pass `mission_id`
+        (the file name without .md, e.g. M-checkout) to check it matches the
+        '> Mission:' line. The ticket-coverage warning needs the local
+        tickets/ folder, so it is skipped here with a note. Run it until
+        `DoR: PASS`."""
+
+        def _run() -> str:
+            from strata_kb.missionlint import lint as lint_mission
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            path = Path(f"{mission_id}.md") if mission_id else None
+            report = lint_mission(mission_markdown, hub, path=path)
+            return stale_hub_note(hub) + report.render()
 
         return await anyio.to_thread.run_sync(_run)
 

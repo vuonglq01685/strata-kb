@@ -111,6 +111,9 @@ EXPECTED_TOOLS = {
     "kb_resolve",
     "kb_ticket_lint",
     "kb_ticket_check",
+    "kb_ticket_stale",
+    "kb_ticket_fetch",
+    "kb_mission_lint",
     "kb_mission_next",
     "kb_doctor_hub",
 }

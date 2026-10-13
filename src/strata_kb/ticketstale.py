@@ -102,10 +102,18 @@ def scan(paths: Iterable[Path], hub: HubHandle) -> list[StaleFile]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        refs = _kb_context_refs(text, hub) + architecture_refs(path, text, hub)
-        if refs:
-            findings.append(StaleFile(path.as_posix(), refs))
+        finding = scan_text(path, text, hub)
+        if finding is not None:
+            findings.append(finding)
     return findings
+
+
+def scan_text(path: Path, text: str, hub: HubHandle) -> StaleFile | None:
+    """One file's findings from its text, None when it is current. `path`
+    names it in the report; its stem is the story id the delivery check
+    reads, so the MCP tool needs only the name, never the file."""
+    refs = _kb_context_refs(text, hub) + architecture_refs(path, text, hub)
+    return StaleFile(path.as_posix(), refs) if refs else None
 
 
 def _grounded_code_entry(text: str) -> tuple[str | None, str, str] | None:
