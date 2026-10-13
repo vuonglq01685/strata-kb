@@ -534,6 +534,12 @@ def tag(root: Path, name: str) -> None:
         raise GitError(f"tag '{name}' failed: {proc.stderr.strip()}")
 
 
+def delete_tag(root: Path, name: str) -> None:
+    proc = _run(root, "tag", "-d", name)
+    if proc.returncode != 0:
+        raise GitError(f"delete tag '{name}' failed: {proc.stderr.strip()}")
+
+
 def push_tag(root: Path, name: str) -> None:
     proc = _run(root, "push", "origin", f"refs/tags/{name}")
     if proc.returncode != 0:

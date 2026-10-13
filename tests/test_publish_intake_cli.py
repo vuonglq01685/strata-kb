@@ -588,6 +588,22 @@ class TestBaPlanRefresh:
         assert f"{folder}/ has uncommitted changes" in result.output
         assert "kb-publish/" not in _git(bare, "tag", "--list")
 
+    def test_refused_tag_push_points_at_a_merge_to_main(self, ba, monkeypatch):
+        """#107: where only the branch may be pushed (a cloud session's git
+        proxy), the tag push fails; a ba repo publishes on a push to main."""
+        root, bare = ba
+
+        def refuse(_root, name):
+            raise gitio.GitError(f"push tag '{name}' failed: HTTP 403")
+
+        monkeypatch.setattr(gitio, "push_tag", refuse)
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert "HTTP 403" in result.output
+        assert "push to main" in result.output
+        assert "kb-publish-request.yml" in result.output
+        assert "kb-publish/" not in _git(root, "tag", "--list")
+
     def test_publish_reports_skipped_items(self, ba, monkeypatch, tmp_path):
         root, _ = ba
         summary = tmp_path / "summary.md"

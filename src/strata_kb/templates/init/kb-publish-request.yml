@@ -1,0 +1,40 @@
+# Merge = publish. A push to main that changes missions/ or tickets/ tags the
+# merged commit kb-publish/<ts> and dispatches kb-publish.yml on that tag, so
+# the intake still sees an OIDC ref of refs/tags/kb-publish/* (it refuses any
+# other ref). A tag created with GITHUB_TOKEN does not trigger workflows, but
+# workflow_dispatch does — hence the explicit dispatch. Run it by hand
+# (workflow_dispatch on main) to republish without a content change. No one
+# needs to push a tag, so it works where only the branch may be pushed.
+# `kb publish` on a dev machine still works and pushes its own tag.
+# A default branch other than main: change `main` in both places below.
+name: kb-publish-request
+on:
+  push:
+    branches: [main]
+    paths: ["missions/**", "tickets/**"]
+  workflow_dispatch:
+permissions:
+  contents: write   # create the kb-publish/<ts> tag
+  actions: write    # dispatch kb-publish.yml
+jobs:
+  request:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tag the merged commit and dispatch kb-publish on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="kb-publish/$(date -u +%Y%m%d-%H%M%S)"
+          api() {
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/$1" -d "$2"
+          }
+          api git/refs "{\"ref\":\"refs/tags/$tag\",\"sha\":\"$SHA\"}" > /dev/null
+          api actions/workflows/kb-publish.yml/dispatches "{\"ref\":\"$tag\"}"
+          echo "Dispatched kb-publish on $tag ($SHA)" | tee -a "$GITHUB_STEP_SUMMARY"

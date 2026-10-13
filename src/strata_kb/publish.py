@@ -1866,7 +1866,23 @@ def publish_via_intake(
     commit = gitio.head_commit(root)
     tag_name = f"kb-publish/{datetime.now(UTC):%Y%m%d-%H%M%S}"
     gitio.tag(root, tag_name)
-    gitio.push_tag(root, tag_name)
+    try:
+        gitio.push_tag(root, tag_name)
+    except gitio.GitError as exc:
+        # A tag the remote never got must not linger for the next attempt.
+        with contextlib.suppress(gitio.GitError):
+            gitio.delete_tag(root, tag_name)
+        if not plan_inputs:
+            raise
+        # Some environments may push their branch but not tags (a cloud
+        # session's git proxy): a ba repo's kb-publish-request.yml publishes
+        # on a push to main instead (#107).
+        raise PublishError(
+            f"{exc} -- where tags cannot be pushed, merge the change into main "
+            "(a push to main that touches missions/ or tickets/ publishes via "
+            ".github/workflows/kb-publish-request.yml), or run "
+            "that workflow by hand on main"
+        ) from None
     status_url = f"{intake_url.rstrip('/')}/intake/status?" + urllib.parse.urlencode(
         {"repo_id": rid, "commit": commit}
     )

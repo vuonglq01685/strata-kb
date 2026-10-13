@@ -3295,3 +3295,39 @@ def test_ba_ticket_author_names_the_re_ground_line_a_fail_may_lack():
     for name in BA_TICKET_AUTHOR_FULL_TEMPLATES:
         text = _ba_wrapper_text(name)
         assert "A FAIL without the `re-run /sa-ticket-ground` line" in text, name
+
+
+# --- #107: a ba repo publishes on a push to main, no hand-pushed tag --------
+
+
+def test_ba_init_ships_the_publish_request_workflow():
+    from strata_kb.initcmd import BA_TEMPLATES
+
+    assert (
+        BA_TEMPLATES[".github/workflows/kb-publish-request.yml"]
+        == "kb-publish-request.yml"
+    )
+
+
+def test_ba_publish_request_tags_the_merged_commit_and_dispatches():
+    text = _read_init_template("kb-publish-request.yml")
+    wf = yaml.safe_load(text)
+    on = wf[True]  # YAML 1.1 reads the bare `on:` key as True
+    assert on["push"] == {
+        "branches": ["main"],
+        "paths": ["missions/**", "tickets/**"],
+    }
+    assert "workflow_dispatch" in on
+    assert wf["permissions"] == {"contents": "write", "actions": "write"}
+    assert "refs/tags/$tag" in text
+    assert 'tag="kb-publish/' in text
+    assert "actions/workflows/kb-publish.yml/dispatches" in text
+
+
+def test_ba_publish_runs_only_on_a_publish_tag_ref():
+    wf = yaml.safe_load(_read_init_template("kb-publish-ba.yml"))
+    assert wf[True]["push"] == {"tags": ["kb-publish/*"]}
+    assert "workflow_dispatch" in wf[True]
+    job = wf["jobs"]["publish"]
+    assert job["if"] == "startsWith(github.ref, 'refs/tags/kb-publish/')"
+    assert wf["concurrency"] == {"group": "kb-publish", "cancel-in-progress": False}

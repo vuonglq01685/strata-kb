@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.23.0 — 2026-10-13
+
+Every hub-reading command a skill runs has an MCP tool now, so BA and Dev skills need no hub clone, and a `ba` repo publishes when a change is merged into `main`.
+
+- **MCP `kb_ticket_stale`, `kb_mission_lint`, `kb_ticket_fetch`.** `kb ticket stale` and `kb mission lint` cloned the hub, which fails where the hub repo is not reachable over git (a cloud session with access to the BA repo only). Three new MCP tools give the same reports over the hub's MCP. `kb_ticket_stale` takes one file's text and its repo-relative path and returns the `kb ticket stale --md` report for it. `kb_mission_lint` runs the mission Definition-of-Ready gate; `mission_id` checks the file name, and the ticket-coverage warning, which needs the local `tickets/`, is skipped with a note. `kb_ticket_fetch` returns the ticket text `kb ticket fetch` writes; the client saves it to `docs/impl/<id>/ticket.md`. The CLI commands are unchanged.
+- **Skills: MCP first for every hub command.** `ba-mission-plan` lints with `kb_mission_lint` and sweeps with `kb_ticket_stale`; `ba-ticket-author` sweeps with `kb_ticket_stale`; `dev-design`, `dev-plan`, `dev-execute`, `dev-handover` and `dev-implement-ticket` fetch with `kb_ticket_fetch`; `dev-implement-ticket` runs `kb_ticket_check` first and the CLI too when the branch's unpublished `-code` may explain a failure. The CLI is the fallback when the client has no MCP tool or the server is unreachable. `kb resolve --cache` / `--write-cache` stay CLI-first: they write a local cache file.
+- **`ba` repos publish on a merge to `main` (#107).** `kb init --kind ba` scaffolds `.github/workflows/kb-publish-request.yml`: a push to `main` that changes `missions/` or `tickets/` creates a `kb-publish/<ts>` tag on the merged commit with `GITHUB_TOKEN` and dispatches `kb-publish.yml` on it, so the intake still sees an OIDC ref of `refs/tags/kb-publish/*`. Nobody pushes a tag, which is what fails where only the branch may be pushed. Run it by hand on `main` to republish without a change. `kb-publish.yml` gains `workflow_dispatch`, runs only on a `kb-publish/*` tag ref, and serializes publishes. `kb publish` still pushes its own tag; when that push is refused it deletes the local tag and, in a `ba` repo, says to merge into `main` instead. A default branch other than `main`: edit the two `main` entries in the new workflow.
+- **Upgrade.** Upgrade and restart the **hub** first so its MCP lists the new tools; until then the skills fall back to the CLI. Then re-run `kb init` in `ba` and `dev` repos to pick up the skills, and in `ba` repos the publish workflows (`kb init` rewrites them: a `runs-on:` you changed must be set again).
+
 ## 1.22.1 — 2026-10-13
 
 `kb doctor` in a ba or dev repo checks the hub over its MCP, with no hub clone, and the hub UI shows when it last pulled and which strata-kb it runs.
