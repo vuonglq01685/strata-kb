@@ -3887,8 +3887,9 @@ def _config_kind(kb_dir: Path) -> str:
 
 
 def _doctor_over_mcp(kb_dir: Path, context_text: str | None):
-    """A ba/dev repo with the hub's MCP configured (`kb mcp-setup`) checks the
-    hub over MCP -- BA and Dev have no git access to the hub to clone it.
+    """A child/ba/dev repo with the hub's MCP configured (`kb mcp-setup`)
+    checks the hub over MCP -- BA and Dev have no git access to the hub to
+    clone it, and only the hub server knows its strata-kb version.
     None = not configured: the caller uses the git hub as before."""
     from strata_kb import gitio
     from strata_kb.doctor import remote
@@ -3969,6 +3970,14 @@ def doctor(
                 )
             raise typer.Exit(1)
         result = doctor_mod.run(kb_dir, handle, context_text=context_text)
+        if _config_kind(kb_dir) not in ("", "hub"):
+            result.issues.append(
+                doctor_mod.Issue(
+                    "info",
+                    "strata-kb version not checked against the hub — run "
+                    "`kb mcp-setup` so kb doctor asks the hub over MCP",
+                )
+            )
     issues = kind_issues + result.issues
 
     for issue in issues:

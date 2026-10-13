@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -37,7 +38,9 @@ if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
 
 TOOL = "kb_doctor_hub"
-REMOTE_KINDS = ("ba", "dev")
+REMOTE_KINDS = ("child", "ba", "dev")
+# `pip install strata-kb==X` in a repo's CI workflows (codeingest.sync's pin).
+_PIN_RE = re.compile(r"strata-kb==([^\s\"']+)")
 CONNECT_TIMEOUT = 30  # a human is waiting on `kb doctor`
 READ_TIMEOUT = 300  # hashing a large hub entry, or a TTL pull, takes a while
 
@@ -71,6 +74,7 @@ def hub_facts(
     '' when the repo is not a git repo: no registry identity then, as in
     `check_published_kind`. Both come from the client, so the entry name is
     checked before it becomes a path."""
+    import strata_kb
     from strata_kb.codeingest import hublag
 
     if kind not in REMOTE_KINDS:
@@ -106,6 +110,7 @@ def hub_facts(
         hub_commit = ""
     return {
         "hub_commit": hub_commit,
+        "hub_version": strata_kb.__version__,
         "stale": handle.stale,
         "age_seconds": handle.age_seconds,
         "published": published,
@@ -256,8 +261,10 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
         )
         return DoctorResult(issues=issues, stale=False)
     repo_id = repo_id_for(kb_dir)
-    issues += check_usage_log(kb_dir)
-    issues += check_usage_hooks(kb_dir.resolve().parent)
+    issues += version_issues(_git_root(kb_dir), facts.get("hub_version"))
+    if kind in ("ba", "dev"):
+        issues += check_usage_log(kb_dir)
+        issues += check_usage_hooks(kb_dir.resolve().parent)
 
     hub_stale = bool(facts.get("stale"))
     if hub_stale:
@@ -308,3 +315,47 @@ def repo_id_for(kb_dir: Path) -> str | None:
         return gitio.git_root(kb_dir.resolve()).name
     except gitio.GitError:
         return None
+
+
+def _git_root(kb_dir: Path) -> Path | None:
+    try:
+        return gitio.git_root(kb_dir.resolve())
+    except gitio.GitError:
+        return None
+
+
+def version_issues(repo_root: Path | None, hub_version: str | None) -> list[Issue]:
+    """Every repo on a hub runs the hub's strata-kb: the installed package
+    and each `strata-kb==X` pin in the repo's CI workflows."""
+    import strata_kb
+
+    if not hub_version:
+        return []
+    issues: list[Issue] = []
+    if strata_kb.__version__ != hub_version:
+        issues.append(
+            Issue(
+                "error",
+                f"strata-kb {strata_kb.__version__} is installed but the hub runs "
+                f"{hub_version} — every repo on a hub uses the hub's version: "
+                f"pip install strata-kb=={hub_version}",
+            )
+        )
+    workflows = repo_root / ".github" / "workflows" if repo_root else None
+    if workflows is None or not workflows.is_dir():
+        return issues
+    for wf in sorted(workflows.glob("*.y*ml")):
+        try:
+            pins = sorted(set(_PIN_RE.findall(wf.read_text(encoding="utf-8"))))
+        except (OSError, UnicodeDecodeError):
+            continue
+        issues += [
+            Issue(
+                "error",
+                f".github/workflows/{wf.name} pins strata-kb=={pin} but the hub "
+                f"runs {hub_version} — change the pin to strata-kb=={hub_version}",
+            )
+            for pin in pins
+            if pin != hub_version
+        ]
+    return issues

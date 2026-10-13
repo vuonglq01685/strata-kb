@@ -74,7 +74,7 @@ def test_unpublished_repo_warns_over_mcp(git_kb, hub_worktree):
 
 @pytest.mark.parametrize(
     ("kind", "repo_id", "dir_name"),
-    [("ba", "../etc", ""), ("ba", "", "../etc"), ("child", "demo", "")],
+    [("ba", "../etc", ""), ("ba", "", "../etc"), ("hub", "demo", "")],
 )
 def test_hub_facts_refuses_a_bad_kind_or_entry_name(
     hub_worktree, kind, repo_id, dir_name
@@ -265,7 +265,7 @@ async def test_a_hub_side_refusal_reaches_the_client_as_an_error(hub_worktree):
     )
     async with connect_client(server) as client:
         with pytest.raises(remote.RemoteDoctorError, match="kind must be one of"):
-            await remote.call_facts(client, {"kind": "child", "repo_id": "x"})
+            await remote.call_facts(client, {"kind": "hub", "repo_id": "x"})
 
 
 def test_outside_a_git_repo_nothing_on_the_hub_is_compared(tmp_path, hub_worktree):
@@ -289,3 +289,71 @@ def test_a_credential_in_the_hub_url_never_reaches_the_error():
     with pytest.raises(remote.RemoteDoctorError) as err:
         remote.fetch_facts("http://u:s3cretpw@127.0.0.1:9", "t" * 32, {"kind": "ba"})
     assert "s3cretpw" not in str(err.value)
+
+
+def test_installed_version_must_match_the_hub(git_kb, hub_worktree, monkeypatch):
+    import strata_kb
+
+    kb = _published_ba(git_kb, hub_worktree)
+    facts = _facts(hub_worktree, kb, "ba")
+    assert facts["hub_version"] == strata_kb.__version__
+    assert not any("pip install" in m for _, m in _msgs(remote.run(kb, facts, "h")))
+
+    facts["hub_version"] = "9.9.9"
+    msgs = _msgs(remote.run(kb, facts, "h"))
+    assert (
+        "error",
+        f"strata-kb {strata_kb.__version__} is installed but the hub runs 9.9.9 — "
+        "every repo on a hub uses the hub's version: pip install strata-kb==9.9.9",
+    ) in msgs
+
+
+def test_workflow_pins_must_match_the_hub(tmp_path):
+    import strata_kb
+
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "kb-publish.yml").write_text(
+        "      - run: pip install strata-kb==1.0.0\n", encoding="utf-8"
+    )
+    (wf / "kb-code.yml").write_text(
+        f"      - run: pip install strata-kb=={strata_kb.__version__}\n",
+        encoding="utf-8",
+    )
+    issues = remote.version_issues(tmp_path, strata_kb.__version__)
+    assert [(i.level, i.message) for i in issues] == [
+        (
+            "error",
+            f".github/workflows/kb-publish.yml pins strata-kb==1.0.0 but the hub "
+            f"runs {strata_kb.__version__} — change the pin to "
+            f"strata-kb=={strata_kb.__version__}",
+        )
+    ]
+
+
+def test_child_repo_checks_the_hub_over_mcp_too(git_kb, hub_worktree, monkeypatch):
+    (hub_worktree / ".gitignore").write_text(".kb-work/\n", encoding="utf-8")
+    publish(git_kb["kb"], str(hub_worktree), repo_id="demo-kb")
+    kb = git_kb["kb"]
+    (kb / "config.yaml").write_text("kind: child\nrepo_id: demo-kb\n", encoding="utf-8")
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub:8321")
+    monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", "tok")
+    monkeypatch.setattr(
+        remote,
+        "fetch_facts",
+        lambda url, token, args: remote.hub_facts(HubHandle(root=hub_worktree), **args),
+    )
+    result = runner.invoke(app, ["doctor", "--kb-dir", str(kb), "--no-refresh"])
+    assert result.exit_code == 0, result.output
+    assert "hub checked over MCP" in result.output
+    assert "differs from the published snapshot" not in result.output
+
+
+def test_git_path_says_the_version_was_not_checked(git_kb, fed_hub, monkeypatch):
+    for var in ("STRATA_KB_HUB_URL", "STRATA_KB_HTTP_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    result = runner.invoke(
+        app, ["doctor", "--kb-dir", str(git_kb["kb"]), "--hub", str(fed_hub)]
+    )
+    assert "[info] strata-kb version not checked against the hub" in result.output

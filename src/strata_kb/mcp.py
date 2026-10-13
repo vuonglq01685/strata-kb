@@ -415,8 +415,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         dir_name: str = "",
         kb_context: str | None = None,
     ) -> str:
-        """For `kb doctor` in a ba or dev repo, which reaches the hub only
-        over MCP: the hub's side of the checks as JSON -- whether
+        """For `kb doctor` in a child, ba or dev repo, which reaches the hub
+        over MCP: the hub's side of the checks as JSON -- its strata-kb
+        version (every repo on the hub must run the same), whether
         federation/<repo_id> is published and its content digest, the hub's
         `<repo_id>-code` section digests (dev), the registry's kind pin for
         this repo (`remote_url` and `dir_name` identify it as `kb publish`

@@ -38,7 +38,12 @@ def test_the_cli_prints_check_kind_then_run(git_kb, fed_hub):
     result = doctor.run(git_kb["kb"], HubHandle(root=fed_hub))
     assert any(i.level == "error" for i in result.issues)
     kind = [f"[{i.level}] {i.message}" for i in doctor.check_kind(git_kb["kb"])]
-    assert kind + _messages(result) == _cli_lines(git_kb["kb"], fed_hub)
+    # The CLI adds one line on the git path: the hub's version is MCP-only.
+    unchecked = (
+        "[info] strata-kb version not checked against the hub — run "
+        "`kb mcp-setup` so kb doctor asks the hub over MCP"
+    )
+    assert kind + _messages(result) + [unchecked] == _cli_lines(git_kb["kb"], fed_hub)
 
 
 def _stop_hook_only(repo_root: Path) -> None:
