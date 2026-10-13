@@ -414,7 +414,7 @@ Các lý do bạn có thể gặp:
 | Lý do | Làm gì |
 |---|---|
 | `lint error: <first error>` (`(+N more)` khi có nhiều lỗi) | Chạy `kb mission lint` hoặc `kb ticket lint` trên file đó rồi sửa |
-| `Definition of Ready not fully ticked (<ticked>/<total>)` (chỉ ticket) | Hoàn tất review, rồi tick các ô. Trợ lý chỉ tick các ô mà một công cụ chứng minh được (mục 6); các ô cần phán đoán là của bạn |
+| `Definition of Ready not fully ticked (<ticked>/<total>)` (chỉ ticket) | Hoàn tất review, rồi tick các ô. Trợ lý chỉ tick các ô mà một công cụ chứng minh được (mục 6.2); các ô cần phán đoán là của bạn |
 | `parent mission rev <M> affects this story` | Mission đã đổi sau khi ticket được viết: sửa đổi ticket (mục 6.2) |
 | `fenced line starting with '## ' would split the section — indent it inside the fence` | Một khối code trong file có dòng bắt đầu bằng `## `. Hãy thụt dòng đó vào trong khối code |
 | `id contains whitespace` | Tên file có dấu cách. Đổi tên file |
@@ -539,8 +539,17 @@ Không lệnh nào bắt đầu từ Intake, tạo file hay đổi tên gì. Age
 
 Sửa một ticket cũng **bỏ tick** (các) ô Definition of Ready có bằng chứng đã đổi,
 và cập nhật ghim `@ rev` khi ticket đã phản ánh mọi dòng change log kể từ ghim cũ
-có nhắc tới nó. Agent không bao giờ tick ô DoR, không bao giờ commit hay push.
-Bạn đọc diff, tick lại, commit, rồi `kb publish` để đưa nó đi.
+có nhắc tới nó. Agent không bao giờ commit hay push.
+
+**Ai tick Definition of Ready.** Agent tự tick mọi ô DoR mà một công cụ chứng minh
+được sau lần sửa cuối, và nêu từng ô kèm bằng chứng khi bàn giao: `DoR: PASS` của
+lint (chạy với hub), `kb_ticket_stale` sạch, `kb_ticket_check` PASS với
+`Open decisions` rỗng, tối đa 10 AC; với mission thì `kb mission next` không còn
+story nào bị D-row chặn, và mọi open question `impact: architecture` đã được tick.
+Các ô cần phán đoán vẫn là của bạn: "mọi AC là Given/When/Then và kiểm thử được"
+trên ticket, và "backlog đã review với team" trên mission. Agent không bao giờ tick
+một open question; người sở hữu nó mới đóng. Bạn đọc diff, tick phần còn lại,
+commit, rồi `kb publish` để đưa nó đi.
 
 ## 6.3 Quy tắc thay đổi
 

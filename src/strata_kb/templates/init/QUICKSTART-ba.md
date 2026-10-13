@@ -370,8 +370,13 @@ In a mission's `Affected` cell it writes full story ids
   in `## Review record`.
 - A ticket whose mission moved on past its `@ rev` pin, with a change-log row
   listing its story, shows as `draft` in `kb mission next`.
-- The agent never ticks a Definition of Ready box, commits or pushes: you
-  re-tick, review the diff and commit. The next `kb publish` ships it.
+- The agent ticks the Definition of Ready boxes a tool proves after its
+  last edit (lint `DoR: PASS` against the hub, a clean `kb_ticket_stale`,
+  `kb_ticket_check` PASS, `kb mission next`, …) and names each with its
+  evidence. The judgement boxes (AC quality on a ticket, "backlog reviewed
+  with the team" on a mission) and open questions stay yours. It never
+  commits or pushes: you review the diff, tick what is left and commit.
+  The next `kb publish` ships it.
 
 ## Upgrading an existing BA repo
 

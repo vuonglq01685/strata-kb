@@ -419,7 +419,7 @@ The reasons you can see:
 | Reason | What to do |
 |---|---|
 | `lint error: <first error>` (`(+N more)` when there are several) | Run `kb mission lint` or `kb ticket lint` on the file and fix it |
-| `Definition of Ready not fully ticked (<ticked>/<total>)` (tickets only) | Finish the review, then tick the boxes. The assistant ticks only the boxes a tool proves (§6); the judgement boxes are yours |
+| `Definition of Ready not fully ticked (<ticked>/<total>)` (tickets only) | Finish the review, then tick the boxes. The assistant ticks only the boxes a tool proves (§6.2); the judgement boxes are yours |
 | `parent mission rev <M> affects this story` | The mission changed after the ticket was written: amend the ticket (§6.2) |
 | `fenced line starting with '## ' would split the section — indent it inside the fence` | A code fence in the file holds a line that starts with `## `. Indent that line inside the fence |
 | `id contains whitespace` | The file name has a space in it. Rename the file |
@@ -546,8 +546,17 @@ Neither starts from Intake, creates a file, or renames anything. The agent:
 
 Amending a ticket also **un-ticks** the Definition of Ready box(es) whose
 evidence changed, and updates the `@ rev` pin once the ticket reflects every
-change-log row since its old pin that lists it. The agent never ticks a DoR box,
-and never commits or pushes. You read the diff, re-tick, commit, and `kb publish`
+change-log row since its old pin that lists it. The agent never commits or pushes.
+
+**Who ticks the Definition of Ready.** The agent ticks, on its own, every DoR box
+a tool proves after its last edit, and names each one with its evidence in the
+handover: `DoR: PASS` from lint (run against the hub), a clean `kb_ticket_stale`,
+`kb_ticket_check` PASS with `Open decisions` empty, at most 10 ACs; for a mission,
+`kb mission next` showing no story blocked by a D-row, and every
+`impact: architecture` open question ticked. The judgement boxes stay yours:
+"every AC is Given/When/Then and acceptance-testable" on a ticket, and "backlog
+reviewed with the team" on a mission. The agent never ticks an open question; its
+owner closes it. You read the diff, tick what is left, commit, and `kb publish`
 to ship it.
 
 ## 6.3 Change rules
