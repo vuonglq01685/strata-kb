@@ -1,6 +1,7 @@
 import builtins
 import logging
 import sqlite3
+import threading
 
 import pytest
 import yaml
@@ -170,6 +171,28 @@ def test_open_db_cold_locked_raises_instead_of_rebuild(tmp_path, monkeypatch):
             searchdb.open_db(hub)
     finally:
         holder.rollback()
+        holder.close()
+
+
+def test_raw_connect_waits_out_a_rollback_mode_writer(tmp_path):
+    """`PRAGMA journal_mode=WAL` needs an EXCLUSIVE lock and SQLite answers
+    SQLITE_BUSY at once, without the busy handler, while another connection
+    of a cold build still in rollback mode holds RESERVED. The switch must
+    wait for the writer like any other statement (release gate v1.21.0)."""
+    path = tmp_path / "search.db"
+    holder = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("CREATE TABLE t(x)")
+    timer = threading.Timer(0.3, lambda: holder.execute("COMMIT"))
+    timer.start()
+    try:
+        conn, _ = searchdb._raw_connect(path)
+        try:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        finally:
+            conn.close()
+    finally:
+        timer.join()
         holder.close()
 
 

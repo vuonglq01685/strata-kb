@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import sqlite3
+import time
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -62,6 +63,7 @@ DB_NAME = "search.db"
 _KNN_OVERFETCH = 4
 _EMBED_BATCH = 256  # sections per embedder.embed() call
 _BUSY_TIMEOUT_MS = 5000
+_WAL_RETRY_SECONDS = 0.05
 # bm25 column weights (title, summary, body_l2, body_l3) — title strongest,
 # L3 weakest so long raw sections do not drown out title/summary matches (spec §3).
 _BM25_WEIGHTS = "4.0, 2.0, 1.5, 1.0"
@@ -189,12 +191,28 @@ def classify_db_error(exc: sqlite3.Error) -> str:
     return "corrupt"
 
 
+def _switch_to_wal(conn: sqlite3.Connection) -> None:
+    """`PRAGMA journal_mode=WAL`, retried up to the busy timeout. On a file
+    still in rollback mode SQLite answers SQLITE_BUSY at once, skipping the
+    busy handler, while another cold build holds RESERVED — so five
+    concurrent cold `kb query` runs could lose this race instantly."""
+    deadline = time.monotonic() + _BUSY_TIMEOUT_MS / 1000
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if not is_lock_error(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(_WAL_RETRY_SECONDS)
+
+
 def _raw_connect(path: Path) -> tuple[sqlite3.Connection, bool]:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=_BUSY_TIMEOUT_MS / 1000)
     try:
         vec_loaded = _load_vec(conn)
-        conn.execute("PRAGMA journal_mode=WAL")
+        _switch_to_wal(conn)
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     except BaseException:
         conn.close()  # corrupt file: without a close, Windows cannot unlink it
