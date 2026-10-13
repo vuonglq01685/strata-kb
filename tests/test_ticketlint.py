@@ -1617,3 +1617,56 @@ def test_pipe_and_union_boundary_still_holds():
     )
     assert len(warns) == 1
     assert no_warns == []
+
+
+def _blocked_missions(tmp_path: Path) -> Path:
+    missions = tmp_path / "missions"
+    missions.mkdir()
+    doc = _mission_doc(
+        "M-airspace-filter", ["M-airspace-filter-US1", "M-airspace-filter-US2"]
+    ) + (
+        "\n## Technology decisions\n"
+        "| # | Decision | Status | Owner | Blocks |\n|---|---|---|---|---|\n"
+        "| D1 | Map library | OPEN | lead | US2 |\n"
+        "\n## Open questions\n"
+        "- [ ] Q1 — Which layer? — owner: Bob — blocks: M-airspace-filter-US1\n"
+    )
+    (missions / "M-airspace-filter.md").write_text(doc, encoding="utf-8")
+    return missions
+
+
+@pytest.mark.parametrize(
+    ("us", "reason"),
+    [("US1", "Q1 open (owner: Bob)"), ("US2", "D1 OPEN (owner: lead)")],
+)
+def test_ticket_of_a_story_the_mission_still_blocks_errors(
+    fed_hub: Path, golden_block: str, tmp_path: Path, us: str, reason: str
+):
+    missions = _blocked_missions(tmp_path)
+    text = _build_ticket(
+        golden_block, title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter"
+    )
+    path = tmp_path / "tickets" / f"M-airspace-filter-{us}.md"
+
+    report = ticketlint.lint(text, _hub(fed_hub), path=path, missions_dir=missions)
+
+    assert report.passed is False
+    assert any(reason in m and "blocked by mission" in m for m in _errors(report))
+
+
+def test_mission_blockers_are_checked_over_mcp_too(golden_block: str, tmp_path: Path):
+    mission_text = (_blocked_missions(tmp_path) / "M-airspace-filter.md").read_text(
+        encoding="utf-8"
+    )
+    text = _build_ticket(
+        golden_block, title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter"
+    )
+    issues, _notes = ticketlint.check_parent_mission(
+        text,
+        None,
+        None,
+        ticket_id="M-airspace-filter-US1",
+        load_mission=lambda _mid: mission_text,
+    )
+    assert [i.level for i in issues] == ["error"]
+    assert "Q1 open (owner: Bob)" in issues[0].message

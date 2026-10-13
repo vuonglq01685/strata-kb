@@ -406,3 +406,39 @@ def test_statuses_demotion_does_not_undo_done():
         {"M-platform-US1": "x"},
     )
     assert got[0].status == "done"
+
+
+OQ_MISSION = (
+    PLATFORM
+    + """
+## Open questions
+- [ ] Q1 — Which queue? — owner: Bob — impact: architecture — blocks: US1, M-platform-US3
+- [x] Q2 — Retention? — owner: Ann — blocks: M-platform-US2
+- [ ] Q3 — Unrelated — owner: Ann — blocks: <US id>
+"""
+)
+
+
+def test_open_questions_block_the_stories_they_name():
+    _mid, stories, _d = missionnext.parse_mission(OQ_MISSION)
+    by_id = {s.us_id: s for s in stories}
+    assert by_id["M-platform-US1"].open_questions == ("Q1 open (owner: Bob)",)
+    assert by_id["M-platform-US3"].open_questions == ("Q1 open (owner: Bob)",)
+    assert by_id["M-platform-US2"].open_questions == ()  # Q2 is ticked
+
+
+def test_story_blockers_list_open_questions_and_undecided_rows():
+    assert missionnext.story_blockers(OQ_MISSION, "M-platform-US1") == [
+        "Q1 open (owner: Bob)"
+    ]
+    assert missionnext.story_blockers(OQ_MISSION, "M-platform-US2") == [
+        "D2 OPEN (owner: Alice)"
+    ]
+    assert missionnext.story_blockers(PLATFORM, "M-platform-US3") == []
+
+
+def test_an_open_question_makes_an_undrafted_story_blocked():
+    parsed = [missionnext.parse_mission(OQ_MISSION)]
+    by_id = {r.us_id: r for r in missionnext.statuses(parsed, {}, {"x"})}
+    assert by_id["M-platform-US3"].status == "blocked"
+    assert by_id["M-platform-US3"].reasons == ("Q1 open (owner: Bob)",)

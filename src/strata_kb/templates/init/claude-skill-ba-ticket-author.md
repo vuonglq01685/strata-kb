@@ -46,8 +46,13 @@ it reads this repo's unpublished `missions/` and `tickets/`, which
    `done: unknown` note means a `draft` or `ready` row may be a merged
    story — say so. Then show the table: propose the first `to-draft`
    story; the BA may pick another. A `draft` or `ready` story points at
-   its existing file. A `blocked` story may be drafted only with its
-   reasons acknowledged by the BA — carry those reasons into the handover
+   its existing file. A `blocked` story whose reason is a
+   Technology-decisions row (`D<n> OPEN`) or an unticked open question
+   (`Q<n> open`) is NOT drafted: `kb ticket lint` fails a ticket its parent
+   mission still blocks. Name those rows to the BA — they are decided or
+   closed in the mission first. A story blocked only by unfinished
+   dependencies (`US … not done`) may be drafted with its reasons
+   acknowledged by the BA — carry those reasons into the handover
    verbatim.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog

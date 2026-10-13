@@ -11,9 +11,11 @@ Print every `conflict:` and `note:` line of `kb ticket tidy` to the BA
 as well. Print every `note:` line of `kb mission next` to the BA verbatim, before
 the table, and propose the first `to-draft` story; for every `unsorted:`
 line ask the BA for its folder and run
-`kb ticket tidy --into <folder> <file>`. A `blocked` story may be drafted
-only with its reasons acknowledged by the BA and carried into the
-handover.
+`kb ticket tidy --into <folder> <file>`. A `blocked` story whose reason is a
+D-row or an open question is not drafted: `kb ticket lint` fails a ticket
+its parent mission still blocks. One blocked only by unfinished
+dependencies may be, with its reasons acknowledged by the BA and carried
+into the handover.
 
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
 read the ticket and its `kb_ticket_stale` findings (CLI: `kb ticket stale

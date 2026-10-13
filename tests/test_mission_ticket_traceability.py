@@ -121,7 +121,7 @@ def _real_mission_text(block: str) -> str:
             f"| {US_ID} | None | M | Foundation |"
         ),
         "## Open questions": (
-            "- [ ] Q1 — Confirm map tile provider quota — "
+            "- [x] Q1 — Confirm map tile provider quota — "
             f"owner: tech-lead — impact: cost — blocks: {US_ID}"
         ),
         "## KB context": f"```yaml\n{block}\n```",

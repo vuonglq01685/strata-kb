@@ -12,6 +12,7 @@ and `missionlint.py` keep.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
@@ -41,6 +42,8 @@ class Story:
     title: str
     depends_on: tuple[str, ...]  # full US ids
     seq_index: int | None  # row index in ## Sequencing; None = absent
+    # one reason per unticked `## Open questions` row whose `blocks:` names it
+    open_questions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,7 @@ def parse_mission(text: str) -> ParsedMission:
             dep_cell = cells[i_dep] if i_dep is not None and len(cells) > i_dep else ""
             seq.setdefault(cells[i_id], (n, dep_cell))
 
+    questions = _open_question_blocks(text, mid)
     stories: list[Story] = []
     for cells in rows:
         us_id = cells[0]
@@ -99,9 +103,36 @@ def parse_mission(text: str) -> ParsedMission:
             continue
         title = cells[1] if len(cells) > 1 else ""
         idx, dep_cell = seq.get(us_id, (None, ""))
-        stories.append(Story(us_id, mid, title, dep_ids(dep_cell, mid), idx))
+        oq = tuple(reason for reason, ids in questions if us_id in ids)
+        stories.append(Story(us_id, mid, title, dep_ids(dep_cell, mid), idx, oq))
 
     return mission_id, stories, parse_decisions(text, mission_id or "mission")
+
+
+_QID_RE = re.compile(r"^(Q\d+)\b")
+_OWNER_RE = re.compile(r"owner:\s*([^—]+?)\s*(?:—|$)")
+_BLOCKS_RE = re.compile(r"blocks:\s*([^—]+)")
+
+
+def _open_question_blocks(text: str, mission_id: str) -> list[tuple[str, set[str]]]:
+    """(reason, US ids) per UNTICKED `## Open questions` row with a
+    `blocks:` tag. A ticked row is closed and blocks nothing."""
+    body = lintcore.section_body(text, lintcore.OPEN_QUESTIONS_HEADING)
+    out: list[tuple[str, set[str]]] = []
+    for line in (body or "").splitlines():
+        m = lintcore.CHECKBOX_STATE_RE.match(line.strip())
+        if m is None or m.group("mark") != " ":
+            continue
+        row = m.group("text")
+        blocks = _BLOCKS_RE.search(row)
+        ids = set(dep_ids(blocks.group(1), mission_id)) if blocks else set()
+        if not ids:
+            continue
+        qid = _QID_RE.match(row)
+        owner = _OWNER_RE.search(row)
+        label = qid.group(1) if qid else f"open question '{row[:60]}'"
+        out.append((f"{label} open (owner: {owner.group(1) if owner else '?'})", ids))
+    return out
 
 
 def grounded_doc(text: str) -> tuple[str | None, str] | None:
@@ -225,10 +256,7 @@ def statuses(
         # A `Blocks` cell may hold a bare `US<n>` (the same id rule as
         # `Depends on`); resolve it against this mission's id once, not once
         # per story.
-        blocking = [
-            (d, set(dep_ids(" ".join(d.blocks), mission_id or "")))
-            for d in decisions.rows.values()
-        ]
+        blocking = _blocking(mission_id, decisions)
         for s in _mission_order(stories):
             if s.us_id in done_set:
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "done", ()))
@@ -265,17 +293,48 @@ def statuses(
                 reasons.append(
                     f"US {dep} not done" if dep in known else f"US {dep} unknown"
                 )
-            for d, blocks in blocking:
-                if s.us_id not in blocks:
-                    continue
-                status, reason = effective_status(d, decisions.rows)
-                if status != DECIDED:
-                    reasons.append(reason)
+            reasons += _undecided(s.us_id, blocking, decisions)
+            reasons += s.open_questions
             status = "blocked" if reasons else "to-draft"
             out.append(
                 StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
             )
     return out
+
+
+def _blocking(
+    mission_id: str | None, decisions: DecisionTable
+) -> list[tuple[Decision, set[str]]]:
+    return [
+        (d, set(dep_ids(" ".join(d.blocks), mission_id or "")))
+        for d in decisions.rows.values()
+    ]
+
+
+def _undecided(
+    us_id: str, blocking: list[tuple[Decision, set[str]]], decisions: DecisionTable
+) -> list[str]:
+    """One reason per D-row that names `us_id` in `Blocks` and is not DECIDED."""
+    out: list[str] = []
+    for d, blocks in blocking:
+        if us_id not in blocks:
+            continue
+        status, reason = effective_status(d, decisions.rows)
+        if status != DECIDED:
+            out.append(reason)
+    return out
+
+
+def story_blockers(text: str, us_id: str) -> list[str]:
+    """What in the mission `text` still blocks drafting `us_id`: every
+    D-row blocking it that is not DECIDED, then every unticked open
+    question whose `blocks:` names it. Empty = nothing blocks it."""
+    mission_id, stories, decisions = parse_mission(text)
+    story = next((s for s in stories if s.us_id == us_id), None)
+    if story is None:
+        return []
+    blocking = _blocking(mission_id, decisions)
+    return _undecided(us_id, blocking, decisions) + list(story.open_questions)
 
 
 def next_story(results: list[StoryStatus]) -> StoryStatus | None:

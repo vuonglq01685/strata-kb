@@ -101,7 +101,10 @@ carry their own decision row. -->
 
 ## Open questions
 <!-- Architecture-changing questions are flagged here and must be
-closed BEFORE foundational stories start. -->
+closed BEFORE foundational stories start. An unticked row whose
+`blocks:` names stories (full ids or bare US<n>) blocks them: `kb mission
+next` shows them blocked and `kb ticket lint` fails their tickets. Tick
+the box once the question is answered. -->
 - [ ] Q1 — <question> — owner: <who> — impact: <architecture / scope / cost> — blocks: <US id>
 
 ## KB context
