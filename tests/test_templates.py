@@ -3321,6 +3321,7 @@ def test_ba_publish_request_tags_the_merged_commit_and_dispatches():
     assert wf["permissions"] == {"contents": "write", "actions": "write"}
     assert "refs/tags/$tag" in text
     assert 'tag="kb-publish/' in text
+    assert "${SHA::7}" in text  # two pushes in one second get distinct tags
     assert "actions/workflows/kb-publish.yml/dispatches" in text
 
 
@@ -3330,4 +3331,7 @@ def test_ba_publish_runs_only_on_a_publish_tag_ref():
     assert "workflow_dispatch" in wf[True]
     job = wf["jobs"]["publish"]
     assert job["if"] == "startsWith(github.ref, 'refs/tags/kb-publish/')"
-    assert wf["concurrency"] == {"group": "kb-publish", "cancel-in-progress": False}
+    # On the job, not the workflow: a skipped non-tag run must not join the
+    # group and cancel a pending publish.
+    assert "concurrency" not in wf
+    assert job["concurrency"] == {"group": "kb-publish", "cancel-in-progress": False}

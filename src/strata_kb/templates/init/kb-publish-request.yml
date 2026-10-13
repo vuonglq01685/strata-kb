@@ -28,7 +28,8 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag="kb-publish/$(date -u +%Y%m%d-%H%M%S)"
+          # The short SHA keeps two pushes in one second from colliding.
+          tag="kb-publish/$(date -u +%Y%m%d-%H%M%S)-${SHA::7}"
           api() {
             curl -fsS -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
@@ -36,5 +37,15 @@ jobs:
               "https://api.github.com/repos/$REPO/$1" -d "$2"
           }
           api git/refs "{\"ref\":\"refs/tags/$tag\",\"sha\":\"$SHA\"}" > /dev/null
-          api actions/workflows/kb-publish.yml/dispatches "{\"ref\":\"$tag\"}"
+          # A just-created ref can lag behind the dispatch API: retry briefly.
+          for attempt in 1 2 3 4 5; do
+            if api actions/workflows/kb-publish.yml/dispatches "{\"ref\":\"$tag\"}"; then
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "dispatch failed for $tag" >&2
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
           echo "Dispatched kb-publish on $tag ($SHA)" | tee -a "$GITHUB_STEP_SUMMARY"

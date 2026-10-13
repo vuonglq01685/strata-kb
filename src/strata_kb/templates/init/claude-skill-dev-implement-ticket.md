@@ -21,10 +21,8 @@ tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
 `kb_ticket_check`) whenever your client exposes them; fall back to the
 matching CLI command only when it does not, or the MCP server cannot be
 reached. `kb ticket fetch` runs as `kb_ticket_fetch`: save the text it returns
-as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb ticket check` runs as `kb_ticket_check` (the ticket's text); it reads
-the `-code` document from the hub only, so when it reports an id that only
-this branch's unpublished `-code` has, confirm with the CLI `kb ticket
-check`, which falls back to the local document. `kb impl tidy`, `kb svc note` and the cache-writing `kb resolve --status-only --cache` /
+as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb ticket check` runs as `kb_ticket_check` (the ticket's text), the CLI as
+the fallback. `kb impl tidy`, `kb svc note` and the cache-writing `kb resolve --status-only --cache` /
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
@@ -65,9 +63,8 @@ edit above it.
   the ticket is not Ready.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
   section, run MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
-  fallback: `kb ticket check docs/impl/<id>/ticket.md`; run the CLI too
-  when the MCP report fails on an id or fact your branch's unpublished
-  `-code` changed — the CLI falls back to the local document). PASS → show every `[warn]` (a diff, or facts that could
+  fallback: `kb ticket check docs/impl/<id>/ticket.md`, which reads the
+  local `-code` only when the hub holds none). PASS → show every `[warn]` (a diff, or facts that could
   not be verified), the Dev decides, continue. FAIL with `re-run
   /sa-ticket-ground` → STOP, blocker for the BA (the SA re-grounds on the
   current `-code`) — unless the run also printed the local-fallback note

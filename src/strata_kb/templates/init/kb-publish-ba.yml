@@ -10,10 +10,6 @@ on:
   push:
     tags: ["kb-publish/*"]
   workflow_dispatch:
-# Two quick merges must not race two hub PRs; a started publish always finishes.
-concurrency:
-  group: kb-publish
-  cancel-in-progress: false
 permissions:
   id-token: write   # OIDC JWT — proves "I am this repo's workflow" to the intake
   contents: read
@@ -21,6 +17,11 @@ jobs:
   publish:
     # The intake only accepts an OIDC ref of refs/tags/kb-publish/*.
     if: startsWith(github.ref, 'refs/tags/kb-publish/')
+    # Two quick merges must not race two hub PRs; a started publish always
+    # finishes. On the job, so a skipped non-tag run never joins the group.
+    concurrency:
+      group: kb-publish
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2

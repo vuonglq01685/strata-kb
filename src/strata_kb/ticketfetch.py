@@ -74,7 +74,10 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
     try:
         section = slice_section(l3.read_text(encoding="utf-8"), ticket_id)
     except (OSError, UnicodeDecodeError) as exc:
-        raise TicketFetchError(f"could not read {l3} ({exc})") from exc
+        # Name the file, not its path: an MCP client must not see the hub's disk layout.
+        # OSError's str() repeats the path, its strerror does not.
+        detail = exc.strerror if isinstance(exc, OSError) and exc.strerror else exc
+        raise TicketFetchError(f"could not read {doc}/{l3.name} ({detail})") from exc
     if section is None:
         raise TicketFetchError(
             f"{doc} lists {ticket_id} but {l3.name} has no such section"
