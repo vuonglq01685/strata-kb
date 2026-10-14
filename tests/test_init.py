@@ -649,7 +649,12 @@ _BA_SPEC_8_PATHS = (
     ".claude/commands/ba-ticket-author.md",
     ".github/prompts/ba-ticket-author.prompt.md",
     ".cursor/commands/ba-ticket-author.md",
+    ".claude/skills/ba-bug-report/SKILL.md",
+    ".claude/commands/ba-bug-report.md",
+    ".github/prompts/ba-bug-report.prompt.md",
+    ".cursor/commands/ba-bug-report.md",
     "docs/tickets/TEMPLATE.md",
+    "docs/tickets/BUG-TEMPLATE.md",
     "tickets/.gitkeep",
     ".github/workflows/kb-ticket-lint.yml",
     "QUICKSTART-BA.md",
@@ -837,6 +842,9 @@ def test_hub_child_unchanged_by_phase4(tmp_path: Path):
         ).exists()
         assert not (repo / ".cursor" / "commands" / "ba-ticket-author.md").exists()
         assert not (repo / "docs" / "tickets" / "TEMPLATE.md").exists()
+        assert not (repo / "docs" / "tickets" / "BUG-TEMPLATE.md").exists()
+        assert not (repo / ".claude" / "skills" / "ba-bug-report").exists()
+        assert not (repo / ".claude" / "skills" / "dev-fix-bug").exists()
         assert not (repo / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
 
 
@@ -1767,8 +1775,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # a child repo gets) + 4 (the kb-mcp-setup wrappers, MCP_CLIENT_TEMPLATES)
     # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
     # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
-    # = 55.
-    assert len(expected_files("dev")) == 55
+    # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
+    # = 59.
+    assert len(expected_files("dev")) == 59
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -1971,6 +1980,7 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         "dev-plan",
         "dev-execute",
         "dev-handover",
+        "dev-fix-bug",
     ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
@@ -1985,7 +1995,7 @@ def test_init_kind_dev_excludes_authoring_and_ba_artifacts(tmp_path: Path):
     for name in ("kb-ingest", "kb-docker-setup", "kb-init"):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
         assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
-    for name in ("ba-ticket-author", "ba-mission-plan"):
+    for name in ("ba-ticket-author", "ba-mission-plan", "ba-bug-report"):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
     assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
     assert not (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
@@ -3314,3 +3324,47 @@ def test_init_hub_upgrade_invalid_registry_exits_1(tmp_path: Path):
 
     assert result.exit_code == 1
     assert "registry.yaml is invalid" in result.output
+
+
+# --- 1.25.0: bug / hotfix tickets (ba-bug-report, dev-fix-bug) ---------------
+
+
+def test_init_kind_ba_installs_ba_bug_report_and_the_bug_template(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    for rel in (
+        ".claude/skills/ba-bug-report/SKILL.md",
+        ".claude/commands/ba-bug-report.md",
+        ".github/prompts/ba-bug-report.prompt.md",
+        ".cursor/commands/ba-bug-report.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel
+    bug = (tmp_path / "docs" / "tickets" / "BUG-TEMPLATE.md").read_text(
+        encoding="utf-8"
+    )
+    assert bug == initcmd.read_template("bug-template.md")
+    assert "> Type: bug" in bug
+    # the Dev-side skill is not a BA concern
+    assert not (tmp_path / ".claude" / "skills" / "dev-fix-bug").exists()
+    assert not (tmp_path / ".cursor" / "commands" / "dev-fix-bug.md").exists()
+
+
+def test_init_kind_dev_installs_dev_fix_bug_and_no_ba_bug_artifacts(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    for rel in (
+        ".claude/skills/dev-fix-bug/SKILL.md",
+        ".claude/commands/dev-fix-bug.md",
+        ".github/prompts/dev-fix-bug.prompt.md",
+        ".cursor/commands/dev-fix-bug.md",
+    ):
+        assert (tmp_path / rel).is_file(), rel
+    assert not (tmp_path / ".claude" / "skills" / "ba-bug-report").exists()
+    assert not (tmp_path / "docs" / "tickets").exists()
+
+
+def test_cli_init_next_steps_name_the_bug_skills(tmp_path: Path):
+    ba = runner.invoke(app, ["init", str(tmp_path / "ba"), "--kind", "ba"])
+    assert ba.exit_code == 0, ba.output
+    assert "/ba-bug-report" in ba.output
+    dev = runner.invoke(app, ["init", str(tmp_path / "dev"), "--kind", "dev"])
+    assert dev.exit_code == 0, dev.output
+    assert "/dev-fix-bug" in dev.output

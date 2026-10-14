@@ -123,11 +123,16 @@ BA_TEMPLATES: dict[str, str] = {
     ".claude/commands/ba-mission-plan.md": "claude-command-ba-mission-plan.md",
     ".github/prompts/ba-mission-plan.prompt.md": "copilot-ba-mission-plan.prompt.md",
     ".cursor/commands/ba-mission-plan.md": "cursor-ba-mission-plan.md",
+    ".claude/skills/ba-bug-report/SKILL.md": "claude-skill-ba-bug-report.md",
+    ".claude/commands/ba-bug-report.md": "claude-command-ba-bug-report.md",
+    ".github/prompts/ba-bug-report.prompt.md": "copilot-ba-bug-report.prompt.md",
+    ".cursor/commands/ba-bug-report.md": "cursor-ba-bug-report.md",
     ".claude/skills/sa-ticket-ground/SKILL.md": "claude-skill-sa-ticket-ground.md",
     ".claude/commands/sa-ticket-ground.md": "claude-command-sa-ticket-ground.md",
     ".github/prompts/sa-ticket-ground.prompt.md": "copilot-sa-ticket-ground.prompt.md",
     ".cursor/commands/sa-ticket-ground.md": "cursor-sa-ticket-ground.md",
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
+    "docs/tickets/BUG-TEMPLATE.md": "bug-template.md",
     "docs/missions/TEMPLATE.md": "mission-template.md",
     "docs/ac-quality.md": "ac-quality.md",
     "docs/review-rubric.md": "review-rubric.md",
@@ -252,6 +257,10 @@ DEV_TEMPLATES: dict[str, str] = {
             # the ticket-shaped SHARED-* canon doesn't apply to it) so it gets
             # the same four-way wrapper layout for free.
             "dev-code-seed",
+            # Fixes a BA bug / hotfix (systematic debugging). Same reasoning:
+            # not a story workflow, so it stays out of the tests'
+            # DEV_WORKFLOW_SKILLS canon and has its own pins.
+            "dev-fix-bug",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),

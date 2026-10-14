@@ -172,16 +172,17 @@ This repo can be one of four kinds:
           the main hub. Does not host the company-wide MCP/Web service.
 
   ba    — Requirements repo. Drafts Dev-ready tickets grounded in the KB
-          via the ba-ticket-author skill, versions them under tickets/,
-          and gates them with a CI Definition-of-Ready check. Never
-          ingests or summarizes KB content; publishes only its own plan
+          via the ba-ticket-author skill (bugs and hotfixes via
+          ba-bug-report), versions them under tickets/, and gates them
+          with a CI Definition-of-Ready check. Never ingests or
+          summarizes KB content; publishes only its own plan
           (`<repo_id>-plan`) to the hub.
 
   dev   — Product code repo. Implements BA tickets grounded in the KB via the
           dev-implement-ticket workflow (design → plan → execute → handover,
-          TDD enforced), and, from Stage B on, publishes generated knowledge
-          about its own source code back to the hub. Never ingests outside
-          documents.
+          TDD enforced; bugs via dev-fix-bug) and, from Stage B on, publishes
+          generated knowledge about its own source code back to the hub.
+          Never ingests outside documents.
 """
 
 
@@ -428,7 +429,7 @@ def init(
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
-            "run /ba-ticket-author"
+            "run /ba-ticket-author (or /ba-bug-report for a bug or hotfix)"
         )
         typer.echo(
             "  4. kb publish    (or /kb-publish)"
@@ -448,7 +449,8 @@ def init(
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
-            "run /dev-implement-ticket <ticket>"
+            "run /dev-implement-ticket <ticket> "
+            "(or /dev-fix-bug <BUG-id> for a bug or hotfix)"
         )
     quickstart_name = {
         "ba": "QUICKSTART-BA.md",
