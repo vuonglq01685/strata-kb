@@ -365,7 +365,7 @@ STRATA_KB_HTTP_TOKEN=<secret> \
 |---|---|---|
 | `http://host:8321/mcp` | AI agent | Bearer token |
 | `http://host:8321/api/…` | script và tích hợp | Bearer token hoặc cookie |
-| `http://host:8321/ui` | con người | đăng nhập bằng token |
+| `http://host:8321/ui` | con người | đăng nhập bằng tài khoản hub (§10.3); token chỉ mở UI ở chế độ chỉ đọc |
 
 Hub là bắt buộc; server từ chối khởi động nếu không có, và chỉ tìm trong
 `federation/` — không bao giờ tìm trong `.kb/` làm việc của chính nó.
@@ -407,15 +407,41 @@ chúng. Tài liệu `*-plan` nằm ở menu Ticket, không nằm ở Document, v
 đếm theo từng loại; một kết quả tìm kiếm nằm trong đó dẫn tới trang Ticket của nó. Bản CLI tương
 ứng là `kb mission next --from-hub [--repo <ba-repo>]`.
 
-## 10.3 Trước khi mở ra ngoài
+## 10.3 Tài khoản hub, trang Registry và auto-merge
+
+Mọi người đăng nhập `/ui` bằng tên người dùng và mật khẩu. Tài khoản nằm trong
+`<hub>/.kb-auth/` (`users.db`, `session.key`). Không bao giờ commit thư mục này:
+`.gitignore` của hub mới đã liệt kê nó và hub đang chạy cũng tự git-exclude nó. Xoá
+`session.key` sẽ đăng xuất tất cả mọi người.
+
+- **Tạo admin đầu tiên** bằng
+  `docker compose exec hub kb user add <name> --role admin`, hoặc đặt
+  `STRATA_KB_BOOTSTRAP_ADMIN` và `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (kết quả của
+  `kb user hash`) trong `.env`. Cặp biến này chỉ có tác dụng khi chưa có tài khoản
+  nào; mật khẩu dạng văn bản thô không bao giờ được chấp nhận.
+- **Lệnh khác:** `kb user passwd|role|remove|list|hash`. Vai trò là `admin`, `ba`,
+  `dev`; chỉ `admin` thấy và dùng được trang Registry.
+- **Bearer token** vẫn dùng cho `/api`, `/mcp` và CI. Trên UI nó chỉ đọc và không
+  bao giờ mở được trang Registry.
+- **Trang Registry** (`/ui/registry`). Admin thêm hoặc bỏ một repo con và bật/tắt
+  **auto-merge** cho repo đó. Mỗi lần sửa là một commit trên nhánh mặc định của
+  hub, đẩy bằng GitHub App của intake, không bao giờ force-push. Nhánh mặc định
+  được bảo vệ thì App phải được phép push. Trang chỉ đọc khi intake chưa cấu hình
+  hoặc hub không có remote.
+- **Auto-merge** merge cả PR publish của repo ngay sau khi intake mở nó — kể cả
+  nội dung `-svc` đi kèm. App cần quyền `contents: write` và
+  `pull_requests: write`. Nếu merge thất bại, PR vẫn mở và publish vẫn là `done`
+  (`merged: false`); `kb publish` in "merged" khi đã merge (`kb ci-publish` không báo).
+
+## 10.4 Trước khi mở ra ngoài
 
 - **Thay token được sinh tự động.** `kb docker-setup` sinh token cho tiện. Hãy
   coi đó là giá trị tạm.
 - **Đặt số proxy tin cậy nếu đứng sau reverse proxy.** Mặc định là bỏ qua header
   chuyển tiếp. Để nguyên mặc định khi đứng sau proxy thì mọi người gọi đều trông
   giống proxy, và một người gọi có thể làm cạn giới hạn tần suất của tất cả.
-- **Biết rõ giới hạn.** Xác thực chỉ là một bearer token — không OAuth, không
-  SSO. Mức đó ổn cho mạng nội bộ và chưa sẵn sàng cho Internet công cộng.
+- **Biết rõ giới hạn.** Xác thực là bearer token cho `/api`, `/mcp` và CI cùng
+  tài khoản hub cục bộ cho UI — không OAuth, không SSO. Mức đó ổn cho mạng nội bộ và chưa sẵn sàng cho Internet công cộng.
 
 Hướng dẫn triển khai đầy đủ: `docs/deploy-remote-mcp.md`.
 

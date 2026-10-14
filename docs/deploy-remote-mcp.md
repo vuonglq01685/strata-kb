@@ -101,6 +101,16 @@ the PR itself using a GitHub App.
    is refused: `pubgate.resolve_identity` raises before anything is written,
    naming the repo-id the registry actually maps the remote to.
 4. Install deps on the server: `pip install "strata-kb[server]"`.
+5. Optional, per repo: turn on **auto-merge** for a registered repo (the Registry
+   page of the hub UI, admin only, or `auto_merge: true` in its registry entry).
+   Intake then merges that repo's whole publish PR right after opening it; the
+   App's `Contents` and `Pull requests` write permissions (step 1) cover it. A
+   failed merge leaves the PR open and the publish `done` (`merged: false`, the
+   reason in `detail` for the OIDC caller). Registry-page edits are commits on the
+   hub's default branch pushed by the same App, so a protected default branch must
+   allow the App to push. UI accounts live in `<hub>/.kb-auth/` and are never
+   committed; create the first admin with `kb user add <name> --role admin` or
+   `STRATA_KB_BOOTSTRAP_ADMIN` + `STRATA_KB_BOOTSTRAP_PASSWORD_HASH`.
 
 The three intake routes are exempt from `STRATA_KB_HTTP_TOKEN` (children don't
 hold that token): POST /intake/publish and GET /intake/manifest are

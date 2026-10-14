@@ -378,7 +378,7 @@ STRATA_KB_HTTP_TOKEN=<secret> \
 |---|---|---|
 | `http://host:8321/mcp` | AI agents | Bearer token |
 | `http://host:8321/api/…` | scripts and integrations | Bearer token or cookie |
-| `http://host:8321/ui` | people | sign in with the token |
+| `http://host:8321/ui` | people | sign in with a hub account (§10.3); the token opens the UI read-only |
 
 A hub is mandatory; the server refuses to start without one and searches only
 `federation/` — never its own working `.kb/`.
@@ -420,15 +420,43 @@ naming them. `*-plan` documents appear under Ticket, not Document, and the
 overview counts per kind; a search hit inside one links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>]`.
 
-## 10.3 Before you expose it
+## 10.3 Hub accounts, the Registry page and auto-merge
+
+People sign in to `/ui` with a username and password. Accounts live in
+`<hub>/.kb-auth/` (`users.db`, `session.key`). Never commit that directory:
+a new hub's `.gitignore` lists it and the running hub also git-excludes it.
+Deleting `session.key` logs everyone out.
+
+- **Create the first admin** with
+  `docker compose exec hub kb user add <name> --role admin`, or set
+  `STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (the output
+  of `kb user hash`) in `.env`. The pair applies only while no account exists;
+  a plaintext password is never accepted.
+- **Other commands:** `kb user passwd|role|remove|list|hash`. Roles are `admin`,
+  `ba`, `dev`; only `admin` sees and uses the Registry page.
+- **The bearer token** still serves `/api`, `/mcp` and CI. In the UI it is
+  read-only and never opens the Registry page.
+- **Registry page** (`/ui/registry`). An admin adds or removes a child repo and
+  switches its **auto-merge** on or off. Each edit is a commit on the hub's
+  default branch, pushed with the intake GitHub App and never force-pushed. A
+  protected default branch must allow the App to push. The page is read-only
+  when intake is not configured or the hub has no remote.
+- **Auto-merge** merges a repo's whole publish PR right after intake opens it —
+  including any `-svc` content riding along. The App needs `contents: write` and
+  `pull_requests: write`. If the merge fails the PR stays open and the publish is
+  still `done` (`merged: false`); `kb publish` prints "merged"
+  when it merged (`kb ci-publish` does not report it).
+
+## 10.4 Before you expose it
 
 - **Replace the generated token.** `kb docker-setup` generates one for
   convenience. Treat it as a placeholder.
 - **Set the trusted-proxy count if you are behind a reverse proxy.** The default
   ignores forwarded headers. Left unset behind a proxy, every caller looks like
   the proxy, and one caller can exhaust the rate limiters for everyone.
-- **Know the limit.** Authentication is a single bearer token — no OAuth, no SSO.
-  That is fine on an internal network and not ready for the public internet.
+- **Know the limit.** Authentication is a bearer token for `/api`, `/mcp` and CI
+  plus local hub accounts for the UI — no OAuth, no SSO. That is fine on an
+  internal network and not ready for the public internet.
 
 Full deployment guide: `docs/deploy-remote-mcp.md`.
 

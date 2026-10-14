@@ -574,7 +574,10 @@ crossing the cap is refused with `400` and the whole upload fails.
 
 `federation/registry.yaml` entries carry the hub kind of each repo. An entry is
 either a plain `repo_id` string (still valid, kind unknown) or a mapping
-`{repo_id, kind, workflow?}` with `kind` one of `kb`, `ba`, `dev`:
+`{repo_id, kind, workflow?, auto_merge?}` with `kind` one of `kb`, `ba`, `dev`
+(`auto_merge: true` makes the hub merge that repo's publish PRs itself; default
+`false`; the Registry page writes it, see [Hub accounts and the Registry
+page](#hub-accounts-and-the-registry-page)):
 
 ```yaml
 repos:
@@ -770,7 +773,7 @@ export STRATA_KB_HTTP_TOKEN=$(python -c "import secrets; print(secrets.token_hex
 python -m strata_kb.mcp --hub . --transport http
 # → agent:  http://<host>:8321/mcp     (Bearer token)
 # → REST:   http://<host>:8321/api/…   (Bearer token or cookie)
-# → human:  http://<host>:8321/ui      (sign in with the token; cookie stored)
+# → human:  http://<host>:8321/ui      (sign in with a hub account; cookie stored)
 ```
 
 A hub is **mandatory** — resolved from `--hub`, `STRATA_KB_HUB`, or
@@ -847,8 +850,9 @@ links to its Ticket page. The CLI twin is
 
 Every response carries CSP (`script-src 'self'`), `X-Frame-Options: DENY`,
 nosniff, `Referrer-Policy` and `Permissions-Policy`; HSTS on https. The `/ui`
-session cookie is a signed, expiring value derived from the token, never the
-token itself. `POST /ui/logout` ends a session. The server refuses to start on
+session cookie is a signed, expiring value keyed with `.kb-auth/session.key`
+(never with the bearer token, which every child repo holds); it carries the
+username, not the role. `POST /ui/logout` ends a session. The server refuses to start on
 the `change-me` placeholder, a token shorter than 32 characters, or one that is
 not printable ASCII. The login body is capped at 8 KiB however it is sent.
 
@@ -862,8 +866,39 @@ Leaving it at `0` behind a proxy makes every limiter key every caller on the
 proxy's address, so one caller can exhaust them for everyone. Full guide:
 [`docs/deploy-remote-mcp.md`](docs/deploy-remote-mcp.md).
 
-HTTP auth stops at a bearer token — one fixed secret, no OAuth or SSO. That is
-adequate for an internal network and not ready for the public internet.
+HTTP auth is a bearer token for `/api`, `/mcp` and CI, plus local hub accounts
+for the UI — no OAuth or SSO. That is adequate for an internal network and not
+ready for the public internet.
+
+### Hub accounts and the Registry page
+
+People sign in to `/ui` with a username and password. Accounts live in
+`<hub>/.kb-auth/` (`users.db` and `session.key`); **never commit that
+directory** — a new hub's `.gitignore` lists it and the running hub also adds it
+to `.git/info/exclude`. Deleting `session.key` logs everyone out. Roles are
+`admin`, `ba` and `dev`; only `admin` sees and uses the **Registry** page.
+
+- **Bootstrap.** While no account exists, set `STRATA_KB_BOOTSTRAP_ADMIN` and
+  `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (the output of `kb user hash`) and the hub
+  creates that admin on start. Plaintext is never accepted; once any account
+  exists both variables are ignored. Or run
+  `docker compose exec hub kb user add <name> --role admin`.
+- **Manage.** `kb user add|passwd|role|remove|list|hash` (see the command
+  reference). The last admin cannot be removed or demoted.
+- **The bearer token** still works for `/api`, `/mcp` and CI. On the UI it is
+  read-only: it never opens the Registry page.
+- **Registry page** (`/ui/registry`, admin only). Add or remove a child repo and
+  switch its **auto-merge** on or off. Each edit is a commit on the hub's
+  default branch, pushed with the intake GitHub App and never force-pushed; if
+  the default branch is protected the App must be allowed to push to it. The
+  page is read-only when intake is not configured or the hub has no git remote.
+  Removing a repo does not delete its published content.
+- **Auto-merge** is a per-repo switch. Right after intake opens a repo's publish
+  PR it merges it (a merge commit, or a squash when the repo forbids merge
+  commits) — the whole PR, including any `-svc` content riding along. The App
+  needs `contents: write` and `pull_requests: write`. If the merge fails the PR
+  stays open and the publish is still `done`, with `"merged": false` and the
+  reason in `detail`; a merged one reports `"merged": true`, and `kb publish` prints "merged".
 
 ---
 
@@ -1274,9 +1309,10 @@ a human before it can publish.
 2. **`pending` vs. a clean build.** `-svc` carries `pending` sections during a
    seed or an amend; folding that into `-code` would fail `kb build` for the
    whole document, including the parts CI regenerates automatically.
-3. **Auto-merge vs. review.** `-code` is machine fact and may be auto-merged by
-   hub policy; `-svc` is a human claim and always needs review. One document can't carry
-   both publish policies at once.
+3. **Auto-merge vs. review.** `-code` is machine fact; `-svc` is a human claim
+   and needs review. Auto-merge is a per-repo switch that merges the whole
+   publish PR, so the `-svc` review happens locally in `/dev-code-seed`, before
+   publish. One document can't carry both review styles at once.
 
 The two are joined by **section id, not by file**: `svc.<name>` deliberately
 exists in both. `-code §svc.<name>` supplies `alias`/`label`/`technology`,
@@ -1339,14 +1375,14 @@ completed the seed needs no further per-ticket documentation discipline.
   *mistake guard* — a child's remote URL is self-asserted, so the check cannot
   authenticate anyone. Branch protection on the hub plus the OIDC intake are the
   actual security boundary.
-- **Decide the hub's auto-merge policy for `-code` PRs, and exclude `-svc`.**
-  This is a constraint on *how* the policy is implemented: `kb ci-publish` opens
-  one hub PR per publish, not per document — the intake keys the publish branch by
-  repo id and reuses it while a PR is pending — so a publish carrying both a
-  regenerated `-code` and an already-merged `-svc` amend lands both in one PR.
-  The rule must therefore be **path-scoped to `.kb/<repo_id>-code/**`**, never a
-  whole-PR or whole-repo rule, or it will auto-merge `-svc` content riding
-  along.
+- **Decide whether the hub auto-merges this repo's publish PRs.** It is a
+  per-repo switch on the hub's Registry page. `kb ci-publish` opens one hub PR per
+  publish, not per document — the intake keys the publish branch by repo id and
+  reuses it while a PR is pending — so a publish carrying both a regenerated
+  `-code` and an already-merged `-svc` amend lands both in one PR, and auto-merge
+  merges the **whole PR**. The `-svc` review therefore happens locally in
+  `/dev-code-seed` step 4, before the section reaches `reviewed`, never at the
+  hub.
 - **Run `kb mcp-setup`** (or `/kb-mcp-setup`) for each developer — it writes
   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` into `.env` and verifies them.
 - **Budget the one-time seed:** ~10–15 min per service.

@@ -244,7 +244,7 @@ One process serves three audiences over HTTP:
 |---|---|---|
 | `/mcp` | AI agents | Bearer token |
 | `/api/…` | programmatic callers | Bearer token or session cookie |
-| `/ui` | people | sign in with the token, session cookie stored |
+| `/ui` | people | sign in with a hub account, session cookie stored; the token opens it read-only |
 
 The UI has a **Ticket** menu beside Document (`/ui/tickets`) for the missions and
 tickets that `ba` repos publish (§8.4).
@@ -379,7 +379,7 @@ separate.
 They cannot share one document for three independent reasons: `-code` is
 overwritten wholesale while `-svc` accumulates; `-svc` carries `pending` sections
 during a seed while `-code` must always build clean; and `-code` may be
-auto-merged by hub policy while `-svc` always needs human review.
+merged without a human by the repo's auto-merge switch while `-svc` needs human review (done locally, before publish).
 
 `-code` is never committed: its revision lives in its manifest, not in
 `index.yaml`, so a dev repo's committed index does not change when code does.
@@ -584,8 +584,15 @@ reaches readers only through a hub pull request.
 
 - Every response carries a content security policy, frame denial, nosniff,
   referrer and permissions policies; HSTS over https.
-- The UI session cookie is a signed, expiring value derived from the token — never
-  the token itself.
+- The UI session cookie is a signed, expiring value keyed with
+  `<hub>/.kb-auth/session.key` — never the bearer token, which every child repo
+  holds. It carries the username, not the role; the role is read from the account
+  database on every request. Accounts live in `.kb-auth/`, which is never committed.
+- The Registry page (`/ui/registry`) is admin-only, so the bearer token can view the
+  UI but never change the registry. Each edit is a commit on the hub's default branch,
+  pushed with the intake GitHub App, never force-pushed. A repo's `auto_merge` switch
+  makes intake merge its whole publish PR right after opening it; a failed merge
+  leaves the PR open and the publish `done` with `merged: false`.
 - A failed bearer-token attempt shares the login form's rate-limit bucket, so the
   lockout cannot be side-stepped through the header.
 - Behind a reverse proxy, the trusted-proxy count **must** be configured. The

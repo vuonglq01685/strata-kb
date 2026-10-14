@@ -110,26 +110,25 @@ nhánh.
 > thiếu các mục bắt buộc — kể cả pull request của bot như nâng cấp dependency
 > hay revert.
 
-## 2.4 Hỏi về chính sách auto-merge của hub
+## 2.4 Hỏi hub có auto-merge repo của bạn không
 
-Pull request `-code` trên hub có thể được tự động merge; pull request `-svc` thì
-tuyệt đối không. Hãy hỏi người quản trị hub cấu hình ra sao, và chắc chắn một
-điều:
+Auto-merge là công tắc theo từng repo trên trang Registry của hub; admin hub bật
+nó cho repo của bạn. Hãy hỏi người quản trị hub xem nó đã bật chưa, và hiểu nó làm
+gì:
 
 > `kb ci-publish` mở **một** pull request trên hub cho mỗi lần push, không phải
 > mỗi tài liệu một cái. Intake gắn nhánh publish theo id repository và dùng lại
 > nhánh đó trong khi PR còn mở — nên một lần push mang theo `-code` vừa sinh lại
 > cùng với một sửa đổi `-svc` đã merge sẽ đưa **cả hai** vào cùng PR đó.
 >
-> Vì vậy quy tắc auto-merge phải được **giới hạn theo đường dẫn
-> `.kb/<repo_id>-code/**`**, không bao giờ là quy tắc cho cả PR hay cả repo. Một
-> quy tắc kích hoạt theo kiểu "đây là lượt publish `-code` của repo dev" sẽ âm
-> thầm vô hiệu hoá chính cổng review `-svc` mà việc tách hai tài liệu sinh ra để
-> bảo vệ.
+> Khi công tắc bật, hub merge **cả** PR ngay sau khi mở, kể cả nội dung `-svc`.
+> Vì vậy việc review `-svc` diễn ra tại máy, ở bước 4 của `/dev-code-seed`, trước
+> khi section lên `reviewed` — không bao giờ ở hub.
 
-Quy tắc auto-merge này cũng là thứ giữ cho hub không bị tụt lại so với main:
-thiếu nó, mỗi lần push sẽ dồn vào một PR hub đang chờ mà ai đó phải merge tay.
-`kb doctor` báo khi `-code` trên hub bị tụt lại.
+Nếu merge thất bại, PR vẫn mở cho người quản trị hub và publish vẫn tính là xong.
+`kb publish` in "merged" khi đã merge (`kb ci-publish` không in gì về việc này). Khi công tắc bật, hub
+không bị tụt lại so với main: thiếu nó, mỗi lần push sẽ dồn vào một PR hub đang
+chờ mà ai đó phải merge tay. `kb doctor` báo khi `-code` trên hub bị tụt lại.
 
 ---
 
@@ -181,8 +180,8 @@ hỏi dò intake tới mười phút, chờ một lượt CI kích hoạt bằng
 không hề có, rồi báo lỗi gây hiểu nhầm.
 
 Pull request đó trên hub được một BA hoặc kiến trúc sư review, như mọi nội dung
-khác trên hub. `-svc` là tri thức do người biên soạn; nó publish qua review, không
-bao giờ qua auto-merge.
+khác trên hub — trừ khi hub đã bật auto-merge cho repo của bạn: khi đó nó tự merge
+và lượt review `-svc` bạn làm tại máy là lượt duy nhất.
 
 ---
 
