@@ -576,6 +576,34 @@ def push_branch_with_token(
         raise GitError(f"push branch '{branch}' failed: {detail}")
 
 
+def push_head_with_token(
+    root: Path,
+    url: str,
+    token: str,
+    dest_branch: str,
+    *,
+    timeout: float | None = None,
+) -> None:
+    """Push HEAD to `dest_branch` on `url`, token via env, NEVER forced.
+
+    A non-fast-forward is rejected (GitError) rather than overwriting what
+    someone else landed -- the registry edit path must lose a race, not win it.
+    """
+    stripped, embedded = split_credentials(url)
+    proc = _run_network(
+        root,
+        credential_env(stripped, token or embedded),
+        f"push HEAD to '{dest_branch}'",
+        "push",
+        stripped,
+        f"HEAD:refs/heads/{dest_branch}",
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        detail = redact_url(proc.stderr.strip().replace(stripped, "<hub-url>"))
+        raise GitError(f"push to '{dest_branch}' failed: {detail}")
+
+
 def worktree_add(root: Path, path: Path, branch: str, base: str, reset: bool) -> None:
     """Check `branch` out into its own working tree at `path`.
 
