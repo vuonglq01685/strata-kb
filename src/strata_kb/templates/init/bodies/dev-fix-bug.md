@@ -48,9 +48,10 @@ stay CLI-first.
    Environment, Pre-conditions, Steps to reproduce, Expected result,
    Actual result and Impact. When `> Related ticket:` names a ticket
    (not `none`), fetch and read it too — its acceptance criteria say what
-   was promised. Create the branch from the default branch: `fix/<BUG-id>`
-   for a `bug`; for a `hotfix`, ask the Dev which production line to
-   branch from and create `hotfix/<BUG-id>` from it. Run `kb ticket check`
+   was promised. Offer the exact branch command and create the branch once the Dev
+   agrees: `git switch -c fix/<BUG-id>` from the default branch for a
+   `bug`; for a `hotfix`, ask the Dev which production line to branch from
+   and offer `git switch -c hotfix/<BUG-id> <production-line>`. Run `kb ticket check`
    (MCP `kb_ticket_check` with the file's text; CLI fallback
    `kb ticket check docs/impl/<id>/ticket.md`) only when the bug has a
    `## Technical grounding` section: PASS shows every `[warn]` to the Dev;
@@ -95,30 +96,51 @@ stay CLI-first.
    is a wrong architecture or a wrong mental model. Bring what each
    attempt revealed and what is shared, coupled or stateful where it
    should not be, and do not attempt number four without that
-   conversation.
-5. **Handover** — run `/dev-handover` (it re-checks freshness, runs the
-   full suite, records service history and assembles the PR description).
-   In the PR body: **Ticket** = `BUG-<n>` (not a story id); **Changes** =
-   one bullet per change, the first being the root cause in one line (the
-   `Root cause:` line of `rootcause.md`); **Testing** = the reproduction
-   test mapped to the bug's Actual result, plus the `cmd.test` command line
-   and its summary lines. The Dev opens the PR and merges; for a `hotfix`
-   the PR targets the production line named at Intake.
+   conversation. A fix that fails (the reproduction test still fails, or
+   another test breaks for a reason you cannot explain) is a failed
+   hypothesis: revert it, log it in the hypothesis log as failed with what
+   it taught you, clear the `Root cause:` line of `rootcause.md`, and
+   return to step 3 (Root cause). Never stack a second fix on top of the
+   first.
+5. **Handover** — run `/dev-handover` (it runs the full suite, records
+   service history and assembles the PR description), with these bug
+   rules, which override its story wording:
+   - (a) Skip its "Freshness re-check" when the bug has no `## KB context`
+     block: `kb resolve --status-only` fails on a ticket without one, and
+     that is not a blocker for the BA. With a block, run it as written.
+   - (b) There is no design and no plan: report design, plan and tasks as
+     `n/a (bug)`; its plan-completeness check does not apply. The
+     reproduction test and the Root cause line replace them.
+   - (c) **Testing** maps the reproduction test (Steps to reproduce →
+     Expected result) instead of acceptance criteria, then the `cmd.test`
+     command line and its summary lines. **Ticket** = `BUG-<n>` (not a
+     story id); **Changes** = one bullet per change, the first being the
+     root cause in one line (the `Root cause:` line of `rootcause.md`).
+   - (d) For a `hotfix`, build its branch diff against the production line
+     the Dev named at Intake, not `git merge-base <default-branch> HEAD`,
+     and the PR targets that line.
+
+   The Dev opens the PR and merges.
 
 Re-entry is derived, never stored:
 
 - `docs/impl/<id>/rootcause.md` absent → `repro ⬜`: run Reproduce.
 - present, `Root cause:` empty → `repro ✅`, `root cause ⬜`: continue
   Root cause from the last row of the hypothesis log.
+- present, `Root cause:` empty and three or more rows of the hypothesis
+  log failed → STOP and raise the architecture question with the Dev;
+  never a fourth hypothesis without that conversation.
 - `Root cause:` filled → `root cause ✅`; `fix ✅` once the reproduction
   test and the full suite pass on the branch; no PR yet → Fix, then
-  Handover.
+  Handover. A fix that failed cleared `Root cause:` (step 4), so this
+  state never loops back into Fix.
 - `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
   flow done; `--state closed` non-empty → `PR ❌ closed`: re-handover or
   reopen; `gh` absent → `PR ? unknown (gh not installed)`.
 - no branch matches `git branch --list "*<BUG-id>*"` and HEAD is the
-  default branch → offer `git switch -c fix/<BUG-id>` (hotfix: from the
-  production line, `hotfix/<BUG-id>`).
+  default branch → offer the exact `git switch -c fix/<BUG-id>` (hotfix:
+  `git switch -c hotfix/<BUG-id> <production-line>`, the line the Dev
+  named) and create it once the Dev agrees.
 - the current branch names a *different* ticket id → STOP: "two tickets in
   flight; switch branches first".
 

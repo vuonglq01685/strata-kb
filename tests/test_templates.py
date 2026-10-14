@@ -3470,3 +3470,50 @@ def test_dev_fix_bug_ends_with_its_own_next_step_block():
 
 def test_dev_fix_bug_is_outside_the_story_workflow_canon():
     assert "dev-fix-bug" not in DEV_WORKFLOW_SKILLS
+
+
+def test_ba_bug_report_never_ticks_a_dor_box():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        assert "Tick NO `## Definition of Ready` box yourself" in text, name
+        assert "the BA ticks them all after reading the draft" in text, name
+        assert "Tick no `## Definition of Ready` box on a bug" in text, name
+        assert "the lint proves" not in text, name
+
+
+def test_dev_fix_bug_handover_overrides_the_story_wording():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert (
+            'Skip its "Freshness re-check" when the bug has no `## KB context`' in text
+        ), name
+        assert "design, plan and tasks as `n/a (bug)`" in text, name
+        assert (
+            "maps the reproduction test (Steps to reproduce → Expected result)" in text
+        ), name
+        assert "instead of acceptance criteria" in text, name
+        assert "against the production line the Dev named at Intake" in text, name
+        assert "not `git merge-base <default-branch> HEAD`" in text, name
+
+
+def test_dev_fix_bug_failed_fix_returns_to_root_cause_and_never_loops():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "A fix that fails" in text, name
+        assert "clear the `Root cause:` line of `rootcause.md`" in text, name
+        assert "return to step 3 (Root cause)" in text, name
+        assert "three or more rows of the hypothesis log failed" in text, name
+        assert "never a fourth hypothesis" in text, name
+        assert "this state never loops back into Fix" in text, name
+
+
+def test_dev_fix_bug_offers_the_branch_command_instead_of_creating_it():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "Create the branch" not in text, name
+        assert (
+            "Offer the exact branch command and create the branch once the Dev agrees"
+            in text
+        ), name
+        assert "git switch -c fix/<BUG-id>" in text, name
+        assert "git switch -c hotfix/<BUG-id> <production-line>" in text, name

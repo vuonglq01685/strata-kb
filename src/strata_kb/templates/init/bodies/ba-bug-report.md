@@ -74,10 +74,12 @@ has no MCP tool and stays CLI.
    every `OPEN(<owner>)` with its Open questions row, and the lint verdict.
    The BA reviews, commits `tickets/bugs/BUG-<n>.md` with its
    `BUG-<n>/` folder, and runs `kb publish` so the Dev can
-   `kb ticket fetch BUG-<n>`. Tick only the `## Definition of Ready` boxes
-   the lint proves (attachments or `N/A`, severity and related ticket,
-   open-question owners); "steps reproduce the actual result" and
-   "concrete values" stay the BA's judgement. Never commit or push.
+   `kb ticket fetch BUG-<n>`. Tick NO `## Definition of Ready` box
+   yourself: the BA ticks them all after reading the draft. List the five
+   boxes in the handover with what you did for each (steps and values
+   taken from the BA's answers, attachments or `N/A`, severity and related
+   ticket set, open questions and their owners) so the BA can verify.
+   Never commit or push.
 
 ## Hard rules
 
@@ -97,6 +99,7 @@ has no MCP tool and stays CLI.
 - Quote error text verbatim and keep concrete values (ids, amounts,
   timestamps) exactly as the BA gave them; redact secrets and personal
   data before they reach a screenshot or the text.
+- Tick no `## Definition of Ready` box on a bug; the BA ticks them all.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining warnings
   to the BA — do not hand over a failing ticket silently.
