@@ -359,6 +359,26 @@ gì được giao, và đó là một **báo cáo, không phải một cổng**:
 tại chỗ và chuyển kết quả cho bạn, thay vì tự tiến bước dựa trên lời tự nhận
 của mình.
 
+## 4.5 Sửa một bug
+
+Bug mà BA đã publish là `BUG-<n>` (`> Type: bug` hoặc `hotfix`, `> Severity:
+S1`–`S4`). Nó không có user story và không có tiêu chí chấp nhận: xong khi các bước
+không còn tái hiện kết quả sai. `/dev-fix-bug BUG-<n>` chạy theo phong cách
+`superpowers:systematic-debugging`:
+
+1. **Intake** — lấy bug về. `kb ticket fetch BUG-<n>` ghi `docs/impl/<id>/ticket.md`
+   và chép ảnh chụp của bug (PNG hoặc WebP) vào `docs/impl/<id>/assets/`; nó cảnh
+   báo một lần cho mỗi ảnh thiếu trong bản clone hub, khi đó bạn mở
+   `<hub>/assets/<name>`. MCP `kb_ticket_fetch` chỉ trả về văn bản. Tạo branch
+   `fix/<BUG-id>`, hoặc `hotfix/<BUG-id>` từ nhánh production mà bạn chỉ định.
+2. **Reproduce** — một test thất bại cho thấy kết quả thực tế. Không có test này
+   thì không sửa.
+3. **Root cause** — các giả thuyết ghi rõ trong `docs/impl/<id>/rootcause.md`. Ba
+   giả thuyết thất bại thì luồng dừng lại để bàn về kiến trúc với bạn.
+4. **Fix** — một thay đổi tại nguyên nhân gốc, toàn bộ test xanh.
+5. **Handover** — `/dev-handover` với quy tắc cho bug: không có design hay plan; test
+   tái hiện và dòng root cause thay thế chúng.
+
 ---
 
 # 5. Cái gì được máy bảo đảm, cái gì chỉ là lời nhắc
@@ -643,7 +663,7 @@ thật.
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
-`/dev-execute`, `/dev-handover`, `/dev-code-seed`.
+`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`.
 
 ---
 

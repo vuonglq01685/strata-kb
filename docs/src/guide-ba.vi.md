@@ -267,6 +267,31 @@ dòng đó: chúng là quyết định của bạn, không phải việc ground 
 Chỉ chạy `/sa-ticket-ground` bằng tay khi `kb ticket check` fail với
 `re-run /sa-ticket-ground`.
 
+## 3.9 Báo cáo một bug
+
+Lỗi của thứ đã chạy thật là **bug ticket**, không phải story: không có "As a … I
+want …", và tiêu chí chấp nhận là "các bước không còn tái hiện kết quả sai". Chạy
+`/ba-bug-report` (do `kb init --kind ba` cài). Nó hỏi cái gì hỏng, môi trường, các
+bước chính xác, kết quả mong đợi và kết quả thực tế, mức severity và ảnh chụp màn
+hình, rồi soạn `tickets/bugs/BUG-<n>.md` từ `docs/tickets/BUG-TEMPLATE.md` và lint
+tới khi `DoR: PASS`. Bug bỏ qua maturity review và phần technical grounding.
+
+- **Dòng header.** `> Type: bug|hotfix` (hotfix ra trước bản phát hành kế tiếp),
+  `> Severity: S1..S4` (bắt buộc), tuỳ chọn `> Related ticket: <id|none>`. Không có
+  `> Parent mission:`.
+- **Các section.** Summary, Environment, Pre-conditions, Steps to reproduce,
+  Expected result, Actual result, Attachments, Impact, Definition of Ready.
+- **Attachments.** Chỉ PNG hoặc WebP, đặt trong `tickets/bugs/BUG-<n>/`, tham chiếu
+  ở `## Attachments` dạng `![caption](BUG-<n>/<file>.png)`. Không có ảnh thì ghi
+  `N/A — <lý do>`.
+- **Phần của bạn.** Đánh dấu Definition of Ready sau khi đọc bản nháp (agent không
+  bao giờ tự đánh dấu), commit bug cùng thư mục `BUG-<n>/` rồi publish. `kb publish`
+  chép ảnh vào plan và trang ticket trên hub hiển thị chúng; Dev sau đó chạy
+  `/dev-fix-bug BUG-<n>`.
+
+`kb ticket lint tickets/bugs/BUG-<n>.md` (và cổng CI) tự kiểm bug theo hợp đồng này;
+nó cũng kiểm các file ảnh có tồn tại.
+
 ---
 
 # 4. Mission plan — cho tính năng lớn
@@ -782,7 +807,7 @@ kb mission lint missions/M-checkout.md
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
-**Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.
+**Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/sa-ticket-ground`, `/kb-publish`.
 
 ---
 

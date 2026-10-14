@@ -160,6 +160,26 @@ who has the SA re-ground it. If the run also prints `checked against the local
 -code, not the hub's copy`, your own branch may be the cause: re-run once the
 hub is reachable and holds the -code.
 
+## Fix a bug
+
+A bug the BA published is `BUG-<n>` (`> Type: bug` or `hotfix`,
+`> Severity: S1`–`S4`). It has no user story and no acceptance criteria: it is
+done when its steps no longer reproduce the wrong result. Run
+`/dev-fix-bug BUG-<n>` (installed by `kb init --kind dev`):
+
+1. **Intake** — fetch the bug. `kb ticket fetch BUG-<n>` also copies its
+   screenshots to `docs/impl/<id>/assets/` and warns once per image missing
+   from the hub clone (open `<hub>/assets/<name>`); MCP `kb_ticket_fetch`
+   returns text only. Branch `fix/<BUG-id>`, or `hotfix/<BUG-id>` from the
+   production line you name.
+2. **Reproduce** — a failing test that shows the Actual result. No fix
+   without it.
+3. **Root cause** — written hypotheses in `docs/impl/<id>/rootcause.md`;
+   three failed ones stop the flow for an architecture talk with you.
+4. **Fix** — one change at the root cause, full suite green.
+5. **Handover** — `/dev-handover` with bug rules: no design or plan, the
+   reproduction test and the root cause replace them.
+
 ## Where work lives
 
 - `docs/impl/<ticket-id>/design.md` — the design produced by `dev-design`.
