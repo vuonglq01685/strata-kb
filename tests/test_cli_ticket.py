@@ -424,3 +424,21 @@ def test_fetch_refuses_traversal_and_absolute_ids(
 
     assert list(work.iterdir()) == []
     assert not outside.exists()
+
+
+def test_fetch_copies_bug_assets_next_to_ticket(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    from tests.test_ticketfetch import _bug_hub
+
+    _, name = _bug_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", "BUG-12", "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    impl = work / "docs" / "impl" / "BUG-12"
+    assert f"](assets/{name})" in (impl / "ticket.md").read_text(encoding="utf-8")
+    assert (impl / "assets" / name).is_file()

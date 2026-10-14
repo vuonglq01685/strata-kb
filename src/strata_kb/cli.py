@@ -3094,12 +3094,15 @@ def ticket_fetch(
 ) -> None:
     """Read a ticket from the hub by id and save it as a local ticket file.
     Always overwrites; the BA's repo stays the place to amend it."""
+    import shutil
+
     from strata_kb import ticketfetch
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
         repo, doc, _ = ticketfetch.find(handle, ticket)
         text = ticketfetch.render(handle, ticket)
+        files = ticketfetch.assets_of(handle, ticket)
     except ticketfetch.TicketFetchError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
@@ -3111,6 +3114,10 @@ def ticket_fetch(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
+        if files:
+            (path.parent / "assets").mkdir(exist_ok=True)
+        for f in files:
+            shutil.copyfile(f, path.parent / "assets" / f.name)
     except OSError as exc:
         typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None

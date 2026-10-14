@@ -190,3 +190,53 @@ def test_unreadable_section_file_names_no_hub_path(plan_hub):
         ticketfetch.render(plan_hub, US1)
     assert f"/{l3.name}" in str(exc.value)
     assert str(plan_hub.root) not in str(exc.value)
+
+
+def _bug_hub(fed_hub: Path, tmp_path: Path, run_git) -> tuple[HubHandle, str]:
+    """A hub holding a plan whose only ticket is a bug with one PNG."""
+    from tests.test_planingest import _PNG, _bug_text, _sha
+
+    ba = tmp_path / "ba-one"
+    write_repo(ba, {}, {"bugs/BUG-12.md": _bug_text()})
+    folder = ba / "tickets" / "bugs" / "BUG-12"
+    folder.mkdir(parents=True)
+    (folder / "toast.png").write_bytes(_PNG)
+    planingest.run(ba, ba / ".kb", "demo", ba / "missions", ba / "tickets")
+    entry = make_fed_entry(
+        fed_hub / "federation",
+        "ba-one",
+        "ba-one-plan",
+        title=f"ba-one {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
+    shutil.rmtree(entry / "ba-one-plan")
+    shutil.copytree(ba / ".kb" / "demo-plan", entry / "ba-one-plan")
+    manifest = entry / "ba-one-plan" / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("demo-plan", "ba-one-plan"),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish bug")
+    return HubHandle(root=fed_hub), f"{_sha(_PNG)}.png"
+
+
+def test_assets_of_lists_the_files_the_fetched_text_references(
+    fed_hub, tmp_path, run_git
+):
+    hub, name = _bug_hub(fed_hub, tmp_path, run_git)
+    assert f"](assets/{name})" in ticketfetch.render(hub, "BUG-12")
+    files = ticketfetch.assets_of(hub, "BUG-12")
+    assert [f.name for f in files] == [name]
+    assert files[0].is_file()
+
+
+def test_assets_of_skips_a_missing_asset_and_a_ticket_without_images(
+    fed_hub, tmp_path, run_git, block
+):
+    hub, name = _bug_hub(fed_hub, tmp_path, run_git)
+    files = ticketfetch.assets_of(hub, "BUG-12")
+    files[0].unlink()
+    assert ticketfetch.assets_of(hub, "BUG-12") == []
+    publish_plan(hub.root, "ba-two", tmp_path / "ba-two", block)
+    assert ticketfetch.assets_of(hub, "ba-two:" + US1) == []

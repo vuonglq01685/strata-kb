@@ -11,7 +11,7 @@ from strata_kb import gitio, query
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
-from strata_kb.planingest import promote_headings
+from strata_kb.planingest import ASSET_REF_RE, ASSETS_DIR, promote_headings
 from strata_kb.planstatus import plan_docs, safe_name
 
 
@@ -93,3 +93,13 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
         "— do not edit; amend in the BA repo."
     )
     return f"# {title}\n\n{provenance}\n\n{promote_headings(body.strip(chr(10)))}\n"
+
+
+def assets_of(hub: HubHandle, ticket_ref: str) -> list[Path]:
+    """The files under the plan document's `assets/` that the fetched text
+    references. A missing file (diverted to the object store) or a symlink is
+    left out."""
+    folder = find(hub, ticket_ref)[2].parent / ASSETS_DIR
+    names = dict.fromkeys(ASSET_REF_RE.findall(render(hub, ticket_ref)))
+    files = [folder / n for n in names]
+    return [f for f in files if f.is_file() and not f.is_symlink()]
