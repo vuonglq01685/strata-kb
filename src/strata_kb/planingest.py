@@ -261,7 +261,7 @@ def _via_symlink(base: Path, rel: str) -> bool:
 
 
 def _attach(
-    text: str, base_dir: Path
+    text: str, stem: str, base_dir: Path
 ) -> tuple[str, tuple[tuple[str, bytes], ...]] | str:
     """Read each `## Attachments` image of a bug and rewrite its reference to
     `assets/<sha256>.<ext>`. Returns `(text, assets)`, or the reason the bug
@@ -273,7 +273,7 @@ def _attach(
     for src in buglint.attachment_images(text):
         if src in mapping:
             continue
-        if problems := buglint.image_problems(src, None, None):
+        if problems := buglint.image_problems(src, stem, None):
             return problems[0]  # lint catches these; this is defence
         path = base_dir / src
         if _via_symlink(base_dir, src) or not path.resolve().is_relative_to(root):
@@ -287,7 +287,7 @@ def _attach(
         name = f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
         mapping[src] = f"{ASSETS_DIR}/{name}"
         assets[name] = data
-    return buglint.rewrite_attachment_images(text, mapping), tuple(assets.items())
+    return buglint.rewrite_images(text, mapping), tuple(assets.items())
 
 
 def _select(
@@ -340,7 +340,7 @@ def _select(
         is_bug = ticket.ticket_type(text) in ("bug", "hotfix")
         assets: tuple[tuple[str, bytes], ...] = ()
         if is_bug:
-            attached = _attach(text, path.parent)
+            attached = _attach(text, path.stem, path.parent)
             if isinstance(attached, str):
                 report.skipped.append((file, attached))
                 continue

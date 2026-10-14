@@ -490,3 +490,44 @@ def test_assets_folder_does_not_break_ownership_check_or_cleanup(tmp_path: Path)
     (tmp_path / "tickets" / "bugs" / "BUG-12.md").unlink()
     run_plan(tmp_path)  # nothing qualifies: whole doc dir (assets too) removed
     assert not (tmp_path / ".kb" / "demo-plan").exists()
+
+
+def test_bug_image_listed_in_attachments_and_elsewhere_is_rewritten_everywhere(
+    tmp_path: Path,
+):
+    from tests.test_buglint import _bug
+
+    line = "![toast](BUG-12/toast.png)"
+    text = _bug(
+        override={
+            "## Actual result": f"HTTP 500.\n{line}",
+            "## Attachments": line,
+            "## Definition of Ready": _DOR_DONE,
+        }
+    )
+    _write_bug(tmp_path, text)
+    assert run_plan(tmp_path).published == ["BUG-12"]
+    name = f"{_sha(_PNG)}.png"
+    for f in ("tickets.md", "tickets.raw.md"):
+        body = doc_file(tmp_path, f)
+        assert "BUG-12/toast.png" not in body
+        assert body.count(f"![toast](assets/{name})") >= 1
+    assert doc_file(tmp_path, "tickets.raw.md").count(f"assets/{name}") == 2
+
+
+def test_bug_image_in_another_bugs_folder_is_skipped(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text(images=("BUG-13/x.png",)), png=None)
+    other = tmp_path / "tickets" / "bugs" / "BUG-13"
+    other.mkdir()
+    (other / "x.png").write_bytes(_PNG)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert "not under 'BUG-12/'" in report.skipped[0][1]
+
+
+def test_attach_checks_the_bug_folder_itself(tmp_path: Path):
+    # defence in depth: lint already rejects this, _attach must too
+    (tmp_path / "BUG-13").mkdir()
+    (tmp_path / "BUG-13" / "x.png").write_bytes(_PNG)
+    got = planingest._attach(_bug_text(images=("BUG-13/x.png",)), "BUG-12", tmp_path)
+    assert isinstance(got, str) and "not under 'BUG-12/'" in got

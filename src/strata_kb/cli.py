@@ -3102,7 +3102,7 @@ def ticket_fetch(
     try:
         repo, doc, _ = ticketfetch.find(handle, ticket)
         text = ticketfetch.render(handle, ticket)
-        files = ticketfetch.assets_of(handle, ticket)
+        files, missing = ticketfetch.split_assets(handle, ticket)
     except ticketfetch.TicketFetchError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
@@ -3121,6 +3121,12 @@ def ticket_fetch(
     except OSError as exc:
         typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
+    for name in missing:
+        typer.secho(
+            f"warning: assets/{name} is not in the hub clone — open it on the hub at /assets/{name}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     typer.echo(f"fetched: {repo}:{doc} §{ticket_id} -> {path}")
 
 

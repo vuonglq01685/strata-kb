@@ -55,20 +55,16 @@ def attachment_images(text: str) -> list[str]:
     return _IMAGE_RE.findall(mdmask._visible_text(body))
 
 
-def rewrite_attachment_images(text: str, mapping: dict[str, str]) -> str:
-    """`text` with each `## Attachments` image src in `mapping` replaced by
-    its value; every other byte is untouched."""
-    body = lintcore.section_body(text, ATTACHMENTS_HEADING)
-    if body is None:
-        return text
+def rewrite_images(text: str, mapping: dict[str, str]) -> str:
+    """`text` with the src of every markdown image found in `mapping`
+    replaced by its value (wherever the image sits); all else untouched."""
 
     def swap(m: re.Match[str]) -> str:
         start, end = (i - m.start() for i in m.span(1))
         whole = m.group(0)
         return whole[:start] + mapping.get(m.group(1), m.group(1)) + whole[end:]
 
-    new_body = _IMAGE_RE.sub(swap, body)
-    return text.replace(body, new_body, 1) if new_body != body else text
+    return _IMAGE_RE.sub(swap, text)
 
 
 def image_problems(src: str, stem: str | None, base_dir: Path | None) -> list[str]:
