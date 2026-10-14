@@ -1,16 +1,15 @@
 """ui — the server-rendered HTML screens under `/ui/*` and `/assets/*`.
 
 `build_routes` returns the overview/search screen, doc and section pages, the
-token login and logout, static files, and content-addressed asset serving.
+username/password login and logout, static files, and content-addressed asset serving.
 Pages render through `templating` with `mdrender` for Markdown bodies and read
 only the hub's `federation/`, never its unpublished `.kb/`. The login form is
-unauthenticated, so it is size-capped and rate-limited before the token
+unauthenticated, so it is size-capped and rate-limited before the credentials
 compare.
 """
 
 from __future__ import annotations
 
-import hmac
 import logging
 import os
 import re
@@ -45,8 +44,10 @@ from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
 from strata_kb.serving.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE,
+    SessionAuth,
     cookie_is_secure,
-    make_session,
+    make_user_session,
+    request_user,
 )
 from strata_kb.serving.config import ServerConfig
 from strata_kb.serving.ratelimit import (
@@ -63,10 +64,10 @@ logger = logging.getLogger("strata_kb.web.ui")
 
 # /ui/login is unauthenticated and auth-exempt, and Starlette applies no size
 # limit to a form body -- the same reason intake_routes caps every upload
-# (intake_routes.read_capped). A token is tens of bytes; 8 KiB is generous.
+# (intake_routes.read_capped). A username and password are tens of bytes; 8 KiB is generous.
 #
 # A chunked request (no Content-Length) skips the header check in login_post
-# and reaches request.form() regardless. Do not rely on "the token field is
+# and reaches request.form() regardless. Do not rely on "the login fields are
 # not a file part" to bound it: Starlette's FormParser, not just
 # MultiPartParser, enforces its own limits on plain url-encoded fields too.
 # Verified against pinned Starlette 1.6.0: FormParser caps each field at
@@ -222,6 +223,8 @@ def _shell_ctx(
     href_kind: str | None = None,
 ) -> dict:
     selected = [t.strip() for t in raw_tags.split(",") if t.strip()]
+    user = request_user()
+    is_admin = user is not None and user.role == "admin"
     scope = _SCREEN_KIND.get(screen)
     # The cloud is scoped by `scope`; hrefs keep the menu's kind, or (on the
     # top-search screen, cloud global) the kind chip that is on.
@@ -246,6 +249,7 @@ def _shell_ctx(
                 kind=href_scope,
             ),
             "selected_tags": selected,
+            "is_admin": is_admin,
         }
     return {
         "screen": screen,
@@ -266,6 +270,7 @@ def _shell_ctx(
             kind=href_scope,
         ),
         "selected_tags": selected,
+        "is_admin": is_admin,
     }
 
 
@@ -518,12 +523,25 @@ def _kind_chips(request: Request, q: str, found: list, shown: str | None) -> lis
     ]
 
 
+def _verified_user(session: SessionAuth | None, username: str, password: str):
+    """The account these credentials unlock, or None. Never raises: a
+    username sqlite cannot bind (lone surrogate) is just a wrong login."""
+    if session is None:
+        return None
+    try:
+        username.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+    return session.accounts.verify(username, password)
+
+
 def build_routes(
     config: ServerConfig,
     token: str,
     store_factory=None,
     login_limiter=None,
     trusted_proxies: int | None = None,
+    session: SessionAuth | None = None,
 ) -> list[Route]:
     limiter = login_limiter or SlidingWindowLimiter(
         LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
@@ -539,14 +557,22 @@ def build_routes(
     if trusted_proxies is None:
         trusted_proxies = trusted_proxies_from_env()
 
+    def render_login(error: str = "", status: int = 200) -> HTMLResponse:
+        no_accounts = session is None or session.accounts.count() == 0
+        return HTMLResponse(
+            templating.render("login.html", error=error, no_accounts=no_accounts),
+            status_code=status,
+            headers=NO_STORE,
+        )
+
     async def login_get(request: Request) -> HTMLResponse:
-        return HTMLResponse(templating.render("login.html", error=""), headers=NO_STORE)
+        return render_login()
 
     async def login_post(request: Request) -> Response:
         # Checked first, before the rate limiter and before request.form()
         # touches the body: a fat-fingered paste (an honest mistake) is not
         # an attempt at the shared secret, so it must not spend a lockout
-        # attempt the same way a wrong token does (the same rule as auth's
+        # attempt the same way a wrong password does (the same rule as auth's
         # _credential_presented -- absence/non-attempt doesn't count). An
         # attacker sending oversized bodies to probe gains nothing either:
         # this is a header-only check, no body is ever read, so it costs the
@@ -554,17 +580,11 @@ def build_routes(
         if int(request.headers.get("content-length") or 0) > LOGIN_MAX_BODY:
             return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
         client_ip = client_key(request, trusted_proxies)
-        # Checked before the token compare: a brute-forcer must not learn of
+        # Checked before the password check: a brute-forcer must not learn of
         # a hit inside the lockout window.
         if not limiter.allow(client_ip):
             logger.warning("login rate-limited for %s", client_ip)
-            return HTMLResponse(
-                templating.render(
-                    "login.html", error="Too many attempts — try again later."
-                ),
-                status_code=429,
-                headers=NO_STORE,
-            )
+            return render_login("Too many attempts — try again later.", 429)
         # The Content-Length check above does not bound a chunked body, and
         # request.form() alone buffers up to 1 MiB per field × 1000 fields:
         # one unauthenticated request could OOM the whole service. The capped
@@ -577,11 +597,11 @@ def build_routes(
             form = await capped.form(max_files=0, max_fields=4)
         except _LoginBodyTooLarge:
             return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
-        submitted = str(form.get("token", ""))
+        username = str(form.get("username", ""))
+        password = str(form.get("password", ""))
         await capped.close()
-        # Bytes, not str: compare_digest raises TypeError on a non-ASCII str,
-        # which would be a 500 for any non-ASCII guess.
-        if hmac.compare_digest(submitted.encode("utf-8"), token.encode("utf-8")):
+        user = _verified_user(session, username, password)
+        if user is not None and session is not None:
             resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
             secure = cookie_is_secure(request, trusted_proxies)
             if not secure:
@@ -593,7 +613,7 @@ def build_routes(
                 )
             resp.set_cookie(
                 COOKIE_NAME,
-                make_session(token),
+                make_user_session(session.key, user),
                 httponly=True,
                 samesite="lax",
                 secure=secure,
@@ -605,14 +625,9 @@ def build_routes(
             resp.delete_cookie("center_kb_token", path="/")
             resp.delete_cookie("center_kb_session", path="/")
             return resp
-        # never log the submitted value — it may be a near-miss of the token
+        # never log the submitted values — a password may be a near-miss
         logger.warning("failed login attempt from %s", client_ip)
-        return HTMLResponse(
-            templating.render(
-                "login.html", error="Invalid token — check for trailing spaces."
-            ),
-            headers=NO_STORE,
-        )
+        return render_login("Wrong username or password.")
 
     async def logout_post(request: Request) -> Response:
         resp = RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)

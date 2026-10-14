@@ -522,7 +522,7 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
             raise typer.Exit(1)
         typer.echo(
             "Hub running — Web UI: http://localhost:8321/ui "
-            "(sign in with the token from .env)"
+            "(first account: docker compose exec hub kb user add <name> --role admin)"
         )
     else:
         if not no_docker:
@@ -533,9 +533,8 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
             )
         typer.echo("Next steps:")
         typer.echo("  1. docker compose up -d")
-        typer.echo(
-            "  2. Open http://localhost:8321/ui (sign in with the token from .env)"
-        )
+        typer.echo("  2. docker compose exec hub kb user add <name> --role admin")
+        typer.echo("  3. Open http://localhost:8321/ui and sign in")
     typer.echo("Point remote MCP clients at the hub:")
     typer.echo('  { "mcpServers": { "strata-kb": { "type": "http",')
     typer.echo('    "url": "http://<host>:8321/mcp",')
@@ -4082,8 +4081,11 @@ def doctor(
 
 
 def _accounts(kb_dir: Path):
-    from strata_kb.serving.accounts import Accounts, auth_dir_for
+    from strata_kb.serving.accounts import Accounts, auth_dir_for, ensure_git_exclude
 
+    # Before the first server start, `kb user add` must not leave users.db
+    # committable either.
+    ensure_git_exclude(kb_dir.parent)
     return Accounts(auth_dir_for(kb_dir) / "users.db")
 
 

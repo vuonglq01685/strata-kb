@@ -124,3 +124,10 @@ def test_user_hash_prints_verifiable_hash():
     assert r.exit_code == 0
     line = r.output.strip().splitlines()[-1]
     assert check_password("pw", line)
+
+
+def test_user_add_before_first_server_start_excludes_auth_dir_from_git(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert _add(tmp_path).exit_code == 0
+    exclude = (tmp_path / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert ".kb-auth/" in exclude.splitlines()

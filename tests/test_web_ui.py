@@ -94,9 +94,20 @@ Full raw text about airspace records. Designation, type, multiple code, level.
 """
 
 
-def _client(kb_dir, hub: str) -> TestClient:
+def _client(kb_dir, hub: str, session=None) -> TestClient:
     config = ServerConfig(kb_dir=kb_dir, hub=hub)
-    return TestClient(Starlette(routes=ui.build_routes(config, TOKEN)))
+    return TestClient(Starlette(routes=ui.build_routes(config, TOKEN, session=session)))
+
+
+def _login_session(tmp_path):
+    """A SessionAuth over a throwaway store holding one account; returns
+    (session, username, password)."""
+    from strata_kb.serving.accounts import Accounts
+    from strata_kb.serving.auth import SessionAuth
+
+    accounts = Accounts(tmp_path / "users.db")
+    accounts.add("ann", "throwaway-pw", "dev")
+    return SessionAuth(b"k" * 32, accounts), "ann", "throwaway-pw"
 
 
 def _authed_client(kb_dir, hub: str, store_factory=None) -> TestClient:
@@ -188,12 +199,13 @@ def test_ui_root_hub_down_shows_offline(tmp_path, monkeypatch):
 def test_login_page_renders(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/login")
     assert resp.status_code == 200
-    assert 'name="token"' in resp.text
+    assert 'name="username"' in resp.text and 'name="password"' in resp.text
 
 
-def test_login_correct_token_sets_cookie_and_redirects(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).post(
-        "/ui/login", data={"token": TOKEN}, follow_redirects=False
+def test_login_correct_password_sets_cookie_and_redirects(fed_hub, tmp_path):
+    session, user, pw = _login_session(tmp_path)
+    resp = _client(fed_hub / ".kb", str(fed_hub), session).post(
+        "/ui/login", data={"username": user, "password": pw}, follow_redirects=False
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/ui"
@@ -201,37 +213,43 @@ def test_login_correct_token_sets_cookie_and_redirects(fed_hub):
     assert "httponly" in resp.headers["set-cookie"].lower()
 
 
-def test_login_wrong_token_shows_error_no_cookie(fed_hub):
-    resp = _client(fed_hub / ".kb", str(fed_hub)).post(
-        "/ui/login", data={"token": "wrong"}
+def test_login_wrong_password_shows_error_no_cookie(fed_hub, tmp_path):
+    session, user, _ = _login_session(tmp_path)
+    resp = _client(fed_hub / ".kb", str(fed_hub), session).post(
+        "/ui/login", data={"username": user, "password": "wrong"}
     )
     assert resp.status_code == 200
     assert "set-cookie" not in resp.headers
-    assert "Invalid token" in resp.text
+    assert "Wrong username or password" in resp.text
 
 
-def test_login_failure_is_logged(fed_hub, caplog):
+def test_login_failure_is_logged(fed_hub, tmp_path, caplog):
     import logging
 
+    session, user, _ = _login_session(tmp_path)
     with caplog.at_level(logging.WARNING, logger="strata_kb.web.ui"):
-        _client(fed_hub / ".kb", str(fed_hub)).post(
-            "/ui/login", data={"token": "wrong"}
+        _client(fed_hub / ".kb", str(fed_hub), session).post(
+            "/ui/login", data={"username": user, "password": "wrong"}
         )
     assert "login" in caplog.text.lower()
-    # the submitted value must never be logged (it may be a near-miss token)
-    assert "wrong" not in caplog.text
+    # the submitted values must never be logged (a password may be a near-miss)
+    assert "wrong" not in caplog.text and user not in caplog.text
 
 
-def test_login_rate_limited_after_repeated_failures(fed_hub):
-    c = _client(fed_hub / ".kb", str(fed_hub))
+def test_login_rate_limited_after_repeated_failures(fed_hub, tmp_path):
+    session, user, pw = _login_session(tmp_path)
+    c = _client(fed_hub / ".kb", str(fed_hub), session)
+    bad = {"username": user, "password": "wrong"}
     for _ in range(5):
-        resp = c.post("/ui/login", data={"token": "wrong"})
+        resp = c.post("/ui/login", data=bad)
         assert resp.status_code == 200
-    limited = c.post("/ui/login", data={"token": "wrong"})
+    limited = c.post("/ui/login", data=bad)
     assert limited.status_code == 429
-    # correct token also refused while limited — limiter keys on the client,
+    # correct password also refused while limited — limiter keys on the client,
     # a brute-forcer must not confirm a hit inside the lockout window
-    still = c.post("/ui/login", data={"token": TOKEN}, follow_redirects=False)
+    still = c.post(
+        "/ui/login", data={"username": user, "password": pw}, follow_redirects=False
+    )
     assert still.status_code == 429
 
 
@@ -263,7 +281,9 @@ def test_login_limiter_honours_trusted_proxies_for_the_rate_limit_key(
 
     def post(xff):
         return c.post(
-            "/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff}
+            "/ui/login",
+            data={"username": "x", "password": "wrong"},
+            headers={"X-Forwarded-For": xff},
         )
 
     first = post("9.9.9.9, 1.1.1.1")
@@ -297,7 +317,9 @@ def test_login_limiter_ignores_forged_xff_when_trusted_proxies_is_zero(
 
     def post(xff):
         return c.post(
-            "/ui/login", data={"token": "wrong"}, headers={"X-Forwarded-For": xff}
+            "/ui/login",
+            data={"username": "x", "password": "wrong"},
+            headers={"X-Forwarded-For": xff},
         )
 
     first = post("9.9.9.9, 1.1.1.1")
@@ -1468,7 +1490,7 @@ def test_static_handles_name_too_long_as_404(fed_hub):
 def test_login_page_is_standalone_no_catalog_leak(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get("/ui/login")
     assert resp.status_code == 200
-    assert 'name="token"' in resp.text
+    assert 'name="username"' in resp.text
     assert "Demo Document" not in resp.text  # no rail on the login page
 
 

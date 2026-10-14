@@ -2,21 +2,25 @@
 
 `TokenAuthMiddleware` wraps the one ASGI app `web.app.create_app` builds (MCP
 over HTTP, /api, /ui, /intake). It accepts `Authorization: Bearer <token>` or
-the `strata_kb_session` cookie (`make_session` / `verify_session`: an HMAC of
-the token, never the token itself), rate-limits requests that present a
+the `strata_kb_session` cookie (`make_user_session` / `read_user_session`: an
+HMAC under the accounts session key naming a user, never the token), rate-limits requests that present a
 credential, and lets EXEMPT_PATHS through. Every verdict goes through
 `is_authorized_request`, so there is one cookie parser and one header reader.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import logging
 import time
+from contextvars import ContextVar
+from dataclasses import dataclass
 
 from starlette.requests import Request
 
+from strata_kb.serving.accounts import Accounts, User, password_version
 from strata_kb.serving.ratelimit import client_key
 
 # Logger name kept from before the move to serving/ (1.15.1): operators
@@ -42,41 +46,107 @@ EXEMPT_PATHS = (
 EXEMPT_PREFIXES = ("/ui/static/",)
 
 
-def make_session(token: str, now: float | None = None) -> str:
-    """`<issued-at>.<hmac_sha256(token, issued-at)>`.
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
-    The cookie is derived from the token instead of being the token: /api
-    and /mcp accept the token, so a cookie that WAS the token would make
-    every browser session an admin-equivalent credential at rest. Stateless
-    on purpose — a server-side store would add a second sweeper to bound
-    and would log everyone out on restart.
+
+def _unb64url(text: str) -> bytes | None:
+    try:
+        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+    except ValueError:
+        return None
+
+
+def _sign(key: bytes, payload: str) -> str:
+    return hmac.new(key, payload.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def make_user_session(key: bytes, user: User, now: float | None = None) -> str:
+    """`<issued>.<b64url(username)>.<password_version>.<hmac>`.
+
+    Signed with the accounts store's own session key, never the bearer token:
+    /api and /mcp accept the token, so a cookie derived from it would let
+    anyone holding the token mint a session as any user. The password
+    version rides in the cookie so changing a password ends every session of
+    that user without a server-side session table to sweep (or to lose on
+    restart).
     """
     issued = int(now if now is not None else time.time())
-    sig = hmac.new(
-        token.encode("utf-8"), str(issued).encode("ascii"), hashlib.sha256
-    ).hexdigest()
-    return f"{issued}.{sig}"
+    name = _b64url(user.username.encode("utf-8", "surrogatepass"))
+    payload = f"{issued}.{name}.{password_version(user.password_hash)}"
+    return f"{payload}.{_sign(key, payload)}"
 
 
-def verify_session(value: str, token: str, now: float | None = None) -> bool:
-    issued_raw, _, sig = value.partition(".")
-    if (
-        not sig
-        or not sig.isascii()
-        or not issued_raw.isdecimal()
-        or not issued_raw.isascii()
-    ):
-        return False
-    expected = hmac.new(
-        token.encode("utf-8"), issued_raw.encode("ascii"), hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(sig, expected):
-        return False
+def read_user_session(
+    value: str, key: bytes, now: float | None = None
+) -> tuple[str, str] | None:
+    """`(username, password_version)` when the signature and age are valid."""
+    parts = value.split(".")
+    if len(parts) != 4 or not value.isascii():
+        return None
+    issued_raw, name, version, sig = parts
+    if not issued_raw.isdecimal():
+        return None
+    if not hmac.compare_digest(sig, _sign(key, ".".join(parts[:3]))):
+        return None
     age = (now if now is not None else time.time()) - int(issued_raw)
-    return 0 <= age <= SESSION_MAX_AGE
+    raw_name = _unb64url(name)
+    if raw_name is None or not 0 <= age <= SESSION_MAX_AGE:
+        return None
+    return raw_name.decode("utf-8", "surrogatepass"), version
 
 
-def is_authorized_request(request, token: str) -> bool:
+@dataclass(frozen=True)
+class SessionAuth:
+    """What the middleware needs to turn a cookie into a live account."""
+
+    key: bytes
+    accounts: Accounts
+
+    def user_for(self, cookie_value: str) -> User | None:
+        parsed = read_user_session(cookie_value, self.key)
+        if parsed is None:
+            return None
+        username, version = parsed
+        user = self.accounts.get(username)
+        if user is None or not hmac.compare_digest(
+            password_version(user.password_hash), version
+        ):
+            return None
+        return user
+
+
+def current_user(request) -> User | None:
+    """The logged-in account, or None (anonymous, or a bearer-token request)."""
+    return getattr(request.state, "user", None)
+
+
+# The middleware runs in the same task as the routes (and anyio copies the
+# context into sync handlers' threads), so page code that has no Request in
+# hand -- _shell_ctx -- can still ask who is looking.
+_REQUEST_USER: ContextVar[User | None] = ContextVar("strata_kb_user", default=None)
+
+
+def request_user() -> User | None:
+    return _REQUEST_USER.get()
+
+
+def _authorize(request, token: str, session: SessionAuth | None) -> User | bool:
+    """False when unauthorized, True for a bearer request, else the User."""
+    auth_header = request.headers.get("authorization", "")
+    try:
+        if hmac.compare_digest(auth_header, f"Bearer {token}"):
+            return True
+    except TypeError:
+        return False
+    if session is None:
+        return False
+    return session.user_for(request.cookies.get(COOKIE_NAME, "")) or False
+
+
+def is_authorized_request(
+    request, token: str, session: SessionAuth | None = None
+) -> bool:
     """The Request-level twin of TokenAuthMiddleware._authorized -- for code
     that has a Starlette Request (not a bare ASGI scope) and needs the same
     verdict. _authorized DELEGATES here rather than re-parsing, so there is
@@ -84,6 +154,9 @@ def is_authorized_request(request, token: str) -> bool:
     second hand-rolled parser (stdlib SimpleCookie) disagreed with
     Starlette's own `request.cookies` (cookie_parser) on 8 of 26 measured
     real Cookie-header shapes, in both directions.
+
+    Authorized means a bearer token OR a session cookie that names a live
+    account whose password has not changed since the cookie was issued.
 
     Do not call this from an auth-exempt route to vary its response by auth
     (e.g. /api/health's body). Such a route sits in EXEMPT_PATHS, so
@@ -94,13 +167,7 @@ def is_authorized_request(request, token: str) -> bool:
     _credential_presented guards against, since it needs no header trickery
     at all. This function is only safe to call from a path the middleware
     itself meters (i.e. not in EXEMPT_PATHS/EXEMPT_PREFIXES)."""
-    auth_header = request.headers.get("authorization", "")
-    try:
-        if hmac.compare_digest(auth_header, f"Bearer {token}"):
-            return True
-    except TypeError:
-        return False
-    return verify_session(request.cookies.get(COOKIE_NAME, ""), token)
+    return _authorize(request, token, session) is not False
 
 
 def cookie_is_secure(request, trusted_proxies: int = 0) -> bool:
@@ -139,9 +206,17 @@ class TokenAuthMiddleware:
     everything else (API, MCP) gets 401 JSON.
     """
 
-    def __init__(self, app, token: str, limiter=None, trusted_proxies: int = 0) -> None:
+    def __init__(
+        self,
+        app,
+        token: str,
+        limiter=None,
+        trusted_proxies: int = 0,
+        session: SessionAuth | None = None,
+    ) -> None:
         self.app = app
         self.token = token
+        self.session = session
         # The SAME limiter instance the login form uses (app.py builds one and
         # injects it into both). Separate buckets would leave the bypass
         # _credential_presented describes open in the other direction: spend
@@ -149,13 +224,17 @@ class TokenAuthMiddleware:
         self.limiter = limiter
         self.trusted_proxies = trusted_proxies
 
+    def _verdict(self, scope) -> User | bool:
+        # Shares _authorize with is_authorized_request instead of re-parsing:
+        # a second cookie parser here is exactly the drift class that
+        # helper's docstring warns about. Request(scope) with no receive is
+        # enough -- headers/cookies need no body read (same pattern already
+        # used below in __call__). A User means a cookie session; True is a
+        # bearer request, which never carries an account.
+        return _authorize(Request(scope), self.token, self.session)
+
     def _authorized(self, scope) -> bool:
-        # Delegates to is_authorized_request instead of re-parsing: a second
-        # cookie parser here is exactly the drift class that helper's
-        # docstring warns about. Request(scope) with no receive is enough --
-        # headers/cookies need no body read (same pattern already used below
-        # in __call__).
-        return is_authorized_request(Request(scope), self.token)
+        return self._verdict(scope) is not False
 
     def _credential_presented(self, scope) -> bool:
         """Whether the request carried ANY credential (an Authorization
@@ -198,12 +277,19 @@ class TokenAuthMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
-        if (
-            path in EXEMPT_PATHS
-            or any(path.startswith(p) for p in EXEMPT_PREFIXES)
-            or self._authorized(scope)
-        ):
+        if path in EXEMPT_PATHS or any(path.startswith(p) for p in EXEMPT_PREFIXES):
             await self.app(scope, receive, send)
+            return
+        verdict = self._verdict(scope)
+        if verdict is not False:
+            user = verdict if isinstance(verdict, User) else None
+            if user is not None:
+                scope.setdefault("state", {})["user"] = user
+            reset = _REQUEST_USER.set(user)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                _REQUEST_USER.reset(reset)
             return
         if self._credential_presented(scope):
             # Request(scope) with no receive is enough for headers + client;
