@@ -161,3 +161,7 @@ def test_demotions_mission_without_revision_line_is_rev1():
         planrev.demotions({"M-x": "# M\n> Mission: M-x\n"}, {"M-x-US2": _ticket("")})
         == {}
     )
+
+
+def test_check_revision_accepts_question_trigger():
+    assert planrev.check_revision(_doc(2, _row(2, "question"))) == []

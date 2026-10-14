@@ -322,17 +322,16 @@ def bootstrap_from_env(accounts: Accounts, env: Mapping[str, str]) -> str:
     return msg
 
 
-def ensure_git_exclude(repo_root: Path) -> bool:
-    """Append `.kb-auth/` to `.git/info/exclude`; True when it wrote the line."""
+def ensure_git_exclude(repo_root: Path, entry: str = f"{_AUTH_DIR_NAME}/") -> bool:
+    """Append `entry` to `.git/info/exclude`; True when it wrote the line."""
     git_dir = repo_root / ".git"
     if not git_dir.is_dir():
         return False
     exclude = git_dir / "info" / "exclude"
-    line = f"{_AUTH_DIR_NAME}/"
     text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-    if line in text.splitlines():
+    if entry in text.splitlines():
         return False
     exclude.parent.mkdir(parents=True, exist_ok=True)
     sep = "" if not text or text.endswith("\n") else "\n"
-    exclude.write_text(f"{text}{sep}{line}\n", encoding="utf-8", newline="\n")
+    exclude.write_text(f"{text}{sep}{entry}\n", encoding="utf-8", newline="\n")
     return True

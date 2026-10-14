@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from strata_kb import lintcore, ticket
 
 TRIGGERS: frozenset[str] = frozenset(
-    {"kb-context", "architecture", "scope", "delivery"}
+    {"kb-context", "architecture", "scope", "delivery", "question"}
 )
 CHANGE_LOG_HEADING = "## Change log"
 

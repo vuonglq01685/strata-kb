@@ -256,3 +256,11 @@ def test_session_key_creates_auth_dir_0700(tmp_path):
     auth = tmp_path / ".kb-auth"
     load_or_create_session_key(auth)
     assert (auth.stat().st_mode & 0o777) == 0o700
+
+
+def test_ensure_git_exclude_takes_another_entry(tmp_path, run_git):
+    run_git(tmp_path, "init")
+    assert ensure_git_exclude(tmp_path, ".kb-qa/") is True
+    assert ensure_git_exclude(tmp_path, ".kb-qa/") is False
+    lines = (tmp_path / ".git/info/exclude").read_text().splitlines()
+    assert lines.count(".kb-qa/") == 1 and ".kb-auth/" not in lines
