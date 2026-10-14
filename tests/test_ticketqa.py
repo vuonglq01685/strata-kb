@@ -33,8 +33,8 @@ def store(tmp_path: Path) -> QaStore:
     return QaStore(tmp_path / "qa" / "qa.db")
 
 
-def test_qa_db_path_sits_beside_kb_dir(tmp_path: Path):
-    assert qa_db_path(tmp_path / ".kb") == tmp_path / ".kb-qa" / "qa.db"
+def test_qa_db_path_sits_in_the_hub_root(tmp_path: Path):
+    assert qa_db_path(tmp_path) == tmp_path / ".kb-qa" / "qa.db"
 
 
 def test_ask_records_hub_revision_and_lists_open(hub_with_ticket, store):

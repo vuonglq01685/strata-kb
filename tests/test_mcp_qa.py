@@ -10,7 +10,6 @@ from mcp.shared.memory import (
 )
 
 from strata_kb.mcp import QA_NEEDS_HUB_SERVER, ServerConfig, create_server
-from strata_kb.serving.accounts import ensure_git_exclude
 from tests.test_planingest import US1
 from tests.test_ticketfetch import _bug_hub
 
@@ -20,12 +19,6 @@ REPO = "ba-one"
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
-
-
-@pytest.fixture(autouse=True)
-def _qa_db_out_of_git(fed_hub):
-    # The server does this at start; the tests' `git add -A` must not commit qa.db.
-    ensure_git_exclude(fed_hub, ".kb-qa/")
 
 
 def _config(hub_root) -> ServerConfig:
@@ -91,7 +84,8 @@ async def test_round_trip_ask_list_answer(hub_with_ticket):
 
 @pytest.mark.anyio
 async def test_write_tools_refuse_cache_clone_hub(tmp_path, monkeypatch):
-    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(tmp_path / "cache"))
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("STRATA_KB_HUB_CACHE", str(cache))
     config = ServerConfig(
         kb_dir=tmp_path / "repo" / ".kb", hub="https://example.invalid/hub.git"
     )
@@ -107,13 +101,14 @@ async def test_write_tools_refuse_cache_clone_hub(tmp_path, monkeypatch):
             answered_by="b",
             ticket_sections=[],
         )
+        assert not cache.exists()  # refused before the hub was resolved
         listed = await _call(client, "kb_question_list")
-    assert ask == answer == QA_NEEDS_HUB_SERVER
+    assert ask == answer == listed == QA_NEEDS_HUB_SERVER
     assert QA_NEEDS_HUB_SERVER == (
         "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
     )
-    assert "hub unreachable" in listed  # list is not refused; here the hub is down
-    assert not (tmp_path / "repo" / ".kb-qa").exists()
+    assert not cache.exists()
+    assert not (tmp_path / "repo").exists()  # no .kb-qa/ in the dev repo
 
 
 @pytest.mark.anyio
@@ -220,3 +215,47 @@ async def test_nested_repo_ref_mid_slash_ba(fed_hub, tmp_path):
         f"/ui/questions/ticket?repo=mid%2Fba-x&ticket={US1}"
     )
     assert "Q1 [open] mid/ba-x:" in by_repo and by_repo == by_ref
+
+
+@pytest.mark.anyio
+async def test_stdio_dev_repo_config_stores_qa_db_in_the_hub_root(
+    hub_with_ticket, tmp_path
+):
+    hub = hub_with_ticket()
+    dev_repo = tmp_path / "dev-repo"
+    (dev_repo / ".kb").mkdir(parents=True)
+    config = ServerConfig(kb_dir=dev_repo / ".kb", hub=str(hub.root))
+    async with connect_client(create_server(config), raise_exceptions=True) as client:
+        asked = await _call(
+            client, "kb_question_ask", ticket=US1, question="Q?", asked_by="dev1"
+        )
+        listed = await _call(client, "kb_question_list")
+    assert asked.startswith("Q1 asked on ") and "Q1 [open]" in listed
+    assert (hub.root / ".kb-qa" / "qa.db").is_file()
+    assert not (dev_repo / ".kb-qa").exists()
+    exclude = (hub.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert ".kb-qa/" in exclude.splitlines()
+
+
+@pytest.mark.anyio
+async def test_store_failure_is_a_short_message_without_paths(hub_with_ticket):
+    hub = hub_with_ticket()
+    (hub.root / ".kb-qa").write_text("not a directory", encoding="utf-8")
+    async with connect_client(
+        create_server(_config(hub.root)), raise_exceptions=True
+    ) as client:
+        outs = [
+            await _call(
+                client, "kb_question_ask", ticket=US1, question="Q?", asked_by="d"
+            ),
+            await _call(client, "kb_question_list"),
+            await _call(
+                client,
+                "kb_question_answer",
+                id=1,
+                answer="A",
+                answered_by="b",
+                ticket_sections=[],
+            ),
+        ]
+    assert outs == ["Q&A store error — see hub log"] * 3

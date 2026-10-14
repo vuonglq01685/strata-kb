@@ -435,6 +435,29 @@ def create_server(config: ServerConfig) -> MCPServer:
 
         return await anyio.to_thread.run_sync(_run)
 
+    def _qa(op) -> str:
+        """Run `op(hub, store)` against the Q&A store at the shared hub's root.
+        The guard runs before any side effect: on a URL / cache-clone hub the
+        store would be private to this machine, so nothing is created."""
+        from strata_kb import hub as hub_mod
+        from strata_kb.errors import KbError
+        from strata_kb.serving.accounts import ensure_git_exclude
+        from strata_kb.ticketqa import QaStore, qa_db_path
+
+        if not hub_mod.is_local_hub(config.hub):
+            return QA_NEEDS_HUB_SERVER
+        hub = _hub()
+        if hub is None:
+            return HUB_DOWN
+        try:
+            ensure_git_exclude(hub.root, ".kb-qa/")
+            return op(hub, QaStore(qa_db_path(hub.root)))
+        except KbError as exc:
+            return str(exc)
+        except (sqlite3.Error, OSError):
+            logger.exception("Q&A store error")
+            return "Q&A store error — see hub log"  # never echo server paths
+
     @mcp.tool()
     @_canonical_docstring
     async def kb_question_ask(
@@ -456,33 +479,20 @@ def create_server(config: ServerConfig) -> MCPServer:
         def _run() -> str:
             from urllib.parse import quote
 
-            from strata_kb import hub as hub_mod
-            from strata_kb.errors import KbError
-            from strata_kb.ticketqa import QaStore, ask_question, qa_db_path
+            from strata_kb.ticketqa import ask_question
 
-            if not hub_mod.is_local_hub(config.hub):
-                return QA_NEEDS_HUB_SERVER
-            hub = _hub()
-            if hub is None:
-                return HUB_DOWN
-            try:
+            def op(hub, store) -> str:
                 q = ask_question(
-                    hub,
-                    QaStore(qa_db_path(config.kb_dir)),
-                    ticket,
-                    question,
-                    asked_by,
-                    context,
-                    blocks,
+                    hub, store, ticket, question, asked_by, context, blocks
                 )
-            except KbError as exc:
-                return str(exc)
-            # No hub base-URL setting exists, so the link is the path only.
-            link = (
-                f"/ui/questions/ticket?repo={quote(q.repo, safe='')}"
-                f"&ticket={quote(q.ticket, safe='')}"
-            )
-            return f"Q{q.id} asked on {q.repo}:{q.ticket} — {link}"
+                # No hub base-URL setting exists, so the link is the path only.
+                link = (
+                    f"/ui/questions/ticket?repo={quote(q.repo, safe='')}"
+                    f"&ticket={quote(q.ticket, safe='')}"
+                )
+                return f"Q{q.id} asked on {q.repo}:{q.ticket} — {link}"
+
+            return _qa(op)
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -497,28 +507,18 @@ def create_server(config: ServerConfig) -> MCPServer:
         revision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA
         `repo`. `status` is `open` (no answer), `waiting` (answered, but the
         ticket revision carrying the answer is not on the hub yet),
-        `answered`, or `all`. Do not act on a `waiting` answer: the ticket
-        is the source of truth."""
+        `answered`, or `all`. Results come only from the shared hub server;
+        any other hub is refused. Do not act on a `waiting` answer: the
+        ticket is the source of truth."""
 
         def _run() -> str:
-            from strata_kb.errors import KbError
-            from strata_kb.ticketqa import (
-                QaStore,
-                format_questions,
-                list_questions,
-                qa_db_path,
-            )
+            from strata_kb.ticketqa import format_questions, list_questions
 
-            hub = _hub()
-            if hub is None:
-                return HUB_DOWN
-            try:
-                rows = list_questions(
-                    hub, QaStore(qa_db_path(config.kb_dir)), ticket, repo, status
+            return _qa(
+                lambda hub, store: format_questions(
+                    list_questions(hub, store, ticket, repo, status)
                 )
-            except KbError as exc:
-                return str(exc)
-            return format_questions(rows)
+            )
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -533,43 +533,31 @@ def create_server(config: ServerConfig) -> MCPServer:
     ) -> str:
         """Record the BA's answer to an open question. If the answer changes
         the ticket, pass `answer_rev` (the ticket revision that carries the
-        change; it must exceed the hub's current one) and `ticket_sections`
-        (the changed section names, the change-log row's `Affected`); the
-        question stays `waiting` until that revision is on the hub. If the
-        ticket already says it, leave `answer_rev` unset and pass an empty
+        change; it must exceed the hub's current one, and it is refused while
+        the ticket is off the hub) and `ticket_sections` (the changed
+        section names, the change-log row's `Affected`); the question stays
+        `waiting` until that revision is on the hub. If the ticket already
+        says it, leave `answer_rev` unset and pass an empty
         `ticket_sections`. `answered_by` is your own name (`git config
         user.name`). Any authenticated caller may answer; names are
         self-declared, so this is tracking, not authentication. Works only
         on the shared hub server."""
 
         def _run() -> str:
-            from strata_kb import hub as hub_mod
-            from strata_kb.errors import KbError
-            from strata_kb.ticketqa import QaStore, answer_question, qa_db_path
+            from strata_kb.ticketqa import answer_question
 
-            if not hub_mod.is_local_hub(config.hub):
-                return QA_NEEDS_HUB_SERVER
-            hub = _hub()
-            if hub is None:
-                return HUB_DOWN
-            try:
+            def op(hub, store) -> str:
                 q = answer_question(
-                    hub,
-                    QaStore(qa_db_path(config.kb_dir)),
-                    id,
-                    answer,
-                    answered_by,
-                    answer_rev,
-                    ticket_sections,
+                    hub, store, id, answer, answered_by, answer_rev, ticket_sections
                 )
-            except KbError as exc:
-                return str(exc)
-            if q.answer_rev is None:
-                return f"Q{q.id} answered"
-            return (
-                f"Q{q.id} answered — waiting until {q.repo}:{q.ticket} "
-                f"reaches revision {q.answer_rev} on the hub"
-            )
+                if q.answer_rev is None:
+                    return f"Q{q.id} answered"
+                return (
+                    f"Q{q.id} answered — waiting until {q.repo}:{q.ticket} "
+                    f"reaches revision {q.answer_rev} on the hub"
+                )
+
+            return _qa(op)
 
         return await anyio.to_thread.run_sync(_run)
 

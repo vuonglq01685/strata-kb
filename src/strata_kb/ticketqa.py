@@ -77,8 +77,8 @@ class Question:
     answered_at: str | None
 
 
-def qa_db_path(kb_dir: Path) -> Path:
-    return kb_dir.parent / ".kb-qa" / "qa.db"
+def qa_db_path(hub_root: Path) -> Path:
+    return hub_root / ".kb-qa" / "qa.db"
 
 
 def _now() -> str:
