@@ -101,16 +101,37 @@ def dump_registry(reg: Registry) -> str:
     return yaml.safe_dump({"repos": repos}, sort_keys=False, allow_unicode=True)
 
 
-def commit_registry(
+def parse_registry(text: str) -> Registry:
+    """The load-time parse of registry.yaml text, with short user-facing errors."""
+    try:
+        return Registry.model_validate(yaml.safe_load(text) or {})
+    except ValidationError as exc:
+        raise KbError(
+            f"federation/registry.yaml is invalid: {exc.errors()[0]['msg']}"
+        ) from exc
+    except yaml.YAMLError as exc:
+        raise KbError("federation/registry.yaml is invalid: not valid YAML") from exc
+
+
+def read_registry(hub_root: Path) -> Registry:
+    """The registry as committed on the hub's default branch -- the same base
+    `edit_registry` / `commit_registry` commit onto, so what an admin sees is
+    what an edit starts from. Never the working tree: a checkout on another
+    branch or with an uncommitted hand-edit must not leak into the registry."""
+    branch = gitio.default_branch(hub_root)
+    proc = gitio._run(hub_root, "show", f"{branch}:{_REL_REGISTRY}")
+    return parse_registry(proc.stdout) if proc.returncode == 0 else Registry()
+
+
+def _commit_on_default_branch(
     hub_root: Path,
-    text: str,
+    produce: Callable[[Path], str | None],
     message: str,
     push: Callable[[Path, str], None],
 ) -> bool:
-    """Commit `text` as federation/registry.yaml on the hub's default branch
-    (in a throwaway detached worktree) and hand it to `push(worktree, branch)`.
-
-    False (and no push) when `text` is what the branch already holds.
+    """Commit what `produce(worktree)` returns as federation/registry.yaml on
+    the default branch (None = nothing to change) in a throwaway detached
+    worktree and hand it to `push(worktree, branch)`.
 
     The hub checkout is never touched. Only the registry path is staged, so
     stray files in the worktree (.kb-auth/) cannot ride along.
@@ -118,14 +139,6 @@ def commit_registry(
     # Lazy: intake is a heavy module and may itself import registryedit.
     from strata_kb.intake import _hub_write_lock
 
-    try:
-        Registry.model_validate(yaml.safe_load(text))
-    except ValidationError as exc:
-        raise KbError(
-            f"refusing to write an invalid registry: {exc.errors()[0]['msg']}"
-        ) from exc
-    except yaml.YAMLError as exc:
-        raise KbError("refusing to write an invalid registry: not valid YAML") from exc
     branch = gitio.default_branch(hub_root)
     with tempfile.TemporaryDirectory(prefix="kb-registry-") as tmp:
         work = Path(tmp) / "hub"
@@ -133,6 +146,9 @@ def commit_registry(
             gitio.worktree_prune(hub_root)
             gitio.worktree_add_detached(hub_root, work, branch)
         try:
+            text = produce(work)
+            if text is None:
+                return False
             target = work / _REL_REGISTRY
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8", newline="\n")
@@ -143,3 +159,48 @@ def commit_registry(
         finally:
             with _hub_write_lock:
                 gitio.worktree_remove(hub_root, work)
+
+
+def edit_registry(
+    hub_root: Path,
+    edit: Callable[[Registry, Path], Registry],
+    message: str,
+    push: Callable[[Path, str], None],
+) -> bool:
+    """Read the registry from the default branch's own worktree, apply
+    `edit(registry, federation_dir)` and commit+push the result: the base read
+    is the base committed on. False when the edit changes nothing."""
+
+    def produce(work: Path) -> str | None:
+        reg_file = work / _REL_REGISTRY
+        reg = (
+            parse_registry(reg_file.read_text(encoding="utf-8"))
+            if reg_file.exists()
+            else Registry()
+        )
+        edited = edit(reg, work / "federation")
+        return None if edited == reg else dump_registry(edited)
+
+    return _commit_on_default_branch(hub_root, produce, message, push)
+
+
+def commit_registry(
+    hub_root: Path,
+    text: str,
+    message: str,
+    push: Callable[[Path, str], None],
+) -> bool:
+    """Commit `text` as federation/registry.yaml on the hub's default branch
+    and hand it to `push(worktree, branch)`.
+
+    False (and no push) when `text` is what the branch already holds.
+    """
+    try:
+        Registry.model_validate(yaml.safe_load(text))
+    except ValidationError as exc:
+        raise KbError(
+            f"refusing to write an invalid registry: {exc.errors()[0]['msg']}"
+        ) from exc
+    except yaml.YAMLError as exc:
+        raise KbError("refusing to write an invalid registry: not valid YAML") from exc
+    return _commit_on_default_branch(hub_root, lambda _work: text, message, push)

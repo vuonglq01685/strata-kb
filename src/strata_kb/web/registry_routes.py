@@ -33,7 +33,6 @@ from starlette.routing import Route
 from strata_kb import federation, ghapp, gitio, kinds, registryedit
 from strata_kb import hub as hub_mod
 from strata_kb.errors import KbError
-from strata_kb.federation import RegistryError
 from strata_kb.models import Registry
 from strata_kb.serving.accounts import User
 from strata_kb.serving.auth import COOKIE_NAME, SessionAuth, current_user
@@ -94,7 +93,8 @@ class _Fail(KbError):
 
 
 def _first_line(text: str, limit: int = 300) -> str:
-    return (text.strip().splitlines() or [""])[0][:limit]
+    # redact_url: a remote URL in the text may carry credentials.
+    return (gitio.redact_url(text).strip().splitlines() or [""])[0][:limit]
 
 
 def _read_only_reason(
@@ -135,11 +135,16 @@ def _entries(reg: Registry) -> list[dict]:
 
 
 def _history(hub_root: Path) -> list[dict]:
+    try:
+        branch = gitio.default_branch(hub_root)
+    except gitio.GitError:
+        return []
     proc = gitio._run(
         hub_root,
         "log",
         f"-{HISTORY_LIMIT}",
         "--format=%h%x1f%cs%x1f%s",
+        branch,
         "--",
         REGISTRY_REL,
     )
@@ -155,8 +160,9 @@ def _history(hub_root: Path) -> list[dict]:
 def _pull_best_effort(hub: str) -> None:
     try:
         hub_mod.pull_once(hub)
-    except (KbError, OSError):
-        # The push below fails cleanly if the base is stale; do not block on it.
+    except Exception:  # noqa: BLE001 -- pull_once can also raise sqlite3.Error; after a landed push that must not become a 500
+        # Before an edit the push fails cleanly if the base is stale; after one
+        # the change has already landed. Either way: log, never raise.
         logger.warning("registry: hub pull failed", exc_info=True)
 
 
@@ -222,8 +228,8 @@ def build_registry_routes(
         for name, default in (("notice", ""), ("confirm", ""), ("form", {})):
             ctx.setdefault(name, default)
         try:
-            rows = _entries(federation.load_registry(hub.federation_dir))
-        except (RegistryError, KbError) as exc:
+            rows = _entries(registryedit.read_registry(hub.root))
+        except (KbError, gitio.GitError) as exc:
             rows, reason = [], reason or "Read-only: the registry cannot be read."
             error = error or _first_line(str(exc))
         resp = _render_page(
@@ -252,6 +258,7 @@ def build_registry_routes(
     def apply(action: str, form: FormData, username: str) -> str:
         """Run one edit under the lock; the notice code on success."""
         repo = str(form.get("repo", "")).strip()
+        label, code = _labels(action, form)
         with registry_lock:
             _pull_best_effort(config.hub)
             hub = api.hub_handle(config)
@@ -260,45 +267,64 @@ def build_registry_routes(
             reason = _read_only_reason(intake_cfg, hub.root)
             if reason or intake_cfg is None:
                 raise _Fail(409, reason or "Read-only.")
-            try:
-                reg = federation.load_registry(hub.federation_dir)
-            except RegistryError as exc:
-                raise _Fail(500, _first_line(str(exc))) from exc
-            edited, label, code = _edit(action, reg, form, repo, hub.federation_dir)
-            if edited == reg:
-                return "nochange"
             message = f"registry: {label} {repo} (by {username})"
             do_push = push or _make_real_push(hub.root, intake_cfg)
             try:
-                changed = registryedit.commit_registry(
-                    hub.root, registryedit.dump_registry(edited), message, do_push
+                # Read and commit share one base: the default branch's own
+                # worktree, never the (possibly off-branch or dirty) checkout.
+                changed = registryedit.edit_registry(
+                    hub.root,
+                    lambda reg, fed_dir: _edit(action, reg, form, repo, fed_dir),
+                    message,
+                    do_push,
                 )
+            except _Fail:
+                raise
             except gitio.GitError as exc:
                 _pull_best_effort(config.hub)
                 if any(m in str(exc) for m in _STALE_MARKERS):
                     raise _Fail(409, STALE_MESSAGE) from exc
-                logger.warning("registry push failed: %s", exc)
+                logger.warning("registry push failed: %s", gitio.redact_url(str(exc)))
                 raise _Fail(
                     502, f"The hub rejected the push: {_first_line(str(exc))}"
                 ) from exc
             except ghapp.GHAppError as exc:
-                logger.warning("registry token mint failed: %s", exc)
+                logger.warning(
+                    "registry token mint failed: %s", gitio.redact_url(str(exc))
+                )
                 raise _Fail(
                     502,
                     f"GitHub App token could not be minted: {_first_line(str(exc))}",
                 ) from exc
+            except KbError as exc:  # the registry on the branch is unreadable
+                raise _Fail(500, _first_line(str(exc))) from exc
             if not changed:
                 return "nochange"
             _pull_best_effort(config.hub)
             return code
 
+    def _labels(action: str, form: FormData) -> tuple[str, str]:
+        """(commit-message action, notice code)."""
+        if action == "add":
+            return "add", "added"
+        if action == "remove":
+            return "remove", "removed"
+        on = form.get("on") == "1"
+        return (
+            ("auto-merge on", "auto-merge-on")
+            if on
+            else (
+                "auto-merge off",
+                "auto-merge-off",
+            )
+        )
+
     def _edit(
         action: str, reg: Registry, form: FormData, repo: str, fed_dir: Path
-    ) -> tuple[Registry, str, str]:
-        """(edited registry, commit-message action, notice code)."""
+    ) -> Registry:
         try:
             if action == "add":
-                edited = registryedit.add_entry(
+                return registryedit.add_entry(
                     reg,
                     repo,
                     str(form.get("repo_id", "")).strip(),
@@ -307,13 +333,9 @@ def build_registry_routes(
                     auto_merge=form.get("auto_merge") == "on",
                     existing_dirs=_federation_dirs(fed_dir),
                 )
-                return edited, "add", "added"
             if action == "remove":
-                return registryedit.remove_entry(reg, repo), "remove", "removed"
-            on = form.get("on") == "1"
-            edited = registryedit.set_auto_merge(reg, repo, on)
-            label = "auto-merge on" if on else "auto-merge off"
-            return edited, label, "auto-merge-on" if on else "auto-merge-off"
+                return registryedit.remove_entry(reg, repo)
+            return registryedit.set_auto_merge(reg, repo, form.get("on") == "1")
         except KbError as exc:
             # remove/toggle of a key that is gone = a stale tab, not bad input.
             raise _Fail(400 if action == "add" else 409, str(exc)) from exc
@@ -356,8 +378,8 @@ def build_registry_routes(
         if hub is None:
             return []
         try:
-            return _entries(federation.load_registry(hub.federation_dir))
-        except (RegistryError, KbError):
+            return _entries(registryedit.read_registry(hub.root))
+        except (KbError, gitio.GitError):
             return []
 
     def read_only_now() -> str | None:

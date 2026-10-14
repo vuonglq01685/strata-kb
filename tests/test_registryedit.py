@@ -11,6 +11,8 @@ from strata_kb.registryedit import (
     add_entry,
     commit_registry,
     dump_registry,
+    edit_registry,
+    read_registry,
     remove_entry,
     set_auto_merge,
 )
@@ -213,3 +215,43 @@ def test_push_head_with_token_fast_forwards(tmp_path, run_git):
     run_git(a, "commit", "-m", "one")
     gitio.push_head_with_token(a, str(origin), "", "main")
     assert run_git(origin, "log", "-1", "--format=%s", "main") == "one"
+
+
+def test_read_registry_is_the_default_branch_not_the_working_tree(
+    fed_hub, run_git, git_identity
+):
+    assert read_registry(fed_hub) == Registry()  # no file yet
+    reg = fed_hub / "federation" / "registry.yaml"
+    reg.write_text("repos: {a/b: rb}\n", encoding="utf-8", newline="\n")
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "registry")
+    reg.write_text("repos: {a/b: rb, x/y: hand}\n", encoding="utf-8", newline="\n")
+    assert list(read_registry(fed_hub).repos) == ["a/b"]
+
+
+def test_read_registry_unreadable_is_a_short_kb_error(fed_hub, run_git, git_identity):
+    reg = fed_hub / "federation" / "registry.yaml"
+    reg.write_text("repos: [oops", encoding="utf-8", newline="\n")
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "bad")
+    with pytest.raises(KbError, match="invalid") as err:
+        read_registry(fed_hub)
+    assert "\n" not in str(err.value)
+
+
+def test_edit_registry_applies_to_the_branch_tip_and_skips_a_no_op(
+    fed_hub, run_git, git_identity
+):
+    seen = []
+    pushed = []
+
+    def edit(reg, fed_dir):
+        seen.append((list(reg.repos), fed_dir.name))
+        return add_entry(reg, "a/b", "rb")
+
+    changed = edit_registry(fed_hub, edit, "m", lambda w, b: pushed.append(b))
+    assert changed and seen == [([], "federation")] and len(pushed) == 1
+    same = edit_registry(
+        fed_hub, lambda reg, _d: reg, "m", lambda w, b: pushed.append(b)
+    )
+    assert same is False and len(pushed) == 1

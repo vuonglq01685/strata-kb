@@ -149,6 +149,12 @@ def post(client: TestClient, path: str, **fields):
     return client.post(path, data=fields, follow_redirects=False)
 
 
+def commit_text(hub: Path, run_git, text: str, subject: str = "edit registry") -> None:
+    """Land `text` as the registry on the checked-out branch (local commit)."""
+    (hub / REGISTRY).write_text(text, encoding="utf-8", newline="\n")
+    run_git(hub, "commit", "-am", subject)
+
+
 def registry_bytes(hub: Path) -> bytes:
     return (hub / REGISTRY).read_bytes()
 
@@ -189,10 +195,10 @@ def test_admin_lists_entries_and_history(admin_registry_client):
     assert "style=" not in template.read_text(encoding="utf-8")
 
 
-def test_registry_keys_are_html_escaped(admin_registry_client, registry_hub: Path):
-    (registry_hub / REGISTRY).write_text(
-        "repos:\n  'a<script>/b': rb\n", encoding="utf-8", newline="\n"
-    )
+def test_registry_keys_are_html_escaped(
+    admin_registry_client, registry_hub: Path, run_git
+):
+    commit_text(registry_hub, run_git, "repos:\n  'a<script>/b': rb\n")
     body = admin_registry_client.get("/ui/registry").text
     assert "a<script>/b" not in body and "a&lt;script&gt;/b" in body
 
@@ -381,9 +387,9 @@ def test_unexpected_error_is_a_clean_500_page(make_client, admin_user):
 
 
 def test_unreadable_registry_shows_message_and_is_read_only(
-    admin_registry_client, registry_hub: Path
+    admin_registry_client, registry_hub: Path, run_git
 ):
-    (registry_hub / REGISTRY).write_text("repos: [oops", encoding="utf-8")
+    commit_text(registry_hub, run_git, "repos: [oops")
     page = admin_registry_client.get("/ui/registry")
     assert page.status_code == 200
     assert "invalid" in page.text and 'action="/ui/registry/add"' not in page.text
@@ -462,3 +468,124 @@ def test_oversized_post_body_is_413(admin_registry_client, pushes):
         "/ui/registry/add", data={**ADD_FORM, "workflow": "x" * 20000}
     )
     assert resp.status_code == 413 and pushes == []
+
+
+def test_edit_starts_from_the_default_branch_not_an_off_branch_checkout(
+    admin_registry_client, registry_hub: Path, run_git, pushes
+):
+    default = gitio.default_branch(registry_hub)
+    run_git(registry_hub, "checkout", "-b", "side")
+    commit_text(registry_hub, run_git, SEED + "  acme/stale: stale-kb\n")
+    assert gitio.current_branch(registry_hub) != default
+    page = admin_registry_client.get("/ui/registry")
+    assert "acme/stale" not in page.text and "acme/icao" in page.text
+    r = post(admin_registry_client, "/ui/registry/add", **ADD_FORM)
+    assert r.status_code == 303
+    repos = yaml.safe_load(pushes[0]["registry"])["repos"]
+    assert list(repos) == ["acme/icao", "acme/web", "acme/new"]  # no acme/stale
+
+
+def test_uncommitted_hand_edit_is_not_committed(
+    admin_registry_client, registry_hub: Path, pushes
+):
+    dirty = SEED + "  acme/handmade: hand-kb\n"
+    (registry_hub / REGISTRY).write_text(dirty, encoding="utf-8", newline="\n")
+    assert "acme/handmade" not in admin_registry_client.get("/ui/registry").text
+    r = post(admin_registry_client, "/ui/registry/add", **ADD_FORM)
+    assert r.status_code == 303
+    assert "acme/handmade" not in pushes[0]["registry"]
+    assert registry_bytes(registry_hub) == dirty.encode()  # left as the operator had it
+
+
+def test_head_and_options_are_not_a_way_around_the_admin_check(make_client, dev_client):
+    anon = make_client()
+    for method in ("HEAD", "OPTIONS"):
+        resp = anon.request(method, "/ui/registry", follow_redirects=False)
+        assert resp.status_code == 302
+    assert dev_client.head("/ui/registry").status_code == 403
+    options = dev_client.options("/ui/registry")
+    assert options.status_code in (403, 405) and "acme/icao" not in options.text
+
+
+def test_csrf_token_of_another_session_is_rejected(
+    make_client, recording_push, admin_user, registry_hub: Path, pushes
+):
+    Accounts(registry_hub / ".kb-auth" / "users.db").add(
+        "admin2", "pw-two-xyz", "admin"
+    )
+    one = _login(make_client(recording_push), *admin_user)
+    two = _login(make_client(recording_push), "admin2", "pw-two-xyz")
+    stolen = csrf_of(one)
+    assert csrf_of(two) != stolen
+    resp = two.post("/ui/registry/add", data={**ADD_FORM, "csrf": stolen})
+    assert resp.status_code == 403 and pushes == []
+
+
+def test_chunked_oversized_body_is_413_and_not_pushed(admin_registry_client, pushes):
+    def chunks():
+        for _ in range(40):
+            yield b"workflow=" + b"x" * 1000 + b"&"
+
+    resp = admin_registry_client.post(
+        "/ui/registry/add",
+        content=chunks(),
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 413 and pushes == []
+
+
+def test_script_in_workflow_subject_and_echoed_form_is_escaped(
+    admin_registry_client, registry_hub: Path, run_git
+):
+    xss = "<script>alert(1)</script>"
+    commit_text(
+        registry_hub,
+        run_git,
+        f"repos:\n  a/b:\n    repo_id: rb\n    workflow: '{xss}'\n",
+        subject=f"registry: {xss}",
+    )
+    body = admin_registry_client.get("/ui/registry").text
+    assert xss not in body and "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+    bad = post(
+        admin_registry_client,
+        "/ui/registry/add",
+        repo="acme/x",
+        repo_id="<script>alert(2)</script>",
+    )
+    assert bad.status_code == 400
+    assert "<script>alert(2)" not in bad.text and "&lt;script&gt;alert(2)" in bad.text
+
+
+def test_remote_url_credentials_never_reach_the_page(
+    make_client, admin_user, registry_hub: Path, run_git, monkeypatch
+):
+    from strata_kb import hub as hub_mod
+
+    monkeypatch.setattr(hub_mod, "pull_once", lambda hub: False)  # no network
+    run_git(
+        registry_hub,
+        "remote",
+        "set-url",
+        "origin",
+        "https://u:hunter2@example.com/h.git",
+    )
+    client = _login(make_client(None), *admin_user)  # real push path
+    r = post(client, "/ui/registry/add", **ADD_FORM)
+    assert r.status_code == 502
+    assert "hunter2" not in r.text and "u:hunter" not in r.text
+
+
+def test_pull_failure_after_a_landed_push_is_not_a_500(
+    make_client, admin_user, registry_hub: Path, recording_push, monkeypatch
+):
+    import sqlite3
+
+    from strata_kb import hub as hub_mod
+
+    def boom(hub: str) -> bool:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(hub_mod, "pull_once", boom)
+    client = _login(make_client(recording_push), *admin_user)
+    r = post(client, "/ui/registry/add", **ADD_FORM)
+    assert r.status_code == 303
