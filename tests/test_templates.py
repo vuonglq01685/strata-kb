@@ -433,7 +433,7 @@ SHARED_BLOCKS = {
 SHARED_BLOCK_TEXT = {
     "SHARED-FRESHNESS": "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb_get_section` (else `kb get …\n  --level l3`) the hub's version. Do NOT use `kb diff` — it compares\n  the local `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
     "SHARED-HARD-RULES": '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
-    "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
+    "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all five markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
 }
 
 
@@ -3572,3 +3572,51 @@ def test_ba_answer_questions_wrappers_carry_the_five_steps_and_next_step_block()
         assert "kb_question_answer" in text, name
         assert "## Next step" in text, name
         assert "State:" in text, name
+
+
+# --- dev-sa: the Dev-repo SA agent, and the fifth BA-Q state marker -----------
+#
+# Deliberately NOT in DEV_WORKFLOW_SKILLS (same reasoning as dev-code-seed and
+# dev-fix-bug above): dev-sa implements no ticket phase, so the freshness /
+# hard-rules / next-step canon does not apply to it.
+
+DEV_SA_TEMPLATES = _dev_wrapper_names("dev-sa")
+
+
+def test_dev_sa_templates_exist_as_package_resources():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in DEV_SA_TEMPLATES:
+        assert base.joinpath(name).is_file(), name
+    assert base.joinpath("bodies", "dev-sa.md").is_file()
+
+
+def test_dev_sa_is_outside_the_workflow_canon():
+    assert "dev-sa" not in DEV_WORKFLOW_SKILLS
+
+
+def test_dev_sa_wrappers_have_their_frontmatter():
+    skill = _read_init_template("claude-skill-dev-sa.md")
+    assert skill.startswith("---\nname: dev-sa\ndescription: ")
+    assert "invoked as /dev-sa" in skill
+    assert "mode: agent" in _read_init_template("copilot-dev-sa.prompt.md")
+    assert "name: dev-sa\n" in _read_init_template("cursor-dev-sa.md")
+    command = _read_init_template("claude-command-dev-sa.md")
+    assert "Invoke the `dev-sa` skill" in command
+    assert 'argument-hint: "<question>"' in command
+
+
+def test_dev_sa_wrappers_carry_the_contract_in_every_form():
+    for name in DEV_SA_TEMPLATES:
+        text = _normalised(_read_init_template(name))
+        assert "business question:" in text, name
+        assert "never writes to the hub" in text.lower(), name
+        assert "`path:line`" in text, name
+
+
+def test_every_dev_workflow_wrapper_state_line_has_the_fifth_marker():
+    marker = "BA-Q: none | open Q<ids> | waiting Q<ids>"
+    for name in _landed_dev_wrapper_names():
+        text = _normalised(_read_init_template(name))
+        assert marker in text, name
+        assert "always shows all five markers" in text, name
+        assert "all four markers" not in text, name

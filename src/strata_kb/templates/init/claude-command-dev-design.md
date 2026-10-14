@@ -74,8 +74,26 @@ reads correctly if the ticket is re-opened. The design content covers
 modules touched, interfaces added or changed, data changes, and the
 placeholder resolutions from the orchestrator's Placeholders step, with every
 standard-derived value quoted verbatim with its `doc-id §section`; any
-AC that cannot be implemented as written becomes `OPEN(BA)` —
-reinterpreting an AC is forbidden.
+AC that cannot be implemented as written becomes `OPEN(BA)`, raised as a
+`business` question (below) — reinterpreting an AC is forbidden.
+
+The `design-author` never calls the hub: what it could not decide goes into
+a `## Questions raised` section of its draft, each item tagged `business`
+or `technical` with `blocks: <AC ids|none>`, and you handle each one.
+**technical** → dispatch `dev-sa` as a subagent, write its decision into the
+draft's `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`,
+then re-dispatch the author with those decisions. **business** → call
+`kb_question_ask(ticket, question, asked_by, context, blocks)` and move the
+item to the draft's `## Open questions` as
+`- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
+returned by `dev-sa` is handled the same way. `kb_question_ask` works only
+against the shared hub server: on `Q&A needs the shared hub server — point
+MCP at it (kb mcp-setup)` stop and tell the Dev, never reading it as "no
+questions". A blocking open BA question stops the gate and the Dev gets the
+hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
+path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
+one does not stop the gate and the A1 reviewer reads it as a known open
+item, not a defect.
 
 ## A1 — independent design review (before GATE 1)
 
@@ -171,12 +189,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

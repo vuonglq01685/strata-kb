@@ -193,12 +193,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

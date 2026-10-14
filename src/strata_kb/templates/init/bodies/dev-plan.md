@@ -102,6 +102,45 @@ hub.
   point, so it must be complete enough for a different session to pick up
   cold.
 
+## Questions the plan cannot settle
+
+The `plan-author` subagent never calls the hub, and it cannot dispatch
+subagents. What it could not decide goes into a `## Questions raised`
+section of its draft: one item per question, tagged `business` or
+`technical`, each with `blocks: <AC ids|none>` — the ACs the answer would
+change. You, the orchestrator, handle every raised question; the author
+does not:
+
+- **technical** → dispatch `dev-sa` as a subagent (fresh context; the
+  question, `docs/impl/<ticket-id>/ticket.md` and the draft passed as file
+  paths; model named), write its decision into the draft's
+  `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`, then
+  re-dispatch the author (or the fix round) with those decisions.
+- **business** → call `kb_question_ask(ticket, question, asked_by, context,
+  blocks)` (`asked_by` = `git config user.name`; `context` = where in the
+  plan it came up; `blocks` = the AC ids, or empty) and move the item to
+  the draft's `## Open questions` as
+  `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
+  `business question:`, treat the item as business and handle it the same
+  way. The first line under `## Open questions` reads "Asked of the BA, not
+  yet answered — known open items, not defects."
+
+`kb_question_ask` has no CLI twin and works only against the shared hub
+server. Any other MCP target answers `Q&A needs the shared hub server —
+point MCP at it (kb mcp-setup)`; a client that does not expose the tool
+has the same problem. In both cases stop and tell the Dev; this is a stop,
+never "no questions". The hub link for the Dev to share with the BA is
+`STRATA_KB_HUB_URL` (from the process env, or the `.env` that `kb mcp-setup`
+wrote; read only that line and never show `STRATA_KB_HTTP_TOKEN`) followed
+by the path `kb_question_ask` returned; if it is unset, give the path only.
+
+**Gate.** A blocking open BA question stops the gate: a plan whose
+`## Open questions` holds a question with `blocks:` naming an AC cannot pass
+GATE 2. Stop and give the Dev the hub Q&A link. A non-blocking open BA
+question does not stop the gate (`blocks: none`); it stays listed, and
+the A2 reviewer reads it as a known open item, not a defect. The answer is
+picked up by `dev-implement-ticket` on its next entry.
+
 ## A2 — independent plan review (before GATE 2)
 
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
@@ -194,12 +233,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

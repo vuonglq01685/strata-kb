@@ -350,3 +350,135 @@ def test_ba_answer_questions_claude_command_matches_the_body_rules():
     assert "record nothing for that ticket" in text
     assert "`STRATA_KB_HUB_URL`" in text
     assert "only when the HUB revision" in text
+
+
+# --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
+
+HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
+
+_AUTHOR_BODIES = [
+    ("dev-design.md", "design-author"),
+    ("dev-plan.md", "plan-author"),
+]
+
+
+@pytest.mark.parametrize(("name", "author"), _AUTHOR_BODIES)
+def test_dev_design_and_plan_route_raised_questions_through_the_orchestrator(
+    name, author
+):
+    text = _body(name)
+    for phrase in (
+        f"The `{author}` subagent never calls the hub",
+        "## Questions raised",
+        "tagged `business` or `technical`",
+        "blocks: <AC ids|none>",
+        "dispatch `dev-sa`",
+        "## Technical decisions",
+        "- SA-<n>: <decision> — why — evidence",
+        "then re-dispatch the author",
+        "kb_question_ask",
+        "## Open questions",
+        "- Q<id> — <question> — blocks: <AC ids|none>",
+        "returns `business question:`",
+    ):
+        assert phrase in text, (name, phrase)
+
+
+@pytest.mark.parametrize(("name", "author"), _AUTHOR_BODIES)
+def test_dev_design_and_plan_gate_on_blocking_questions_only(name, author):
+    text = _body(name)
+    for phrase in (
+        "A blocking open BA question stops the gate",
+        "A non-blocking open BA question does not stop the gate",
+        "known open item, not a defect",
+        "hub Q&A link",
+    ):
+        assert phrase in text, (name, phrase)
+
+
+@pytest.mark.parametrize(("name", "author"), _AUTHOR_BODIES)
+def test_dev_design_and_plan_stop_on_the_hub_only_error_and_guard_the_link(
+    name, author
+):
+    text = _body(name)
+    assert HUB_ONLY_ERROR in text, name
+    assert 'a stop, never "no questions"' in text, name
+    assert "`STRATA_KB_HUB_URL`" in text, name
+    assert "never show `STRATA_KB_HTTP_TOKEN`" in text, name
+    assert "give the path only" in text, name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+    ],
+)
+def test_dev_design_and_plan_claude_commands_carry_the_question_rules(name):
+    text = " ".join(read_template(name).split())
+    for phrase in (
+        "never calls the hub",
+        "## Questions raised",
+        "dispatch `dev-sa`",
+        "kb_question_ask",
+        "A blocking open BA question stops the gate",
+        HUB_ONLY_ERROR,
+    ):
+        assert phrase in text, (name, phrase)
+
+
+def test_dev_execute_open_ba_returns_to_design_which_asks_through_qa():
+    for text in (
+        _body("dev-execute.md"),
+        " ".join(read_template("claude-command-dev-execute.md").split()),
+    ):
+        assert "`dev-design` asks the BA through hub Q&A" in text
+        assert "`OPEN(BA)`" in text
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+        "copilot-dev-implement-ticket.prompt.md",
+        "cursor-dev-implement-ticket.md",
+    ],
+)
+def test_dev_implement_ticket_resumes_from_the_question_states(name):
+    text = " ".join(read_template(name).split())
+    for phrase in (
+        "kb_question_list(ticket=",
+        "status=all",
+        "**answered**",
+        "kb_ticket_fetch",
+        "— answered rev N",
+        "back to `dev-design`",
+        "**waiting**",
+        "information only",
+        "**open**",
+        "do not continue past the gate",
+        "BA-Q: open Q<ids>",
+        HUB_ONLY_ERROR,
+        'never treat it as "no questions"',
+    ):
+        assert phrase in text, (name, phrase)
+
+
+def test_dev_sa_body_pins_inputs_sources_output_and_limits():
+    text = _body("dev-sa.md")
+    for phrase in (
+        "docs/impl/<id>/ticket.md",
+        "the current design or plan draft",
+        "kb_search",
+        "kb_get_section",
+        "decision, reasoning, rejected alternatives",
+        "`path:line`",
+        "`doc §section`",
+        "business question: <why>",
+        "what an AC means",
+        "never writes to the hub",
+        "- SA-<n>: <decision> — why — evidence",
+    ):
+        assert phrase in text, phrase

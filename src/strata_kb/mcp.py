@@ -537,8 +537,8 @@ def create_server(config: ServerConfig) -> MCPServer:
         change; it must exceed the hub's current one, and it is refused while
         the ticket is off the hub) and `ticket_sections` (the changed
         section names, the change-log row's `Affected`); the question stays
-        `waiting` until that revision is on the hub. If the ticket already
-        says it, leave `answer_rev` unset and pass an empty
+        `waiting` until that revision is on the hub. If the hub's current
+        revision already says it, leave `answer_rev` unset and pass an empty
         `ticket_sections`. `answered_by` is your own name (`git config
         user.name`). Any authenticated caller may answer; names are
         self-declared, so this is tracking, not authentication. Works only

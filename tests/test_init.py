@@ -1795,8 +1795,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
     # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
     # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
-    # = 59.
-    assert len(expected_files("dev")) == 59
+    # + 4 (1.27.0: dev-sa's own four-way wrappers)
+    # = 63.
+    assert len(expected_files("dev")) == 63
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -2000,6 +2001,7 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         "dev-execute",
         "dev-handover",
         "dev-fix-bug",
+        "dev-sa",
     ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
@@ -2007,6 +2009,32 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
             skill
         )
         assert (tmp_path / ".cursor" / "commands" / f"{skill}.md").is_file(), skill
+
+
+_DEV_SA_PATHS = (
+    ".claude/skills/dev-sa/SKILL.md",
+    ".claude/commands/dev-sa.md",
+    ".github/prompts/dev-sa.prompt.md",
+    ".cursor/commands/dev-sa.md",
+)
+
+
+def test_init_dev_installs_the_dev_sa_wrappers(tmp_path):
+    init_repo(tmp_path, "dev")
+
+    for rel in _DEV_SA_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "business question:" in text, rel
+        assert "strata-kb:include" not in text, rel
+
+
+def test_init_other_kinds_leave_dev_sa_out(tmp_path):
+    for kind in ("ba", "hub", "child"):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        for rel in _DEV_SA_PATHS:
+            assert not (target / rel).exists(), (kind, rel)
 
 
 def test_init_kind_dev_excludes_authoring_and_ba_artifacts(tmp_path: Path):

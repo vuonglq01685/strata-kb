@@ -265,6 +265,11 @@ DEV_TEMPLATES: dict[str, str] = {
             # not a story workflow, so it stays out of the tests'
             # DEV_WORKFLOW_SKILLS canon and has its own pins.
             "dev-fix-bug",
+            # The Dev-repo SA agent: answers one technical question with
+            # evidence, dispatched by dev-design/dev-plan or run as /dev-sa.
+            # Not a phase of the ticket workflow, so it stays out of the
+            # tests' DEV_WORKFLOW_SKILLS canon and has its own pins.
+            "dev-sa",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
