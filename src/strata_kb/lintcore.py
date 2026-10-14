@@ -832,3 +832,34 @@ def check_context_block(
         issues += check_context_tags(ctx, hub)
     issues += check_citation_consistency(text, ctx)
     return issues, ctx
+
+
+DOR_HEADING = "## Definition of Ready"
+
+
+def check_dor_checklist(text: str) -> list[Issue]:
+    """The checklist must exist; ticking it is the BA's job at review
+    time, so an unticked box is a warning — the wrappers forbid the agent
+    from ticking one itself."""
+    body = section_body(text, DOR_HEADING)
+    if body is None:
+        return []
+    rows = [
+        m for line in body.splitlines() if (m := CHECKBOX_STATE_RE.match(line.strip()))
+    ]
+    if not rows:
+        return [
+            Issue(
+                "error",
+                f"'{DOR_HEADING}' has no '- [ ]' checklist rows — keep the "
+                "template's checklist",
+            )
+        ]
+    return [
+        Issue(
+            "warning",
+            f"Definition of Ready item is not ticked: '{m.group('text').strip()}'",
+        )
+        for m in rows
+        if m.group("mark") == " "
+    ]

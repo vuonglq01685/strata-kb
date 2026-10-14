@@ -1670,3 +1670,20 @@ def test_mission_blockers_are_checked_over_mcp_too(golden_block: str, tmp_path: 
     )
     assert [i.level for i in issues] == ["error"]
     assert "Q1 open (owner: Bob)" in issues[0].message
+
+
+# --- type dispatch (bug / hotfix go to buglint) ---
+
+
+def test_bug_type_dispatches_to_buglint():
+    report = ticketlint.lint("# BUG-1 — x\n> Type: bug\n> Revision: 1\n", None)
+    errors = [i.message for i in report.issues if i.level == "error"]
+    assert any("Severity" in e for e in errors)
+    assert "missing required heading: '## Steps to reproduce'" in errors
+    assert "missing required heading: '## User Story'" not in errors
+
+
+def test_story_without_type_line_keeps_story_contract():
+    report = ticketlint.lint("# TAL-1 — x\n> Revision: 1\n", None)
+    errors = [i.message for i in report.issues if i.level == "error"]
+    assert "missing required heading: '## User Story'" in errors
