@@ -160,13 +160,15 @@ commented out with a pointer to `kb user hash`.
   SQLite read per UI request is acceptable at this scale.)
 - Existing token-derived cookies (old format) no longer validate: users get
   sent to the login page once after upgrade. Acceptable.
-- **Credentials split by path.** `/ui/*` accepts only the session cookie; a
-  bearer token there is treated as not logged in (redirect to login).
-  `/api/*` and `/mcp` accept only the bearer token, exactly as today (the
-  UI's own JS does not call `/api`). Today `is_authorized_request` accepts
-  either credential on every path; the middleware must split by path
-  prefix. `cli.py` and `QUICKSTART-hub.md` text that says "sign in with
-  the token" changes to the account login.
+- **Which credential opens what.** As today, either credential (bearer
+  token or a valid session cookie) passes the auth middleware on every
+  path. What changes is *who* the request is: only a valid session cookie
+  attaches a user (`request.state.user`); a bearer-token request has no
+  user and therefore no role. Registry routes require a user with role
+  `admin`, so a bearer token — which every child repo holds — can read the
+  UI but never change the registry. This keeps every existing API/MCP
+  client and test working unchanged. `cli.py` and `QUICKSTART-hub.md`
+  text that says "sign in with the token" changes to the account login.
 
 ### 5.6 Authorization
 
@@ -304,8 +306,7 @@ intake's existing publish path or write a small sibling helper.
   sign/verify/expiry/tamper; a cookie signed with the bearer token is
   rejected; role check reads DB at request time (downgrade takes effect);
   password change invalidates old cookies; last-admin removal refused.
-- Path split: bearer token on `/ui/registry` → not logged in; cookie on
-  `/api` → 401.
+- Bearer token on `/ui/registry` GET and every registry POST → 403.
 - Route: non-admin and anonymous get 403/redirect on every registry route
   including POSTs; CSRF missing/wrong → 403; add/remove/toggle produce the
   expected `registry.yaml` and commit message (against the existing local
@@ -334,7 +335,8 @@ intake's existing publish path or write a small sibling helper.
   bearer token (which every child repo holds).
 - Role and password version are checked against the DB on every request,
   so a role change, removal or password reset ends old sessions at once.
-- `/ui` accepts only the cookie; `/api` and `/mcp` only the bearer token.
+- The bearer token still passes auth everywhere but carries no user, so
+  it can never reach the admin-only registry routes.
 - Auto-merge also merges a pending `kb publish --pr` seed PR of an
   auto-merge repo.
 - Publish status stays `done` on success; a new `merged` field says
