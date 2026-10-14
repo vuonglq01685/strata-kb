@@ -92,6 +92,11 @@ def _text(label: str, value: str, cap: int, *, required: bool = True) -> None:
         raise QaError(f"{label} is {len(value)} characters; the limit is {cap}")
 
 
+def _check_answer_rev(answer_rev: int | None) -> None:
+    if answer_rev is not None and answer_rev < 1:
+        raise QaError(f"answer_rev must be 1 or more, not {answer_rev}")
+
+
 def _row_to_question(row: tuple) -> Question:
     (id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev) = row[
         :9
@@ -125,6 +130,7 @@ class QaStore:
     ) -> Question:
         _text("question", question, MAX_QUESTION)
         _text("context", context, MAX_CONTEXT, required=False)
+        _text("blocks", blocks, MAX_CONTEXT, required=False)
         _text("asked_by", asked_by, MAX_NAME)
         now = _now()
         with closing(self._connect()) as conn, conn:
@@ -196,6 +202,7 @@ class QaStore:
     ) -> Question:
         _text("answer", answer, MAX_ANSWER)
         _text("answered_by", answered_by, MAX_NAME)
+        _check_answer_rev(answer_rev)
         if answer_rev is not None and not ticket_sections:
             raise QaError(
                 "ticket_sections must name what changed when answer_rev is set"
@@ -250,11 +257,13 @@ def _read_revision(hub: HubHandle, repo: str, ticket: str) -> int:
 
 def ticket_revision(hub: HubHandle, repo: str, ticket: str) -> int | None:
     """The ticket's `> Revision: N` on the hub (1 when absent); None when the
-    ticket is no longer published."""
+    ticket is no longer published. Any other lookup failure (unreadable file,
+    git error, ambiguity) propagates: it is not "gone"."""
     try:
-        return _read_revision(hub, repo, ticket)
-    except ticketfetch.TicketFetchError:
+        ticketfetch.find(hub, f"{repo}:{ticket}")
+    except ticketfetch.TicketNotOnHub:
         return None
+    return _read_revision(hub, repo, ticket)
 
 
 def ask_question(
@@ -288,10 +297,15 @@ def answer_question(
         raise QaError(
             f"Q{id} was already answered by {q.answered_by} at {q.answered_at}"
         )
+    _check_answer_rev(answer_rev)
     if answer_rev is not None:
         hub_rev = ticket_revision(hub, q.repo, q.ticket)
-        # Ticket gone from the hub: nothing to compare with, the answer waits.
-        if hub_rev is not None and answer_rev <= hub_rev:
+        if hub_rev is None:
+            raise QaError(
+                f"{q.repo}:{q.ticket} is not on the hub — publish it before "
+                "recording an answer that changes it"
+            )
+        if answer_rev <= hub_rev:
             raise QaError(
                 f"the hub already has revision {hub_rev} — amend the ticket "
                 "and bump its revision"

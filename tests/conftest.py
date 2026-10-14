@@ -11,12 +11,15 @@ import os
 # first thing in this file, ahead of every other import.
 os.environ.setdefault("_TYPER_FORCE_DISABLE_TERMINAL", "1")
 
+import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from strata_kb import models
+from strata_kb.hub import HubHandle
 from strata_kb.mdutils import count_tokens, slice_section
 
 
@@ -776,3 +779,28 @@ def plan_hub(fed_hub: Path, tmp_path: Path):
     publish_ba(fed_hub, tmp_path / "ba-one", context_block(fed_hub))
     publish_svc(fed_hub)
     return HubHandle(root=fed_hub)
+
+
+@pytest.fixture
+def hub_with_ticket(fed_hub: Path, tmp_path: Path, run_git) -> Callable[..., HubHandle]:
+    """`make(rev=N)` (re)publishes the BA repo's (`ba-one`) ticket with
+    `> Revision: N`."""
+    from strata_kb import ticketfetch
+    from tests.test_planingest import US1, context_block
+    from tests.test_ticketfetch import publish_plan
+
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", context_block(fed_hub))
+    hub = HubHandle(root=fed_hub)
+
+    def make(rev: int = 1) -> HubHandle:
+        l3 = ticketfetch.find(hub, US1)[2]
+        head, sep, tail = l3.read_text(encoding="utf-8").partition(f"\n## {US1} ")
+        tail = re.sub(
+            r"^> Revision: \d+$", f"> Revision: {rev}", tail, count=1, flags=re.M
+        )
+        l3.write_text(head + sep + tail, encoding="utf-8", newline="\n")
+        run_git(fed_hub, "add", "-A")
+        run_git(fed_hub, "commit", "--allow-empty", "-m", f"ticket rev {rev}")
+        return hub
+
+    return make

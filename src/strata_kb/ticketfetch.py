@@ -19,6 +19,11 @@ class TicketFetchError(KbError):
     """The ticket is not on the hub, or several repos publish the same id."""
 
 
+class TicketNotOnHub(TicketFetchError):
+    """No published `*-plan` document lists the ticket (the one case a caller
+    may treat as "gone"; every other `TicketFetchError` is a real problem)."""
+
+
 def split_ref(ticket_ref: str) -> tuple[str | None, str]:
     """`<repo>:<id>` -> (repo, id); a bare `<id>` -> (None, id). An id that
     is not a plain name (path separators, `..`, empty) is refused."""
@@ -52,7 +57,7 @@ def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
                 (fed.meta.repo_id, manifest.id, folder / f"{section.file}.raw.md")
             )
     if not holders:
-        raise TicketFetchError(
+        raise TicketNotOnHub(
             f"{ticket_id} is not on the hub — ask the BA to run kb publish, "
             "or pass the ticket file / paste it"
         )

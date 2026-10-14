@@ -50,7 +50,7 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_eleven_tools(fed_hub):
+async def test_lists_exactly_fourteen_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
@@ -60,6 +60,9 @@ async def test_lists_exactly_eleven_tools(fed_hub):
             "kb_get_section",
             "kb_mission_lint",
             "kb_mission_next",
+            "kb_question_answer",
+            "kb_question_ask",
+            "kb_question_list",
             "kb_resolve",
             "kb_search",
             "kb_ticket_check",

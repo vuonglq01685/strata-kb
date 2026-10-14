@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import re
 import shutil
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from strata_kb import ticketfetch
-from strata_kb.hub import HubHandle
 from strata_kb.ticketqa import (
     QaError,
     QaStore,
@@ -28,26 +26,6 @@ from tests.test_planingest import context_block as _context_block
 from tests.test_ticketfetch import publish_plan
 
 REPO = "ba-one"
-
-
-@pytest.fixture
-def hub_with_ticket(fed_hub: Path, tmp_path: Path, run_git) -> Callable[..., HubHandle]:
-    """`make(rev=N)` (re)publishes the BA repo's ticket with `> Revision: N`."""
-    publish_plan(fed_hub, REPO, tmp_path / REPO, _context_block(fed_hub))
-    hub = HubHandle(root=fed_hub)
-
-    def make(rev: int = 1) -> HubHandle:
-        l3 = ticketfetch.find(hub, US1)[2]
-        head, sep, tail = l3.read_text(encoding="utf-8").partition(f"\n## {US1} ")
-        tail = re.sub(
-            r"^> Revision: \d+$", f"> Revision: {rev}", tail, count=1, flags=re.M
-        )
-        l3.write_text(head + sep + tail, encoding="utf-8", newline="\n")
-        run_git(fed_hub, "add", "-A")
-        run_git(fed_hub, "commit", "--allow-empty", "-m", f"ticket rev {rev}")
-        return hub
-
-    return make
 
 
 @pytest.fixture
@@ -269,3 +247,49 @@ def test_derive_state_table(store):
     assert derive_state(q("a", 4), 3) == "waiting"
     assert derive_state(q("a", 4), 4) == "answered"
     assert derive_state(q("a", 4), None) == "waiting"
+
+
+def test_answer_rev_refused_while_ticket_is_off_the_hub(hub_with_ticket, store):
+    hub = hub_with_ticket(rev=3)
+    q = ask_question(hub, store, US1, "Q?", "dev1")
+    shutil.rmtree(hub.root / "federation" / REPO)
+    with pytest.raises(
+        QaError,
+        match=re.escape(
+            f"{REPO}:{US1} is not on the hub — publish it before recording "
+            "an answer that changes it"
+        ),
+    ):
+        answer_question(hub, store, q.id, "EUR", "ba1", 4, ["Scope"])
+    assert store.get(q.id).answer is None  # type: ignore[union-attr]
+    done = answer_question(hub, store, q.id, "no change", "ba1", None, [])
+    assert done.answer == "no change"
+
+
+def test_unreadable_ticket_is_an_error_not_gone(hub_with_ticket, store):
+    hub = hub_with_ticket()
+    q = ask_question(hub, store, US1, "Q?", "dev1")
+    l3 = ticketfetch.find(hub, US1)[2]
+    l3.unlink()
+    l3.mkdir()  # exists but cannot be read as a file
+    with pytest.raises(ticketfetch.TicketFetchError, match="could not read"):
+        ticket_revision(hub, REPO, US1)
+    with pytest.raises(ticketfetch.TicketFetchError, match="could not read"):
+        list_questions(hub, store)
+    with pytest.raises(ticketfetch.TicketFetchError, match="could not read"):
+        answer_question(hub, store, q.id, "A", "ba1", 2, ["Scope"])
+    assert store.get(q.id).answer is None  # type: ignore[union-attr]
+
+
+def test_blocks_is_capped_and_answer_rev_must_be_positive(hub_with_ticket, store):
+    hub = hub_with_ticket()
+    with pytest.raises(QaError, match="blocks"):
+        ask_question(hub, store, US1, "Q?", "dev1", blocks="x" * 1001)
+    ask_question(hub, store, US1, "Q?", "dev1", blocks="x" * 1000)
+    q = store.list()[0]
+    for bad in (0, -1):
+        with pytest.raises(QaError, match="answer_rev must be 1 or more"):
+            answer_question(hub, store, q.id, "A", "ba1", bad, ["Scope"])
+        with pytest.raises(QaError, match="answer_rev must be 1 or more"):
+            store.answer(q.id, "A", "ba1", bad, ["Scope"])
+    assert store.get(q.id).answer is None  # type: ignore[union-attr]

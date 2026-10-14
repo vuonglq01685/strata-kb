@@ -74,6 +74,7 @@ def create_app(
     # Accounts live beside the KB, never inside a tree the hub publishes:
     # keep them out of git before anything is written there.
     ensure_git_exclude(config.kb_dir.parent)
+    ensure_git_exclude(config.kb_dir.parent, ".kb-qa/")
     auth_dir = auth_dir_for(config.kb_dir)
     accounts = Accounts(auth_dir / "users.db")
     bootstrap_from_env(accounts, os.environ)
