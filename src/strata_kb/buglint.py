@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import lintcore, mdmask, planrev, ticket
+from strata_kb import acquality, lintcore, mdmask, planrev, ticket
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 
@@ -37,8 +37,8 @@ _FILL_EXEMPT: frozenset[str] = frozenset(
 _SAFE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
-_NA_REASON_RE = re.compile(r"^[ \t]*n/?a[ \t]*[—–-][ \t]*\S", re.I | re.M)
-_NUMBERED_RE = re.compile(r"^[ \t]*\d+[.)][ \t]+\S", re.M)
+_NA_REASON_RE = re.compile(r"^[ \t]*n/?a[ \t]*[—–-][ \t]*(\S.*)$", re.I | re.M)
+_NUMBERED_RE = re.compile(r"^[ \t]*\d+[.)][ \t]+(\S.*)$", re.M)
 _URL_RE = re.compile(r"^(?:[a-z][a-z0-9+.-]*:)?//", re.I)
 _DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
@@ -59,6 +59,8 @@ def image_problems(src: str, stem: str | None, base_dir: Path | None) -> list[st
     """Why `src` is not an acceptable attachment ([] when it is). `stem` is
     the bug's id (its folder name); None skips the folder check. `base_dir`
     is the ticket's directory; None skips the existence check."""
+    if "<" in src or ">" in src:
+        return [f"image '{src}' is still a template placeholder — fill it in"]
     if _URL_RE.match(src):
         return [
             f"image '{src}' is an external URL — save it as PNG into the bug's folder"
@@ -86,7 +88,11 @@ def _check_attachments(
     if body is None:
         return []  # missing heading — check_headings reports it
     images = attachment_images(text)
-    if not images and not _NA_REASON_RE.search(mdmask._visible_text(body)):
+    visible = mdmask._visible_text(body)
+    has_na = any(
+        not acquality.is_unfilled(m.group(1)) for m in _NA_REASON_RE.finditer(visible)
+    )
+    if not images and not has_na:
         return [
             Issue(
                 "error",
@@ -103,7 +109,10 @@ def _check_attachments(
 
 def _check_steps(text: str) -> list[Issue]:
     body = lintcore.section_body(text, "## Steps to reproduce")
-    if body is None or _NUMBERED_RE.search(mdmask.visible_body(body)):
+    if body is None:
+        return []
+    steps = _NUMBERED_RE.findall(mdmask.visible_body(body))
+    if any(not acquality.is_unfilled(step) for step in steps):
         return []
     return [
         Issue(

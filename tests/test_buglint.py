@@ -89,6 +89,12 @@ def test_ticket_type_defaults_to_story_and_lowercases():
     assert ticket.ticket_type("# T\n> Type: chore\n") == "chore"
 
 
+def test_ticket_type_strips_trailing_comment_and_keeps_whole_value():
+    assert ticket.ticket_type("# T\n> Type: bug   # bug | hotfix\n") == "bug"
+    assert ticket.ticket_type("# T\n> Type: hot fix\n") == "hot fix"
+    assert ticket.ticket_type("# T\n> Type:\n") == ""
+
+
 def test_ticket_type_ignores_a_type_line_in_a_comment_or_fence():
     assert ticket.ticket_type("# T\n<!-- > Type: bug -->\n") == "story"
     assert ticket.ticket_type("# T\n```\n> Type: bug\n```\n") == "story"
@@ -138,6 +144,21 @@ def test_unknown_type_is_one_error():
         "unknown ticket type 'chore' — use one of: story (no Type line), bug, hotfix"
     ]
     assert report.render().splitlines()[-1] == "DoR: FAIL"
+
+
+@pytest.mark.parametrize(
+    ("line", "shown"), [("> Type: hot fix", "hot fix"), ("> Type:", "")]
+)
+def test_malformed_type_line_is_an_unknown_type_error(line, shown):
+    text = _bug().replace("> Type: bug", line)
+    assert _errors(_lint(text)) == [
+        f"unknown ticket type '{shown}' — use one of: story (no Type line), bug, hotfix"
+    ]
+
+
+def test_spec_example_header_with_trailing_comment_is_a_bug():
+    text = _bug().replace("> Type: bug", "> Type: bug                 # bug | hotfix")
+    assert _errors(_lint(text)) == []
 
 
 # --- required structure ---
@@ -221,6 +242,29 @@ def test_steps_without_a_numbered_item_is_an_error():
 def test_bulleted_steps_are_not_numbered():
     text = _bug(override={"## Steps to reproduce": "- Open Billing\n- Click Export"})
     assert any("numbered" in e for e in _errors(_lint(text)))
+
+
+# --- placeholders from the template's literal lines ---
+
+
+def test_template_placeholder_steps_are_an_error():
+    text = _bug(override={"## Steps to reproduce": "1. <step>\n2. <step>"})
+    assert any("Steps to reproduce" in e for e in _errors(_lint(text)))
+
+
+def test_one_real_step_among_placeholders_passes():
+    text = _bug(override={"## Steps to reproduce": "1. Open Billing.\n2. <step>"})
+    assert _errors(_lint(text)) == []
+
+
+def test_placeholder_na_reason_is_an_error():
+    text = _bug(override={"## Attachments": "N/A — <reason>"})
+    assert any("Attachments" in e for e in _errors(_lint(text)))
+
+
+def test_placeholder_image_src_is_an_error_without_a_path():
+    text = _bug(override={"## Attachments": "![<caption>](BUG-<n>/<file>.png)"})
+    assert any("placeholder" in e for e in _errors(_lint(text)))
 
 
 # --- attachments ---
@@ -352,7 +396,10 @@ def test_template_has_every_bug_heading_once():
 
 def test_unfilled_template_fails_lint_on_placeholders():
     report = _lint(_TEMPLATE.read_text(encoding="utf-8"))
+    errors = _errors(report)
     assert not report.passed
+    assert any("Steps to reproduce" in e for e in errors)
+    assert any("Attachments" in e or "placeholder" in e for e in errors)
 
 
 def test_filled_template_passes():

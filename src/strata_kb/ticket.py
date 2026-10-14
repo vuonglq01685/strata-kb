@@ -138,16 +138,19 @@ def export_body(text: str) -> str:
 # '> Type: bug|hotfix' under the H1 is the type discriminator. No such
 # line -> a user story, exactly as before: every pre-existing ticket stays
 # a story without an edit.
-TYPE_RE = re.compile(r"^>[ \t]*Type:[ \t]*(\S+)[ \t]*$", re.M)
+TYPE_RE = re.compile(r"^>[ \t]*Type:[ \t]*(.*?)[ \t]*$", re.M)
 TICKET_TYPES: tuple[str, ...] = ("story", "bug", "hotfix")
 
 
 def ticket_type(text: str) -> str:
-    """'story' when there is no '> Type:' line, else its value lower-cased.
-    An unknown value is returned as written so lint can report it. A line
-    inside a comment or fence is not a header."""
+    """'story' when there is no '> Type:' line, else its whole value
+    lower-cased, minus a trailing '# comment'. An unknown (or empty) value is
+    returned as written so lint can report it. A line inside a comment or
+    fence is not a header."""
     m = TYPE_RE.search(mdmask._visible_text(text))
-    return m.group(1).lower() if m else "story"
+    if m is None:
+        return "story"
+    return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
 
 
 # Bug / hotfix contract (`buglint.py`). Like REQUIRED_HEADINGS this is a
