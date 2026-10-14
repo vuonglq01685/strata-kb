@@ -17,6 +17,7 @@ import logging
 import os
 import secrets
 import sqlite3
+import threading
 from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import dataclass
@@ -35,6 +36,10 @@ _SESSION_KEY_BYTES = 32
 _AUTH_DIR_NAME = ".kb-auth"
 _ENV_ADMIN = "STRATA_KB_BOOTSTRAP_ADMIN"
 _ENV_HASH = "STRATA_KB_BOOTSTRAP_PASSWORD_HASH"
+# Each scrypt holds ~16 MiB; unauthenticated logins run in a 40-thread pool, so
+# cap them well inside the hub's 512m container limit.
+MAX_CONCURRENT_SCRYPT = 4
+_scrypt_slots = threading.BoundedSemaphore(MAX_CONCURRENT_SCRYPT)
 
 _log = logging.getLogger("strata_kb.accounts")
 
@@ -68,15 +73,16 @@ def _b64(raw: bytes) -> str:
 
 def _scrypt(password: str, salt: bytes) -> bytes:
     # surrogatepass: a lone surrogate in a submitted password must hash, not raise.
-    return hashlib.scrypt(
-        password.encode("utf-8", errors="surrogatepass"),
-        salt=salt,
-        n=_N,
-        r=_R,
-        p=_P,
-        dklen=_KEY_BYTES,
-        maxmem=256 * _N * _R * _P,
-    )
+    with _scrypt_slots:
+        return hashlib.scrypt(
+            password.encode("utf-8", errors="surrogatepass"),
+            salt=salt,
+            n=_N,
+            r=_R,
+            p=_P,
+            dklen=_KEY_BYTES,
+            maxmem=256 * _N * _R * _P,
+        )
 
 
 def hash_password(password: str) -> str:
@@ -146,9 +152,11 @@ class Accounts:
 
     def __init__(self, db_path: Path) -> None:
         self._path = db_path
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
             conn.execute(_SCHEMA)
+        if os.name != "nt":  # POSIX modes only; password hashes stay owner-readable
+            db_path.chmod(0o600)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path, timeout=10)
@@ -262,7 +270,7 @@ def auth_dir_for(kb_dir: Path) -> Path:
 
 def load_or_create_session_key(auth_dir: Path) -> bytes:
     """The 32-byte cookie-signing key; created (mode 0600) on first use."""
-    auth_dir.mkdir(parents=True, exist_ok=True)
+    auth_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = auth_dir / "session.key"
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -298,7 +306,8 @@ def bootstrap_from_env(accounts: Accounts, env: Mapping[str, str]) -> str:
     elif _parse_hash(pw_hash) is None:
         msg = (
             f"bootstrap admin not created: {_ENV_HASH} is not a password hash; "
-            "generate one with `kb user hash`"
+            "generate one with `kb user hash`. If the parts after `$` went "
+            "missing, single-quote the value in .env"
         )
     else:
         try:

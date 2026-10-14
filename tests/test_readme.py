@@ -42,6 +42,7 @@ def test_readme_documents_hub_accounts_and_the_registry_page():
     assert "sign in with the token" not in text
     assert "`<hub>/.kb-auth/` (`users.db` and `session.key`)" in text
     assert "`STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH`" in text
+    assert "`STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`" in text
     assert "only `admin` sees and uses the **Registry** page" in text
     assert "`contents: write` and `pull_requests: write`" in text
 

@@ -429,8 +429,9 @@ Deleting `session.key` logs everyone out.
 
 - **Create the first admin** with
   `docker compose exec hub kb user add <name> --role admin`, or set
-  `STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (the output
-  of `kb user hash`) in `.env`. The pair applies only while no account exists;
+  `STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`
+  (the output of `kb user hash`) in `.env`. Keep the single quotes: Docker
+  Compose expands `$` in `.env`, and the hash contains several. The pair applies only while no account exists;
   a plaintext password is never accepted.
 - **Other commands:** `kb user passwd|role|remove|list|hash`. Roles are `admin`,
   `ba`, `dev`; only `admin` sees and uses the Registry page.

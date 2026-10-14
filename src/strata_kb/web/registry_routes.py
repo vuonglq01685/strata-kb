@@ -66,6 +66,12 @@ NOTICES = {
     "auto-merge-off": "Auto-merge turned off.",
     "nochange": "No change.",
 }
+# Suffix on a notice code: the push landed but the post-push pull failed.
+STALE_SUFFIX = "-stale"
+STALE_PULL_NOTICE = (
+    "Pushed, but this hub's checkout did not refresh; "
+    "intake uses the old registry until it does."
+)
 
 
 def csrf_token(key: bytes, cookie_value: str) -> str:
@@ -157,13 +163,16 @@ def _history(hub_root: Path) -> list[dict]:
     return rows
 
 
-def _pull_best_effort(hub: str) -> None:
+def _pull_best_effort(hub: str) -> bool:
+    """True when the pull ran; False (logged) when it failed."""
     try:
         hub_mod.pull_once(hub)
+        return True
     except Exception:  # noqa: BLE001 -- pull_once can also raise sqlite3.Error; after a landed push that must not become a 500
         # Before an edit the push fails cleanly if the base is stale; after one
         # the change has already landed. Either way: log, never raise.
         logger.warning("registry: hub pull failed", exc_info=True)
+        return False
 
 
 def _federation_dirs(federation_dir: Path) -> list[str]:
@@ -252,7 +261,10 @@ def build_registry_routes(
     def registry_get(request: Request) -> Response:
         if isinstance(who := admin_or_403(request), Response):
             return who
-        notice = NOTICES.get(request.query_params.get("done", ""), "")
+        done = request.query_params.get("done", "")
+        notice = NOTICES.get(done.removesuffix(STALE_SUFFIX), "")
+        if notice and done.endswith(STALE_SUFFIX):
+            notice = f"{notice} {STALE_PULL_NOTICE}"
         return page(request, notice=notice)
 
     def apply(action: str, form: FormData, username: str) -> str:
@@ -300,8 +312,7 @@ def build_registry_routes(
                 raise _Fail(500, _first_line(str(exc))) from exc
             if not changed:
                 return "nochange"
-            _pull_best_effort(config.hub)
-            return code
+            return code if _pull_best_effort(config.hub) else code + STALE_SUFFIX
 
     def _labels(action: str, form: FormData) -> tuple[str, str]:
         """(commit-message action, notice code)."""

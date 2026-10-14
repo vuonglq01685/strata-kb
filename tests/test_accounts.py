@@ -154,6 +154,7 @@ def test_bootstrap_rejects_plaintext_in_hash_var(tmp_path):
     )
     assert a.count() == 0 and "kb user hash" in msg
     assert "plain-password" not in msg
+    assert "single-quote" in msg
 
 
 def test_ensure_git_exclude_is_idempotent(tmp_path, run_git):
@@ -209,3 +210,49 @@ def test_username_with_surrounding_whitespace_is_rejected(tmp_path):
         with pytest.raises(AccountError):
             a.add(name, "pw", "dev")
     assert a.count() == 0
+
+
+def test_concurrent_scrypt_never_exceeds_the_bound(monkeypatch):
+    # Each scrypt holds 16 MiB; unbounded logins would OOM the hub container.
+    import threading
+    import time
+
+    from strata_kb.serving import accounts as acc
+
+    stored = hash_password("pw")  # real scrypt, before the monkeypatch
+    lock = threading.Lock()
+    state = {"now": 0, "peak": 0}
+
+    def fake_scrypt(*_a, **_kw):
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        return b"\0" * 64
+
+    monkeypatch.setattr(acc.hashlib, "scrypt", fake_scrypt)
+    threads = [
+        threading.Thread(target=check_password, args=("x", stored)) for _ in range(16)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert 1 <= state["peak"] <= acc.MAX_CONCURRENT_SCRYPT == 4
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes")
+def test_auth_dir_is_0700_and_users_db_0600(tmp_path):
+    auth = tmp_path / ".kb-auth"
+    Accounts(auth / "users.db")
+    assert (auth.stat().st_mode & 0o777) == 0o700
+    assert ((auth / "users.db").stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes")
+def test_session_key_creates_auth_dir_0700(tmp_path):
+    auth = tmp_path / ".kb-auth"
+    load_or_create_session_key(auth)
+    assert (auth.stat().st_mode & 0o777) == 0o700

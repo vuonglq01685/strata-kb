@@ -11,6 +11,7 @@ runner = CliRunner()
 
 
 def _kb(tmp_path):
+    (tmp_path / ".kb").mkdir(exist_ok=True)
     return str(tmp_path / ".kb")
 
 
@@ -122,8 +123,11 @@ def test_user_remove_unknown_exits_1(tmp_path):
 def test_user_hash_prints_verifiable_hash():
     r = runner.invoke(app, ["user", "hash"], input="pw\npw\n")
     assert r.exit_code == 0
-    line = r.output.strip().splitlines()[-1]
+    line = r.stdout.strip().splitlines()[-1]
     assert check_password("pw", line)
+    # stdout is the bare hash; stderr carries a quoted, compose-safe .env line.
+    assert "STRATA_KB_BOOTSTRAP_PASSWORD_HASH" not in r.stdout
+    assert f"STRATA_KB_BOOTSTRAP_PASSWORD_HASH='{line}'" in r.stderr
 
 
 def test_user_add_before_first_server_start_excludes_auth_dir_from_git(tmp_path):
@@ -131,3 +135,14 @@ def test_user_add_before_first_server_start_excludes_auth_dir_from_git(tmp_path)
     assert _add(tmp_path).exit_code == 0
     exclude = (tmp_path / ".git" / "info" / "exclude").read_text(encoding="utf-8")
     assert ".kb-auth/" in exclude.splitlines()
+
+
+def test_user_commands_refuse_a_missing_kb_dir_and_create_nothing(tmp_path):
+    kb = str(tmp_path / "typo" / ".kb")
+    r = runner.invoke(
+        app, ["user", "add", "boss", "--role", "admin", "--kb", kb], input="p\np\n"
+    )
+    assert r.exit_code == 1
+    assert len(r.stderr.strip().splitlines()) == 1 and "typo" in r.stderr
+    assert not (tmp_path / "typo").exists()
+    assert runner.invoke(app, ["user", "list", "--kb", kb]).exit_code == 1

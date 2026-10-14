@@ -170,9 +170,14 @@ def test_anonymous_redirects_bearer_and_non_admin_get_403(
     )
     bearer = {"Authorization": f"Bearer {token}"}
     assert anon.get("/ui/registry", headers=bearer).status_code == 403
-    assert (
-        anon.post("/ui/registry/add", data=ADD_FORM, headers=bearer).status_code == 403
-    )
+    for path in ("add", "remove", "auto-merge"):
+        resp = anon.post(
+            f"/ui/registry/{path}",
+            data=ADD_FORM,
+            headers=bearer,
+            follow_redirects=False,
+        )
+        assert resp.status_code == 403, path
     assert dev_client.get("/ui/registry").status_code == 403
     for path in ("add", "remove", "auto-merge"):
         resp = dev_client.post(f"/ui/registry/{path}", data={"repo": "acme/icao"})
@@ -589,3 +594,18 @@ def test_pull_failure_after_a_landed_push_is_not_a_500(
     client = _login(make_client(recording_push), *admin_user)
     r = post(client, "/ui/registry/add", **ADD_FORM)
     assert r.status_code == 303
+    page = client.get(r.headers["location"])
+    assert "Repository added." in page.text
+    assert "this hub&#39;s checkout did not refresh" in page.text
+
+
+def test_successful_pull_after_a_landed_push_has_no_stale_notice(
+    make_client, admin_user, registry_hub: Path, recording_push, monkeypatch
+):
+    from strata_kb import hub as hub_mod
+
+    monkeypatch.setattr(hub_mod, "pull_once", lambda hub: False)
+    client = _login(make_client(recording_push), *admin_user)
+    r = post(client, "/ui/registry/add", **ADD_FORM)
+    page = client.get(r.headers["location"])
+    assert "Repository added." in page.text and "did not refresh" not in page.text

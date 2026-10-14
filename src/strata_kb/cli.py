@@ -4085,8 +4085,18 @@ def doctor(
 
 
 def _accounts(kb_dir: Path):
-    from strata_kb.serving.accounts import Accounts, auth_dir_for, ensure_git_exclude
+    from strata_kb.serving.accounts import (
+        AccountError,
+        Accounts,
+        auth_dir_for,
+        ensure_git_exclude,
+    )
 
+    # A mistyped --kb must not create a stray .kb-auth/ beside the typo.
+    if not kb_dir.is_dir():
+        raise _account_fail(
+            AccountError(f"KB directory {kb_dir} does not exist; pass --kb <hub>/.kb")
+        )
     # Before the first server start, `kb user add` must not leave users.db
     # committable either.
     ensure_git_exclude(kb_dir.parent)
@@ -4179,4 +4189,7 @@ def user_hash() -> None:
     """Print a password hash for STRATA_KB_BOOTSTRAP_PASSWORD_HASH (touches no DB)."""
     from strata_kb.serving.accounts import hash_password
 
-    typer.echo(hash_password(_ask_password()))
+    pw_hash = hash_password(_ask_password())
+    typer.echo(pw_hash)
+    # Compose expands `$` in .env, so the value must be single-quoted there.
+    typer.echo(f"STRATA_KB_BOOTSTRAP_PASSWORD_HASH='{pw_hash}'", err=True)

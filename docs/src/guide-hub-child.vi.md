@@ -416,8 +416,9 @@ Mọi người đăng nhập `/ui` bằng tên người dùng và mật khẩu. 
 
 - **Tạo admin đầu tiên** bằng
   `docker compose exec hub kb user add <name> --role admin`, hoặc đặt
-  `STRATA_KB_BOOTSTRAP_ADMIN` và `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (kết quả của
-  `kb user hash`) trong `.env`. Cặp biến này chỉ có tác dụng khi chưa có tài khoản
+  `STRATA_KB_BOOTSTRAP_ADMIN` và `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`
+  (kết quả của `kb user hash`) trong `.env`. Giữ nguyên dấu nháy đơn: Docker
+  Compose thay thế `$` trong `.env`, mà hash có nhiều ký tự `$`. Cặp biến này chỉ có tác dụng khi chưa có tài khoản
   nào; mật khẩu dạng văn bản thô không bao giờ được chấp nhận.
 - **Lệnh khác:** `kb user passwd|role|remove|list|hash`. Vai trò là `admin`, `ba`,
   `dev`; chỉ `admin` thấy và dùng được trang Registry.

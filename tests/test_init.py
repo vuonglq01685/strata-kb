@@ -2570,6 +2570,7 @@ def test_hub_quickstart_documents_accounts_registry_and_auto_merge(tmp_path: Pat
     assert "sign in with the token" not in flat
     assert "docker compose exec hub kb user add <name> --role admin" in flat
     assert "kb user hash" in flat
+    assert "STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'" in flat
     assert "Never commit `.kb-auth/`" in flat
     assert "Deleting `.kb-auth/session.key` logs everyone out" in flat
     assert "/ui/registry" in flat

@@ -729,18 +729,22 @@ def test_merge_oserror_keeps_publish_done_with_pr_url(merge_env):
     c, pem, _, hub, cfg = merge_env
     _set_auto_merge(hub, True)
 
+    sentinel = "SENTINEL-PEM-MATERIAL"
+
     def unreachable(url):
-        raise OSError("github unreachable")
+        raise OSError(f"github unreachable {sentinel}")
 
     cfg.merge_hook = unreachable
     resp = _post(c, _jwt(pem))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["merged"] is False and body["pr_url"] == "u/pull/9"
-    assert "github unreachable" in body["detail"]
+    # Only GHAppError text is safe to expose; anything else is a fixed line.
+    assert body["detail"] == "auto-merge failed -- PR left open (see hub log)"
     st = _get_status(c, _jwt(pem)).json()
     assert st["state"] == "done" and st["merged"] is False
     assert st["pr_url"] == "u/pull/9"
+    assert sentinel not in resp.text and sentinel not in json.dumps(st)
 
 
 def test_hub_pull_failure_after_merge_still_reports_merged(merge_env, monkeypatch):
@@ -812,6 +816,16 @@ def test_auto_merge_pr_survives_hub_pull_failure(intake_cfg, monkeypatch):
 def test_auto_merge_pr_bad_url_is_a_failed_merge_not_a_raise(intake_cfg):
     ok, detail = intake.auto_merge_pr(intake_cfg, "u/pull/9")
     assert ok is False and "not a GitHub pull request URL" in detail
+
+
+def test_auto_merge_pr_non_ghapp_error_text_is_not_exposed(intake_cfg):
+    def boom(url):
+        raise KeyError("-----BEGIN PRIVATE KEY----- SENTINEL")
+
+    intake_cfg.merge_hook = boom
+    ok, detail = intake.auto_merge_pr(intake_cfg, "u/pull/9")
+    assert ok is False
+    assert detail == "auto-merge failed -- PR left open (see hub log)"
 
 
 def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypatch):

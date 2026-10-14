@@ -880,7 +880,8 @@ to `.git/info/exclude`. Deleting `session.key` logs everyone out. Roles are
 
 - **Bootstrap.** While no account exists, set `STRATA_KB_BOOTSTRAP_ADMIN` and
   `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (the output of `kb user hash`) and the hub
-  creates that admin on start. Plaintext is never accepted; once any account
+  creates that admin on start. In a Compose `.env`, single-quote the hash
+  (`STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`): Compose expands `$`. Plaintext is never accepted; once any account
   exists both variables are ignored. Or run
   `docker compose exec hub kb user add <name> --role admin`.
 - **Manage.** `kb user add|passwd|role|remove|list|hash` (see the command

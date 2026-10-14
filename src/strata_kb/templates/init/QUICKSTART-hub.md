@@ -60,10 +60,11 @@ into it; merging their PRs here is the review gate.
    - **Command:** `docker compose exec hub kb user add <name> --role admin`
      (prompts for the password twice).
    - **Bootstrap env:** set `STRATA_KB_BOOTSTRAP_ADMIN=<name>` and
-     `STRATA_KB_BOOTSTRAP_PASSWORD_HASH=<hash>` in `.env`, where `<hash>` is
-     the output of `kb user hash` (it prompts for the password; run it on any
-     machine with strata-kb installed). Plaintext passwords are never
-     accepted. The pair applies only while no account exists; once one does,
+     `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'` in `.env`, where `<hash>` is
+     the output of `kb user hash` (it prompts for the password and prints a
+     ready-to-paste line; run it on any machine with strata-kb installed).
+     **Keep the single quotes**: Docker Compose expands `$` in `.env`, and the
+     hash contains several. Plaintext passwords are never accepted. The pair applies only while no account exists; once one does,
      a stale value is ignored.
 
    Roles are `admin`, `ba` and `dev`. More commands:
