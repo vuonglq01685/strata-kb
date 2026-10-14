@@ -1112,6 +1112,25 @@ _TICKET_WRAPPER_PATHS = (
 )
 
 
+_ANSWER_QUESTIONS_PATHS = (
+    ".claude/skills/ba-answer-questions/SKILL.md",
+    ".claude/commands/ba-answer-questions.md",
+    ".github/prompts/ba-answer-questions.prompt.md",
+    ".cursor/commands/ba-answer-questions.md",
+)
+
+
+def test_init_ba_installs_the_answer_questions_wrappers(tmp_path):
+    from strata_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _ANSWER_QUESTIONS_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "kb_question_answer" in text, rel
+        assert "strata-kb:include" not in text, rel
+
+
 def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
     """The four ba-mission-plan wrappers are supposed to be byte-identical
     from '## Workflow' to end of file — that property is the whole point
@@ -1995,7 +2014,12 @@ def test_init_kind_dev_excludes_authoring_and_ba_artifacts(tmp_path: Path):
     for name in ("kb-ingest", "kb-docker-setup", "kb-init"):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
         assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
-    for name in ("ba-ticket-author", "ba-mission-plan", "ba-bug-report"):
+    for name in (
+        "ba-ticket-author",
+        "ba-mission-plan",
+        "ba-bug-report",
+        "ba-answer-questions",
+    ):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
     assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
     assert not (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").exists()

@@ -1042,7 +1042,8 @@ under its title (absent reads as 1, with a lint warning) and an append-only
 `## Change log` before `## Review record`:
 `| Rev | Date | Trigger | What changed | Affected | Review |`. With `N > 1` the
 log must hold exactly one row per revision `2..N`, in order, and each `Trigger`
-is one or more of `kb-context`, `architecture`, `scope`, `delivery`; lint fails
+is one or more of `kb-context`, `architecture`, `scope`, `delivery`, `question`
+(the last only for amendments made from `/ba-answer-questions`); lint fails
 otherwise. `Affected` lists full story ids (`M-<slug>-US<n>`) in a mission and
 section names in a ticket. `Review` holds the amendment's maturity scores, never
 `## Review record`.

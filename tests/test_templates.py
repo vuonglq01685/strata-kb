@@ -3533,3 +3533,42 @@ def test_hub_env_example_single_quotes_the_bootstrap_hash():
     text = _read_init_template("env.example")
     assert "# STRATA_KB_BOOTSTRAP_PASSWORD_HASH='" in text
     assert "Single-quote the hash" in text
+
+
+# --- ba-answer-questions: the BA side of ticket Q&A --------------------------
+
+BA_ANSWER_QUESTIONS_TEMPLATES = [
+    "claude-skill-ba-answer-questions.md",
+    "claude-command-ba-answer-questions.md",
+    "copilot-ba-answer-questions.prompt.md",
+    "cursor-ba-answer-questions.md",
+]
+
+
+def test_ba_answer_questions_templates_exist_as_package_resources():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in BA_ANSWER_QUESTIONS_TEMPLATES:
+        assert base.joinpath(name).is_file(), name
+    assert base.joinpath("bodies", "ba-answer-questions.md").is_file()
+
+
+def test_ba_answer_questions_wrappers_have_their_frontmatter():
+    skill = _read_init_template("claude-skill-ba-answer-questions.md")
+    assert skill.startswith("---\nname: ba-answer-questions\ndescription: ")
+    assert "invokes /ba-answer-questions." in skill
+    assert "mode: agent" in _read_init_template("copilot-ba-answer-questions.prompt.md")
+    assert "name: ba-answer-questions\n" in _read_init_template(
+        "cursor-ba-answer-questions.md"
+    )
+    command = _read_init_template("claude-command-ba-answer-questions.md")
+    assert "Invoke the `ba-answer-questions` skill" in command
+
+
+def test_ba_answer_questions_wrappers_carry_the_five_steps_and_next_step_block():
+    for name in BA_ANSWER_QUESTIONS_TEMPLATES:
+        text = _normalised(_read_init_template(name))
+        for step in ("List", "Walk", "Answer", "Record", "Report"):
+            assert step in text, (name, step)
+        assert "kb_question_answer" in text, name
+        assert "## Next step" in text, name
+        assert "State:" in text, name

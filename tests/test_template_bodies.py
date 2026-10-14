@@ -272,3 +272,42 @@ def test_no_template_claims_a_merge_publishes(name):
     text = " ".join(read_template(name).split())
     for claim in ("published it on merge", "on merge to the default branch"):
         assert claim not in text, name
+
+
+# --- ba-answer-questions (ticket Q&A, BA side) ---------------------------------
+
+
+def test_ba_answer_questions_body_pins_the_workflow_phrases():
+    text = _body("ba-answer-questions.md")
+    for phrase in (
+        "kb_question_list",
+        "kb_question_answer",
+        "Trigger `question`",
+        "one amendment per ticket",
+        "do not record any answer for a ticket whose Definition of Ready"
+        " is not fully ticked",
+        "never commits, pushes or publishes",
+        "answer_rev",
+        "waiting for publish",
+        "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)",
+        "kb ticket lint",
+    ):
+        assert phrase in text, phrase
+
+
+def test_ba_answer_questions_requires_mcp_because_the_cli_has_no_twin():
+    text = _body("ba-answer-questions.md")
+    assert "Hub access — MCP first" in text
+    assert "no CLI" in text
+    assert "MCP is required" in text
+
+
+def test_ba_ticket_author_amend_lists_the_question_trigger_for_qa_only():
+    for name in (
+        "claude-skill-ba-ticket-author.md",
+        "claude-command-ba-ticket-author.md",
+        "cursor-ba-ticket-author.md",
+    ):
+        text = " ".join(read_template(name).split())
+        assert "`question`" in text, name
+        assert "only for amendments made from `/ba-answer-questions`" in text, name
