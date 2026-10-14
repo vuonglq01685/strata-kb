@@ -75,3 +75,41 @@ def test_health_answers_while_a_slow_page_renders(
     app = create_app(ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub)), TOKEN)
     ms = anyio.run(_health_while, app, path)
     assert ms < 500, f"/api/health took {ms:.0f} ms while {path} rendered"
+
+
+def test_health_answers_while_a_login_verifies_a_password(fed_hub, monkeypatch):
+    """scrypt + sqlite in login_post run in a worker thread: a slow verify
+    (stand-in for a held sqlite write lock) must not freeze the loop."""
+    from strata_kb.serving.accounts import Accounts
+
+    monkeypatch.setattr(Accounts, "verify", _slow(Accounts.verify))
+    app = create_app(ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub)), TOKEN)
+
+    async def run() -> float:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            started = anyio.Event()
+            out: list[float] = []
+            started_at: list[float] = []
+
+            async def login():
+                started_at.append(time.perf_counter())
+                started.set()
+                await c.post("/ui/login", data={"username": "u", "password": "p"})
+
+            async def probe():
+                await started.wait()
+                await anyio.sleep(0.1)
+                # Measured from when the probe was due: a blocked loop delays
+                # the timer itself, so "now" would hide the stall.
+                due = started_at[0] + 0.1
+                assert (await c.get("/api/health")).status_code == 200
+                out.append((time.perf_counter() - due) * 1000)
+
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(login)
+                tg.start_soon(probe)
+            return out[0]
+
+    ms = anyio.run(run)
+    assert ms < 500, f"/api/health took {ms:.0f} ms during a login verify"

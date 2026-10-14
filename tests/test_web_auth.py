@@ -85,9 +85,9 @@ def test_wrong_cookie_401():
 # Fix round 1 (Critical): _authorized parsed Cookie headers with stdlib
 # SimpleCookie while auth.is_authorized_request (added for /api/health) used
 # Starlette's cookie_parser -- they disagreed on 8/26 measured real
-# Cookie-header shapes. Fixed by making _authorized delegate to
-# is_authorized_request and moving _credential_presented's cookie read onto
-# the same parser.
+# Cookie-header shapes. Fixed by routing _authorized and
+# is_authorized_request through one shared helper (auth._authorize) and moving
+# _credential_presented's cookie read onto the same parser.
 #
 # Fix round 2 (Critical): that fix left the Authorization axis still
 # diverging -- _authorized read it via Request.headers.get (Starlette's

@@ -121,3 +121,51 @@ def test_middleware_attaches_user_to_request_state(admin_user, hub_dir):
     assert user is not None
     c.cookies.set(COOKIE_NAME, make_user_session(session.key, user))
     assert c.get("/api/whoami").text == "admin/admin"
+
+
+def test_role_change_hides_registry_nav_on_next_request(web_client, hub_dir):
+    accounts = Accounts(hub_dir / ".kb-auth/users.db")
+    accounts.add("boss", "pw-b", "admin")
+    accounts.add("other", "pw-o", "admin")  # keeps an admin after the demotion
+    assert _login(web_client, "boss", "pw-b").status_code == 303
+    assert 'href="/ui/registry"' in web_client.get("/ui").text
+    accounts.set_role("boss", "dev")
+    r = web_client.get("/ui")
+    assert r.status_code == 200 and 'href="/ui/registry"' not in r.text
+
+
+def test_bearer_request_after_cookie_request_has_no_registry_nav(
+    web_client_logged_in, token
+):
+    assert 'href="/ui/registry"' in web_client_logged_in.get("/ui").text
+    r = web_client_logged_in.get("/ui", headers={"Authorization": f"Bearer {token}"})
+    # The cookie jar still sends the session cookie, but a valid bearer wins
+    # and carries no account.
+    assert r.status_code == 200 and 'href="/ui/registry"' not in r.text
+
+
+def test_sqlite_error_during_login_is_a_failed_login_not_a_500(
+    web_client, admin_user, monkeypatch
+):
+    import sqlite3
+
+    def boom(self, username, password):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(Accounts, "verify", boom)
+    r = _login(web_client, *admin_user)
+    assert r.status_code == 200 and COOKIE_NAME not in r.cookies
+    assert "Wrong username or password" in r.text
+
+
+def test_sqlite_error_during_session_lookup_is_logged_out_not_a_500(
+    web_client_logged_in, monkeypatch
+):
+    import sqlite3
+
+    def boom(self, username):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(Accounts, "get", boom)
+    r = web_client_logged_in.get("/ui", follow_redirects=False)
+    assert r.status_code == 302

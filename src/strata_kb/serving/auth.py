@@ -3,9 +3,10 @@
 `TokenAuthMiddleware` wraps the one ASGI app `web.app.create_app` builds (MCP
 over HTTP, /api, /ui, /intake). It accepts `Authorization: Bearer <token>` or
 the `strata_kb_session` cookie (`make_user_session` / `read_user_session`: an
-HMAC under the accounts session key naming a user, never the token), rate-limits requests that present a
-credential, and lets EXEMPT_PATHS through. Every verdict goes through
-`is_authorized_request`, so there is one cookie parser and one header reader.
+HMAC under the accounts session key naming a user, never the token),
+rate-limits requests that present a credential, and lets EXEMPT_PATHS
+through. Every verdict goes through `_authorize`, so there is one cookie
+parser and one header reader.
 """
 
 from __future__ import annotations
@@ -14,10 +15,12 @@ import base64
 import hashlib
 import hmac
 import logging
+import sqlite3
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 from strata_kb.serving.accounts import Accounts, User, password_version
@@ -108,7 +111,12 @@ class SessionAuth:
         if parsed is None:
             return None
         username, version = parsed
-        user = self.accounts.get(username)
+        try:
+            user = self.accounts.get(username)
+        except (sqlite3.Error, UnicodeError):
+            # A locked or unreadable store means "not logged in", never a 500.
+            logger.exception("session lookup failed")
+            return None
         if user is None or not hmac.compare_digest(
             password_version(user.password_hash), version
         ):
@@ -149,7 +157,7 @@ def is_authorized_request(
 ) -> bool:
     """The Request-level twin of TokenAuthMiddleware._authorized -- for code
     that has a Starlette Request (not a bare ASGI scope) and needs the same
-    verdict. _authorized DELEGATES here rather than re-parsing, so there is
+    verdict. Both go through `_authorize` rather than re-parsing, so there is
     one cookie parser for both, not a twin someone can drift out of sync: a
     second hand-rolled parser (stdlib SimpleCookie) disagreed with
     Starlette's own `request.cookies` (cookie_parser) on 8 of 26 measured
@@ -280,7 +288,9 @@ class TokenAuthMiddleware:
         if path in EXEMPT_PATHS or any(path.startswith(p) for p in EXEMPT_PREFIXES):
             await self.app(scope, receive, send)
             return
-        verdict = self._verdict(scope)
+        # user_for reads sqlite; keep that (and its up-to-10 s lock wait) off
+        # the event loop. The credential rules themselves are unchanged.
+        verdict = await run_in_threadpool(self._verdict, scope)
         if verdict is not False:
             user = verdict if isinstance(verdict, User) else None
             if user is not None:
@@ -346,11 +356,11 @@ class TokenAuthMiddleware:
             # its docstring), and 5 requests -- two or three
             # page opens -- exhausts the budget and 429s the NEXT login POST,
             # even with the correct token. Chose clearing over teaching
-            # verify_session to distinguish aged-out-but-signed from forged:
-            # one header at the single redirect every unauthenticated /ui
-            # hit already funnels through, vs. threading a 3-way verdict
-            # through verify_session/_credential_presented/is_authorized_
-            # request and their tests. Charging above already happened
+            # read_user_session to distinguish aged-out-but-signed from
+            # forged: one header at the single redirect every unauthenticated
+            # /ui hit already funnels through, vs. threading a 3-way verdict
+            # through read_user_session/_credential_presented/
+            # is_authorized_request and their tests. Charging above already happened
             # before this line, so this cannot open a retry channel -- a
             # forged/garbage cookie a scripted attacker resends manually
             # (ignoring Set-Cookie, as a script can) is still charged every

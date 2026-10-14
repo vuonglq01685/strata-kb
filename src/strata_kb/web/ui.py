@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sqlite3
 import tempfile
 import time
 from collections import Counter
@@ -64,7 +65,8 @@ logger = logging.getLogger("strata_kb.web.ui")
 
 # /ui/login is unauthenticated and auth-exempt, and Starlette applies no size
 # limit to a form body -- the same reason intake_routes caps every upload
-# (intake_routes.read_capped). A username and password are tens of bytes; 8 KiB is generous.
+# (intake_routes.read_capped). A username and password are tens of bytes;
+# 8 KiB is generous.
 #
 # A chunked request (no Content-Length) skips the header check in login_post
 # and reaches request.form() regardless. Do not rely on "the login fields are
@@ -530,9 +532,22 @@ def _verified_user(session: SessionAuth | None, username: str, password: str):
         return None
     try:
         username.encode("utf-8")
+        return session.accounts.verify(username, password)
     except UnicodeEncodeError:
         return None
-    return session.accounts.verify(username, password)
+    except sqlite3.Error:
+        logger.exception("login lookup failed")
+        return None
+
+
+def _no_accounts(session: SessionAuth | None) -> bool:
+    if session is None:
+        return True
+    try:
+        return session.accounts.count() == 0
+    except sqlite3.Error:
+        logger.exception("account count failed")
+        return False
 
 
 def build_routes(
@@ -557,8 +572,9 @@ def build_routes(
     if trusted_proxies is None:
         trusted_proxies = trusted_proxies_from_env()
 
-    def render_login(error: str = "", status: int = 200) -> HTMLResponse:
-        no_accounts = session is None or session.accounts.count() == 0
+    async def render_login(error: str = "", status: int = 200) -> HTMLResponse:
+        # sqlite read: off the event loop (see login_post's verify).
+        no_accounts = await run_in_threadpool(_no_accounts, session)
         return HTMLResponse(
             templating.render("login.html", error=error, no_accounts=no_accounts),
             status_code=status,
@@ -566,7 +582,7 @@ def build_routes(
         )
 
     async def login_get(request: Request) -> HTMLResponse:
-        return render_login()
+        return await render_login()
 
     async def login_post(request: Request) -> Response:
         # Checked first, before the rate limiter and before request.form()
@@ -584,7 +600,7 @@ def build_routes(
         # a hit inside the lockout window.
         if not limiter.allow(client_ip):
             logger.warning("login rate-limited for %s", client_ip)
-            return render_login("Too many attempts — try again later.", 429)
+            return await render_login("Too many attempts — try again later.", 429)
         # The Content-Length check above does not bound a chunked body, and
         # request.form() alone buffers up to 1 MiB per field × 1000 fields:
         # one unauthenticated request could OOM the whole service. The capped
@@ -600,7 +616,9 @@ def build_routes(
         username = str(form.get("username", ""))
         password = str(form.get("password", ""))
         await capped.close()
-        user = _verified_user(session, username, password)
+        # scrypt (~45 ms, 16 MiB) plus a sqlite read: never on the event loop,
+        # or one login POST would stall /api, /mcp and /ui for everyone.
+        user = await run_in_threadpool(_verified_user, session, username, password)
         if user is not None and session is not None:
             resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
             secure = cookie_is_secure(request, trusted_proxies)
@@ -627,7 +645,7 @@ def build_routes(
             return resp
         # never log the submitted values — a password may be a near-miss
         logger.warning("failed login attempt from %s", client_ip)
-        return render_login("Wrong username or password.")
+        return await render_login("Wrong username or password.")
 
     async def logout_post(request: Request) -> Response:
         resp = RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
