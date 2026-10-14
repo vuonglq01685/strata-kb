@@ -125,6 +125,9 @@ code_sync_app = typer.Typer(
 )
 app.add_typer(code_sync_app, name="code-sync")
 
+user_app = typer.Typer(help="Hub UI accounts: add, passwd, role, remove, list, hash.")
+app.add_typer(user_app, name="user")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -4076,3 +4079,98 @@ def doctor(
     if result.stale:
         raise typer.Exit(2)
     typer.echo("kb doctor: OK")
+
+
+def _accounts(kb_dir: Path):
+    from strata_kb.serving.accounts import Accounts, auth_dir_for
+
+    return Accounts(auth_dir_for(kb_dir) / "users.db")
+
+
+def _account_fail(exc: Exception) -> typer.Exit:
+    typer.secho(str(exc), fg=typer.colors.RED, err=True)
+    return typer.Exit(1)
+
+
+def _ask_password() -> str:
+    return typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+
+
+_KB_OPT = typer.Option(Path(".kb"), "--kb", help="KB directory")
+
+
+@user_app.command("add")
+def user_add(
+    username: str = typer.Argument(..., help="Login name (case-insensitive)"),
+    role: str = typer.Option(..., "--role", help="admin, ba or dev"),
+    kb_dir: Path = _KB_OPT,
+) -> None:
+    """Create a hub UI account; the password is prompted for twice."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).add(username, _ask_password(), role)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"added {username} ({role})")
+
+
+@user_app.command("passwd")
+def user_passwd(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> None:
+    """Set a new password for an account."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).set_password(username, _ask_password())
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"password updated for {username}")
+
+
+@user_app.command("role")
+def user_role(
+    username: str = typer.Argument(...),
+    role: str = typer.Argument(..., help="admin, ba or dev"),
+    kb_dir: Path = _KB_OPT,
+) -> None:
+    """Change an account's role (the last admin cannot be demoted)."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).set_role(username, role)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"{username} is now {role}")
+
+
+@user_app.command("remove")
+def user_remove(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> None:
+    """Delete an account (the last admin cannot be removed)."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).remove(username)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"removed {username}")
+
+
+@user_app.command("list")
+def user_list(kb_dir: Path = _KB_OPT) -> None:
+    """List accounts: username, role, created. Never prints hashes."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        users = _accounts(kb_dir).list()
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    for u in users:
+        typer.echo(f"{u.username}\t{u.role}\t{u.created_at}")
+
+
+@user_app.command("hash")
+def user_hash() -> None:
+    """Print a password hash for STRATA_KB_BOOTSTRAP_PASSWORD_HASH (touches no DB)."""
+    from strata_kb.serving.accounts import hash_password
+
+    typer.echo(hash_password(_ask_password()))

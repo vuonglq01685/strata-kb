@@ -270,6 +270,7 @@ that follows it.
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
 | `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `issue [--json]` finds the hub job's own `kb-code-sync` issue among the open ones (needs `gh`; exit `0` a usable one, `2` none, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
+| `kb user` | Hub only. Accounts for the hub web UI, stored in `<hub root>/.kb-auth/users.db`. `add <username> --role admin\|ba\|dev` and `passwd <username>` prompt for the password twice; `role <username> <role>`; `remove <username>`; `list` (never prints hashes); `hash` prints a password hash for `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` and touches no database. All but `hash` take `--kb` (default `.kb`). The last admin cannot be removed or demoted: one line on stderr, exit `1` |
 | `kb status` | List sections still pending summarization |
 | `kb build` | Validate the store: no blanks, table integrity, quality rules, token counts |
 | `kb approve` | Mark sections reviewed (`summarized` → `reviewed`) |
