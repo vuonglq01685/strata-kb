@@ -125,7 +125,7 @@ on for your repo. Ask your hub maintainer whether it is on, and know what it doe
 > `/dev-code-seed` step 4, before the section reaches `reviewed` — never at the hub.
 
 If the merge fails, the PR stays open for the hub maintainer and the publish still
-counts as done. `kb publish` prints "merged" when it merged (`kb ci-publish` does not report it).
+counts as done. `kb publish` and `kb ci-publish` print "merged" when it merged (the CI step summary still shows `hub PR: <url>`).
 With the switch on, the hub does not lag main: without it, every push adds to one
 pending hub PR that someone has to merge. `kb doctor` reports when the hub's
 `-code` lags.
@@ -180,7 +180,8 @@ does not have, then fail with a misleading error.
 
 That hub pull request is reviewed by an analyst or architect, like any other hub
 content — unless the hub has auto-merge switched on for your repo, in which case
-it merges on its own and the `-svc` review you did locally is the only one.
+the hub merges it on the repo's next intake publish (`kb publish --pr` itself does not
+go through intake); the `-svc` review you did in step 4 is the only one.
 
 ---
 

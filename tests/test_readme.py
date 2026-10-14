@@ -251,3 +251,23 @@ def test_readme_never_tells_users_to_commit_a_hub_credential():
     text = _normalised(_readme_text())
     assert "never put a token in `hub:`" in text
     assert "whose `.kb/config.yaml` `hub:` URL carries a credential" not in text
+
+
+def test_no_doc_claims_ci_publish_stays_silent_about_a_merge():
+    """cipublish.py echoes `merged: <pr_url>` when intake reports merged;
+    only the CI step summary says `hub PR: <url>`."""
+    from strata_kb.initcmd import read_template
+
+    texts = [
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        read_template("QUICKSTART-dev.md"),
+        read_template("QUICKSTART-hub.md"),
+        *(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "docs/src").glob("*.md")),
+    ]
+    for text in texts:
+        flat = _normalised(text)
+        assert "`kb ci-publish` does not report it" not in flat
+        assert "`kb ci-publish` không báo" not in flat
+        assert "`kb ci-publish` không in gì" not in flat
+    assert 'print "merged"' in _normalised(_readme_text())

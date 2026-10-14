@@ -46,7 +46,7 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    therefore happens **locally**, in `/dev-code-seed` step 4, before the
    section reaches `reviewed` — never at the hub. If the merge fails, the
    PR stays open for the hub maintainer and the publish still counts as
-   done. `kb publish` prints "merged" when it merged (`kb ci-publish` does not report it).
+   done. `kb publish` and `kb ci-publish` print "merged" when it merged (the CI step summary still shows `hub PR: <url>`).
    With the switch off, a hub BA or architect merges the PR as before.
 4. **Connect the shared MCP server** — run `kb mcp-setup` (in your assistant:
    `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token, writes
@@ -106,9 +106,10 @@ and it walks seven steps:
    `kb-code.yml`, but `--pr` opens the review PR straight away.
    **That hub PR is reviewed by a BA or architect**, the same
    as any other hub content — unless the hub has auto-merge switched on
-   for this repo: then it merges on its own, and the `-svc` review you did
-   in step 4 above is the only one (see the auto-merge note in step 3 of
-   "Setup once" above).
+   for this repo: then the hub merges it on the repo's next intake publish,
+   and the `-svc` review you did in step 4 is the only one (see the
+   auto-merge note in step 3 of "Setup once" above). `kb publish --pr` does
+   not go through intake, so it does not merge the PR by itself.
 
 Budget **10–15 min per service** for step 4 — that is the honest cost of
 a seed, and it is a one-time cost. Everything after the seed publishes is

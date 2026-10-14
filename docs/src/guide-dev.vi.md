@@ -126,7 +126,7 @@ gì:
 > khi section lên `reviewed` — không bao giờ ở hub.
 
 Nếu merge thất bại, PR vẫn mở cho người quản trị hub và publish vẫn tính là xong.
-`kb publish` in "merged" khi đã merge (`kb ci-publish` không in gì về việc này). Khi công tắc bật, hub
+`kb publish` và `kb ci-publish` in "merged" khi đã merge (bản tóm tắt bước CI vẫn hiện `hub PR: <url>`). Khi công tắc bật, hub
 không bị tụt lại so với main: thiếu nó, mỗi lần push sẽ dồn vào một PR hub đang
 chờ mà ai đó phải merge tay. `kb doctor` báo khi `-code` trên hub bị tụt lại.
 
@@ -180,8 +180,9 @@ hỏi dò intake tới mười phút, chờ một lượt CI kích hoạt bằng
 không hề có, rồi báo lỗi gây hiểu nhầm.
 
 Pull request đó trên hub được một BA hoặc kiến trúc sư review, như mọi nội dung
-khác trên hub — trừ khi hub đã bật auto-merge cho repo của bạn: khi đó nó tự merge
-và lượt review `-svc` bạn làm tại máy là lượt duy nhất.
+khác trên hub — trừ khi hub đã bật auto-merge cho repo của bạn: khi đó hub merge nó ở
+lượt publish qua intake kế tiếp của repo (bản thân `kb publish --pr` không đi qua
+intake); lượt review `-svc` bạn làm ở bước 4 là lượt duy nhất.
 
 ---
 

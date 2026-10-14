@@ -898,7 +898,7 @@ to `.git/info/exclude`. Deleting `session.key` logs everyone out. Roles are
   commits) — the whole PR, including any `-svc` content riding along. The App
   needs `contents: write` and `pull_requests: write`. If the merge fails the PR
   stays open and the publish is still `done`, with `"merged": false` and the
-  reason in `detail`; a merged one reports `"merged": true`, and `kb publish` prints "merged".
+  reason in `detail`; a merged one reports `"merged": true`, and `kb publish` / `kb ci-publish` print "merged" (the CI step summary still shows `hub PR: <url>`).
 
 ---
 

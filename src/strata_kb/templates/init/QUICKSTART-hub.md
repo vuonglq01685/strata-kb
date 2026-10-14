@@ -66,8 +66,8 @@ into it; merging their PRs here is the review gate.
      accepted. The pair applies only while no account exists; once one does,
      a stale value is ignored.
 
-   Roles are `admin`, `ba` and `dev`. More commands: `kb user passwd|role|
-   remove|list`. The last admin cannot be removed or demoted. Only an
+   Roles are `admin`, `ba` and `dev`. More commands:
+   `kb user passwd|role|remove|list`. The last admin cannot be removed or demoted. Only an
    `admin` sees and uses the **Registry** page (step 6); the bearer token can
    view the UI read-only but never opens it.
 6. **Manage the registry and auto-merge from the UI (optional)** — an admin
@@ -84,7 +84,7 @@ into it; merging their PRs here is the review gate.
    the **whole** PR, so a `-svc` amend riding along merges without a hub
    review — that review happens in the dev's repo before publish. If the
    merge fails the PR stays open for a human and the publish still counts as
-   done; `kb publish` prints "merged" only when it merged.
+   done; `kb publish` and `kb ci-publish` print "merged" only when it merged.
 
 ## Asset storage
 

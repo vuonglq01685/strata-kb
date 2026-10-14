@@ -431,7 +431,7 @@ Mọi người đăng nhập `/ui` bằng tên người dùng và mật khẩu. 
 - **Auto-merge** merge cả PR publish của repo ngay sau khi intake mở nó — kể cả
   nội dung `-svc` đi kèm. App cần quyền `contents: write` và
   `pull_requests: write`. Nếu merge thất bại, PR vẫn mở và publish vẫn là `done`
-  (`merged: false`); `kb publish` in "merged" khi đã merge (`kb ci-publish` không báo).
+  (`merged: false`); `kb publish` và `kb ci-publish` in "merged" khi đã merge (bản tóm tắt bước CI vẫn hiện `hub PR: <url>`).
 
 ## 10.4 Trước khi mở ra ngoài
 

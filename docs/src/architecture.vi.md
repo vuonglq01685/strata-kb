@@ -377,8 +377,8 @@ chủ đích.
 
 Chúng không thể dùng chung một tài liệu vì ba lý do độc lập: `-code` bị ghi đè
 toàn bộ trong khi `-svc` tích luỹ dần; `-svc` mang section `pending` trong lúc
-seed còn `-code` thì luôn phải build sạch; và `-code` được công tắc auto-merge của
-repo tự động merge còn `-svc` thì cần người review (làm tại máy, trước khi publish).
+seed còn `-code` thì luôn phải build sạch; và `-code` có thể được công tắc auto-merge
+của repo tự động merge còn `-svc` thì cần người review (làm tại máy, trước khi publish).
 
 `-code` không bao giờ được commit: revision của nó nằm trong manifest, không
 nằm trong `index.yaml`, nên index đã commit của repo dev không đổi khi code
@@ -597,7 +597,8 @@ hub.
   định là bỏ qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc
   định khi đứng sau proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và
   một người gọi có thể làm cạn giới hạn của tất cả.
-- Xác thực HTTP dừng ở bearer token. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
+- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục
+  bộ cho UI — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
   cho Internet công cộng.
 
 ---

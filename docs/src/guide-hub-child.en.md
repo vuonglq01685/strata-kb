@@ -444,8 +444,7 @@ Deleting `session.key` logs everyone out.
 - **Auto-merge** merges a repo's whole publish PR right after intake opens it —
   including any `-svc` content riding along. The App needs `contents: write` and
   `pull_requests: write`. If the merge fails the PR stays open and the publish is
-  still `done` (`merged: false`); `kb publish` prints "merged"
-  when it merged (`kb ci-publish` does not report it).
+  still `done` (`merged: false`); `kb publish` and `kb ci-publish` print "merged" when it merged (the CI step summary still shows `hub PR: <url>`).
 
 ## 10.4 Before you expose it
 

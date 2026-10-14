@@ -599,8 +599,9 @@ reaches readers only through a hub pull request.
   default ignores forwarded headers and keys on the socket peer; left unset behind
   a proxy, every caller shares the proxy's address and one caller can exhaust the
   limiters for everyone.
-- HTTP authentication stops at a bearer token. That is adequate for an internal
-  network and is not ready for the public internet.
+- HTTP authentication is a bearer token for `/api`, `/mcp` and CI plus local hub
+  accounts for the UI — no OAuth or SSO. That is adequate for an internal network
+  and is not ready for the public internet.
 
 ---
 
