@@ -460,6 +460,32 @@ Deleting `session.key` logs everyone out.
 
 Full deployment guide: `docs/deploy-remote-mcp.md`.
 
+## 10.5 Ticket Q&A
+
+A Dev who meets a business question about a published ticket asks the BA; the BA
+answers; the hub keeps the thread. Nothing to configure: the questions live in SQLite
+at `<hub root>/.kb-qa/qa.db` (in Docker `/data/.kb-qa/qa.db`), created on the first
+question. Never commit `.kb-qa/`: a new hub's `.gitignore` lists it, and the hub
+git-excludes it when the web UI starts and when the first question is written. Back it
+up with the rest of the hub volume.
+
+- **MCP tools.** `kb_question_ask`, `kb_question_list` and `kb_question_answer`. All
+  three, the list included, work only on this shared hub server, meaning MCP pointed at
+  the hub's HTTP endpoint (`kb mcp-setup`). Any other target answers `Q&A needs the
+  shared hub server — point MCP at it (kb mcp-setup)`.
+- **Who may write.** Any caller the hub authenticates: the bearer token, or a session of
+  any role. `asked_by` and `answered_by` are names the caller types, so they track who
+  said what and authenticate nobody. At most 50 questions per ticket can be open.
+- **The Q&A menu.** The left rail's **Q&A** (`/ui/questions`) is read-only. It lists the
+  tickets that have questions, grouped by BA repo, with open, waiting and answered
+  counts (`?all=1` includes fully answered tickets);
+  `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` shows one ticket's questions. The
+  ticket page of the Ticket menu gains an "N unresolved questions" link while any are
+  open or waiting.
+- **States.** *Open* until answered. An answer that changes the ticket stays *waiting
+  for publish* until the BA's new ticket revision (its own `> Revision: N`) is on the
+  hub, then it is *answered*.
+
 ---
 
 # 11. Searching

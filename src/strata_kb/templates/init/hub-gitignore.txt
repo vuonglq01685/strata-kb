@@ -3,3 +3,5 @@
 .kb-work/
 # Hub web UI accounts and the session key: never commit.
 .kb-auth/
+# Ticket Q&A store (qa.db): hub-local state, never commit.
+.kb-qa/

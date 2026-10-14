@@ -73,16 +73,18 @@ Two kinds of question get two different paths:
 
 ### 5.1 Where it lives
 
-- SQLite, decided by the owner. File `<config.kb_dir.parent>/.kb-qa/qa.db`
+- SQLite, decided by the owner. File `<hub root>/.kb-qa/qa.db`
   (in Docker: `/data/.kb-qa/qa.db`), beside `.kb-auth/` on the same volume.
 - `.kb-qa/` is kept out of git like `.kb-auth/`: added to
-  `.git/info/exclude` at startup (generalise `accounts.ensure_git_exclude`
-  to take the directory name) and to `hub-gitignore.txt`.
-- The write tools work only on a hub served from its own local checkout
-  (the shared HTTP hub server). An MCP server whose hub is a URL resolved to
-  a local cache clone refuses the write tools with "Q&A needs the shared
-  hub server — point MCP at it (kb mcp-setup)", because writes there would
-  be private to one machine and lost on reclone.
+  `.git/info/exclude` by the MCP write path and at web start (generalised
+  `accounts.ensure_git_exclude`, which takes the directory name), and to
+  `hub-gitignore.txt`.
+- All three tools, `kb_question_list` included, work only on a hub served from
+  its own local checkout (the shared HTTP hub server). An MCP server whose hub
+  is a URL resolved to a local cache clone (or any other target) refuses them
+  with "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)",
+  because the store there would be private to one machine and lost on
+  reclone. The guard runs before any side effect: nothing is created.
 - BA and Dev therefore talk to the same hub: the one their MCP points at.
 
 ### 5.2 Ticket revision
@@ -331,7 +333,7 @@ On every entry, for the ticket in flight,
   answering session.
 - No answer is recorded while the ticket's DoR is not fully ticked. This
   stops Q&A from knocking the ticket off the hub.
-- The write tools refuse a hub served from a cache clone.
+- All three tools, list included, refuse a hub that is not the shared hub server (a cache clone or any other target).
 - Any authenticated caller may answer. There is a 50-open-question cap per
   ticket and no other rate limit.
 - Author subagents only list questions. The orchestrator posts BA questions

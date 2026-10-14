@@ -131,6 +131,7 @@ the PR, not in the assistant's memory:
 | Plan approved, or execution already in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
+| A technical question you want answered with evidence | `/dev-sa <question>` |
 | Just want to check a citation, no implementation | `kb resolve <file>` |
 
 `/dev-implement-ticket` is also the orchestrator: given a ticket fresh, it
@@ -154,6 +155,56 @@ names still hold, so read the diff and decide. A FAIL carrying `re-run
 who has the SA re-ground it. If the run also prints `checked against the local
 -code, not the hub's copy`, your own branch may be the cause: re-run once the
 hub is reachable and holds the -code.
+
+## Questions while you design and plan
+
+`dev-design` and `dev-plan` never decide a question they cannot settle by
+guessing. Their author subagents list each one under `## Questions raised` in
+the draft, tagged `business` or `technical`, with the ACs it blocks. The
+orchestrating skill then sorts them:
+
+- **Technical** (how to build it, where it goes, which component to reuse) →
+  `dev-sa`, the Dev-repo solution architect. It reads this repo's source and
+  the hub's `-code`, `-svc` and domain documents, and returns a decision with
+  `path:line` and `doc §section` evidence. The skill writes it into the
+  draft's `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`
+  and re-dispatches the author. Nothing goes to the hub. You can also call it
+  yourself: `/dev-sa <question>` for the ticket in flight; it returns the line
+  for you to record.
+- **Business** (anything that changes what an AC means) → asked of the BA with
+  MCP `kb_question_ask`, which stores it on the hub. The draft's `## Open
+  questions` gets `- Q<id> — <question> — blocks: <AC ids|none>`. A technical
+  question that `dev-sa` returns as `business question:` goes the same way.
+  The BA answers it with `/ba-answer-questions`.
+- **A blocking question stops the gate.** A design or plan with an open
+  question that blocks an AC cannot pass GATE 1 or GATE 2: the skill stops and
+  gives you the hub's Q&A link to paste in chat. A question that blocks no AC
+  does not stop the gate; the A1 and A2 reviewers treat it as a known open
+  item, not a defect.
+- **The `BA-Q` marker.** The `State:` line of the Next-step block in
+  `/dev-implement-ticket`, `dev-design`, `dev-plan`, `dev-execute` and
+  `dev-handover` ends with a fifth marker: `BA-Q: none | open Q<ids> | waiting Q<ids>`.
+- **Resuming.** On every entry `/dev-implement-ticket` calls
+  `kb_question_list` for the ticket. An **answered** question you have not
+  marked yet is shown with its changed sections; the flow re-fetches the
+  ticket into `docs/impl/<id>/ticket.md`, marks the `## Open questions` line
+  `— answered rev N`, and sends you back to `dev-design` if a changed section
+  touches an approved design (it returns to `draft`). A **waiting** question
+  (answered, but the BA's new ticket revision is not on the hub yet) is shown
+  as information only: do not act on it. An **open** blocking one stops the
+  flow.
+- **Only on the shared hub server.** `kb_question_ask`, `kb_question_list` and
+  `kb_question_answer` work only when MCP points at the hub's HTTP server
+  (`kb mcp-setup`); any other target answers `Q&A needs the shared hub server
+  — point MCP at it (kb mcp-setup)`. Any authenticated caller may write, and
+  the names are self-declared (`git config user.name`): they track who asked,
+  nothing more. At most 50 questions per ticket can be open. When Q&A is
+  unavailable and no `Q<id>` line in the design or plan lacks `— answered rev
+  N`, `/dev-implement-ticket` continues with `BA-Q: unknown (Q&A
+  unavailable)` and a note; with such a line it stops, because it cannot know
+  the state.
+- **Review.** The pre-code axis of `docs/pr-review-rubric.md` accepts a `Q<id>`
+  asked through hub Q&A as the escalation of an ambiguous AC.
 
 ## Fix a bug
 
@@ -287,7 +338,10 @@ measures compliance with it. The only check is the human at the gate.
   never edits the ticket.
 - **GATE 1 and GATE 2** — design and plan approved before the next phase;
   the `status:` header records it, a human grants it.
-- **`OPEN(BA)`** — an ambiguous AC is escalated, never reinterpreted.
+- **`OPEN(BA)`** — an ambiguous AC is escalated, never reinterpreted. During
+  design and plan the escalation is a hub question (`Q<id>`); `OPEN(BA)` stays
+  for the case `dev-execute` meets mid-implementation, which returns to
+  `dev-design`.
 - **A1–A4** — the four agent reviews before GATE 3 are prompt discipline;
   nothing in `kb` measures whether they ran. Only A5 has teeth: `kb pr
   lint` reads the `Blocking:` line in the PR's `## Testing` section. An

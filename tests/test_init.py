@@ -2630,6 +2630,65 @@ def test_hub_quickstart_documents_accounts_registry_and_auto_merge(tmp_path: Pat
     assert "the App must be allowed to push to it" in flat
 
 
+def test_hub_scaffold_ignores_the_ticket_qa_store(tmp_path: Path):
+    """1.27.0: `<hub>/.kb-qa/qa.db` holds the ticket questions; `git add -A`
+    on the hub must never commit it."""
+    init_repo(tmp_path, "hub")
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".kb-qa/" in text.splitlines()
+
+
+def test_hub_quickstart_documents_ticket_qa(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    assert "`.kb-qa/qa.db`" in flat
+    assert "**never commit `.kb-qa/`**" in flat
+    assert "work only on this shared hub server" in flat
+    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
+    assert "list included" in flat
+    assert "Any caller the hub authenticates may ask and answer" in flat
+    assert "names the caller types" in flat
+    assert "do not authenticate anyone" in flat
+    assert "At most 50 questions per ticket" in flat
+    assert "**waiting for publish**" in flat
+    assert "/ui/questions" in flat
+
+
+def test_ba_quickstart_documents_answering_questions(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    flat = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    assert "`/ba-answer-questions`" in flat
+    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
+    assert "Any authenticated caller may write" in flat
+    assert "self-declared" in flat
+    assert "Trigger `question`" in flat
+    assert "Re-tick the Definition of Ready" in flat
+    assert "It never commits, pushes or publishes" in flat
+    assert "**waiting for publish**" in flat
+    assert "`question` is written only by `/ba-answer-questions`" in flat
+
+
+def test_dev_quickstart_documents_questions_and_dev_sa(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    flat = " ".join(
+        (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split()
+    )
+    assert "`## Questions raised`" in flat
+    assert "`business` or `technical`" in flat
+    assert "- SA-<n>: <decision> — why — evidence" in flat
+    assert "- Q<id> — <question> — blocks: <AC ids|none>" in flat
+    assert "`kb_question_ask`" in flat
+    assert "A blocking question stops the gate" in flat
+    assert "`BA-Q: none | open Q<ids> | waiting Q<ids>`" in flat
+    assert "fifth marker" in flat
+    assert "`BA-Q: unknown (Q&A unavailable)`" in flat
+    assert "/dev-sa <question>" in flat
+    assert "Only on the shared hub server" in flat
+    assert "the names are self-declared" in flat
+    assert "accepts a `Q<id>`" in flat
+    assert "`OPEN(BA)` stays for the case `dev-execute` meets" in flat
+
+
 def test_hub_gitignore_is_protected_from_a_second_init(tmp_path: Path):
     # A hub's own .gitignore may carry secret-exclusion rules (.env,
     # credentials) a maintainer added — a routine re-init must not silently

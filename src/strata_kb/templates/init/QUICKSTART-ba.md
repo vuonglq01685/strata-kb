@@ -188,6 +188,44 @@ screenshots, drafts `tickets/bugs/BUG-<n>.md` from
 - By hand: `kb ticket lint tickets/bugs/BUG-<n>.md` (it also checks the image
   files exist).
 
+## Answer a Dev's questions
+
+While designing or planning a ticket, a Dev may ask you a business question
+about it. The questions live on the hub, not in your repo. Run
+`/ba-answer-questions` (installed by `kb init --kind ba`) to walk the open ones
+for this repo, one ticket at a time, oldest first. It shows each question with
+its context, the ACs it blocks and who asked, beside the ticket. The answers
+are yours; the agent never writes one for you.
+
+- **Needs the shared hub server.** The skill uses MCP tools that read and
+  write the hub's Q&A store (`kb_question_list`, `kb_question_answer`). They
+  work only when MCP points at the hub's HTTP server (`kb mcp-setup`); any
+  other target answers `Q&A needs the shared hub server — point MCP at it (kb
+  mcp-setup)` and the skill stops without touching a ticket. There is no CLI.
+  Any authenticated caller may write; the names (`git config user.name`) are
+  self-declared, so they track who answered and prove nothing.
+- **An answer that changes the ticket is an amendment.** All the answers of
+  one ticket go into **one** amendment under the amend rules of
+  `/ba-ticket-author`: `> Revision:` becomes N+1, one `## Change log` row with
+  Trigger `question` (used only here), What changed `Q<ids>: <one line>` and
+  Affected the changed sections, one maturity review round, and `kb ticket
+  lint` must pass.
+- **Re-tick the Definition of Ready.** The amendment unticks the boxes whose
+  evidence changed, and `kb plan-ingest` drops a ticket whose Definition of
+  Ready is not fully ticked, so it would leave the hub. The skill shows you
+  the unticked boxes; re-check and re-tick them. Until every box is ticked it
+  records no answer for that ticket.
+- **Waiting for publish.** The skill then records each answer on the hub with
+  the revision it expects (`answer_rev` = N+1). It never commits, pushes or
+  publishes, and it does not wait: you commit and merge the ticket change as
+  usual (or `/kb-publish`). Until revision N+1 is on the hub the Dev sees the
+  answer as **waiting for publish** and must not act on it. An answer that
+  changes nothing (the hub's revision already says it, or the question is no
+  longer needed) is recorded as answered at once.
+- **Where to look.** The hub's **Q&A** menu (`/ui/questions`) shows every
+  ticket with questions and their state: open, waiting for publish, answered.
+  The skill ends by giving you the link to one ticket's page to paste in chat.
+
 ## Mission plans — for large features
 
 A feature that spans several User Stories gets a **mission plan** first;
@@ -375,7 +413,7 @@ Once a mission or ticket is merged, change it with
 `/ba-mission-plan --amend M-<slug>` or `/ba-ticket-author --amend <ticket>`,
 not by hand. The agent reads the file and its `kb ticket stale --md`
 findings, asks you for the trigger (`kb-context`, `architecture`, `scope`,
-`delivery`), then bumps `> Revision:` and appends a row to `## Change log`.
+`delivery`; `question` is written only by `/ba-answer-questions`), then bumps `> Revision:` and appends a row to `## Change log`.
 In a mission's `Affected` cell it writes full story ids
 (`M-<slug>-US<n>`), because `kb mission next` matches only full ids.
 

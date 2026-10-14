@@ -86,6 +86,28 @@ into it; merging their PRs here is the review gate.
    review — that review happens in the dev's repo before publish. If the
    merge fails the PR stays open for a human and the publish still counts as
    done; `kb publish` and `kb ci-publish` print "merged" only when it merged.
+7. **Ticket Q&A (nothing to set up)** — a Dev asks the BA about a published
+   ticket, the BA answers, and the hub keeps the thread. The questions live in
+   SQLite at `.kb-qa/qa.db` in the hub root; **never commit `.kb-qa/`** — a new
+   hub's `.gitignore` lists it, and the hub adds it to `.git/info/exclude` the
+   first time a question is written and again when the web UI starts. Back it
+   up with the rest of the hub volume (in Docker: `/data/.kb-qa/qa.db`); the
+   file is created on the first question. Three MCP tools write it
+   (`kb_question_ask`, `kb_question_list`, `kb_question_answer`, the first MCP
+   tools that write) and they work only on this shared hub server, meaning
+   MCP pointed at the hub's HTTP endpoint (`kb mcp-setup`). Any other target
+   answers `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`,
+   list included. Any caller the hub authenticates may ask and answer (the
+   bearer token, or a session of any role); `asked_by` and `answered_by` are
+   names the caller types, so they track who said what and do not
+   authenticate anyone. At most 50 questions per ticket can be open at once.
+   The read-only **Q&A** menu (`/ui/questions`) lists the tickets that have
+   questions, per BA repo, with open, waiting and answered counts;
+   `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` shows one ticket's
+   questions. A question is **open** until answered. An answer that changes
+   the ticket stays **waiting for publish** until the BA's new ticket revision
+   reaches the hub, then it is **answered**. The existing ticket page shows an
+   "N unresolved questions" link when any are open or waiting.
 
 ## Asset storage
 

@@ -292,6 +292,38 @@ tới khi `DoR: PASS`. Bug bỏ qua maturity review và phần technical groundi
 `kb ticket lint tickets/bugs/BUG-<n>.md` (và cổng CI) tự kiểm bug theo hợp đồng này;
 nó cũng kiểm các file ảnh có tồn tại.
 
+## 3.10 Trả lời câu hỏi của Dev
+
+Khi thiết kế hoặc lập kế hoạch cho ticket của bạn, Dev có thể hỏi một câu hỏi nghiệp vụ
+quyết định một tiêu chí chấp nhận có nghĩa là gì. Câu hỏi nằm trên hub, không nằm trong
+repo của bạn. Chạy `/ba-answer-questions` (do `kb init --kind ba` cài): nó liệt kê các
+câu hỏi đang mở của repo này và duyệt từng ticket một, câu cũ nhất trước, mỗi câu kèm
+ngữ cảnh, các AC bị chặn và người hỏi, đặt cạnh ticket. Câu trả lời là của bạn; agent
+không bao giờ tự viết thay.
+
+- **Cần server hub dùng chung.** Skill dùng `kb_question_list` và `kb_question_answer`,
+  chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`). Đích khác trả lời
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` và skill dừng, không
+  đổi ticket nào. Không có CLI cho chúng. Mọi bên gọi đã xác thực đều được ghi; tên
+  (`git config user.name`) là tự khai, nên chỉ để theo dõi ai đã trả lời và không chứng
+  minh gì.
+- **Mỗi ticket một lần sửa.** Câu trả lời làm đổi hành vi thì sửa ticket theo §6.2:
+  `> Revision:` thành N+1, một dòng `## Change log` với Trigger `question`, What changed
+  `Q<ids>: <một dòng>`, Affected là các section đã đổi, một vòng maturity review, và
+  `kb ticket lint` phải qua. Mọi câu hỏi của một ticket vào cùng một lần sửa.
+- **Tick lại Definition of Ready.** Lần sửa bỏ tick các ô mà bằng chứng đã đổi, và
+  `kb plan-ingest` loại ticket có Definition of Ready chưa tick đủ, khiến ticket rời hub.
+  Skill cho bạn xem các ô chưa tick; hãy kiểm tra và tick lại. Chừng nào chưa tick đủ,
+  nó không ghi câu trả lời nào cho ticket đó.
+- **Chờ publish.** Skill ghi từng câu trả lời lên hub cùng revision mà nó kỳ vọng (N+1).
+  Nó không bao giờ commit, push hay publish, và không chờ: bạn commit và merge như
+  thường (hoặc `/kb-publish`). Cho tới khi revision N+1 lên hub, câu hỏi hiện là *chờ
+  publish* và Dev được dặn không hành động theo câu trả lời. Câu trả lời không đổi gì
+  (revision trên hub đã nói điều đó, hoặc câu hỏi không còn cần) được ghi là đã trả lời
+  ngay.
+- **Xem ở đâu.** Menu **Q&A** của hub (`/ui/questions`) liệt kê mọi ticket có câu hỏi và
+  trạng thái: mở, chờ publish, đã trả lời.
+
 ---
 
 # 4. Mission plan — cho tính năng lớn
@@ -525,13 +557,13 @@ một mục `## Change log` chỉ thêm vào, đặt trước `## Review record`
 
 | Cột | Nội dung |
 |---|---|
-| `Trigger` | Một hoặc nhiều giá trị `kb-context`, `architecture`, `scope`, `delivery`, cách nhau bằng dấu phẩy |
+| `Trigger` | Một hoặc nhiều giá trị `kb-context`, `architecture`, `scope`, `delivery`, cách nhau bằng dấu phẩy. `question` chỉ do `/ba-answer-questions` thêm (§3.10) |
 | `Affected` | Ở mission: id story **đầy đủ** (`M-<slug>-US<n>`). `US3` trần không khớp, nên ticket sẽ không bao giờ bị gắn cờ. Ở ticket: tên các section. `-` khi không có |
 | `Review` | Điểm maturity của lần sửa đổi, ví dụ `B4 D4 (agent)`. Review của sửa đổi ghi ở đây, không bao giờ ghi vào `## Review record` |
 
 Lint cưỡng chế điều này. `Revision` thiếu được đọc là 1 và chỉ cảnh báo, nên file
 cũ vẫn pass. Khi `Revision: N` lớn hơn 1, log phải có **đúng một dòng cho mỗi
-revision `2..N`, theo thứ tự**, và mỗi `Trigger` phải là một trong bốn giá trị;
+revision `2..N`, theo thứ tự**, và mỗi `Trigger` phải là một trong năm giá trị (`kb-context`, `architecture`, `scope`, `delivery`, `question`);
 nếu không lint fail.
 
 ## 6.2 Sửa đổi
@@ -652,7 +684,7 @@ Chính tham chiếu section, viết đúng dạng một trích dẫn thật:
   ghim đứng sau.**
 - **Change log khớp với revision.** Khi `> Revision: N` lớn hơn 1, `## Change log`
   phải có đúng một dòng cho mỗi revision `2..N`, theo thứ tự, và mỗi `Trigger`
-  phải là `kb-context`, `architecture`, `scope` hoặc `delivery`.
+  phải là `kb-context`, `architecture`, `scope`, `delivery` hoặc `question`.
 
 Trích dẫn viết theo dạng trần kiểu cũ vẫn được tính, kèm cảnh báo nhắc bạn đặt
 vào ngoặc vuông.
@@ -781,7 +813,7 @@ kb mission lint missions/M-checkout.md
 | Intake từ chối lần publish của bạn | Repo chưa có trong `federation/registry.yaml` của hub, hoặc mục của nó đặt ghim `workflow:` (intake so nó với toàn bộ `job_workflow_ref`, trong đó có tag, nên không bao giờ khớp) | Nhờ người vận hành hub ánh xạ `owner/repo` của bạn tới `repo_id` và để trống `workflow:` |
 | `kb publish` dừng với ".kb/ has uncommitted changes" | Có gì đó dưới `.kb/` khác với `HEAD` — thường là `.kb/index.yaml` hoặc `.kb/<repo_id>-plan/` đang bị theo dõi | Commit phần bạn tự sửa; `git rm --cached` các file do máy sinh rồi chạy lại `kb init --kind ba` để chúng được gitignore |
 | Một mission hay ticket vắng mặt trong plan | Nó không đủ điều kiện | Chạy `kb plan-ingest` và đọc dòng `skipped:` của nó (5.1) |
-| Lint: lỗi "change log" sau khi sửa đổi | `Revision` được tăng mà không có dòng tương ứng, hoặc một `Trigger` viết sai | Thêm đúng một dòng cho mỗi revision `2..N`, theo thứ tự, dùng bốn giá trị trigger |
+| Lint: lỗi "change log" sau khi sửa đổi | `Revision` được tăng mà không có dòng tương ứng, hoặc một `Trigger` viết sai | Thêm đúng một dòng cho mỗi revision `2..N`, theo thứ tự, dùng năm giá trị trigger |
 | Sau khi nâng cấp mọi thứ đều `broken` | Ticket mang khối ghim theo định dạng cũ | Ghim lại bằng `kb context new` |
 
 ---
@@ -807,7 +839,7 @@ kb mission lint missions/M-checkout.md
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
-**Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/sa-ticket-ground`, `/kb-publish`.
+**Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
 
 ---
 

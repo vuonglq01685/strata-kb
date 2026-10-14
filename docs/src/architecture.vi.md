@@ -254,9 +254,12 @@ tự đó — và server từ chối khởi động nếu không có. Nó chỉ 
 của hub, không bao giờ tìm trong `.kb/` làm việc của chính nó. Chính quy tắc đó
 làm cho từ "đã publish" có ý nghĩa.
 
-Mười một MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
+Mười bốn MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
 `kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_stale`,
-`kb_ticket_fetch`, `kb_mission_lint`, `kb_mission_next` và `kb_doctor_hub`.
+`kb_ticket_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
+`kb_mission_lint`, `kb_mission_next` và `kb_doctor_hub`. Ba tool `kb_question_*` làm việc với
+kho hỏi đáp ticket, và `kb_question_ask`, `kb_question_answer` là hai MCP tool duy nhất
+có ghi (xem 8.5); mười hai tool còn lại chỉ đọc.
 
 ---
 
@@ -554,6 +557,25 @@ Ticket, không nằm ở Document, và trang tổng quan đếm theo từng lo�
 Theo chiều ngược lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc
 ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
 
+## 8.5 Câu hỏi về ticket
+
+Dev gặp câu hỏi nghiệp vụ khi thiết kế hoặc lập kế hoạch cho một ticket đã publish sẽ hỏi
+BA qua `kb_question_ask`; câu hỏi được lưu trong SQLite tại `<hub root>/.kb-qa/qa.db`,
+cạnh `.kb-auth/` và nằm ngoài git. Đây là thứ duy nhất hub lưu mà không nằm trong git,
+nên ba tool hỏi đáp chỉ chạy với server hub dùng chung: với đích khác chúng trả lời
+`Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, vì kho ở đó sẽ chỉ
+nằm riêng trên một máy.
+
+Trạng thái câu hỏi được suy ra, không lưu. Câu hỏi *open* cho đến khi có câu trả lời. Câu
+trả lời làm thay đổi ticket ghi lại revision mang nó (`answer_rev`) và các section đã đổi;
+câu hỏi ở trạng thái *chờ publish* cho đến khi bản ticket trên hub (dòng `> Revision: N`
+của chính nó, không phải git HEAD của hub) đạt revision đó, rồi mới là *answered*. Menu
+**Q&A** của Web UI hiển thị chúng ở chế độ chỉ đọc. BA trả lời bằng
+`/ba-answer-questions`: skill sửa ticket (Trigger `question` trong change log), để BA tick
+lại Definition of Ready, ghi câu trả lời và không bao giờ commit, push hay publish; phía
+Dev nêu câu hỏi nghiệp vụ từ `dev-design` và `dev-plan`, còn câu hỏi kỹ thuật chuyển cho
+`dev-sa`.
+
 ---
 
 # 9. Mô hình tin cậy
@@ -591,6 +613,10 @@ hub.
   định của hub, đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc
   `auto_merge` của repo khiến intake merge cả PR publish ngay sau khi mở; merge
   thất bại thì PR vẫn mở và publish vẫn `done` với `merged: false`.
+- Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi
+  ba MCP tool `kb_question_*`, và chỉ trên server hub dùng chung. Mọi bên gọi mà hub
+  xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì và không
+  xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
 - Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form
   đăng nhập, nên không thể né khoá bằng cách chuyển sang header.
 - Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc
