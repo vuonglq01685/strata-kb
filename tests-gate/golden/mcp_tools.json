@@ -221,6 +221,151 @@
       "type": "object"
     }
   },
+  "kb_question_answer": {
+    "description": "Record the BA's answer to an open question. If the answer changes\nthe ticket, pass `answer_rev` (the ticket revision that carries the\nchange; it must exceed the hub's current one, and it is refused while\nthe ticket is off the hub) and `ticket_sections` (the changed\nsection names, the change-log row's `Affected`); the question stays\n`waiting` until that revision is on the hub. If the hub's current\nrevision already says it, leave `answer_rev` unset and pass an empty\n`ticket_sections`. `answered_by` is your own name (`git config\nuser.name`). Any authenticated caller may answer; names are\nself-declared, so this is tracking, not authentication. Works only\non the shared hub server.",
+    "inputSchema": {
+      "properties": {
+        "answer": {
+          "title": "Answer",
+          "type": "string"
+        },
+        "answer_rev": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer Rev"
+        },
+        "answered_by": {
+          "title": "Answered By",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "ticket_sections": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ticket Sections",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "answer",
+        "answered_by",
+        "ticket_sections"
+      ],
+      "title": "kb_question_answerArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_question_answerOutput",
+      "type": "object"
+    }
+  },
+  "kb_question_ask": {
+    "description": "Ask the BA a question about a published ticket (`<id>`, or\n`<repo>:<id>` when several repos hold it). `asked_by` is your own\nname (`git config user.name`); `context` says where the question\ncame from (e.g. `design \u00a7Data model`), `blocks` the AC ids it blocks\n(e.g. `AC-2,AC-3`). Returns `Q<id>` and the hub page of the\nticket's questions. Any authenticated caller may ask; names are\nself-declared, so this is tracking, not authentication. Works only\non the shared hub server.",
+    "inputSchema": {
+      "properties": {
+        "asked_by": {
+          "title": "Asked By",
+          "type": "string"
+        },
+        "blocks": {
+          "default": "",
+          "title": "Blocks",
+          "type": "string"
+        },
+        "context": {
+          "default": "",
+          "title": "Context",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "ticket": {
+          "title": "Ticket",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "question",
+        "asked_by"
+      ],
+      "title": "kb_question_askArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_question_askOutput",
+      "type": "object"
+    }
+  },
+  "kb_question_list": {
+    "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. Results come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
+    "inputSchema": {
+      "properties": {
+        "repo": {
+          "default": "",
+          "title": "Repo",
+          "type": "string"
+        },
+        "status": {
+          "default": "open",
+          "title": "Status",
+          "type": "string"
+        },
+        "ticket": {
+          "default": "",
+          "title": "Ticket",
+          "type": "string"
+        }
+      },
+      "title": "kb_question_listArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_question_listOutput",
+      "type": "object"
+    }
+  },
   "kb_resolve": {
     "description": "Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken.",
     "inputSchema": {
