@@ -83,18 +83,33 @@ or `technical` with `blocks: <AC ids|none>`, and you handle each one.
 **technical** → dispatch `dev-sa` as a subagent (standard model tier, as for
 authors), write its decision into the draft's `## Technical decisions` as
 `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
-`kb_question_ask(ticket, question, asked_by, context, blocks)` and move the
-item to the draft's `## Open questions` as
+`kb_question_ask(ticket, question, asked_by, context, blocks)` (`asked_by` =
+`git config user.name`; when that is empty, ask the Dev for a name once and
+reuse it) and move the item to the draft's `## Open questions` as
 `- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
-returned by `dev-sa` is handled the same way. `kb_question_ask` works only
-against the shared hub server: on `Q&A needs the shared hub server — point
-MCP at it (kb mcp-setup)` stop and tell the Dev, never reading it as "no
-questions". A blocking open BA question (a question line without `— answered rev N`
+returned by `dev-sa` is handled the same way. **Preservation rule.** Remove
+each handled item from `## Questions raised`. Every author and fix round keeps
+`## Technical decisions` and `## Open questions` verbatim and never
+re-raises a question already listed there. Before `kb_question_ask`, skip
+any item already in `## Open questions`. `kb_question_ask` works only against
+the shared hub server: it can answer `Q&A needs the shared hub server — point
+MCP at it (kb mcp-setup)`, `hub unreachable — queries need the hub federation`
+(the `HUB_DOWN` text) or `Q&A store error — see hub log`; treat each as Q&A
+unavailable, and so is a client that does not expose the tool. When Q&A is unavailable, a
+`business` item with `blocks: none` falls back to the pre-1.27 behaviour —
+`OPEN(BA)` in the draft and a note in the PR description — and the work
+continues; only a blocking one stops: stop and tell the Dev, never reading it
+as "no questions". A blocking open BA question (a question line without `— answered rev N`
 whose `blocks:` names an AC) stops the gate and the Dev gets the
 hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
 path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
 one does not stop the gate and the A1 reviewer reads it as a known open
-item, not a defect (the rubric's Pre-code axis says so).
+item, not a defect (the rubric's Pre-code axis says so). The answer is
+picked up by `dev-implement-ticket` on its next entry, which marks a newly
+answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
+`— re-draft`, re-dispatch the `design-author` with the re-fetched ticket, then strip
+that suffix (the line keeps `— answered rev N`). A line with
+`— answered rev N` and no `— re-draft` is already handled.
 
 ## A1 — independent design review (before GATE 1)
 
@@ -102,9 +117,10 @@ Write the design in its own context: dispatch a `design-author` subagent with
 the resolved context cache path, the ticket's acceptance criteria, the
 conventions paths, and this phase's own authoring rules above — what the
 design must cover, and how placeholders and standard values are cited —
-and the Questions rule above: it lists what it could not decide under
-`## Questions raised`, tags each item `business` or `technical` with
-`blocks: <AC ids|none>`, and never calls the hub or asks the BA itself —
+and the Questions rule and preservation rule above: it lists what it could
+not decide under `## Questions raised`, tags each item `business` or
+`technical` with `blocks: <AC ids|none>`, never calls the hub or asks the BA
+itself, and keeps `## Technical decisions` and `## Open questions` verbatim —
 and let it write `docs/impl/<ticket-id>/design.md` with `status: draft`.
 After each author or fix round returns, handle its `## Questions raised`
 before the reviewer is dispatched. You orchestrate; you do not draft and
@@ -120,6 +136,8 @@ conversation.
 It returns pass/fail per axis plus a gap list in which every gap names the
 section it lives in, its severity, and a proposed fix. Apply BLOCKER and
 SUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.
+The fix subagent gets the same Questions rule and preservation rule as the
+author.
 
 Record every round in the design file's `## Review record` table, creating it
 below the design body on round 1:

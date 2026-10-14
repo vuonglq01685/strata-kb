@@ -350,11 +350,19 @@ def test_ba_answer_questions_claude_command_matches_the_body_rules():
     assert "record nothing for that ticket" in text
     assert "`STRATA_KB_HUB_URL`" in text
     assert "only when the HUB revision" in text
+    assert "or the question is no longer needed" in text
 
 
 # --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
 
 HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
+
+_IMPLEMENT_TICKET_FORMS = [
+    "claude-skill-dev-implement-ticket.md",
+    "claude-command-dev-implement-ticket.md",
+    "copilot-dev-implement-ticket.prompt.md",
+    "cursor-dev-implement-ticket.md",
+]
 
 _AUTHOR_BODIES = [
     ("dev-design.md", "design-author"),
@@ -463,8 +471,9 @@ def test_dev_implement_ticket_resumes_from_the_question_states(name):
         "BA-Q: open Q<ids>",
         HUB_ONLY_ERROR,
         "BA-Q: unknown (Q&A unavailable)",
-        "no `Q<id>` line without `— answered rev N`",
-        "STOP and tell the Dev",
+        "If every `Q<id>` line carries `— answered rev N` (or there are none), "
+        "continue with `BA-Q: unknown (Q&A unavailable)`",
+        "if any `Q<id>` line lacks it, STOP and tell the Dev",
         'never treating it as "no questions"'
         if name.startswith("claude-command")
         else 'never treat it as "no questions"',
@@ -506,7 +515,7 @@ def test_author_dispatch_carries_the_questions_rule(body, command):
     texts = (_body(body), " ".join(read_template(command).split()))
     for text in texts:
         for phrase in (
-            "the Questions rule above",
+            "the Questions rule and preservation rule above",
             "lists what it could not decide under `## Questions raised`",
             "tags each item `business` or `technical` with `blocks: <AC ids|none>`",
             "never calls the hub or asks the BA itself",
@@ -525,10 +534,79 @@ def test_gate_counts_only_question_lines_without_an_answered_marker(body, comman
         assert "dev-sa" in text and "standard" in text and "tier" in text, body
 
 
-def test_dev_design_says_an_answered_line_re_dispatches_the_author():
-    text = _body("dev-design.md")
-    assert "an answered line means re-dispatching the `design-author`" in text
-    assert "with the re-fetched ticket" in text
+@pytest.mark.parametrize(
+    ("body", "command", "author"),
+    [
+        ("dev-design.md", "claude-command-dev-design.md", "design-author"),
+        ("dev-plan.md", "claude-command-dev-plan.md", "plan-author"),
+    ],
+)
+def test_only_a_re_draft_line_re_dispatches_the_author_once(body, command, author):
+    for text in (_body(body), " ".join(read_template(command).split())):
+        assert (
+            f"once per `Q<id>` line carrying `— re-draft`, re-dispatch the `{author}` "
+            "with the re-fetched ticket"
+        ) in text, body
+        assert "then strip that suffix" in text, body
+        assert "the line keeps `— answered rev N`" in text, body
+        assert "a question line without `— answered rev N`" in text, body
+        assert "an answered line means re-dispatching" not in text, body
+
+
+@pytest.mark.parametrize("name", _IMPLEMENT_TICKET_FORMS)
+def test_implement_ticket_marks_only_new_answers_for_re_draft(name):
+    text = " ".join(read_template(name).split())
+    assert "`— answered rev N — re-draft`" in text, name
+    assert "no `Q<id>` line without" not in text, name
+
+
+@pytest.mark.parametrize("name", _IMPLEMENT_TICKET_FORMS)
+def test_implement_ticket_names_the_repo_the_link_takes(name):
+    text = " ".join(read_template(name).split())
+    assert (
+        "`?repo=<repo-id>`" not in text
+    )  # the bare placeholder was ambiguous; the BA repo is named instead
+    assert "the BA repo, as `kb_question_list` prints it in `<repo>:<ticket>`" in text
+
+
+@pytest.mark.parametrize(("body", "command"), _AUTHOR_DISPATCH)
+def test_author_and_fix_rounds_preserve_decisions_and_open_questions(body, command):
+    for text in (_body(body), " ".join(read_template(command).split())):
+        for phrase in (
+            "Remove each handled item from `## Questions raised`.",
+            "Every author and fix round keeps `## Technical decisions` and "
+            "`## Open questions` verbatim and never re-raises a question already "
+            "listed there.",
+            "Before `kb_question_ask`, skip any item already in `## Open questions`.",
+        ):
+            assert phrase in text, (body, phrase)
+
+
+@pytest.mark.parametrize(("body", "command"), _AUTHOR_DISPATCH)
+def test_the_fix_subagent_gets_the_questions_and_preservation_rules(body, command):
+    for text in (_body(body), " ".join(read_template(command).split())):
+        assert (
+            "The fix subagent gets the same Questions rule and preservation rule "
+            "as the author."
+        ) in text, body
+        assert "the Questions rule and preservation rule above" in text, body
+
+
+@pytest.mark.parametrize(("body", "command"), _AUTHOR_DISPATCH)
+def test_unavailable_qa_stops_only_a_blocking_question(body, command):
+    for text in (_body(body), " ".join(read_template(command).split())):
+        for phrase in (
+            "`Q&A store error — see hub log`",
+            "`hub unreachable — queries need the hub federation`",
+            "treat each as Q&A unavailable",
+            "a `business` item with `blocks: none` falls back to the pre-1.27 "
+            "behaviour",
+            "`OPEN(BA)` in the draft",
+            "a note in the PR description",
+            "only a blocking one stops",
+            "ask the Dev for a name once",
+        ):
+            assert phrase in text, (body, phrase)
 
 
 def test_no_template_asserts_the_open_questions_line_in_the_artefact():

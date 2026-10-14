@@ -62,16 +62,17 @@ edit above it.
   its state. The tools have no CLI twin and work only against the shared
   hub server. When `kb_question_list` answers `Q&A needs the shared hub
   server — point MCP at it (kb mcp-setup)`, or your client does not expose
-  it, read the local `docs/impl/<id>/design.md` and `plan.md`: with no
-  `Q<id>` line without `— answered rev N`, continue with
-  `BA-Q: unknown (Q&A unavailable)` and a one-line note to the Dev; with
-  any such line, STOP and tell the Dev, because its state cannot be known
-  — never treat it as "no questions".
+  it, read the local `docs/impl/<id>/design.md` and `plan.md`. If every
+  `Q<id>` line carries `— answered rev N` (or there are none), continue with
+  `BA-Q: unknown (Q&A unavailable)` and a one-line note to the Dev; if any
+  `Q<id>` line lacks it, STOP and tell the Dev, because its state cannot be
+  known — never treat it as "no questions".
   - **answered**, not yet marked in the design/plan `## Open questions` →
     show each answer with its changed sections, re-fetch the ticket with
     `kb_ticket_fetch` into `docs/impl/<id>/ticket.md`, mark the line
-    `— answered rev N` (N = the answer's `answer_rev`; the hub rev when that
-    is `-`), and go back to `dev-design` when a changed section touches an
+    `— answered rev N — re-draft` (N = the answer's `answer_rev`; the hub rev
+    when that is `-`; `— re-draft` tells `dev-design` or `dev-plan` to
+    re-dispatch its author once for this new answer), and go back to `dev-design` when a changed section touches an
     approved design (it goes back to `status: draft`).
   - **waiting** (answer recorded, its ticket revision not on the hub yet)
     → show the answer as information only, say which revision it waits for,
@@ -81,7 +82,9 @@ edit above it.
     Dev the hub Q&A link to paste in chat: `STRATA_KB_HUB_URL` (process env,
     or the `.env` that `kb mcp-setup` wrote; read only that line, never show
     `STRATA_KB_HTTP_TOKEN`) plus
-    `/ui/questions/ticket?repo=<repo-id>&ticket=<id>`; unset → the path only.
+    `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` (`<repo-id>` = the BA
+    repo, as `kb_question_list` prints it in `<repo>:<ticket>`); unset → the
+    path only.
     An open question that blocks no AC does not stop the flow; it still
     shows in the state line.
 - **Check the grounding** — if the ticket has a `## Technical grounding`

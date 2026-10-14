@@ -118,18 +118,30 @@ does not:
   `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author (or
   the fix round) with those decisions.
 - **business** → call `kb_question_ask(ticket, question, asked_by, context,
-  blocks)` (`asked_by` = `git config user.name`; `context` = where in the
+  blocks)` (`asked_by` = `git config user.name`, and when that is empty ask
+  the Dev for a name once and reuse it; `context` = where in the
   plan it came up; `blocks` = the AC ids, or empty) and move the item to
   the draft's `## Open questions` as
   `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
   `business question:`, treat the item as business and handle it the same
   way.
 
+**Preservation rule.** Remove each handled item from `## Questions raised`.
+Every author and fix round keeps `## Technical decisions` and
+`## Open questions` verbatim and never re-raises a question already listed
+there. Before `kb_question_ask`, skip any item already in
+`## Open questions`.
+
 `kb_question_ask` has no CLI twin and works only against the shared hub
 server. Any other MCP target answers `Q&A needs the shared hub server —
-point MCP at it (kb mcp-setup)`; a client that does not expose the tool
-has the same problem. In both cases stop and tell the Dev; this is a stop,
-never "no questions". The hub link for the Dev to share with the BA is
+point MCP at it (kb mcp-setup)`; the hub can also answer
+`hub unreachable — queries need the hub federation` (the `HUB_DOWN` text) or
+`Q&A store error — see hub log`; treat each as Q&A unavailable, and so is a
+client that does not expose the tool. When Q&A is unavailable, a `business`
+item with `blocks: none` falls back to the pre-1.27 behaviour —
+`OPEN(BA)` in the draft and a note in the PR description — and the work
+continues; only a blocking one stops. For that one, stop and tell the Dev;
+this is a stop, never "no questions". The hub link for the Dev to share with the BA is
 `STRATA_KB_HUB_URL` (from the process env, or the `.env` that `kb mcp-setup`
 wrote; read only that line and never show `STRATA_KB_HTTP_TOKEN`) followed
 by the path `kb_question_ask` returned; if it is unset, give the path only.
@@ -140,7 +152,11 @@ whose `blocks:` names an AC cannot pass GATE 2. Stop and give the Dev the
 hub Q&A link. A non-blocking open BA question does not stop the gate
 (`blocks: none`); it stays listed, and the A2 reviewer reads it as a known
 open item, not a defect (the rubric's Pre-code axis says so). The answer is
-picked up by `dev-implement-ticket` on its next entry.
+picked up by `dev-implement-ticket` on its next entry, which marks a newly
+answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
+`— re-draft`, re-dispatch the `plan-author` with the re-fetched ticket, then strip
+that suffix (the line keeps `— answered rev N`). A line with
+`— answered rev N` and no `— re-draft` is already handled.
 
 ## A2 — independent plan review (before GATE 2)
 
@@ -148,10 +164,11 @@ Dispatch a `plan-author` subagent to turn the approved design into the plan —
 it gets the design file path, the ticket's acceptance criteria, the
 `cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
-format, the ordering rules, and the Questions rule above (it lists what it
-could not decide under `## Questions raised`, tags each item `business` or
-`technical` with `blocks: <AC ids|none>`, and never calls the hub or asks the
-BA itself) — and nothing else. After each author or fix round returns, handle
+format, the ordering rules, and the Questions rule and preservation rule
+above (it lists what it could not decide under `## Questions raised`, tags
+each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
+the hub or asks the BA itself, and keeps `## Technical decisions` and
+`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle
 its `## Questions raised` before the reviewer is dispatched. Then review it
 with a different context.
 
@@ -173,7 +190,8 @@ path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
   reviewer also runs `kb plan waves` and quotes its output; an error
   there is a BLOCKER on its own.
 
-Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
+Fix subagent, re-review, at most 3 rounds. The fix subagent gets the same
+Questions rule and preservation rule as the author. Record each round in the plan file's
 `## Review record` table, same shape as the design file's. GATE 2 is offered
 only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
 left open; NOTE and NITS are recorded, not fixed.

@@ -26,7 +26,7 @@ re-ticks). Record: `kb_question_answer` per question (`id` int without the `Q`,
 `answer`, `answered_by`) with `answer_rev` = N+1 (or the local revision R
 when only that holds the answer) and `ticket_sections` = Affected (a list
 of section names); `answer_rev` None and `[]` only when the HUB revision
-(`hub rev` in `kb_question_list`) already carries the answer. Report: `Q<id> → answered (rev N+1: sections …)`,
+(`hub rev` in `kb_question_list`) already carries the answer, or the question is no longer needed. Report: `Q<id> → answered (rev N+1: sections …)`,
 remind the BA to commit and merge the ticket change as usual (the hub shows
 the answers as waiting for publish until it lands), and give the hub Q&A
 link to paste in chat (`STRATA_KB_HUB_URL` plus the path; path only when unset; never show `STRATA_KB_HTTP_TOKEN`). The agent never commits, pushes or publishes.
