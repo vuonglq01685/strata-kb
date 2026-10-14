@@ -1881,11 +1881,12 @@ def auto_merge_pr(cfg: IntakeConfig, pr_url: str) -> tuple[bool, str]:
             repo_full, number = ghapp.parse_pr_url(pr_url)
             token = ghapp.mint_installation_token(cfg.creds, repo_full, http=http)
             ghapp.merge_pr(repo_full, token, number, http=http)
-    except (ghapp.GHAppError, gitio.GitError) as exc:
+    except Exception as exc:  # noqa: BLE001 -- the PR already exists: URLError/TimeoutError/KeyError from a malformed body must not fail the publish
+        # str(exc) never holds the token (GHAppError messages are token-free).
         logger.warning("auto-merge of %s failed: %s", pr_url, exc)
         return False, f"auto-merge failed -- PR left open: {exc}"
     try:
         hub_mod.pull_once(cfg.hub_ref)
-    except gitio.GitError as exc:
+    except Exception as exc:  # noqa: BLE001 -- pull_once can also raise sqlite3.Error / embedder errors; after a landed merge that must not matter
         logger.warning("hub pull after auto-merge of %s failed: %s", pr_url, exc)
     return True, ""

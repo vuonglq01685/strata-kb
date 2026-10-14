@@ -388,17 +388,6 @@ def build_intake_routes(
                         archive,
                         kind=kind,
                     )
-                    # The registry `_authorize` read for THIS request decides,
-                    # never a second read.
-                    entry = registry.resolve(claims["repository"])
-                    merged: bool | None = None
-                    merge_detail = ""
-                    if pr_url and entry is not None and entry.auto_merge:
-                        merged, merge_detail = await run_in_threadpool(
-                            intake.auto_merge_pr, cfg, pr_url
-                        )
-                    elif pr_url:
-                        merged = False
             except intake.IntakeError as exc:
                 store.set(rid, source_commit, "error", detail=exc.detail)
                 return _err(exc)
@@ -434,6 +423,20 @@ def build_intake_routes(
                     },
                     status_code=500,
                 )
+            # Outside the try above on purpose: once the PR exists nothing in
+            # the merge path may reach its error backstop (the publish is done
+            # whether or not the PR merges). Network-only, so no limiter slot.
+            # The registry `_authorize` read for THIS request decides, never a
+            # second read.
+            entry = registry.resolve(claims["repository"])
+            merged: bool | None = None
+            merge_detail = ""
+            if pr_url and entry is not None and entry.auto_merge:
+                merged, merge_detail = await run_in_threadpool(
+                    intake.auto_merge_pr, cfg, pr_url
+                )
+            elif pr_url:
+                merged = False
             store.set(
                 rid,
                 source_commit,

@@ -23,7 +23,9 @@ from dataclasses import dataclass
 
 API = "https://api.github.com"
 _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
-_PR_URL_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/?$")
+_PR_URL_RE = re.compile(
+    r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(\d+)/?"
+)
 
 
 class GHAppError(RuntimeError):
@@ -144,8 +146,8 @@ def create_or_get_pr(
 
 def parse_pr_url(url: str) -> tuple[str, int]:
     """`https://github.com/owner/repo/pull/12` -> ("owner/repo", 12)."""
-    m = _PR_URL_RE.match(url)
-    if not m:
+    m = _PR_URL_RE.fullmatch(url)
+    if not m or any(set(part) == {"."} for part in m.group(1).split("/")):
         raise GHAppError(f"'{url}' is not a GitHub pull request URL")
     return m.group(1), int(m.group(2))
 

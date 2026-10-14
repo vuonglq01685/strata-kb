@@ -242,13 +242,29 @@ def test_read_file_decodes_and_404_is_none():
 
 def test_parse_pr_url():
     assert ghapp.parse_pr_url("https://github.com/o/r/pull/12") == ("o/r", 12)
-    for bad in (
+    assert ghapp.parse_pr_url("https://github.com/o-1/r_x.y/pull/3/") == (
+        "o-1/r_x.y",
+        3,
+    )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
         "https://github.com/o/r/issues/12",
         "u/pull/9",
         "https://x.io/o/r/pull/1",
-    ):
-        with pytest.raises(ghapp.GHAppError):
-            ghapp.parse_pr_url(bad)
+        "https://github.com/o/r/pull/12\n",
+        "https://github.com/../r/pull/1",
+        "https://github.com/o/../pull/1",
+        "https://github.com/o/./pull/1",
+        "https://github.com/o/r%2Fx/pull/1",
+        "https://github.com/o/r/pull/12/files",
+    ],
+)
+def test_parse_pr_url_rejects(bad):
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.parse_pr_url(bad)
 
 
 def test_merge_pr_puts_merge_method():

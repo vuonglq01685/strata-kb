@@ -725,6 +725,41 @@ def test_merge_failure_keeps_publish_done_with_detail(merge_env):
     assert public == {"state": "done", "pr_url": "u/pull/9", "merged": False}
 
 
+def test_merge_oserror_keeps_publish_done_with_pr_url(merge_env):
+    c, pem, _, hub, cfg = merge_env
+    _set_auto_merge(hub, True)
+
+    def unreachable(url):
+        raise OSError("github unreachable")
+
+    cfg.merge_hook = unreachable
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["merged"] is False and body["pr_url"] == "u/pull/9"
+    assert "github unreachable" in body["detail"]
+    st = _get_status(c, _jwt(pem)).json()
+    assert st["state"] == "done" and st["merged"] is False
+    assert st["pr_url"] == "u/pull/9"
+
+
+def test_hub_pull_failure_after_merge_still_reports_merged(merge_env, monkeypatch):
+    import sqlite3
+
+    c, pem, merged, hub, _ = merge_env
+    _set_auto_merge(hub, True)
+
+    def pull_fails(ref):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(intake.hub_mod, "pull_once", pull_fails)
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["merged"] is True
+    assert merged == ["u/pull/9"]
+    assert _get_status(c, _jwt(pem)).json()["state"] == "done"
+
+
 def test_no_change_publish_does_not_merge(merge_env):
     c, pem, merged, hub, cfg = merge_env
     _set_auto_merge(hub, True)
