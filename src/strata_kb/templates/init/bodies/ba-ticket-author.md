@@ -234,8 +234,9 @@ change is recorded in `## Change log`.
    the ticket's `@ rev` pin that list this story in `Affected` — that is
    why `kb mission next` flags the ticket `draft`.
 2. **Ask** the BA for the trigger(s) — one or more of `kb-context`,
-   `architecture`, `scope`, `delivery` — and what changed. The drift
-   findings pre-fill the answer; ask, don't guess.
+   `architecture`, `scope`, `delivery`, `question` — and what changed. The
+   drift findings pre-fill the answer; ask, don't guess. `question` is used
+   only for amendments made from `/ba-answer-questions`; never offer it here.
 3. **`kb-context` trigger** — re-pin `## KB context` with the MCP tool
    `kb_context_new` when available, otherwise `kb context new --refs
    "<refs>"` (CLI), with the FULL ref list (kept + moved + new) — the tool

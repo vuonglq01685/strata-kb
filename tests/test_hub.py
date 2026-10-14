@@ -432,3 +432,13 @@ def test_cached_hub_records_clone_and_offline_pull(
     h2 = hub.resolve_hub(str(bare))
 
     assert "error" in hub.read_pull_status(h2.root)
+
+
+def test_is_local_hub(tmp_path: Path):
+    (tmp_path / ".kb").mkdir()
+    assert hub.is_local_hub(str(tmp_path)) is True
+    assert hub.is_local_hub(str(tmp_path / "missing")) is False
+    assert hub.is_local_hub("https://example.com/kb-hub.git") is False
+    bare = tmp_path / "plain"
+    bare.mkdir()
+    assert hub.is_local_hub(str(bare)) is False

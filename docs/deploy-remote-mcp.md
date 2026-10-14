@@ -173,6 +173,18 @@ without this variable every child sits behind one shared bucket.
   spoofing risk described above — get `STRATA_KB_TRUSTED_PROXIES` right in
   *both* directions, not just against a spoofing attacker.
 
+## Ticket Q&A
+
+Ticket Q&A needs nothing set up. The three `kb_question_*` MCP tools keep their
+questions in `<hub>/.kb-qa/qa.db`, which is never committed (the hub git-excludes
+it, and a new hub's `.gitignore` lists it); back it up with the hub volume. They
+work only on this server (or the stdio server inside the hub's own checkout,
+`--kb <hub>/.kb`); any other target is refused: a client whose MCP is a dev repo's stdio
+server, or reads the hub through a local cache clone, gets `Q&A needs the shared hub
+server — point MCP at it (kb mcp-setup)`. Any caller the server
+authenticates (the bearer token) can ask and answer, and the names they give are
+self-declared: tracking, not authentication.
+
 ## Client config (Claude Code / Cowork)
 
     {

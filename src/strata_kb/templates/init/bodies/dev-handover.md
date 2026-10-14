@@ -189,6 +189,13 @@ becomes the fix, not the PR.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
+
 ## Next step — ALWAYS end your response with this block
 
 Close every response with a state line and an ordered list of next steps.
@@ -200,12 +207,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

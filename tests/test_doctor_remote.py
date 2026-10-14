@@ -419,6 +419,23 @@ def test_refresh_agent_files_leaves_ci_and_config_alone(tmp_path):
     assert all(r.startswith(initcmd.AGENT_FILE_PREFIXES) for r in report.updated)
 
 
+def test_refresh_agent_files_updates_the_rubric_but_not_its_local_override(tmp_path):
+    from strata_kb import initcmd
+
+    initcmd.init_repo(tmp_path, "dev")
+    rubric = tmp_path / "docs" / "pr-review-rubric.md"
+    local = tmp_path / "docs" / "pr-review-rubric.local.md"
+    rubric.write_text("stale rubric\n", encoding="utf-8")
+    local.write_text("my own axes\n", encoding="utf-8")
+
+    report = initcmd.refresh_agent_files(tmp_path, "dev")
+
+    assert "docs/pr-review-rubric.md" in report.updated
+    assert "Pre-code" in rubric.read_text(encoding="utf-8")
+    assert local.read_text(encoding="utf-8") == "my own axes\n"
+    assert "docs/pr-review-rubric.local.md" not in report.updated
+
+
 def _mcp_cli(git_kb, hub_worktree, monkeypatch, hub_version=None):
     """A published ba repo whose doctor talks to `hub_worktree` over a fake MCP."""
     kb = _published_ba(git_kb, hub_worktree)

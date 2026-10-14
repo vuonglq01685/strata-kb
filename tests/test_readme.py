@@ -272,3 +272,123 @@ def test_no_doc_claims_ci_publish_stays_silent_about_a_merge():
         assert "`kb ci-publish` không báo" not in flat
         assert "`kb ci-publish` không in gì" not in flat
     assert 'print "merged"' in _normalised(_readme_text())
+
+
+_MCP_TOOLS = (
+    "kb_search",
+    "kb_get_section",
+    "kb_context_new",
+    "kb_resolve",
+    "kb_ticket_lint",
+    "kb_ticket_check",
+    "kb_ticket_stale",
+    "kb_mission_lint",
+    "kb_ticket_fetch",
+    "kb_question_ask",
+    "kb_question_list",
+    "kb_question_answer",
+    "kb_mission_next",
+    "kb_doctor_hub",
+)
+
+
+def test_readme_lists_all_fourteen_mcp_tools():
+    text = _readme_text()
+    flat = _normalised(text)
+    assert "### The fourteen MCP tools" in text
+    assert "eleven MCP tools" not in flat.lower()
+    rows = [line for line in text.splitlines() if line.startswith("| `kb_")]
+    assert sorted(line.split("`")[1] for line in rows) == sorted(_MCP_TOOLS)
+
+
+def test_no_doc_still_counts_eleven_mcp_tools():
+    for path in (REPO_ROOT / "docs/src").glob("*.md"):
+        flat = _normalised(path.read_text(encoding="utf-8")).lower()
+        assert "eleven mcp tools" not in flat, path.name
+        assert "mười một mcp tool" not in flat, path.name
+    for path in (REPO_ROOT / "docs/src").glob("architecture.*.md"):
+        text = path.read_text(encoding="utf-8")
+        for name in _MCP_TOOLS:
+            assert f"`{name}`" in text, (path.name, name)
+
+
+def test_readme_documents_ticket_qa():
+    text = _normalised(_readme_text())
+    assert "### Ticket Q&A" in text
+    assert "`<hub root>/.kb-qa/qa.db`" in text
+    assert "**Never commit `.kb-qa/`**" in text
+    assert "All three, the list included, work only against the **hub itself**" in text
+    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in text
+    assert "Any caller the hub authenticates" in text
+    assert "tracking, not authentication" in text
+    assert "at most 50 open questions per ticket" in text
+    assert "*waiting* (answered, but the answer changes the ticket" in text
+    assert "created, and git-excluded, on the first Q&A call" in text
+    assert "the stdio server run inside the hub's own checkout" in text
+    assert "a hub URL read through a local cache clone" in text
+    assert "(`--kb <hub>/.kb`" in text
+    assert "Any other target is refused" in text
+    assert "`/ui/questions`" in text
+    assert "`/ui/questions/ticket?repo=<repo-id>&ticket=<id>`" in text
+    assert "**the BA must re-tick them**" in text
+    assert "Trigger `question`" in text
+    assert "It never commits, pushes or publishes" in text
+    assert "`BA-Q: none | open Q<ids> | waiting Q<ids>`" in text
+    assert "`BA-Q: unknown (Q&A unavailable)`" in text
+    assert "`/dev-sa <question>`" in text
+    assert "`/ba-answer-questions`" in text
+    assert "accepts a hub-asked `Q<id>`" in text
+
+
+def test_readme_does_not_refuse_the_hubs_own_stdio_server():
+    """The scaffolded hub stdio MCP uses `hub: "."`, a local checkout, so the
+    Q&A tools work there; only a cache clone of a hub URL is refused."""
+    text = _normalised(_readme_text())
+    assert "a stdio hub, or" not in text
+    assert "stdio hub" not in text
+
+
+def test_no_doc_says_q_and_a_is_created_on_the_first_question():
+    from strata_kb.initcmd import read_template
+
+    texts = [
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        read_template("QUICKSTART-hub.md"),
+        *(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "docs/src").glob("*.md")),
+    ]
+    for text in texts:
+        flat = _normalised(text)
+        assert "created on the first question" not in flat
+        assert "when the first question is written" not in flat
+        assert "meaning MCP pointed at the hub's HTTP endpoint" not in flat
+
+
+def test_guides_document_ticket_qa_in_both_languages():
+    for lang in ("en", "vi"):
+        ba = (REPO_ROOT / f"docs/src/guide-ba.{lang}.md").read_text(encoding="utf-8")
+        dev = (REPO_ROOT / f"docs/src/guide-dev.{lang}.md").read_text(encoding="utf-8")
+        hub = (REPO_ROOT / f"docs/src/guide-hub-child.{lang}.md").read_text(
+            encoding="utf-8"
+        )
+        assert "## 3.10" in ba and "/ba-answer-questions" in ba, lang
+        assert "Trigger `question`" in _normalised(ba), lang
+        assert "## 4.6" in dev and "/dev-sa" in dev, lang
+        assert "BA-Q: none | open Q<ids> | waiting Q<ids>" in dev, lang
+        assert "`.kb-qa/qa.db`" in hub or "`.kb-qa/`" in hub, lang
+        for text in (ba, dev, hub):
+            assert "Q&A needs the shared hub server" in _normalised(text), lang
+
+
+def test_version_is_1_27_0_everywhere():
+    import tomllib
+
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["version"] == "1.27.0"
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    own = [p for p in lock["package"] if p["name"] == "strata-kb"]
+    assert [p["version"] for p in own] == ["1.27.0"]
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    first = changelog.split("\n## ", 2)[1]
+    assert first.startswith("1.27.0 — 2026-10-14")
+    assert "guide PDFs" in first and "were not rebuilt" in first

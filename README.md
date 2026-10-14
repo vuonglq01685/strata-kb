@@ -142,9 +142,9 @@ manifest is not detectable; `--assets none|s3` (hub) records the asset store.
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and
 Cursor**: `/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`,
 `/kb-docker-setup` on hub and child repos; `/ba-ticket-author`,
-`/ba-mission-plan`, `/ba-bug-report`, `/sa-ticket-ground` and `/kb-publish` (it
-publishes the plan) on a `ba` repo; the five
-dev-workflow commands and `/dev-fix-bug` on a `dev` repo. MCP client wiring ships as
+`/ba-mission-plan`, `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`
+and `/kb-publish` (it publishes the plan) on a `ba` repo; the five
+dev-workflow commands, `/dev-fix-bug` and `/dev-sa` on a `dev` repo. MCP client wiring ships as
 `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
 stdio on the hub, HTTP-with-env-vars everywhere else.
 
@@ -788,12 +788,13 @@ The HTTP server keeps the hub fresh by itself: every
 HEAD moved, so a merged hub PR is searchable without a restart. A diverged or
 hand-edited checkout is never touched; the pull fails with a logged warning.
 
-### Menus — Overview, Document, Ticket, Code
+### Menus — Overview, Document, Ticket, Code, Q&A
 
-The left rail is **Overview · Document · Ticket · Code**. Each menu lists one
-kind and has its own search box, which is a real search (`kb query` with that
+The left rail is **Overview · Document · Ticket · Code · Q&A**. The first four
+each list one kind and have their own search box, which is a real search (`kb query` with that
 kind) rendered inside the menu; the tag cloud follows the menu. Overview counts
-documents per kind.
+documents per kind. **Q&A** is the odd one out: it lists ticket questions, not
+documents, and has no search box (see [Ticket Q&A](#ticket-qa)).
 
 | Menu | Kind | Shows |
 |---|---|---|
@@ -830,7 +831,61 @@ links to its Ticket page. The CLI twin is
 `kb mission next --from-hub [--repo <ba-repo>] [--json]`; over MCP it is
 `kb_mission_next`.
 
-### The eleven MCP tools
+### Ticket Q&A
+
+A Dev who meets a business question while designing or planning a published
+ticket asks the BA; the BA answers; the hub keeps the thread. It is the one
+place the hub stores something that is not in git.
+
+- **Store.** SQLite at `<hub root>/.kb-qa/qa.db` (in Docker `/data/.kb-qa/qa.db`),
+  created, and git-excluded, on the first Q&A call. **Never commit `.kb-qa/`**: a
+  new hub's `.gitignore` lists it, and the hub also adds it to
+  `.git/info/exclude` when the web UI starts. Back it up with the hub volume.
+- **Write path.** Only the MCP tools `kb_question_ask`, `kb_question_list` and
+  `kb_question_answer`. All three, the list included, work only against the
+  **hub itself**: the shared hub's HTTP server, or the stdio server run inside the
+  hub's own checkout (`--kb <hub>/.kb`, `hub: "."`, a local path holding `.kb/`).
+  Any other target is refused: a dev repo's stdio server, even one pointing at the
+  hub's path, or a hub URL read through a local cache clone, answers `Q&A needs the
+  shared hub server — point MCP at it (kb mcp-setup)`, because a store there would
+  not be the shared one. BA and Dev repos point MCP at the hub's HTTP server
+  with `kb mcp-setup`.
+- **Who may write.** Any caller the hub authenticates: the bearer token, or a
+  session of any role. `asked_by` and `answered_by` are names the caller types
+  (the skills pass `git config user.name`): tracking, not authentication. Limits:
+  question and answer 4000 characters, context 1000, names 100 (one printable
+  line, no control characters), at most 50 changed sections per answer, and at
+  most 50 open questions per ticket.
+- **States.** *open* (no answer), *waiting* (answered, but the answer changes the
+  ticket and that ticket revision is not on the hub yet: shown as "waiting for
+  publish") and *answered*. The state is derived, never stored: a ticket's
+  revision is its own `> Revision: N` line (absent = 1), not the hub's git HEAD.
+- **Pages.** Read-only, no forms. `/ui/questions` lists the tickets that have
+  questions, grouped by BA repo, with open, waiting and answered counts and the
+  age of the oldest open one (`?all=1` includes fully answered tickets);
+  `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` shows one ticket's questions,
+  with `?repo=` in the query string because nested repo-ids contain `/`. The
+  ticket page of the Ticket menu gains an "N unresolved questions" link while
+  any are open or waiting.
+- **BA side.** `/ba-answer-questions` (BA repos). It lists this repo's open
+  questions and walks them one ticket at a time. The BA gives each answer. When
+  an answer changes the ticket, all the answers of that ticket go into **one**
+  amendment under `ba-ticket-author`'s amend rules: `> Revision:` N+1, one
+  `## Change log` row with Trigger `question`, Revision N+1 and Affected set to
+  the changed sections, one maturity review round, and `kb ticket lint` must
+  pass. Amend mode unticks the Definition of Ready boxes whose evidence changed,
+  so **the BA must re-tick them**; the skill records no answer for a ticket
+  whose Definition of Ready is not fully ticked, so Q&A never takes a ticket off
+  the hub. It then calls `kb_question_answer` with `answer_rev` = N+1 and the
+  changed sections, or with `answer_rev` unset only when the hub's own revision
+  already carries the answer. It never commits, pushes or publishes: the BA
+  merges as usual, and the answer shows as waiting for publish until revision
+  N+1 is on the hub.
+- **Dev side.** See [Questions while designing](#the-agent-workflow): business
+  questions become `Q<id>` lines in the design or plan, and a blocking one stops
+  GATE 1 or GATE 2.
+
+### The fourteen MCP tools
 
 | Tool | Purpose | Main params |
 |---|---|---|
@@ -843,6 +898,9 @@ links to its Ticket page. The CLI twin is
 | `kb_ticket_stale` | The `kb ticket stale --md` report for one ticket or mission: kb-context citations the hub amended (stale) or lost (broken) since they were pinned, and moved `-code` sections it is grounded on (architecture) | `markdown`, `file_name` |
 | `kb_mission_lint` | Run the mission Definition-of-Ready gate (`kb mission lint`). `mission_id` checks the file name against the `> Mission:` line; the ticket-coverage warning needs the local `tickets/` and is skipped with a note | `mission_markdown`, `mission_id` |
 | `kb_ticket_fetch` | A ticket a BA published, read from the hub's `<ba-repo>-plan` by id — the text `kb ticket fetch` writes; the client saves it to `docs/impl/<id>/ticket.md` | `ticket` |
+| `kb_question_ask` | Ask the BA a question about a published ticket (`<id>` or `<repo>:<id>`); returns `Q<id>` and the hub path of the ticket's Q&A page. **Writes**: hub-local only (the HTTP server or the hub's own checkout), any authenticated caller, self-declared name | `ticket`, `question`, `asked_by`, `context`, `blocks` |
+| `kb_question_list` | List ticket questions oldest first with their derived state (`open`, `waiting`, `answered`, or `all`) and, once answered, the answer, `answer_rev`, changed sections and the hub's current ticket revision. Hub-local only (the HTTP server or the hub's own checkout) | `ticket`, `repo`, `status` |
+| `kb_question_answer` | Record the BA's answer to an open question. `answer_rev` (greater than the hub's current ticket revision, with the changed `ticket_sections`) when the answer changed the ticket, which keeps the question *waiting* until that revision lands; unset otherwise. **Writes**: hub-local only (the HTTP server or the hub's own checkout), self-declared name | `id`, `answer`, `answered_by`, `ticket_sections`, `answer_rev` |
 | `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 | `kb_doctor_hub` | The hub's side of `kb doctor` for a child, ba or dev repo, as JSON: the hub's strata-kb version, whether `federation/<repo_id>` is published and its digest, the hub's `-code` section digests, the registry's kind pin, citation checks. Called by the CLI, not meant for agents | `kind`, `repo_id`, `remote_url`, `dir_name`, `kb_context` |
 
@@ -1042,7 +1100,8 @@ under its title (absent reads as 1, with a lint warning) and an append-only
 `## Change log` before `## Review record`:
 `| Rev | Date | Trigger | What changed | Affected | Review |`. With `N > 1` the
 log must hold exactly one row per revision `2..N`, in order, and each `Trigger`
-is one or more of `kb-context`, `architecture`, `scope`, `delivery`; lint fails
+is one or more of `kb-context`, `architecture`, `scope`, `delivery`, `question`
+(the last only for amendments made from `/ba-answer-questions`); lint fails
 otherwise. `Affected` lists full story ids (`M-<slug>-US<n>`) in a mission and
 section names in a ticket. `Review` holds the amendment's maturity scores, never
 `## Review record`.
@@ -1120,6 +1179,15 @@ merge-to-`main` CI) publishes a ready bug with its images copied to
 `<repo>-plan/assets/<sha256>.<ext>`, and the hub's ticket page renders them.
 The BA ticks the Definition of Ready; the agent never does.
 
+**Answering a Dev's questions.** `/ba-answer-questions` walks the open Dev
+questions for this repo's tickets (see [Ticket Q&A](#ticket-qa)). It needs MCP
+pointed at the hub's HTTP server (`kb mcp-setup`). An answer that changes a ticket is one
+amendment per ticket: `> Revision:` N+1, one `## Change log` row with Trigger
+`question`, then Definition of Ready, which amend mode unticks and the BA must
+re-tick, and `kb ticket lint` must pass. The skill never commits, pushes or
+publishes; until the BA merges and the revision lands, the hub shows the answer
+as waiting for publish.
+
 Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers
 `kb mcp-setup` (`/kb-mcp-setup`), which writes the hub's HTTP MCP credentials
 (`STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN`) into `.env` and verifies them
@@ -1160,6 +1228,7 @@ sidecar file.
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
 | A BA-reported bug (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
+| A technical question that needs evidence from this repo and the hub | `/dev-sa <question>` |
 | Just checking a citation | `kb resolve <file>` |
 
 Work lives in `docs/impl/<ticket-id>/design.md` (every ticket, one paragraph for a small one) and
@@ -1210,6 +1279,38 @@ flow for an architecture talk) → Fix (one change at the root cause) → Handov
 the root cause replace them). `kb ticket fetch BUG-<n>` also copies the bug's
 images to `docs/impl/<id>/assets/` and warns once per image missing from the
 hub clone (open `<hub>/assets/<name>`); MCP `kb_ticket_fetch` returns text only.
+
+**Questions while designing.** The `design-author` and `plan-author` subagents
+never call the hub. What they cannot decide goes into a `## Questions raised`
+section of the draft, each item tagged `business` or `technical` with the ACs it
+blocks. The orchestrating skill sorts them. A *technical* one goes to `dev-sa`
+(below), which returns a decision with `path:line` and `doc §section` evidence;
+the skill writes it under `## Technical decisions` as `SA-<n>` and re-dispatches
+the author. A *business* one is asked with MCP `kb_question_ask` (see [Ticket
+Q&A](#ticket-qa)) and listed under `## Open questions` as `Q<id>`. An open
+question that blocks an AC stops GATE 1 or GATE 2 with the hub's Q&A link; one
+that blocks nothing does not. On every entry `/dev-implement-ticket` reads
+`kb_question_list` for the ticket: an *answered* question is shown with its
+changed sections, the ticket is re-fetched and, when a changed section touches
+an approved design, the flow goes back to `dev-design`; a *waiting* one is shown
+as information only; an *open* blocking one stops the flow. The `State:` line
+gains a fifth marker, `BA-Q: none | open Q<ids> | waiting Q<ids>`. When the Q&A
+tools are refused and every `Q<id>` line in the design and plan carries
+`— answered rev N` (or there are none), the flow continues with
+`BA-Q: unknown (Q&A unavailable)`; `dev-design` and `dev-plan` then keep a
+`blocks: none` business question as `OPEN(BA)` and stop only on a blocking one.
+A newly answered line is marked `— answered rev N — re-draft`, and the phase
+re-dispatches its author once for it. `OPEN(BA)` remains for
+the case `dev-execute` meets mid-implementation, which returns to `dev-design`.
+The Pre-code axis of the PR review rubric accepts a hub-asked `Q<id>`.
+
+**`/dev-sa`.** The Dev-repo solution architect: given one technical question, the
+ticket in flight and the current draft, it reads this repo's source freely and
+the hub's `-code`, `-svc` and domain documents, and returns a decision, the
+reasoning, the rejected alternatives and the evidence; or `business question:
+<why>` when the answer would change what an AC means. Dispatched by `dev-design`
+and `dev-plan`, or called directly as `/dev-sa <question>`. It returns text only:
+it never writes the hub, the ticket, the design or the code.
 
 ### `kb code-ingest` — the generated document
 

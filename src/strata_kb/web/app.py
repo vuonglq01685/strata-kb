@@ -30,7 +30,7 @@ from strata_kb.serving.accounts import (
 )
 from strata_kb.serving.auth import SessionAuth, TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
-from strata_kb.web import api, planui, registry_routes, ui
+from strata_kb.web import api, planui, qaui, registry_routes, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
@@ -74,6 +74,7 @@ def create_app(
     # Accounts live beside the KB, never inside a tree the hub publishes:
     # keep them out of git before anything is written there.
     ensure_git_exclude(config.kb_dir.parent)
+    ensure_git_exclude(config.kb_dir.parent, ".kb-qa/")
     auth_dir = auth_dir_for(config.kb_dir)
     accounts = Accounts(auth_dir / "users.db")
     bootstrap_from_env(accounts, os.environ)
@@ -93,6 +94,7 @@ def create_app(
     )
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
     routes += planui.plan_routes(config)
+    routes += qaui.qa_routes(config)
     routes += registry_routes.build_registry_routes(
         config, intake_cfg, session, push=registry_push
     )

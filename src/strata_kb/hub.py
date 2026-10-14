@@ -215,6 +215,12 @@ def _cache_lock(cache: Path) -> threading.Lock:
         return _cache_locks.setdefault(str(cache), threading.Lock())
 
 
+def is_local_hub(hub: str) -> bool:
+    """True for a local directory holding a `.kb/` (used in place, not cloned)."""
+    direct = Path(hub)
+    return direct.is_dir() and (direct / ".kb").is_dir()
+
+
 def resolve_hub(hub: str) -> HubHandle | None:
     """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
@@ -225,9 +231,8 @@ def resolve_hub(hub: str) -> HubHandle | None:
     routes run on worker threads, and two of them finding the TTL expired
     at once would run two `git pull`s in one checkout.
     """
-    direct = Path(hub)
-    if direct.is_dir() and (direct / ".kb").is_dir():
-        return HubHandle(root=direct.resolve())
+    if is_local_hub(hub):
+        return HubHandle(root=Path(hub).resolve())
 
     _, token = gitio.split_credentials(hub)
     cache = ensure_cache_base() / cache_key(hub)

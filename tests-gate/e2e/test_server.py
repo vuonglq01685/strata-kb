@@ -116,6 +116,9 @@ EXPECTED_TOOLS = {
     "kb_mission_lint",
     "kb_mission_next",
     "kb_doctor_hub",
+    "kb_question_ask",
+    "kb_question_list",
+    "kb_question_answer",
 }
 
 

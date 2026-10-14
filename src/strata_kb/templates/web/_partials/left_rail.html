@@ -7,6 +7,7 @@
     <a href="/ui/docs" class="{{ 'active' if menu == 'kb' else '' }}">Document<span class="k">kb</span></a>
     <a href="/ui/tickets" class="{{ 'active' if menu == 'ba' else '' }}">Ticket<span class="k">ba</span></a>
     <a href="/ui/code" class="{{ 'active' if menu == 'dev' else '' }}">Code<span class="k">dev</span></a>
+    <a href="/ui/questions" class="{{ 'active' if shell.screen.startswith('questions') else '' }}">Q&amp;A</a>
     {% if shell.screen == 'section' %}<a href="#" class="active">Reader</a>{% endif %}
     {% if shell.is_admin %}<a href="/ui/registry" class="{{ 'active' if shell.screen == 'registry' else '' }}">Registry</a>{% endif %}
     <a href="/ui/login">Sign in</a>

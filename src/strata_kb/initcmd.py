@@ -119,6 +119,10 @@ BA_TEMPLATES: dict[str, str] = {
     ".claude/commands/ba-ticket-author.md": "claude-command-ba-ticket-author.md",
     ".github/prompts/ba-ticket-author.prompt.md": "copilot-ba-ticket-author.prompt.md",
     ".cursor/commands/ba-ticket-author.md": "cursor-ba-ticket-author.md",
+    ".claude/skills/ba-answer-questions/SKILL.md": "claude-skill-ba-answer-questions.md",
+    ".claude/commands/ba-answer-questions.md": "claude-command-ba-answer-questions.md",
+    ".github/prompts/ba-answer-questions.prompt.md": "copilot-ba-answer-questions.prompt.md",
+    ".cursor/commands/ba-answer-questions.md": "cursor-ba-answer-questions.md",
     ".claude/skills/ba-mission-plan/SKILL.md": "claude-skill-ba-mission-plan.md",
     ".claude/commands/ba-mission-plan.md": "claude-command-ba-mission-plan.md",
     ".github/prompts/ba-mission-plan.prompt.md": "copilot-ba-mission-plan.prompt.md",
@@ -261,6 +265,11 @@ DEV_TEMPLATES: dict[str, str] = {
             # not a story workflow, so it stays out of the tests'
             # DEV_WORKFLOW_SKILLS canon and has its own pins.
             "dev-fix-bug",
+            # The Dev-repo SA agent: answers one technical question with
+            # evidence, dispatched by dev-design/dev-plan or run as /dev-sa.
+            # Not a phase of the ticket workflow, so it stays out of the
+            # tests' DEV_WORKFLOW_SKILLS canon and has its own pins.
+            "dev-sa",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
@@ -557,14 +566,16 @@ def _write_scaffold(dest: Path, rel: str, text: str, report: InitReport) -> None
     report.created.append(rel)
 
 
-# The assistant's skills and commands: what `kb doctor` refreshes after it
-# moved a repo to the hub's strata-kb. CI workflows, config and settings are
-# the repo's own and stay as they are.
+# The assistant's skills and commands, plus the review rubric the skills read:
+# what `kb doctor` refreshes after it moved a repo to the hub's strata-kb. CI
+# workflows, config, settings and `*.local.md` overrides are the repo's own and
+# stay as they are.
 AGENT_FILE_PREFIXES = (
     ".claude/skills/",
     ".claude/commands/",
     ".github/prompts/",
     ".cursor/commands/",
+    "docs/pr-review-rubric.md",
 )
 
 

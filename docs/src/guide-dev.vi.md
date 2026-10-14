@@ -279,6 +279,7 @@ thực từ một bản cũ.
 | Code đã tự viết, cần phần mô tả PR | `/dev-handover <id>` |
 | Quên mất ticket đang ở đâu | `/dev-implement-ticket <id>` |
 | Bug do BA báo (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
+| Một câu hỏi kỹ thuật cần bằng chứng từ repo này và hub | `/dev-sa <câu hỏi>` |
 | Chỉ muốn kiểm tra một trích dẫn | `kb resolve <file>` |
 
 Mọi điểm vào đều kiểm tra lại độ mới của trích dẫn trước tiên. Hub có thể đã
@@ -380,6 +381,49 @@ không còn tái hiện kết quả sai. `/dev-fix-bug BUG-<n>` chạy theo phon
 5. **Handover** — `/dev-handover` với quy tắc cho bug: không có design hay plan; test
    tái hiện và dòng root cause thay thế chúng.
 
+## 4.6 Câu hỏi cho BA, và `/dev-sa`
+
+`dev-design` và `dev-plan` không giải quyết một nghi ngờ bằng cách đoán. Các subagent tác
+giả của chúng không bao giờ gọi hub; chúng liệt kê từng nghi ngờ dưới `## Questions
+raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các AC bị chặn. Skill
+điều phối phân loại chúng:
+
+- **Kỹ thuật** (xây thế nào, đặt ở đâu, tái dùng thành phần nào) chuyển cho `dev-sa`, kiến
+  trúc sư giải pháp của repo này. Nó đọc mã nguồn và các tài liệu `-code`, `-svc` và miền
+  của hub rồi trả về một quyết định cùng lập luận, các phương án bị loại và bằng chứng
+  `path:line` / `doc §section`. Skill ghi nó vào `## Technical decisions` của bản nháp
+  dưới dạng `- SA-<n>: <quyết định> — vì sao — bằng chứng` và gửi lại cho tác giả. Không
+  có gì đi lên hub. Bạn có thể tự gọi: `/dev-sa <câu hỏi>` cho ticket đang làm; nó trả về
+  dòng để bạn ghi lại. Khi nó xét thấy đáp án sẽ đổi nghĩa của một AC, nó trả về `business
+  question:` và câu hỏi chuyển sang BA.
+- **Nghiệp vụ** đi tới BA qua MCP `kb_question_ask`, và xuất hiện trong `## Open
+  questions` của bản nháp dưới dạng `- Q<id> — <câu hỏi> — blocks: <AC id|none>`. BA trả
+  lời bằng `/ba-answer-questions`.
+- **Câu hỏi chặn sẽ dừng cổng.** Thiết kế hoặc kế hoạch còn câu hỏi mở chặn một AC thì
+  không qua được GATE 1 hay GATE 2; skill dừng và đưa bạn đường dẫn Q&A của hub để dán vào
+  chat. Câu hỏi không chặn AC nào thì không dừng, và reviewer A1, A2 coi nó là mục còn mở
+  đã biết. Trục Pre-code của rubric review chấp nhận `Q<id>` đã hỏi qua hub như cách mang
+  một điều mơ hồ.
+- **Marker `BA-Q`.** Dòng `State:` của khối Next-step có thêm marker thứ năm,
+  `BA-Q: none | open Q<ids> | waiting Q<ids>`.
+- **Tiếp tục.** Mỗi lần vào, `/dev-implement-ticket` đọc `kb_question_list` của ticket.
+  Câu hỏi *đã trả lời* mà bạn chưa đánh dấu được hiển thị cùng các section đã đổi; luồng
+  tải lại ticket, đánh dấu dòng `## Open questions` là `— answered rev N — re-draft` (pha đó điều phối lại
+  author đúng một lần cho dòng này rồi bỏ `— re-draft`), và quay lại
+  `dev-design` nếu một section đã đổi chạm vào thiết kế đã duyệt (nó về `draft`). Câu hỏi
+  *chờ* (đã trả lời, nhưng revision ticket mới của BA chưa lên hub) chỉ là thông tin: đừng
+  hành động theo. Câu hỏi *mở* và chặn thì dừng luồng.
+- **Chỉ trên server hub dùng chung.** `kb_question_ask`, `kb_question_list` và
+  `kb_question_answer` chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`); URL hub
+  đọc qua bản clone cache cục bộ, hoặc đích khác, trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Mọi bên
+  gọi đã xác thực đều được ghi và tên là tự khai (`git config user.name`), nên chỉ để theo
+  dõi ai đã hỏi, không hơn. Mỗi ticket có tối đa 50 câu hỏi mở. Khi Q&A không dùng được và
+  trong thiết kế hay kế hoạch mọi dòng `Q<id>` đều có `— answered rev N` (hoặc không có
+  dòng nào), `/dev-implement-ticket` tiếp tục với `BA-Q: unknown (Q&A unavailable)` kèm một
+  ghi chú; nếu có dòng `Q<id>` thiếu nó thì dừng, vì không thể biết trạng thái. Trong
+  `dev-design` và `dev-plan`, câu hỏi nghiệp vụ có `blocks: none` khi đó quay về `OPEN(BA)`;
+  chỉ câu hỏi chặn mới dừng.
+
 ---
 
 # 5. Cái gì được máy bảo đảm, cái gì chỉ là lời nhắc
@@ -420,7 +464,9 @@ ghi `Yes`.
 - **Cổng 1 và cổng 2.** Thiết kế và kế hoạch phải được duyệt trước khi sang pha
   sau. Dòng `status:` ghi lại điều đó; con người mới là người duyệt.
 - **`OPEN(BA)`.** Một tiêu chí chấp nhận mơ hồ phải được đưa lên hỏi, không bao
-  giờ được tự diễn giải lại.
+  giờ được tự diễn giải lại. Trong lúc thiết kế và lập kế hoạch, việc đưa lên hỏi là một
+  câu hỏi trên hub (`Q<id>`, §4.6); `OPEN(BA)` chỉ còn cho điều `dev-execute` gặp giữa
+  lúc hiện thực, và nó quay lại `dev-design`.
 - **A1–A4.** Bốn vòng review agent trước GATE 3 là kỷ luật trong prompt.
   Không có gì trong `kb` đo được rằng chúng đã chạy. Chỉ A5 có răng: `kb pr
   lint` đọc dòng `Blocking:` trong mục `## Testing` của PR. Một agent bỏ qua
@@ -664,7 +710,7 @@ thật.
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
-`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`.
+`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`.
 
 ---
 

@@ -446,6 +446,32 @@ Mọi người đăng nhập `/ui` bằng tên người dùng và mật khẩu. 
 
 Hướng dẫn triển khai đầy đủ: `docs/deploy-remote-mcp.md`.
 
+## 10.5 Hỏi đáp về ticket
+
+Dev gặp một câu hỏi nghiệp vụ về ticket đã publish sẽ hỏi BA; BA trả lời; hub giữ cuộc
+trao đổi. Không cần cấu hình gì: câu hỏi nằm trong SQLite tại `<hub root>/.kb-qa/qa.db`
+(trong Docker là `/data/.kb-qa/qa.db`), được tạo, và git-exclude, ở lần gọi Q&A đầu tiên. Không bao giờ commit
+`.kb-qa/`: `.gitignore` của hub mới đã liệt kê nó, và hub cũng tự git-exclude nó khi web UI khởi
+động. Sao lưu cùng với phần còn lại của volume hub.
+
+- **MCP tool.** `kb_question_ask`, `kb_question_list` và `kb_question_answer`. Cả ba, kể cả
+  list, chỉ chạy trên chính hub: server HTTP của hub này, hoặc server stdio chạy trong
+  checkout của hub (`--kb <hub>/.kb`). Mọi đích khác đều bị từ chối: server stdio của repo
+  Dev, hay URL hub được đọc qua bản clone cache cục bộ, trả lời
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Repo BA và Dev trỏ
+  MCP tới server HTTP bằng `kb mcp-setup`.
+- **Ai được ghi.** Mọi bên gọi mà hub xác thực: bearer token, hoặc phiên của bất kỳ vai trò
+  nào. `asked_by` và `answered_by` là tên do bên gọi tự gõ, nên chỉ để theo dõi ai nói gì và
+  không xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
+- **Menu Q&A.** Mục **Q&A** của thanh bên trái (`/ui/questions`) chỉ đọc. Nó liệt kê các
+  ticket có câu hỏi, nhóm theo repo BA, kèm số câu mở, chờ và đã trả lời (`?all=1` thêm cả
+  ticket đã trả lời hết); `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` cho thấy các câu
+  hỏi của một ticket. Trang ticket của menu Ticket có thêm liên kết "N unresolved questions"
+  khi còn câu mở hoặc chờ.
+- **Trạng thái.** *Mở* cho tới khi được trả lời. Câu trả lời làm đổi ticket ở trạng thái
+  *chờ publish* cho tới khi revision ticket mới của BA (dòng `> Revision: N` của chính nó)
+  lên hub, rồi mới là *đã trả lời*.
+
 ---
 
 # 11. Tìm kiếm

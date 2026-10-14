@@ -20,7 +20,7 @@ into the handover.
 With `--amend <ticket>`, skip Intake and follow the skill's `## Amend mode`:
 read the ticket and its `kb_ticket_stale` findings (CLI: `kb ticket stale
 --md <file>`), ask the BA for the
-trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`), re-pin with
+trigger(s) (`kb-context`, `architecture`, `scope`, `delivery`; `question` only for amendments made from `/ba-answer-questions`), re-pin with
 `kb_context_new` (FULL ref list, whole block replaced), run `kb ticket check`
 on every amend (`/sa-ticket-ground` first for an `architecture` trigger, else
 only when the check FAILs with `re-run /sa-ticket-ground`; any other FAIL goes to the BA), bump `> Revision:` and

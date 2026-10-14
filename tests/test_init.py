@@ -1112,6 +1112,25 @@ _TICKET_WRAPPER_PATHS = (
 )
 
 
+_ANSWER_QUESTIONS_PATHS = (
+    ".claude/skills/ba-answer-questions/SKILL.md",
+    ".claude/commands/ba-answer-questions.md",
+    ".github/prompts/ba-answer-questions.prompt.md",
+    ".cursor/commands/ba-answer-questions.md",
+)
+
+
+def test_init_ba_installs_the_answer_questions_wrappers(tmp_path):
+    from strata_kb.initcmd import init_repo
+
+    init_repo(tmp_path, "ba")
+
+    for rel in _ANSWER_QUESTIONS_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "kb_question_answer" in text, rel
+        assert "strata-kb:include" not in text, rel
+
+
 def test_mission_wrapper_workflow_bodies_are_byte_identical(tmp_path):
     """The four ba-mission-plan wrappers are supposed to be byte-identical
     from '## Workflow' to end of file — that property is the whole point
@@ -1776,8 +1795,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # + 1 (docs/pr-review-rubric.md, the dev PR review rubric)
     # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
     # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
-    # = 59.
-    assert len(expected_files("dev")) == 59
+    # + 4 (1.27.0: dev-sa's own four-way wrappers)
+    # = 63.
+    assert len(expected_files("dev")) == 63
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -1981,6 +2001,7 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         "dev-execute",
         "dev-handover",
         "dev-fix-bug",
+        "dev-sa",
     ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
@@ -1990,12 +2011,43 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         assert (tmp_path / ".cursor" / "commands" / f"{skill}.md").is_file(), skill
 
 
+_DEV_SA_PATHS = (
+    ".claude/skills/dev-sa/SKILL.md",
+    ".claude/commands/dev-sa.md",
+    ".github/prompts/dev-sa.prompt.md",
+    ".cursor/commands/dev-sa.md",
+)
+
+
+def test_init_dev_installs_the_dev_sa_wrappers(tmp_path):
+    init_repo(tmp_path, "dev")
+
+    for rel in _DEV_SA_PATHS:
+        text = (tmp_path / rel).read_text(encoding="utf-8")
+        assert "business question:" in text, rel
+        assert "strata-kb:include" not in text, rel
+
+
+def test_init_other_kinds_leave_dev_sa_out(tmp_path):
+    for kind in ("ba", "hub", "child"):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        for rel in _DEV_SA_PATHS:
+            assert not (target / rel).exists(), (kind, rel)
+
+
 def test_init_kind_dev_excludes_authoring_and_ba_artifacts(tmp_path: Path):
     init_repo(tmp_path, "dev")
     for name in ("kb-ingest", "kb-docker-setup", "kb-init"):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
         assert not (tmp_path / ".cursor" / "commands" / f"{name}.md").exists(), name
-    for name in ("ba-ticket-author", "ba-mission-plan", "ba-bug-report"):
+    for name in (
+        "ba-ticket-author",
+        "ba-mission-plan",
+        "ba-bug-report",
+        "ba-answer-questions",
+    ):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
     assert not (tmp_path / ".github" / "workflows" / "kb-publish.yml").exists()
     assert not (tmp_path / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
@@ -2576,6 +2628,74 @@ def test_hub_quickstart_documents_accounts_registry_and_auto_merge(tmp_path: Pat
     assert "/ui/registry" in flat
     assert "`Contents: Read and write` and `Pull requests: Read and write`" in flat
     assert "the App must be allowed to push to it" in flat
+
+
+def test_hub_scaffold_ignores_the_ticket_qa_store(tmp_path: Path):
+    """1.27.0: `<hub>/.kb-qa/qa.db` holds the ticket questions; `git add -A`
+    on the hub must never commit it."""
+    init_repo(tmp_path, "hub")
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".kb-qa/" in text.splitlines()
+
+
+def test_hub_quickstart_documents_ticket_qa(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    assert "`.kb-qa/qa.db`" in flat
+    assert "**never commit `.kb-qa/`**" in flat
+    assert "They work only on the hub itself" in flat
+    assert "the stdio server run inside the hub's own checkout" in flat
+    assert "a hub URL read through a local cache clone" in flat
+    assert "(`--kb <hub>/.kb`)" in flat
+    assert "Any other target is refused" in flat
+    assert "created, and git-excluded, on the first Q&A call" in flat
+    assert (
+        "`kb_question_ask` and `kb_question_answer` are the first MCP tools that write"
+        in flat
+    )
+    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
+    assert "list included" in flat
+    assert "Any caller the hub authenticates may ask and answer" in flat
+    assert "names the caller types" in flat
+    assert "do not authenticate anyone" in flat
+    assert "At most 50 questions per ticket" in flat
+    assert "**waiting for publish**" in flat
+    assert "/ui/questions" in flat
+
+
+def test_ba_quickstart_documents_answering_questions(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    flat = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    assert "`/ba-answer-questions`" in flat
+    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
+    assert "Any authenticated caller may write" in flat
+    assert "self-declared" in flat
+    assert "Trigger `question`" in flat
+    assert "Re-tick the Definition of Ready" in flat
+    assert "It never commits, pushes or publishes" in flat
+    assert "**waiting for publish**" in flat
+    assert "`question` is written only by `/ba-answer-questions`" in flat
+
+
+def test_dev_quickstart_documents_questions_and_dev_sa(tmp_path: Path):
+    init_repo(tmp_path, "dev")
+    flat = " ".join(
+        (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split()
+    )
+    assert "`## Questions raised`" in flat
+    assert "`business` or `technical`" in flat
+    assert "- SA-<n>: <decision> — why — evidence" in flat
+    assert "- Q<id> — <question> — blocks: <AC ids|none>" in flat
+    assert "`kb_question_ask`" in flat
+    assert "A blocking question stops the gate" in flat
+    assert "`BA-Q: none | open Q<ids> | waiting Q<ids>`" in flat
+    assert "fifth marker" in flat
+    assert "`BA-Q: unknown (Q&A unavailable)`" in flat
+    assert "/dev-sa <question>" in flat
+    assert "Only on the shared hub server" in flat
+    assert "the names are self-declared" in flat
+    assert "accepts a `Q<id>`" in flat
+    assert "`OPEN(BA)` stays for the case `dev-execute` meets" in flat
 
 
 def test_hub_gitignore_is_protected_from_a_second_init(tmp_path: Path):

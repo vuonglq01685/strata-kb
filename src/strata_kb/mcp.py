@@ -2,8 +2,10 @@
 
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
 kb_resolve, kb_ticket_lint, kb_ticket_check, kb_ticket_stale,
-kb_ticket_fetch, kb_mission_lint, kb_mission_next and kb_doctor_hub tools
-over the hub federation; every tool body
+kb_ticket_fetch, kb_question_ask, kb_question_list, kb_question_answer,
+kb_mission_lint, kb_mission_next and kb_doctor_hub tools over the hub
+federation (the question tools are the only ones that write, and only on a
+hub served from its own checkout); every tool body
 runs on a worker thread and resolves the hub under one lock. `main()` serves
 stdio by default; `--transport http` mounts the same server inside the
 token-guarded `web.app` and refuses a weak STRATA_KB_HTTP_TOKEN.
@@ -97,6 +99,21 @@ HUB_DOWN = (
     "hub unreachable — queries need the hub federation; check the network "
     "or the hub path, then try again"
 )
+
+
+QA_NEEDS_HUB_SERVER = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
+
+
+def hub_serves_own_checkout(config: ServerConfig) -> bool:
+    """True when this server runs inside the hub's own checkout (the HTTP
+    server, or stdio with `--kb <hub>/.kb`) -- the only place the Q&A store is
+    the one shared copy. A dev repo pointing at a local hub path is refused."""
+    from strata_kb import hub as hub_mod
+
+    return (
+        hub_mod.is_local_hub(config.hub)
+        and Path(config.hub).resolve() == config.kb_dir.resolve().parent
+    )
 
 
 def _canonical_docstring(fn):
@@ -427,6 +444,133 @@ def create_server(config: ServerConfig) -> MCPServer:
                 return ticketfetch.render(hub, ticket)
             except ticketfetch.TicketFetchError as exc:
                 return str(exc)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    def _qa(op) -> str:
+        """Run `op(hub, store)` against the Q&A store at the shared hub's root.
+        The guard runs before any side effect: on a URL / cache-clone hub, or
+        from a dev repo, the store would not be the shared one, so nothing is
+        created."""
+        from strata_kb.errors import KbError
+        from strata_kb.serving.accounts import ensure_git_exclude
+        from strata_kb.ticketqa import QaStore, qa_db_path
+
+        if not hub_serves_own_checkout(config):
+            return QA_NEEDS_HUB_SERVER
+        hub = _hub()
+        if hub is None:
+            return HUB_DOWN
+        try:
+            ensure_git_exclude(hub.root, ".kb-qa/")
+            return op(hub, QaStore(qa_db_path(hub.root)))
+        except KbError as exc:
+            return str(exc)
+        except (sqlite3.Error, OSError):
+            logger.exception("Q&A store error")
+            return "Q&A store error — see hub log"  # never echo server paths
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_ask(
+        ticket: str,
+        question: str,
+        asked_by: str,
+        context: str = "",
+        blocks: str = "",
+    ) -> str:
+        """Ask the BA a question about a published ticket (`<id>`, or
+        `<repo>:<id>` when several repos hold it). `asked_by` is your own
+        name (`git config user.name`); `context` says where the question
+        came from (e.g. `design §Data model`), `blocks` the AC ids it blocks
+        (e.g. `AC-2,AC-3`). Returns `Q<id>` and the hub page of the
+        ticket's questions. Any authenticated caller may ask; names are
+        self-declared, so this is tracking, not authentication. Works only
+        on the shared hub server."""
+
+        def _run() -> str:
+            from urllib.parse import quote
+
+            from strata_kb.ticketqa import ask_question
+
+            def op(hub, store) -> str:
+                q = ask_question(
+                    hub, store, ticket, question, asked_by, context, blocks
+                )
+                # The server process does not have the client's STRATA_KB_HUB_URL,
+                # so the link is the path only.
+                link = (
+                    f"/ui/questions/ticket?repo={quote(q.repo, safe='')}"
+                    f"&ticket={quote(q.ticket, safe='')}"
+                )
+                return f"Q{q.id} asked on {q.repo}:{q.ticket} — {link}"
+
+            return _qa(op)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_list(
+        ticket: str = "", repo: str = "", status: str = "open"
+    ) -> str:
+        """List ticket questions, oldest first: id, ticket, state, question,
+        context, blocks, who asked and when, and for answered ones the
+        answer, `answer_rev`, changed sections and the hub's current ticket
+        revision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA
+        `repo`. `status` is `open` (no answer), `waiting` (answered, but the
+        ticket revision carrying the answer is not on the hub yet),
+        `answered`, or `all`. Results come only from the shared hub server;
+        any other hub is refused. Do not act on a `waiting` answer: the
+        ticket is the source of truth."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import format_questions, list_questions
+
+            return _qa(
+                lambda hub, store: format_questions(
+                    list_questions(hub, store, ticket, repo, status)
+                )
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_answer(
+        id: int,
+        answer: str,
+        answered_by: str,
+        ticket_sections: list[str],
+        answer_rev: int | None = None,
+    ) -> str:
+        """Record the BA's answer to an open question. If the answer changes
+        the ticket, pass `answer_rev` (the ticket revision that carries the
+        change; it must exceed the hub's current one, and it is refused while
+        the ticket is off the hub) and `ticket_sections` (the changed
+        section names, the change-log row's `Affected`); the question stays
+        `waiting` until that revision is on the hub. If the hub's current
+        revision already says it, leave `answer_rev` unset and pass an empty
+        `ticket_sections`. `answered_by` is your own name (`git config
+        user.name`). Any authenticated caller may answer; names are
+        self-declared, so this is tracking, not authentication. Works only
+        on the shared hub server."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import answer_question
+
+            def op(hub, store) -> str:
+                q = answer_question(
+                    hub, store, id, answer, answered_by, answer_rev, ticket_sections
+                )
+                if q.answer_rev is None:
+                    return f"Q{q.id} answered"
+                return (
+                    f"Q{q.id} answered — waiting until {q.repo}:{q.ticket} "
+                    f"reaches revision {q.answer_rev} on the hub"
+                )
+
+            return _qa(op)
 
         return await anyio.to_thread.run_sync(_run)
 

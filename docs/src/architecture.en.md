@@ -255,9 +255,12 @@ that order — and the server refuses to start without one. It searches only the
 hub's `federation/`, never its own working `.kb/`. That single rule is what makes
 "published" mean something.
 
-Eleven MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
+Fourteen MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
 `kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_stale`,
-`kb_ticket_fetch`, `kb_mission_lint`, `kb_mission_next` and `kb_doctor_hub`.
+`kb_ticket_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
+`kb_mission_lint`, `kb_mission_next` and `kb_doctor_hub`. The three `kb_question_*`
+tools work on the ticket Q&A store, and `kb_question_ask` and `kb_question_answer`
+are the only MCP tools that write (see 8.5); the other twelve only read.
 
 ---
 
@@ -557,6 +560,27 @@ per kind. Nothing is stored and there is no write path. In the other direction, 
 given only a ticket id runs `kb ticket fetch`, which reads the ticket from the
 hub's `-plan` and restores its source shape.
 
+## 8.5 Ticket questions
+
+A Dev who meets a business question while designing or planning a published ticket
+asks the BA through `kb_question_ask`; the question is stored in SQLite at
+`<hub root>/.kb-qa/qa.db`, beside `.kb-auth/` and out of git. This is the one thing
+the hub stores that is not in git, so the three question tools work only against the
+hub itself, that is the shared hub's HTTP server or the stdio server run inside the hub's
+own checkout (`--kb <hub>/.kb`); any other target is refused: a dev repo's stdio server,
+or a hub URL read through a local cache clone, answers `Q&A needs the shared hub server —
+point MCP at it (kb mcp-setup)`, because a store there would not be the shared one.
+
+A question's state is derived, never stored. It is *open* until answered. An answer
+that changes the ticket records the revision that carries it (`answer_rev`) and the
+changed sections; the question is *waiting for publish* until the hub's copy of the
+ticket (its own `> Revision: N`, not the hub's git HEAD) reaches that revision, then
+*answered*. The Web UI's **Q&A** menu renders it read-only. The BA answers with
+`/ba-answer-questions`, which amends the ticket (change-log Trigger `question`),
+leaves the Definition of Ready to be re-ticked, records the answer and never
+commits, pushes or publishes; the Dev side raises business questions from
+`dev-design` and `dev-plan` and sends technical ones to `dev-sa`.
+
 ---
 
 # 9. The trust model
@@ -593,6 +617,10 @@ reaches readers only through a hub pull request.
   pushed with the intake GitHub App, never force-pushed. A repo's `auto_merge` switch
   makes intake merge its whole publish PR right after opening it; a failed merge
   leaves the PR open and the publish `done` with `merged: false`.
+- The ticket Q&A store (`<hub>/.kb-qa/qa.db`, never committed) is written only by the
+  three `kb_question_*` MCP tools, and only on the hub itself (not a cache clone). Any caller the
+  hub authenticates may write; the names they give are self-declared, so they track
+  who said what and authenticate nobody. At most 50 questions per ticket can be open.
 - A failed bearer-token attempt shares the login form's rate-limit bucket, so the
   lockout cannot be side-stepped through the header.
 - Behind a reverse proxy, the trusted-proxy count **must** be configured. The

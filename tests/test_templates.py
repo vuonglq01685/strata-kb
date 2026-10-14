@@ -433,7 +433,7 @@ SHARED_BLOCKS = {
 SHARED_BLOCK_TEXT = {
     "SHARED-FRESHNESS": "## Freshness re-check (run this FIRST, every time)\n\nCheap check first: `kb resolve --status-only --cache\ndocs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;\ncheck the cache `version:` yourself). Exit 0 → use the cache, do NOT\nre-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve\n--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the\nlayout by hand), then fill `## Placeholder map` below the marker; never\nedit above it.\n\n- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a\n  citation that no longer resolves.\n- **stale** → show BOTH versions, humans decide: the resolve gives the\n  pinned content and the reason, `kb_get_section` (else `kb get …\n  --level l3`) the hub's version. Do NOT use `kb diff` — it compares\n  the local `.kb/` worktree to a local git rev, not this repo to the hub.\n- **ok** → continue.\n",
     "SHARED-HARD-RULES": '## Hard rules\n\n- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.\n- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.\n- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.\n- Never claim done without showing the verification output.\n- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.\n- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.\n- The ticket is the BA\'s artifact: report placeholder resolutions and AC findings back; never edit the ticket.\n- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.\n- Never edit a test to make it pass; diagnose the cause.\n- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.\n- Never modify a `reviewed` section of `-svc`; propose an amend.\n- `hist.*` entries are appended only by `kb svc note`, never hand-edited.\n- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.\n- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.\n',
-    "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all four markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
+    "SHARED-NEXT-STEP": "## Next step — ALWAYS end your response with this block\n\nClose every response with a state line and an ordered list of next steps.\nInclude it even when you stopped early or hit an error — especially then.\n\n    ## Next step\n\n    → 1. <next step in flow> — <what it does>   (next in flow)\n      2. <revise the current phase> — <how>\n      3. <stop/park> — <where the work is saved>\n\n    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>\n\nRules:\n- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.\n- Show the exact command with the ticket id already filled in, ready to copy.\n- The `State:` line always shows all five markers, even the ones not yet reached.\n- A blocker takes option 1 instead and says so, e.g.\n  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.\n  Flow order never hides a blocker.\n",
 }
 
 
@@ -2310,8 +2310,8 @@ REVIEW_BLOCK_BOUNDS = {
 # claude-skill-dev-design.md again for the contract), never hand-retyped.
 REVIEW_BLOCK_TEXT = {
     "REVIEW-CONTRACT": "## Review dispatch contract (every review in this flow)\n\n- The author and the reviewer are NEVER the same subagent. A self-review\n  never satisfies a review step.\n- A reviewer starts from a fresh context and gets no conversation history —\n  hand it only the paths it must read and the constraints that bind it.\n- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the\n  draft, the diff, the report. Whatever you paste stays in your context for\n  the rest of the session.\n- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag\n  and never rates a finding's severity for it.\n- Name the model on every dispatch — a standard model for authors and\n  implementers, the most capable one available for reviewers. Never inherit\n  the session default silently.\n- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still\n  standing after round 3 stops the flow and goes to the Dev.\n- A finding that contradicts the approved design or plan is never auto-fixed:\n  show the finding beside the text that mandates it and let the Dev choose.\n- Criteria come from the source that matches the review: the rubric's\n  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and\n  `docs/conventions/<lang>.md` — plus the five pack files it links under\n  `docs/conventions/<lang>/` and `docs/conventions/common/` — for A3 and A4.\n  Each one's own `.local.md` override wins over its base file. Severity is\n  always BLOCKER / SUGGESTED / NOTE / NITS.\n- Where the runtime cannot dispatch subagents, run the review as its own pass\n  that reads ONLY the paths it was handed and reuses nothing it remembers from\n  drafting, and write up its findings the same way — then STOP and hand the\n  result to the Dev. The phase does not advance on a fallback pass: one\n  context reviewing itself is a weaker substitute, not an equivalent — only\n  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.\n  `Review: ✅ r<n> (fallback, Dev-approved)`.\n",
-    "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited — and\nlet it write `docs/impl/<ticket-id>/design.md` with `status: draft`. You\norchestrate; you do not draft and then judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>/design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
-    "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules — and nothing else. Then review it with a\ndifferent context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n- Is every `Depends on:` line consistent with Files and Interfaces — no\n  two tasks without a dependency path share a path, every consumed\n  interface names its producer, no cycle? A miss is a BLOCKER. The\n  reviewer also runs `kb plan waves` and quotes its output; an error\n  there is a BLOCKER on its own.\n\nFix subagent, re-review, at most 3 rounds. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
+    "A1": "## A1 — independent design review (before GATE 1)\n\nWrite the design in its own context: dispatch a `design-author` subagent with\nthe resolved context cache path, the ticket's acceptance criteria, the\nconventions paths, and this phase's own authoring rules above — what the\ndesign must cover, and how placeholders and standard values are cited —\nand the Questions rule and preservation rule above: it lists what it could\nnot decide under `## Questions raised`, tags each item `business` or\n`technical` with `blocks: <AC ids|none>`, never calls the hub or asks the BA\nitself, and keeps `## Technical decisions` and `## Open questions` verbatim —\nand let it write `docs/impl/<ticket-id>/design.md` with `status: draft`.\nAfter each author or fix round returns, handle its `## Questions raised`\nbefore the reviewer is dispatched. You orchestrate; you do not draft and\nthen judge your own draft.\n\nThat design is a draft until a reviewer that never saw it being written\nsays otherwise. Dispatch a `design-reviewer` subagent and hand it exactly\nthese things: the path `docs/impl/<ticket-id>/design.md`, the ticket's\nacceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`\nplus `docs/pr-review-rubric.local.md`. Not your reasoning, not this\nconversation.\n\nIt returns pass/fail per axis plus a gap list in which every gap names the\nsection it lives in, its severity, and a proposed fix. Apply BLOCKER and\nSUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.\nThe fix subagent gets the same Questions rule and preservation rule as the\nauthor.\n\nRecord every round in the design file's `## Review record` table, creating it\nbelow the design body on round 1:\n\n    | Date | Round | Verdict | Reviewer | Open gaps |\n    |---|---|---|---|---|\n    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |\n\nGATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and\nno SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.\n",
+    "A2": "## A2 — independent plan review (before GATE 2)\n\nDispatch a `plan-author` subagent to turn the approved design into the plan —\nit gets the design file path, the ticket's acceptance criteria, the\n`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above\n— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line\nformat, the ordering rules, and the Questions rule and preservation rule\nabove (it lists what it could not decide under `## Questions raised`, tags\neach item `business` or `technical` with `blocks: <AC ids|none>`, never calls\nthe hub or asks the BA itself, and keeps `## Technical decisions` and\n`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle\nits `## Questions raised` before the reviewer is dispatched. Then review it\nwith a different context.\n\nDispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the\npath `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the\n`## Pre-code axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:\n\n- Is there exactly one task per AC — none missing, none invented?\n- Does every task state its failing test before its implementation?\n- Is each task's **Interfaces** entry complete enough that its implementer\n  never has to read outside its own task block? An incomplete entry is a\n  BLOCKER: it is what forces an implementer to read wider and guess.\n- Does every task with no test declare `Exempt: <config|ci|docs|style>` and\n  name its verification?\n- Is every `Depends on:` line consistent with Files and Interfaces — no\n  two tasks without a dependency path share a path, every consumed\n  interface names its producer, no cycle? A miss is a BLOCKER. The\n  reviewer also runs `kb plan waves` and quotes its output; an error\n  there is a BLOCKER on its own.\n\nFix subagent, re-review, at most 3 rounds. The fix subagent gets the same\nQuestions rule and preservation rule as the author. Record each round in the plan file's\n`## Review record` table, same shape as the design file's. GATE 2 is offered\nonly after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap\nleft open; NOTE and NITS are recorded, not fixed.\n",
     "A4": "## A4 — narrow branch review (after the last task)\n\nEvery box ticked is not the same as the ticket being done. Write the branch\ndiff to `docs/impl/<ticket-id>/review/branch.diff`\n(`mkdir -p docs/impl/<ticket-id>/review` if it does not exist yet, then\n`git diff $(git merge-base <default-branch> HEAD)..HEAD`) and dispatch a\n`branch-reviewer` subagent with that path, the plan, the ticket, and\n`docs/conventions/<lang>.md`, the five pack files it links, and its\n`.local.md` override. One question\nonly: does this branch fulfil the ticket — every AC covered by a test,\nnothing built that no AC asked for, and no later task quietly breaking an\nearlier one?\n\nKeep the lens narrow here; merge risk is A5's job in `dev-handover`, against a\ndifferent rubric. Fix subagent, re-review, at most 3 rounds. Only once A4\ncomes back clean — no BLOCKER and no SUGGESTED left — is option 1\n`/dev-handover <ticket-id>`.\n",
     "A5": "## A5 — merge-risk review (before GATE 3)\n\nA4 asked whether the branch does what the ticket said. A5 asks a different\nquestion, in a different context: is this safe to merge into the default\nbranch?\n\nIf `docs/impl/<ticket-id>/review/branch.diff` does not exist yet — a cold\nhandover session, a fresh clone or worktree, or hand-implemented code that\nnever ran `dev-execute` — build it yourself first, with the same command A4\nuses: `mkdir -p docs/impl/<ticket-id>/review && git diff $(git merge-base\n<default-branch> HEAD)..HEAD > docs/impl/<ticket-id>/review/branch.diff`.\n\nDispatch a `merge-risk-reviewer` subagent on the most capable model available.\nGive it the persona plainly: a tech lead reviewing before a production deploy,\nassuming real traffic, concurrent requests, retries, and more than one running\ninstance. Hand it `docs/impl/<ticket-id>/review/branch.diff`, the ticket, and\nthe `## Merge-risk axes` of `docs/pr-review-rubric.md` plus\n`docs/pr-review-rubric.local.md`.\n\n**The diff alone is not the review.** Say so in the dispatch: the reviewer\nopens the files the change reaches — callers, siblings, migrations, permission\ndeclarations, contracts, tests — and traces the affected flow end to end before\njudging. A finding that only names a category is not a finding; it states why\nthis code, on this path, is dangerous.\n\nIt writes `docs/impl/<ticket-id>/review/merge-risk.md`: one row per finding\n(severity, file, line, why it is dangerous, proposed fix), then the verdict\nline `Blocking: Yes` while any BLOCKER stands, `Blocking: No` otherwise.\nBLOCKER and SUGGESTED findings get a fix round, then re-review, at most 3\nrounds — same routing as A3: only a standing BLOCKER keeps the verdict\n`Blocking: Yes`.\n\nCopy only the verdict line into the PR body, as the last line of\n`## Testing` — `kb pr lint` fails the PR when it is missing and when it\nreads `Blocking: Yes`. The table stays in `merge-risk.md`. NOTE and NITS\nfindings a reviewer should see go to `## Notes`, recorded rather than\nfixed.\n\nA branch whose A5 still reports `Blocking: Yes` never reaches GATE 3. Option 1\nbecomes the fix, not the PR.\n",
 }
@@ -3533,3 +3533,90 @@ def test_hub_env_example_single_quotes_the_bootstrap_hash():
     text = _read_init_template("env.example")
     assert "# STRATA_KB_BOOTSTRAP_PASSWORD_HASH='" in text
     assert "Single-quote the hash" in text
+
+
+# --- ba-answer-questions: the BA side of ticket Q&A --------------------------
+
+BA_ANSWER_QUESTIONS_TEMPLATES = [
+    "claude-skill-ba-answer-questions.md",
+    "claude-command-ba-answer-questions.md",
+    "copilot-ba-answer-questions.prompt.md",
+    "cursor-ba-answer-questions.md",
+]
+
+
+def test_ba_answer_questions_templates_exist_as_package_resources():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in BA_ANSWER_QUESTIONS_TEMPLATES:
+        assert base.joinpath(name).is_file(), name
+    assert base.joinpath("bodies", "ba-answer-questions.md").is_file()
+
+
+def test_ba_answer_questions_wrappers_have_their_frontmatter():
+    skill = _read_init_template("claude-skill-ba-answer-questions.md")
+    assert skill.startswith("---\nname: ba-answer-questions\ndescription: ")
+    assert "invokes /ba-answer-questions." in skill
+    assert "mode: agent" in _read_init_template("copilot-ba-answer-questions.prompt.md")
+    assert "name: ba-answer-questions\n" in _read_init_template(
+        "cursor-ba-answer-questions.md"
+    )
+    command = _read_init_template("claude-command-ba-answer-questions.md")
+    assert "Invoke the `ba-answer-questions` skill" in command
+
+
+def test_ba_answer_questions_wrappers_carry_the_five_steps_and_next_step_block():
+    for name in BA_ANSWER_QUESTIONS_TEMPLATES:
+        text = _normalised(_read_init_template(name))
+        for step in ("List", "Walk", "Answer", "Record", "Report"):
+            assert step in text, (name, step)
+        assert "kb_question_answer" in text, name
+        assert "## Next step" in text, name
+        assert "State:" in text, name
+
+
+# --- dev-sa: the Dev-repo SA agent, and the fifth BA-Q state marker -----------
+#
+# Deliberately NOT in DEV_WORKFLOW_SKILLS (same reasoning as dev-code-seed and
+# dev-fix-bug above): dev-sa implements no ticket phase, so the freshness /
+# hard-rules / next-step canon does not apply to it.
+
+DEV_SA_TEMPLATES = _dev_wrapper_names("dev-sa")
+
+
+def test_dev_sa_templates_exist_as_package_resources():
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in DEV_SA_TEMPLATES:
+        assert base.joinpath(name).is_file(), name
+    assert base.joinpath("bodies", "dev-sa.md").is_file()
+
+
+def test_dev_sa_is_outside_the_workflow_canon():
+    assert "dev-sa" not in DEV_WORKFLOW_SKILLS
+
+
+def test_dev_sa_wrappers_have_their_frontmatter():
+    skill = _read_init_template("claude-skill-dev-sa.md")
+    assert skill.startswith("---\nname: dev-sa\ndescription: ")
+    assert "invoked as /dev-sa" in skill
+    assert "mode: agent" in _read_init_template("copilot-dev-sa.prompt.md")
+    assert "name: dev-sa\n" in _read_init_template("cursor-dev-sa.md")
+    command = _read_init_template("claude-command-dev-sa.md")
+    assert "Invoke the `dev-sa` skill" in command
+    assert 'argument-hint: "<question>"' in command
+
+
+def test_dev_sa_wrappers_carry_the_contract_in_every_form():
+    for name in DEV_SA_TEMPLATES:
+        text = _normalised(_read_init_template(name))
+        assert "business question:" in text, name
+        assert "never writes to the hub" in text.lower(), name
+        assert "`path:line`" in text, name
+
+
+def test_every_dev_workflow_wrapper_state_line_has_the_fifth_marker():
+    marker = "BA-Q: none | open Q<ids> | waiting Q<ids>"
+    for name in _landed_dev_wrapper_names():
+        text = _normalised(_read_init_template(name))
+        assert marker in text, name
+        assert "always shows all five markers" in text, name
+        assert "all four markers" not in text, name

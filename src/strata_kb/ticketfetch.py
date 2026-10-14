@@ -19,6 +19,11 @@ class TicketFetchError(KbError):
     """The ticket is not on the hub, or several repos publish the same id."""
 
 
+class TicketNotOnHub(TicketFetchError):
+    """No published `*-plan` document lists the ticket (the one case a caller
+    may treat as "gone"; every other `TicketFetchError` is a real problem)."""
+
+
 def split_ref(ticket_ref: str) -> tuple[str | None, str]:
     """`<repo>:<id>` -> (repo, id); a bare `<id>` -> (None, id). An id that
     is not a plain name (path separators, `..`, empty) is refused."""
@@ -52,7 +57,7 @@ def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
                 (fed.meta.repo_id, manifest.id, folder / f"{section.file}.raw.md")
             )
     if not holders:
-        raise TicketFetchError(
+        raise TicketNotOnHub(
             f"{ticket_id} is not on the hub — ask the BA to run kb publish, "
             "or pass the ticket file / paste it"
         )
@@ -65,12 +70,8 @@ def find(hub: HubHandle, ticket_ref: str) -> tuple[str, str, Path]:
     return holders[0]
 
 
-def render(hub: HubHandle, ticket_ref: str) -> str:
-    """The ticket as the BA wrote it, minus `## Definition of Ready` and
-    `## Review record` (plan-ingest drops them: being on the hub means DoR
-    passed)."""
-    repo, doc, l3 = find(hub, ticket_ref)
-    _, ticket_id = split_ref(ticket_ref)
+def read_section(l3: Path, doc: str, ticket_id: str) -> str:
+    """The `## <id> <title>` slice of the ticket's L3 group file."""
     try:
         section = slice_section(l3.read_text(encoding="utf-8"), ticket_id)
     except (OSError, UnicodeDecodeError) as exc:
@@ -82,6 +83,16 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
         raise TicketFetchError(
             f"{doc} lists {ticket_id} but {l3.name} has no such section"
         )
+    return section
+
+
+def render(hub: HubHandle, ticket_ref: str) -> str:
+    """The ticket as the BA wrote it, minus `## Definition of Ready` and
+    `## Review record` (plan-ingest drops them: being on the hub means DoR
+    passed)."""
+    repo, doc, l3 = find(hub, ticket_ref)
+    _, ticket_id = split_ref(ticket_ref)
+    section = read_section(l3, doc, ticket_id)
     heading, _, body = section.partition("\n")
     title = heading.removeprefix(f"## {ticket_id}").strip()
     try:

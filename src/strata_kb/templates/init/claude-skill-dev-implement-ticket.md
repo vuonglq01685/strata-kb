@@ -6,8 +6,8 @@ description: Implement a BA ticket grounded in the KB — resolve its pinned kb-
 # dev-implement-ticket — implement a BA ticket, grounded and re-entrant
 
 You are the ORCHESTRATOR of the ticket-implementation pipeline: Intake →
-Check → Resolve → Ground → Placeholders → design → plan → execute → handover. You
-are also the **safe re-entry point** for this pipeline — called again on a
+Questions → Check → Resolve → Ground → Placeholders → design → plan → execute →
+handover. You are also the **safe re-entry point** for this pipeline — called again on a
 ticket that already has work in progress, you detect how far it got and
 offer the next step instead of redoing phases that are already finished.
 
@@ -61,6 +61,36 @@ edit above it.
   <doc> <M-id> --level l3`, from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
+- **Questions** — on every entry, for the ticket in flight, call
+  `kb_question_list(ticket=<id>, status=all)` and handle each question by
+  its state. The tools have no CLI twin and work only against the shared
+  hub server. When `kb_question_list` answers `Q&A needs the shared hub
+  server — point MCP at it (kb mcp-setup)`, or your client does not expose
+  it, read the local `docs/impl/<id>/design.md` and `plan.md`. If every
+  `Q<id>` line carries `— answered rev N` (or there are none), continue with
+  `BA-Q: unknown (Q&A unavailable)` and a one-line note to the Dev; if any
+  `Q<id>` line lacks it, STOP and tell the Dev, because its state cannot be
+  known — never treat it as "no questions".
+  - **answered**, not yet marked in the design/plan `## Open questions` →
+    show each answer with its changed sections, re-fetch the ticket with
+    `kb_ticket_fetch` into `docs/impl/<id>/ticket.md`, mark the line
+    `— answered rev N — re-draft` (N = the answer's `answer_rev`; the hub rev
+    when that is `-`; `— re-draft` tells `dev-design` or `dev-plan` to
+    re-dispatch its author once for this new answer), and go back to `dev-design` when a changed section touches an
+    approved design (it goes back to `status: draft`).
+  - **waiting** (answer recorded, its ticket revision not on the hub yet)
+    → show the answer as information only, say which revision it waits for,
+    and do not act on it.
+  - **open** and blocking (`blocks:` names an AC) → say so in the state
+    line (`BA-Q: open Q<ids>`) and do not continue past the gate; give the
+    Dev the hub Q&A link to paste in chat: `STRATA_KB_HUB_URL` (process env,
+    or the `.env` that `kb mcp-setup` wrote; read only that line, never show
+    `STRATA_KB_HTTP_TOKEN`) plus
+    `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` (`<repo-id>` = the BA
+    repo, as `kb_question_list` prints it in `<repo>:<ticket>`); unset → the
+    path only.
+    An open question that blocks no AC does not stop the flow; it still
+    shows in the state line.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
   section, run MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
   fallback: `kb ticket check docs/impl/<id>/ticket.md`, which reads the
@@ -154,6 +184,10 @@ edit above it.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
+`BA-Q:` comes from `kb_question_list`: `none`, `open Q<ids>` or
+`waiting Q<ids>`, a mixed state written `open Q1; waiting Q2`, and
+`unknown (Q&A unavailable)` when the Q&A tools are refused (see Questions).
+
 ## Next step — ALWAYS end your response with this block
 
 Close every response with a state line and an ordered list of next steps.
@@ -165,12 +199,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

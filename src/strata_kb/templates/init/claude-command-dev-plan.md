@@ -99,14 +99,53 @@ the Next-step block below is `/dev-execute <ticket-id>`; because the
 checkbox file is also the resume point, it must be complete enough for
 a different session to pick up cold.
 
+The `plan-author` never calls the hub: what it could not decide goes into
+a `## Questions raised` section of its draft, each item tagged `business`
+or `technical` with `blocks: <AC ids|none>`, and you handle each one.
+**technical** → dispatch `dev-sa` as a subagent (standard model tier, as for
+authors), write its decision into the draft's `## Technical decisions` as
+`- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
+`kb_question_ask(ticket, question, asked_by, context, blocks)` (`asked_by` =
+`git config user.name`; when that is empty, ask the Dev for a name once and
+reuse it) and move the item to the draft's `## Open questions` as
+`- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
+returned by `dev-sa` is handled the same way. **Preservation rule.** Remove
+each handled item from `## Questions raised`. Every author and fix round keeps
+`## Technical decisions` and `## Open questions` verbatim and never
+re-raises a question already listed there. Before `kb_question_ask`, skip
+any item already in `## Open questions`. `kb_question_ask` works only against
+the shared hub server: it can answer `Q&A needs the shared hub server — point
+MCP at it (kb mcp-setup)`, `hub unreachable — queries need the hub federation`
+(the `HUB_DOWN` text) or `Q&A store error — see hub log`; treat each as Q&A
+unavailable, and so is a client that does not expose the tool. When Q&A is unavailable, a
+`business` item with `blocks: none` falls back to the pre-1.27 behaviour —
+`OPEN(BA)` in the draft and a note in the PR description — and the work
+continues; only a blocking one stops: stop and tell the Dev, never reading it
+as "no questions". A blocking open BA question (a question line without `— answered rev N`
+whose `blocks:` names an AC) stops the gate and the Dev gets the
+hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
+path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
+one does not stop the gate and the A2 reviewer reads it as a known open
+item, not a defect (the rubric's Pre-code axis says so). The answer is
+picked up by `dev-implement-ticket` on its next entry, which marks a newly
+answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
+`— re-draft`, re-dispatch the `plan-author` with the re-fetched ticket, then strip
+that suffix (the line keeps `— answered rev N`). A line with
+`— answered rev N` and no `— re-draft` is already handled.
+
 ## A2 — independent plan review (before GATE 2)
 
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
 it gets the design file path, the ticket's acceptance criteria, the
 `cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
-format, the ordering rules — and nothing else. Then review it with a
-different context.
+format, the ordering rules, and the Questions rule and preservation rule
+above (it lists what it could not decide under `## Questions raised`, tags
+each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
+the hub or asks the BA itself, and keeps `## Technical decisions` and
+`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle
+its `## Questions raised` before the reviewer is dispatched. Then review it
+with a different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
@@ -126,7 +165,8 @@ path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
   reviewer also runs `kb plan waves` and quotes its output; an error
   there is a BLOCKER on its own.
 
-Fix subagent, re-review, at most 3 rounds. Record each round in the plan file's
+Fix subagent, re-review, at most 3 rounds. The fix subagent gets the same
+Questions rule and preservation rule as the author. Record each round in the plan file's
 `## Review record` table, same shape as the design file's. GATE 2 is offered
 only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
 left open; NOTE and NITS are recorded, not fixed.
@@ -180,6 +220,13 @@ left open; NOTE and NITS are recorded, not fixed.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
+
 ## Next step — ALWAYS end your response with this block
 
 Close every response with a state line and an ordered list of next steps.
@@ -191,12 +238,12 @@ Include it even when you stopped early or hit an error — especially then.
       2. <revise the current phase> — <how>
       3. <stop/park> — <where the work is saved>
 
-    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown>
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
 
 Rules:
 - Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
 - Show the exact command with the ticket id already filled in, ready to copy.
-- The `State:` line always shows all four markers, even the ones not yet reached.
+- The `State:` line always shows all five markers, even the ones not yet reached.
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.

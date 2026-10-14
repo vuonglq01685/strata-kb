@@ -297,6 +297,40 @@ grounding.
 `kb ticket lint tickets/bugs/BUG-<n>.md` (and the CI gate) checks a bug against
 this contract on its own; it also checks the image files exist.
 
+## 3.10 Answering a Dev's questions
+
+While designing or planning one of your tickets, a Dev may ask you a business
+question that decides what an acceptance criterion means. The questions live on the
+hub, not in your repo. Run `/ba-answer-questions` (installed by `kb init --kind ba`):
+it lists the open questions for this repo and walks them one ticket at a time, oldest
+first, each with its context, the ACs it blocks and who asked, beside the ticket. The
+answers are yours; the agent never writes one for you.
+
+- **It needs the shared hub server.** The skill uses `kb_question_list` and
+  `kb_question_answer`, which work only when MCP points at the hub's HTTP server (`kb
+  mcp-setup`). A hub URL read through a local cache clone, or any other target, answers
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, and the skill stops without changing a ticket. There is no CLI
+  for them. Any authenticated caller may write; the names (`git config user.name`) are
+  self-declared, so they track who answered and prove nothing.
+- **One amendment per ticket.** An answer that changes behaviour amends the ticket
+  under §6.2: `> Revision:` becomes N+1, one `## Change log` row with Trigger
+  `question`, What changed `Q<ids>: <one line>`, Affected the changed sections, one
+  maturity review round, and `kb ticket lint` must pass. All the questions of a ticket
+  go into the same amendment.
+- **Re-tick the Definition of Ready.** The amendment unticks the boxes whose evidence
+  changed, and `kb plan-ingest` drops a ticket whose Definition of Ready is not fully
+  ticked, which would take the ticket off the hub. The skill shows you the unticked
+  boxes; re-check and re-tick them. Until every box is ticked it records no answer for
+  that ticket.
+- **Waiting for publish.** The skill records each answer on the hub with the revision
+  it expects (N+1). It never commits, pushes or publishes, and it does not wait: you
+  commit and merge as usual (or `/kb-publish`). Until revision N+1 reaches the hub, the
+  question shows as *waiting for publish* and the Dev is told not to act on the answer.
+  An answer that changes nothing (the hub's revision already says it, or the question
+  is no longer needed) is recorded as answered at once.
+- **Where to look.** The hub's **Q&A** menu (`/ui/questions`) lists every ticket with
+  questions and their state: open, waiting for publish, answered.
+
 ---
 
 # 4. Mission plans — for large features
@@ -533,14 +567,14 @@ record`:
 
 | Column | Content |
 |---|---|
-| `Trigger` | One or more of `kb-context`, `architecture`, `scope`, `delivery`, comma-separated |
+| `Trigger` | One or more of `kb-context`, `architecture`, `scope`, `delivery`, comma-separated. `question` is added only by `/ba-answer-questions` (§3.10) |
 | `Affected` | In a mission, the **full** story ids (`M-<slug>-US<n>`). A bare `US3` is not matched, so a ticket would never be flagged. In a ticket, the section names. `-` when none |
 | `Review` | The amendment's maturity scores, e.g. `B4 D4 (agent)`. Amendment reviews go here, never in `## Review record` |
 
 Lint enforces it. A missing `Revision` reads as 1 and only warns, so old files
 still pass. With `Revision: N` above 1, the log must hold **exactly one row per
-revision `2..N`, in order**, and every `Trigger` must be one of the four
-values; otherwise lint fails.
+revision `2..N`, in order**, and every `Trigger` must be one of the five
+values (`kb-context`, `architecture`, `scope`, `delivery`, `question`); otherwise lint fails.
 
 ## 6.2 Amending
 
@@ -663,7 +697,7 @@ The section reference itself, spelled the way a real citation is:
 - **Every inline `[doc-id §section]` citation is backed by a pinned ref.**
 - **The change log matches the revision.** With `> Revision: N` above 1,
   `## Change log` must hold exactly one row per revision `2..N`, in order, and
-  every `Trigger` must be `kb-context`, `architecture`, `scope` or `delivery`.
+  every `Trigger` must be `kb-context`, `architecture`, `scope`, `delivery` or `question`.
 
 A citation written in the old bare form still counts, with a warning telling you
 to bracket it.
@@ -792,7 +826,7 @@ kb mission lint missions/M-checkout.md
 | The intake rejects your publish | The repo is not in the hub's `federation/registry.yaml`, or its entry sets a `workflow:` pin (the intake compares it to the full `job_workflow_ref`, which includes the tag, so it never matches) | Ask the hub operator to map your `owner/repo` to `repo_id` and to leave `workflow:` unset |
 | `kb publish` stops with ".kb/ has uncommitted changes" | Something under `.kb/` differs from `HEAD` — typically a tracked `.kb/index.yaml` or `.kb/<repo_id>-plan/` | Commit your own edits; `git rm --cached` the generated files and re-run `kb init --kind ba` so they are gitignored |
 | A mission or ticket is missing from the plan | It did not qualify | Run `kb plan-ingest` and read its `skipped:` line (5.1) |
-| Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | Add exactly one row per revision `2..N`, in order, using the four trigger values |
+| Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | Add exactly one row per revision `2..N`, in order, using the five trigger values |
 | Everything resolves `broken` after an upgrade | The ticket carries a pin from an older block format | Re-pin with `kb context new` |
 
 ---
@@ -818,7 +852,7 @@ kb mission lint missions/M-checkout.md
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
-**Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/sa-ticket-ground`, `/kb-publish`.
+**Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
 
 ---
 
