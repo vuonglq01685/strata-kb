@@ -75,12 +75,18 @@ A separate design (later) covers the Dev ↔ BA/SA Q&A feature. Not here.
 - One SQLite file, separate from the search cache:
   `<hub root>/.kb-auth/users.db` (in Docker: `/data/.kb-auth/users.db`,
   on the existing `./:/data` volume so it survives restarts and image
-  upgrades). `search.db` under `.kb-work/` is a rebuildable cache and must
+  upgrades). `.kb-work/search.sqlite3` is a rebuildable cache and must
   not hold accounts.
-- `.kb-auth/` is added to the hub's `.gitignore` by `kb init --kind hub`
-  and by a startup check: if the hub root is a git repo and `.kb-auth/` is
-  not ignored, the hub logs an error and appends the ignore line (same
-  spirit as `kb mcp-setup` making sure `.env` is ignored).
+- `.kb-auth/` is kept out of git by writing `.kb-auth/` to the hub
+  checkout's `.git/info/exclude` at startup (idempotent), not to the
+  tracked `.gitignore`: `/data` is the serving checkout that intake and
+  auto-pull run `git pull` on, and an uncommitted `.gitignore` edit there
+  would break the next pull that touches `.gitignore`. `kb init --kind hub`
+  also adds the line to the committed `.gitignore` for new hubs.
+- `.kb-auth/session.key`: 32 random bytes generated on first start
+  (`secrets.token_bytes`), file mode 0600. This — not the bearer token —
+  signs session cookies (§5.5). Deleting it logs everyone out; that is the
+  documented way to revoke all sessions.
 - Table `users(username TEXT PRIMARY KEY COLLATE NOCASE, password_hash TEXT
   NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','ba','dev')),
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`.
@@ -140,17 +146,27 @@ commented out with a pointer to `kb user hash`.
   exec`, or the bootstrap env vars). No fallback login, no default password.
 - Session cookie (same name `strata_kb_session`, same 12 h max age, same
   `httponly`/`samesite=lax`/`secure` rules) becomes
-  `<issued-at>.<username-b64>.<hmac>` signed with the server token as today.
-  The cookie does **not** carry the role.
+  `<issued-at>.<username-b64>.<pw-ver>.<hmac>`, HMAC-SHA256 keyed with
+  `.kb-auth/session.key`. It must **not** be keyed with the bearer token
+  (`STRATA_KB_HTTP_TOKEN`): `kb mcp-setup` writes that token into every BA
+  and Dev repo's `.env`, so anyone holding it could forge an admin cookie.
+  `<pw-ver>` is a short digest of the user's current `password_hash`; the
+  cookie does **not** carry the role.
 - On every UI request, the auth middleware verifies the signature and age,
-  then loads the user row; a missing user means logged out. The role used
-  for authorization is the role in the DB at request time, so a role change
-  or removal takes effect on the next request. (One indexed SQLite read per
-  UI request is acceptable at this scale.)
+  then loads the user row; a missing user, or a `<pw-ver>` that no longer
+  matches (password changed), means logged out. The role used for
+  authorization is the role in the DB at request time, so a role change,
+  removal or password reset takes effect on the next request. (One indexed
+  SQLite read per UI request is acceptable at this scale.)
 - Existing token-derived cookies (old format) no longer validate: users get
   sent to the login page once after upgrade. Acceptable.
-- `/api/*` and `/mcp` keep accepting the bearer token exactly as today.
-  The token is **not** accepted on `/ui/login` any more.
+- **Credentials split by path.** `/ui/*` accepts only the session cookie; a
+  bearer token there is treated as not logged in (redirect to login).
+  `/api/*` and `/mcp` accept only the bearer token, exactly as today (the
+  UI's own JS does not call `/api`). Today `is_authorized_request` accepts
+  either credential on every path; the middleware must split by path
+  prefix. `cli.py` and `QUICKSTART-hub.md` text that says "sign in with
+  the token" changes to the account login.
 
 ### 5.6 Authorization
 
@@ -174,10 +190,17 @@ field, it writes the mapping shape.
 - `GET /ui/registry` — table: repository, repo-id, kind badge, workflow pin,
   auto-merge switch, remove button; add form on top; recent changes below
   (last N commits touching `federation/registry.yaml`, from `git log`).
-- `POST /ui/registry/add` — validate with the same rules the registry
-  already enforces on load (`pubgate.normalize_repo_id`, case-colliding key
-  check, kind in `HUB_KINDS`, workflow pin shape), plus: repository key not
-  already present, repo-id not already claimed by another key.
+- `POST /ui/registry/add` — validates the **new entry** with: the load-time
+  model rules (`extra="forbid"`, kind in `HUB_KINDS`, case-colliding key
+  check), `pubgate.normalize_repo_id` on the repo-id (today only run in
+  `intake.authorize`), repository key not already present, repo-id not
+  already claimed by another key. The workflow pin is free text, matched
+  exactly against the OIDC `job_workflow_ref` claim as today (the form's
+  placeholder shows the full shape,
+  `owner/repo/.github/workflows/x.yml@refs/heads/main`); no new pin-shape
+  rule. The whole file is re-validated with the **load-time** rules only,
+  so an older entry that predates the stricter add-rules never blocks an
+  edit.
 - `POST /ui/registry/remove` — removes the key. Does not delete the repo's
   published content under `federation/<repo_id>/`; the page says so.
 - `POST /ui/registry/auto-merge` — sets the flag on one key.
@@ -187,8 +210,11 @@ field, it writes the mapping shape.
 
 Each successful POST:
 
-1. Takes the hub's per-repo write lock used by intake (a registry write and
-   an intake publish must not interleave).
+1. Takes a new process-wide `registry_lock` so two admin edits never race
+   each other's read-modify-write. It is deliberately **not** shared with
+   intake: intake reads the registry in `intake_routes._authorize` before
+   any lock, and a publish authorized a moment before a removal landing is
+   acceptable (the same race exists today with a hand-edited registry).
 2. Re-reads `federation/registry.yaml` from the hub's default branch HEAD,
    applies the one change, re-validates the whole file through
    `models.Registry`, and writes it back preserving the file's existing
@@ -206,15 +232,30 @@ branch), the page shows the error and nothing is half-applied locally.
 Operators who protect the default branch must allow the GitHub App to push
 to it; the QUICKSTART says so.
 
+When the hub cannot push — intake disabled (`intake_cfg is None`, no App
+credentials) or the hub checkout has no GitHub remote — the page renders
+read-only with a banner naming the missing piece; add/remove/toggle are
+hidden and the POST routes return 409. Route tests inject the push step
+the same way intake tests inject `pr_hook`.
+
 Builder's call: whether to factor the worktree/commit/push steps out of
 intake's existing publish path or write a small sibling helper.
 
 ## 7. Auto-merge
 
-- In `intake_publish`, after `create_or_get_pr` returns the PR, if the
-  registry entry for the authorized repository has `auto_merge: true`,
-  call a new `ghapp.merge_pr(repo_full, token, number, method)` —
-  `PUT /repos/{owner}/{repo}/pulls/{number}/merge`.
+- In `intake_publish`, after `create_or_get_pr` returns, if the registry
+  entry for the authorized repository has `auto_merge: true`, call a new
+  `ghapp.merge_pr(repo_full, token, number, method)` —
+  `PUT /repos/{owner}/{repo}/pulls/{number}/merge`. `create_or_get_pr`
+  returns only the PR's `html_url`; change it to also return the number
+  (or parse it from the URL — builder's call).
+- The flag alone decides, whoever opened the PR. `kb publish --pr` (the
+  `/dev-code-seed` path) shares the `publish/<rid>` branch with intake, so
+  the next CI publish of an auto-merge repo will merge a pending seed PR
+  too. That is intended: the owner chose "the registry decides", and the
+  `-svc` review happens locally before publish. QUICKSTART-dev step 7
+  ("that hub PR is reviewed by a BA or architect") changes to say so for
+  auto-merge repos.
 - Merge method: `merge` (a merge commit), matching how the hub owner merges
   today unless the builder finds the hub configured otherwise. Builder's
   call if the repo disallows merge commits: fall back to `squash`.
@@ -226,14 +267,20 @@ intake's existing publish path or write a small sibling helper.
   content without waiting for the auto-pull interval.
 - Failure to merge (409 conflict, 405 not mergeable, 403 missing
   permission) **does not fail the publish**: the PR stays open exactly as
-  today, the failure is logged with the GitHub status and message, and
-  `/intake/status` reports `state: pr_open` with a `detail` saying
-  auto-merge failed and why (detail only to the OIDC caller, as today).
+  today and the failure is logged with the GitHub status and message.
+- `/intake/status` and the publish response keep today's states
+  (`processing`, `done`, `error`); a published PR is `done` whether or not
+  it merged, so already-deployed child CLIs (`publish.py` polls until
+  `done`/`error`) keep working. A new optional field `merged: true|false`
+  is added, and on a failed merge `detail` says why (detail only to the
+  OIDC caller, as today). `kb publish` / `kb ci-publish` print "merged"
+  instead of "PR opened" when `merged` is true; older CLIs ignore the
+  field.
 - A reused PR (pending publish branch accumulated more content) is merged
   the same way.
 - GitHub App permission: merging needs `contents: write` and
-  `pull_requests: write` on the hub repo; the hub QUICKSTART and
-  `kb doctor` hub check list them.
+  `pull_requests: write` on the hub repo; the hub QUICKSTART lists them.
+  No `kb doctor` check is added (none inspects the App today).
 
 ## 8. Docs and migration
 
@@ -254,8 +301,11 @@ intake's existing publish path or write a small sibling helper.
 
 - Unit: hashing round-trip and parameter parsing; bootstrap rules (empty
   table + both vars, one var missing, table non-empty); session cookie
-  sign/verify/expiry/tamper; role check reads DB at request time (downgrade
-  takes effect); last-admin removal refused.
+  sign/verify/expiry/tamper; a cookie signed with the bearer token is
+  rejected; role check reads DB at request time (downgrade takes effect);
+  password change invalidates old cookies; last-admin removal refused.
+- Path split: bearer token on `/ui/registry` → not logged in; cookie on
+  `/api` → 401.
 - Route: non-admin and anonymous get 403/redirect on every registry route
   including POSTs; CSRF missing/wrong → 403; add/remove/toggle produce the
   expected `registry.yaml` and commit message (against the existing local
@@ -277,9 +327,19 @@ intake's existing publish path or write a small sibling helper.
 
 ## 11. Calls made by the designer (check these)
 
-- Accounts DB at `.kb-auth/users.db`, not inside the search cache.
+- Accounts DB at `.kb-auth/users.db`, not inside the search cache;
+  ignored via `.git/info/exclude`.
 - Bootstrap takes a password **hash** from env, never plaintext.
-- Role is read from the DB on every request, not stored in the cookie.
+- Cookies are signed with a server-only `.kb-auth/session.key`, not the
+  bearer token (which every child repo holds).
+- Role and password version are checked against the DB on every request,
+  so a role change, removal or password reset ends old sessions at once.
+- `/ui` accepts only the cookie; `/api` and `/mcp` only the bearer token.
+- Auto-merge also merges a pending `kb publish --pr` seed PR of an
+  auto-merge repo.
+- Publish status stays `done` on success; a new `merged` field says
+  whether it merged.
+- Registry page is read-only when the hub cannot push.
 - Registry edits are git commits pushed by the GitHub App to the hub's
   default branch.
 - Auto-merge failure never fails the publish.
