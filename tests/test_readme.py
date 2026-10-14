@@ -317,15 +317,15 @@ def test_readme_documents_ticket_qa():
     assert "### Ticket Q&A" in text
     assert "`<hub root>/.kb-qa/qa.db`" in text
     assert "**Never commit `.kb-qa/`**" in text
-    assert (
-        "All three, the list included, work only against the **shared hub server**"
-        in text
-    )
+    assert "All three, the list included, work only against the **hub itself**" in text
     assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in text
     assert "Any caller the hub authenticates" in text
     assert "tracking, not authentication" in text
     assert "at most 50 open questions per ticket" in text
     assert "*waiting* (answered, but the answer changes the ticket" in text
+    assert "created, and git-excluded, on the first Q&A call" in text
+    assert "the stdio server run inside the hub's own checkout" in text
+    assert "A hub URL read through a local cache clone" in text
     assert "`/ui/questions`" in text
     assert "`/ui/questions/ticket?repo=<repo-id>&ticket=<id>`" in text
     assert "**the BA must re-tick them**" in text
@@ -338,6 +338,30 @@ def test_readme_documents_ticket_qa():
     assert "accepts a hub-asked `Q<id>`" in text
 
 
+def test_readme_does_not_refuse_the_hubs_own_stdio_server():
+    """The scaffolded hub stdio MCP uses `hub: "."`, a local checkout, so the
+    Q&A tools work there; only a cache clone of a hub URL is refused."""
+    text = _normalised(_readme_text())
+    assert "a stdio hub, or" not in text
+    assert "stdio hub" not in text
+
+
+def test_no_doc_says_q_and_a_is_created_on_the_first_question():
+    from strata_kb.initcmd import read_template
+
+    texts = [
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        read_template("QUICKSTART-hub.md"),
+        *(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "docs/src").glob("*.md")),
+    ]
+    for text in texts:
+        flat = _normalised(text)
+        assert "created on the first question" not in flat
+        assert "when the first question is written" not in flat
+        assert "meaning MCP pointed at the hub's HTTP endpoint" not in flat
+
+
 def test_guides_document_ticket_qa_in_both_languages():
     for lang in ("en", "vi"):
         ba = (REPO_ROOT / f"docs/src/guide-ba.{lang}.md").read_text(encoding="utf-8")
@@ -346,7 +370,7 @@ def test_guides_document_ticket_qa_in_both_languages():
             encoding="utf-8"
         )
         assert "## 3.10" in ba and "/ba-answer-questions" in ba, lang
-        assert "`question`" in ba, lang
+        assert "Trigger `question`" in _normalised(ba), lang
         assert "## 4.6" in dev and "/dev-sa" in dev, lang
         assert "BA-Q: none | open Q<ids> | waiting Q<ids>" in dev, lang
         assert "`.kb-qa/qa.db`" in hub or "`.kb-qa/`" in hub, lang

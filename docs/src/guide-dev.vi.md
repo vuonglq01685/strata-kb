@@ -413,8 +413,8 @@ raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các 
   *chờ* (đã trả lời, nhưng revision ticket mới của BA chưa lên hub) chỉ là thông tin: đừng
   hành động theo. Câu hỏi *mở* và chặn thì dừng luồng.
 - **Chỉ trên server hub dùng chung.** `kb_question_ask`, `kb_question_list` và
-  `kb_question_answer` chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`); đích
-  khác trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Mọi bên
+  `kb_question_answer` chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`); URL hub
+  đọc qua bản clone cache cục bộ, hoặc đích khác, trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Mọi bên
   gọi đã xác thực đều được ghi và tên là tự khai (`git config user.name`), nên chỉ để theo
   dõi ai đã hỏi, không hơn. Mỗi ticket có tối đa 50 câu hỏi mở. Khi Q&A không dùng được và
   trong thiết kế hay kế hoạch không có dòng `Q<id>` nào thiếu `— answered rev N`,

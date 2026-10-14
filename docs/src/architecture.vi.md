@@ -562,9 +562,10 @@ ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
 Dev gặp câu hỏi nghiệp vụ khi thiết kế hoặc lập kế hoạch cho một ticket đã publish sẽ hỏi
 BA qua `kb_question_ask`; câu hỏi được lưu trong SQLite tại `<hub root>/.kb-qa/qa.db`,
 cạnh `.kb-auth/` và nằm ngoài git. Đây là thứ duy nhất hub lưu mà không nằm trong git,
-nên ba tool hỏi đáp chỉ chạy với server hub dùng chung: với đích khác chúng trả lời
-`Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, vì kho ở đó sẽ chỉ
-nằm riêng trên một máy.
+nên ba tool hỏi đáp chỉ chạy với chính hub, tức server HTTP của hub dùng chung hoặc server
+stdio chạy trong checkout của hub: với URL hub đọc qua bản clone cache cục bộ, hoặc đích
+khác, chúng trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`,
+vì kho ở đó sẽ chỉ nằm riêng trên một máy.
 
 Trạng thái câu hỏi được suy ra, không lưu. Câu hỏi *open* cho đến khi có câu trả lời. Câu
 trả lời làm thay đổi ticket ghi lại revision mang nó (`answer_rev`) và các section đã đổi;
@@ -614,7 +615,7 @@ hub.
   `auto_merge` của repo khiến intake merge cả PR publish ngay sau khi mở; merge
   thất bại thì PR vẫn mở và publish vẫn `done` với `merged: false`.
 - Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi
-  ba MCP tool `kb_question_*`, và chỉ trên server hub dùng chung. Mọi bên gọi mà hub
+  ba MCP tool `kb_question_*`, và chỉ trên chính hub (không phải bản clone cache). Mọi bên gọi mà hub
   xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì và không
   xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
 - Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form

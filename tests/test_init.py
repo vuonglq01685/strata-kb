@@ -2643,7 +2643,14 @@ def test_hub_quickstart_documents_ticket_qa(tmp_path: Path):
     flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
     assert "`.kb-qa/qa.db`" in flat
     assert "**never commit `.kb-qa/`**" in flat
-    assert "work only on this shared hub server" in flat
+    assert "They work only on the hub itself" in flat
+    assert "the stdio server run inside the hub's own checkout" in flat
+    assert "A hub URL read through a local cache clone" in flat
+    assert "created, and git-excluded, on the first Q&A call" in flat
+    assert (
+        "`kb_question_ask` and `kb_question_answer` are the first MCP tools that write"
+        in flat
+    )
     assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
     assert "list included" in flat
     assert "Any caller the hub authenticates may ask and answer" in flat

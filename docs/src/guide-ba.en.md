@@ -308,8 +308,8 @@ answers are yours; the agent never writes one for you.
 
 - **It needs the shared hub server.** The skill uses `kb_question_list` and
   `kb_question_answer`, which work only when MCP points at the hub's HTTP server (`kb
-  mcp-setup`). Any other target answers `Q&A needs the shared hub server — point MCP at
-  it (kb mcp-setup)`, and the skill stops without changing a ticket. There is no CLI
+  mcp-setup`). A hub URL read through a local cache clone, or any other target, answers
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, and the skill stops without changing a ticket. There is no CLI
   for them. Any authenticated caller may write; the names (`git config user.name`) are
   self-declared, so they track who answered and prove nothing.
 - **One amendment per ticket.** An answer that changes behaviour amends the ticket

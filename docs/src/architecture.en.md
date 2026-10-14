@@ -566,8 +566,10 @@ A Dev who meets a business question while designing or planning a published tick
 asks the BA through `kb_question_ask`; the question is stored in SQLite at
 `<hub root>/.kb-qa/qa.db`, beside `.kb-auth/` and out of git. This is the one thing
 the hub stores that is not in git, so the three question tools work only against the
-shared hub server: on any other target they answer `Q&A needs the shared hub server —
-point MCP at it (kb mcp-setup)`, because a store there would be private to one machine.
+hub itself, that is the shared hub's HTTP server or the stdio server run inside the hub's
+own checkout: on a hub URL read through a local cache clone, or any other target, they
+answer `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, because a
+store there would be private to one machine.
 
 A question's state is derived, never stored. It is *open* until answered. An answer
 that changes the ticket records the revision that carries it (`answer_rev`) and the
@@ -616,7 +618,7 @@ reaches readers only through a hub pull request.
   makes intake merge its whole publish PR right after opening it; a failed merge
   leaves the PR open and the publish `done` with `merged: false`.
 - The ticket Q&A store (`<hub>/.kb-qa/qa.db`, never committed) is written only by the
-  three `kb_question_*` MCP tools, and only on the shared hub server. Any caller the
+  three `kb_question_*` MCP tools, and only on the hub itself (not a cache clone). Any caller the
   hub authenticates may write; the names they give are self-declared, so they track
   who said what and authenticate nobody. At most 50 questions per ticket can be open.
 - A failed bearer-token attempt shares the login form's rate-limit bucket, so the

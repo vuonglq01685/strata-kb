@@ -413,8 +413,8 @@ skill sorts them:
   *open* blocking one stops the flow.
 - **Shared hub server only.** `kb_question_ask`, `kb_question_list` and
   `kb_question_answer` work only when MCP points at the hub's HTTP server (`kb
-  mcp-setup`); any other target answers `Q&A needs the shared hub server — point MCP at
-  it (kb mcp-setup)`. Any authenticated caller may write and the names are self-declared
+  mcp-setup`); a hub URL read through a local cache clone, or any other target, answers
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Any authenticated caller may write and the names are self-declared
   (`git config user.name`), so they track who asked and nothing more. At most 50
   questions per ticket can be open. When Q&A is unavailable and no `Q<id>` line in the
   design or plan lacks `— answered rev N`, `/dev-implement-ticket` continues with

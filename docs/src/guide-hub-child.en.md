@@ -464,15 +464,16 @@ Full deployment guide: `docs/deploy-remote-mcp.md`.
 
 A Dev who meets a business question about a published ticket asks the BA; the BA
 answers; the hub keeps the thread. Nothing to configure: the questions live in SQLite
-at `<hub root>/.kb-qa/qa.db` (in Docker `/data/.kb-qa/qa.db`), created on the first
-question. Never commit `.kb-qa/`: a new hub's `.gitignore` lists it, and the hub
-git-excludes it when the web UI starts and when the first question is written. Back it
-up with the rest of the hub volume.
+at `<hub root>/.kb-qa/qa.db` (in Docker `/data/.kb-qa/qa.db`), created, and
+git-excluded, on the first Q&A call. Never commit `.kb-qa/`: a new hub's `.gitignore`
+lists it, and the hub also git-excludes it when the web UI starts. Back it up with the
+rest of the hub volume.
 
 - **MCP tools.** `kb_question_ask`, `kb_question_list` and `kb_question_answer`. All
-  three, the list included, work only on this shared hub server, meaning MCP pointed at
-  the hub's HTTP endpoint (`kb mcp-setup`). Any other target answers `Q&A needs the
-  shared hub server — point MCP at it (kb mcp-setup)`.
+  three, the list included, work only on the hub itself: this hub's HTTP server, or the
+  stdio server run inside the hub's own checkout. A hub URL read through a local cache
+  clone, or any other target, answers `Q&A needs the shared hub server — point MCP at it
+  (kb mcp-setup)`. BA and Dev repos point MCP at the HTTP server with `kb mcp-setup`.
 - **Who may write.** Any caller the hub authenticates: the bearer token, or a session of
   any role. `asked_by` and `answered_by` are names the caller types, so they track who
   said what and authenticate nobody. At most 50 questions per ticket can be open.

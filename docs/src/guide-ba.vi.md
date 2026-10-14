@@ -302,7 +302,8 @@ ngữ cảnh, các AC bị chặn và người hỏi, đặt cạnh ticket. Câu
 không bao giờ tự viết thay.
 
 - **Cần server hub dùng chung.** Skill dùng `kb_question_list` và `kb_question_answer`,
-  chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`). Đích khác trả lời
+  chỉ chạy khi MCP trỏ tới server HTTP của hub (`kb mcp-setup`). URL hub đọc qua bản
+  clone cache cục bộ, hoặc đích khác, trả lời
   `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` và skill dừng, không
   đổi ticket nào. Không có CLI cho chúng. Mọi bên gọi đã xác thực đều được ghi; tên
   (`git config user.name`) là tự khai, nên chỉ để theo dõi ai đã trả lời và không chứng

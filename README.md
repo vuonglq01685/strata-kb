@@ -838,16 +838,17 @@ ticket asks the BA; the BA answers; the hub keeps the thread. It is the one
 place the hub stores something that is not in git.
 
 - **Store.** SQLite at `<hub root>/.kb-qa/qa.db` (in Docker `/data/.kb-qa/qa.db`),
-  created on the first question. **Never commit `.kb-qa/`**: a new hub's
-  `.gitignore` lists it, and the hub adds it to `.git/info/exclude` when the web
-  UI starts and when the first question is written. Back it up with the hub
-  volume.
+  created, and git-excluded, on the first Q&A call. **Never commit `.kb-qa/`**: a
+  new hub's `.gitignore` lists it, and the hub also adds it to
+  `.git/info/exclude` when the web UI starts. Back it up with the hub volume.
 - **Write path.** Only the MCP tools `kb_question_ask`, `kb_question_list` and
   `kb_question_answer`. All three, the list included, work only against the
-  **shared hub server**, meaning MCP pointed at the hub's HTTP endpoint (`kb
-  mcp-setup`). Any other target (a stdio hub, or a hub URL read through a local
-  cache clone) answers `Q&A needs the shared hub server — point MCP at it (kb
-  mcp-setup)`, because a store there would be private to one machine.
+  **hub itself**: the shared hub's HTTP server, or the stdio server run inside the
+  hub's own checkout (`hub: "."`, a local path holding `.kb/`). A hub URL read
+  through a local cache clone, or any other target, answers `Q&A needs the shared
+  hub server — point MCP at it (kb mcp-setup)`, because a store there would be
+  private to one machine. BA and Dev repos point MCP at the hub's HTTP server
+  with `kb mcp-setup`.
 - **Who may write.** Any caller the hub authenticates: the bearer token, or a
   session of any role. `asked_by` and `answered_by` are names the caller types
   (the skills pass `git config user.name`): tracking, not authentication. Limits:
@@ -895,9 +896,9 @@ place the hub stores something that is not in git.
 | `kb_ticket_stale` | The `kb ticket stale --md` report for one ticket or mission: kb-context citations the hub amended (stale) or lost (broken) since they were pinned, and moved `-code` sections it is grounded on (architecture) | `markdown`, `file_name` |
 | `kb_mission_lint` | Run the mission Definition-of-Ready gate (`kb mission lint`). `mission_id` checks the file name against the `> Mission:` line; the ticket-coverage warning needs the local `tickets/` and is skipped with a note | `mission_markdown`, `mission_id` |
 | `kb_ticket_fetch` | A ticket a BA published, read from the hub's `<ba-repo>-plan` by id — the text `kb ticket fetch` writes; the client saves it to `docs/impl/<id>/ticket.md` | `ticket` |
-| `kb_question_ask` | Ask the BA a question about a published ticket (`<id>` or `<repo>:<id>`); returns `Q<id>` and the hub path of the ticket's Q&A page. **Writes**: shared hub server only, any authenticated caller, self-declared name | `ticket`, `question`, `asked_by`, `context`, `blocks` |
-| `kb_question_list` | List ticket questions oldest first with their derived state (`open`, `waiting`, `answered`, or `all`) and, once answered, the answer, `answer_rev`, changed sections and the hub's current ticket revision. Shared hub server only | `ticket`, `repo`, `status` |
-| `kb_question_answer` | Record the BA's answer to an open question. `answer_rev` (greater than the hub's current ticket revision, with the changed `ticket_sections`) when the answer changed the ticket, which keeps the question *waiting* until that revision lands; unset otherwise. **Writes**: shared hub server only, self-declared name | `id`, `answer`, `answered_by`, `ticket_sections`, `answer_rev` |
+| `kb_question_ask` | Ask the BA a question about a published ticket (`<id>` or `<repo>:<id>`); returns `Q<id>` and the hub path of the ticket's Q&A page. **Writes**: hub-local only (the HTTP server or the hub's own checkout), any authenticated caller, self-declared name | `ticket`, `question`, `asked_by`, `context`, `blocks` |
+| `kb_question_list` | List ticket questions oldest first with their derived state (`open`, `waiting`, `answered`, or `all`) and, once answered, the answer, `answer_rev`, changed sections and the hub's current ticket revision. Hub-local only (the HTTP server or the hub's own checkout) | `ticket`, `repo`, `status` |
+| `kb_question_answer` | Record the BA's answer to an open question. `answer_rev` (greater than the hub's current ticket revision, with the changed `ticket_sections`) when the answer changed the ticket, which keeps the question *waiting* until that revision lands; unset otherwise. **Writes**: hub-local only (the HTTP server or the hub's own checkout), self-declared name | `id`, `answer`, `answered_by`, `ticket_sections`, `answer_rev` |
 | `kb_mission_next` | Which story next, from the plans published on the hub — the `kb mission next --from-hub` report (a BA's unpublished `missions/` and `tickets/` need the CLI) | `repo` |
 | `kb_doctor_hub` | The hub's side of `kb doctor` for a child, ba or dev repo, as JSON: the hub's strata-kb version, whether `federation/<repo_id>` is published and its digest, the hub's `-code` section digests, the registry's kind pin, citation checks. Called by the CLI, not meant for agents | `kind`, `repo_id`, `remote_url`, `dir_name`, `kb_context` |
 
@@ -1178,7 +1179,7 @@ The BA ticks the Definition of Ready; the agent never does.
 
 **Answering a Dev's questions.** `/ba-answer-questions` walks the open Dev
 questions for this repo's tickets (see [Ticket Q&A](#ticket-qa)). It needs MCP
-pointed at the shared hub server. An answer that changes a ticket is one
+pointed at the hub's HTTP server (`kb mcp-setup`). An answer that changes a ticket is one
 amendment per ticket: `> Revision:` N+1, one `## Change log` row with Trigger
 `question`, then Definition of Ready, which amend mode unticks and the BA must
 re-tick, and `kb ticket lint` must pass. The skill never commits, pushes or

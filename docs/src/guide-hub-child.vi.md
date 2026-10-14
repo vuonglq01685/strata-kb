@@ -450,14 +450,15 @@ Hướng dẫn triển khai đầy đủ: `docs/deploy-remote-mcp.md`.
 
 Dev gặp một câu hỏi nghiệp vụ về ticket đã publish sẽ hỏi BA; BA trả lời; hub giữ cuộc
 trao đổi. Không cần cấu hình gì: câu hỏi nằm trong SQLite tại `<hub root>/.kb-qa/qa.db`
-(trong Docker là `/data/.kb-qa/qa.db`), được tạo ở câu hỏi đầu tiên. Không bao giờ commit
-`.kb-qa/`: `.gitignore` của hub mới đã liệt kê nó, và hub tự git-exclude nó khi web UI khởi
-động và khi câu hỏi đầu tiên được ghi. Sao lưu cùng với phần còn lại của volume hub.
+(trong Docker là `/data/.kb-qa/qa.db`), được tạo, và git-exclude, ở lần gọi Q&A đầu tiên. Không bao giờ commit
+`.kb-qa/`: `.gitignore` của hub mới đã liệt kê nó, và hub cũng tự git-exclude nó khi web UI khởi
+động. Sao lưu cùng với phần còn lại của volume hub.
 
 - **MCP tool.** `kb_question_ask`, `kb_question_list` và `kb_question_answer`. Cả ba, kể cả
-  list, chỉ chạy trên server hub dùng chung này, nghĩa là MCP trỏ tới endpoint HTTP của hub
-  (`kb mcp-setup`). Đích khác trả lời `Q&A needs the shared hub server — point MCP at it
-  (kb mcp-setup)`.
+  list, chỉ chạy trên chính hub: server HTTP của hub này, hoặc server stdio chạy trong
+  checkout của hub. URL hub được đọc qua bản clone cache cục bộ, hoặc đích khác, trả lời
+  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Repo BA và Dev trỏ
+  MCP tới server HTTP bằng `kb mcp-setup`.
 - **Ai được ghi.** Mọi bên gọi mà hub xác thực: bearer token, hoặc phiên của bất kỳ vai trò
   nào. `asked_by` và `answered_by` là tên do bên gọi tự gõ, nên chỉ để theo dõi ai nói gì và
   không xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
