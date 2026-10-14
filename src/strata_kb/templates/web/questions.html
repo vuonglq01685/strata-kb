@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="stack-lg">
+  <div class="page-head">
+    <p class="kicker accent">Business analysis</p>
+    <h1>Q&amp;A</h1>
+    <p class="lede">Questions Devs asked the BA about published tickets. Open: not
+      answered yet. Waiting: answered, but the amended ticket is not on the hub yet.
+      Read-only.</p>
+  </div>
+  <p class="meta-line">
+    <a class="chip {{ '' if show_all else 'on' }}" href="/ui/questions">unresolved</a>
+    <a class="chip {{ 'on' if show_all else '' }}" href="/ui/questions?all=1">all</a>
+  </p>
+  {% for r in repos %}
+  <div class="panel">
+    <div class="panel-head">
+      <h2>{{ r[0] }}</h2>
+      <span class="note">{{ r[1] | length }} tickets</span>
+    </div>
+    {% for t in r[1] %}
+    <div class="queue-row">
+      {% if t.href %}<a class="cite" href="{{ t.href }}">{{ t.ticket }}</a>
+      {% else %}<span class="cite">{{ t.ticket }}</span>{% endif %}
+      <span class="file">
+        <span class="note">{{ t.open }} open</span>
+        <span class="note">{{ t.waiting }} waiting</span>
+        <span class="note">{{ t.answered }} answered</span>
+      </span>
+      <span class="note">oldest open: {{ t.oldest_open }}</span>
+      <a href="{{ t.qa_href }}">questions</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    {% if any_questions %}
+    <p>No unresolved questions.</p>
+    <p><a href="/ui/questions?all=1">Show answered questions</a></p>
+    {% else %}
+    <p>No questions yet.</p>
+    <p>A Dev raises one with <span class="mono">kb_question_ask</span>.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

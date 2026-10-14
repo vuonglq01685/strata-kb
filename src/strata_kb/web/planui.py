@@ -18,7 +18,7 @@ from starlette.routing import Route
 from strata_kb import planstatus
 from strata_kb.kinds import BA
 from strata_kb.serving.config import ServerConfig
-from strata_kb.web import api, uidata
+from strata_kb.web import api, qaui, uidata
 from strata_kb.web.gfmrender import has_mermaid
 from strata_kb.web.gfmrender import render as md_render
 from strata_kb.web.ui import _render_page, menu_search, render_error_page
@@ -134,6 +134,7 @@ def plan_routes(config: ServerConfig) -> list[Route]:
             mission_linked=group != planstatus.TICKETS_GROUP,
             ticket_id=story,
             ticket=ticket,
+            unresolved=qaui.unresolved_count(hub, found_repo, story),
             content_html=content_html,
             toc=toc,
             mermaid=has_mermaid(content_html),

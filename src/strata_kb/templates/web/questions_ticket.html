@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="stack-lg">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/questions">Q&amp;A</a> <span class="sep">/</span>
+      {{ repo }} <span class="sep">/</span> {{ ticket }}</p>
+    <h1 style="font-size:26px">Questions on
+      {% if href %}<a href="{{ href }}">{{ ticket }}</a>{% else %}{{ ticket }}{% endif %}</h1>
+    {% if rows %}<p class="meta-line">hub rev {{ '—' if hub_rev is none else hub_rev }}</p>{% endif %}
+  </div>
+  {% for q, state, _rev in rows %}
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Q{{ q.id }}
+        <span class="badge badge-{{ {'open': 'pending', 'waiting': 'summarized', 'answered': 'reviewed'}[state] }}">{{ state }}</span></h2>
+      <span class="note">asked by {{ q.asked_by }} · {{ q.asked_at }} · rev {{ q.asked_rev }}</span>
+    </div>
+    <div class="queue-row" style="flex-direction:column;align-items:flex-start">
+      <p class="kicker">Question</p>
+      <div style="white-space:pre-wrap">{{ q.question }}</div>
+      {% if q.context %}<p class="kicker">Context</p><div style="white-space:pre-wrap">{{ q.context }}</div>{% endif %}
+      {% if q.blocks %}<p class="kicker">Blocks</p><div style="white-space:pre-wrap">{{ q.blocks }}</div>{% endif %}
+    </div>
+    {% if q.answer is not none %}
+    <div class="queue-row" style="flex-direction:column;align-items:flex-start">
+      <p class="kicker">Answer</p>
+      <div style="white-space:pre-wrap">{{ q.answer }}</div>
+      {% if q.answer_rev is not none %}
+      <p class="meta-line">ticket rev {{ q.answer_rev }}{% if state == 'waiting' %} <span class="note">(not on the hub yet)</span>{% endif %}
+        {% for s in q.ticket_sections %}<span class="chip">{{ s }}</span>{% endfor %}</p>
+      {% endif %}
+      <p class="note">answered by {{ q.answered_by }} · {{ q.answered_at }}</p>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty-state"><p>No questions for this ticket.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -8,6 +8,7 @@
       {% if mission_linked %}<a href="/ui/tickets/{{ group | urlencode }}?repo={{ repo | urlencode }}">{{ group }}</a>
       <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
     <h1 style="font-size:26px">{{ ticket.title }}</h1>
+    {% if unresolved %}<p class="meta-line"><a href="/ui/questions/ticket?repo={{ repo | urlencode }}&amp;ticket={{ ticket_id | urlencode }}">{{ unresolved }} unresolved question{{ '' if unresolved == 1 else 's' }}</a></p>{% endif %}
   </div>
   <article class="reader-body md-body">{{ content_html | safe }}</article>
 </div>
