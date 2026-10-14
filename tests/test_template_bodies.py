@@ -311,3 +311,42 @@ def test_ba_ticket_author_amend_lists_the_question_trigger_for_qa_only():
         text = " ".join(read_template(name).split())
         assert "`question`" in text, name
         assert "only for amendments made from `/ba-answer-questions`" in text, name
+
+
+def test_ba_answer_questions_hub_link_comes_from_hub_url_env_not_mcp_json():
+    text = _body("ba-answer-questions.md")
+    assert "`STRATA_KB_HUB_URL`" in text
+    assert "never show `STRATA_KB_HTTP_TOKEN`" in text
+    assert "If it is unset, give the path only" in text
+    assert "host in `.mcp.json`" not in text
+
+
+def test_ba_answer_questions_records_none_only_when_the_hub_carries_the_answer():
+    text = _body("ba-answer-questions.md")
+    assert "only when the HUB revision already carries the answer" in text
+    assert "hub rev" in text
+    assert "local revision R higher than the hub revision" in text
+    assert "never bump the revision again" in text
+    assert "it already says it" not in text
+
+
+def test_ba_answer_questions_records_nothing_until_lint_passes():
+    text = _body("ba-answer-questions.md")
+    assert "Until `kb ticket lint` passes, record nothing for that ticket" in text
+
+
+def test_ba_answer_questions_names_the_answer_call_arguments_and_ticket_filter():
+    text = _body("ba-answer-questions.md")
+    assert "`id` (an integer: the number without the `Q`)" in text
+    assert "`answer` (the BA's words)" in text
+    assert "`ticket_sections` is a list of section names" in text
+    assert "pass `ticket=<ticket>`" in text
+    assert 'kb_question_list(repo=<repo-id>, status="waiting")' in text
+
+
+def test_ba_answer_questions_claude_command_matches_the_body_rules():
+    text = " ".join(read_template("claude-command-ba-answer-questions.md").split())
+    assert "plus `ticket=` when a ticket is given" in text
+    assert "record nothing for that ticket" in text
+    assert "`STRATA_KB_HUB_URL`" in text
+    assert "only when the HUB revision" in text

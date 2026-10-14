@@ -485,7 +485,8 @@ def create_server(config: ServerConfig) -> MCPServer:
                 q = ask_question(
                     hub, store, ticket, question, asked_by, context, blocks
                 )
-                # No hub base-URL setting exists, so the link is the path only.
+                # The server process does not have the client's STRATA_KB_HUB_URL,
+                # so the link is the path only.
                 link = (
                     f"/ui/questions/ticket?repo={quote(q.repo, safe='')}"
                     f"&ticket={quote(q.ticket, safe='')}"

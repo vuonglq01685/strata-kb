@@ -20,20 +20,26 @@ fallback `kb ticket lint`).
 ## Workflow
 
 1. **List** — read this repo's id (`repo_id` in `.kb/config.yaml`) and call
-   `kb_question_list(repo=<repo-id>, status="open")`. Nothing open → say so
-   and stop. Questions already `waiting` need nothing from you: their
-   ticket change is not on the hub yet; mention them in one line.
+   `kb_question_list(repo=<repo-id>, status="open")`; when the BA named a
+   ticket, also pass `ticket=<ticket>`. Nothing open → say so and stop. For
+   questions already waiting for publish, call
+   `kb_question_list(repo=<repo-id>, status="waiting")` and mention them in
+   one line: their ticket change is not on the hub yet, so they need
+   nothing from you.
 2. **Walk** — one ticket at a time, oldest question first. Show each open
    question with its context, the AC ids it blocks and who asked, beside the
    relevant part of the local ticket file (`tickets/<folder>/<ticket-id>.md`).
    A ticket that is not in this repo's working tree: say so and skip it.
 3. **Answer** — the BA gives each answer in their own words; do not write
-   one for them. If an answer does not change the ticket (it already says
-   it, or the question is no longer needed), nothing is amended. If it
-   changes behaviour, amend the ticket under `ba-ticket-author`'s amend
+   one for them. If an answer does not change the ticket (the HUB revision
+   already carries it — `kb_question_list` prints `hub rev` per question —
+   or the question is no longer needed), nothing is amended. If it changes
+   behaviour, amend the ticket under `ba-ticket-author`'s amend
    rules (`## Amend mode` of that skill) — all questions of that ticket in
    one amendment: one amendment per ticket, never one per question.
-   - Bump `> Revision:` to N+1.
+   - Bump `> Revision:` to N+1. If the ticket already holds an unpublished
+     N+1 amendment for these questions (a rerun after a Definition of
+     Ready or lint stop), resume it; never bump the revision again.
    - Append one `## Change log` row: Trigger `question` (the only
      amendment trigger this skill uses), What changed = `Q<ids>: <one line>`,
      Affected = the names of the changed sections, comma-separated.
@@ -48,13 +54,20 @@ fallback `kb ticket lint`).
      the ticket never leaves the hub because of Q&A. Tell the BA what is
      missing; the answers wait until they come back to it.
    - `kb_ticket_lint` (CLI `kb ticket lint`) must pass; with a
-     `> Parent mission:` line pass `ticket_id` and `mission_markdown`.
-4. **Record** — call `kb_question_answer` once per question, with
-   `answered_by` = `git config user.name`:
-   - ticket amended: `answer_rev` = N+1 and `ticket_sections` = the
-     change-log row's Affected (the same list for every question of that
-     ticket);
-   - ticket unchanged: `answer_rev` = None and `ticket_sections` = `[]`.
+     `> Parent mission:` line pass `ticket_id` and `mission_markdown`. Until
+     `kb ticket lint` passes, record nothing for that ticket.
+4. **Record** — call `kb_question_answer` once per question, with `id` (an
+   integer: the number without the `Q`), `answer` (the BA's words) and
+   `answered_by` = `git config user.name`. `ticket_sections` is a list of
+   section names.
+   - ticket amended, or the answer exists only in a local revision R higher
+     than the hub revision: `answer_rev` = R (N+1 for an amendment made
+     now) and `ticket_sections` = the Affected of that change-log row (the
+     same list for every question of that ticket);
+   - `answer_rev` = None and `ticket_sections` = `[]` only when the HUB
+     revision already carries the answer, or the question is no longer
+     needed. Never judge "already says it" from the local file alone: a
+     local unpublished change would show as answered at once.
    A refusal (an `answer_rev` the hub's revision has already reached, an
    `answer_rev` while the ticket is not on the hub, a question someone
    already answered) is reported to the BA as it is; never retry with an
@@ -65,7 +78,9 @@ fallback `kb ticket lint`).
    hub shows those answers as waiting for publish. Give the hub's Q&A link
    for the BA to paste in chat: the hub's web address followed by
    `/ui/questions/ticket?repo=<repo-id>&ticket=<ticket-id>` (the hub's
-   address is the host in `.mcp.json`, without the MCP path).
+   address is `STRATA_KB_HUB_URL`, from the process env or the repo's `.env`
+   written by `kb mcp-setup`; read only that line and never show
+   `STRATA_KB_HTTP_TOKEN`. If it is unset, give the path only).
 
 ## Hard rules
 
