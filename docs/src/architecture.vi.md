@@ -563,9 +563,9 @@ Dev gặp câu hỏi nghiệp vụ khi thiết kế hoặc lập kế hoạch ch
 BA qua `kb_question_ask`; câu hỏi được lưu trong SQLite tại `<hub root>/.kb-qa/qa.db`,
 cạnh `.kb-auth/` và nằm ngoài git. Đây là thứ duy nhất hub lưu mà không nằm trong git,
 nên ba tool hỏi đáp chỉ chạy với chính hub, tức server HTTP của hub dùng chung hoặc server
-stdio chạy trong checkout của hub: với URL hub đọc qua bản clone cache cục bộ, hoặc đích
-khác, chúng trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`,
-vì kho ở đó sẽ chỉ nằm riêng trên một máy.
+stdio chạy trong checkout của hub (`--kb <hub>/.kb`); mọi đích khác đều bị từ chối: server
+stdio của repo Dev, hay URL hub đọc qua bản clone cache cục bộ, trả lời `Q&A needs the
+shared hub server — point MCP at it (kb mcp-setup)`, vì kho ở đó không phải kho dùng chung.
 
 Trạng thái câu hỏi được suy ra, không lưu. Câu hỏi *open* cho đến khi có câu trả lời. Câu
 trả lời làm thay đổi ticket ghi lại revision mang nó (`answer_rev`) và các section đã đổi;

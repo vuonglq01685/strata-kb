@@ -96,9 +96,10 @@ into it; merging their PRs here is the review gate.
    `kb_question_list`, `kb_question_answer`); `kb_question_ask` and
    `kb_question_answer` are the first MCP tools that write. They work only on
    the hub itself: this shared hub's HTTP server, or the stdio server run
-   inside the hub's own checkout. A hub URL read through a local cache clone,
-   or any other target, answers `Q&A needs the shared hub server — point MCP
-   at it (kb mcp-setup)`, list included. BA and Dev repos point MCP at the
+   inside the hub's own checkout (`--kb <hub>/.kb`). Any other target is
+   refused: a dev repo's stdio server, or a hub URL read through a local cache
+   clone, answers `Q&A needs the shared hub server — point MCP at it
+   (kb mcp-setup)`, list included. BA and Dev repos point MCP at the
    hub's HTTP server with `kb mcp-setup`. Any caller the hub authenticates may ask and answer (the
    bearer token, or a session of any role); `asked_by` and `answered_by` are
    names the caller types, so they track who said what and do not

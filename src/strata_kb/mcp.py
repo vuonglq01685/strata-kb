@@ -104,6 +104,18 @@ HUB_DOWN = (
 QA_NEEDS_HUB_SERVER = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
 
 
+def hub_serves_own_checkout(config: ServerConfig) -> bool:
+    """True when this server runs inside the hub's own checkout (the HTTP
+    server, or stdio with `--kb <hub>/.kb`) -- the only place the Q&A store is
+    the one shared copy. A dev repo pointing at a local hub path is refused."""
+    from strata_kb import hub as hub_mod
+
+    return (
+        hub_mod.is_local_hub(config.hub)
+        and Path(config.hub).resolve() == config.kb_dir.resolve().parent
+    )
+
+
 def _canonical_docstring(fn):
     """Normalize `fn.__doc__` with `inspect.cleandoc` before FastMCP reads it
     as the MCP `description` (`Tool.from_function` uses `fn.__doc__` verbatim
@@ -437,14 +449,14 @@ def create_server(config: ServerConfig) -> MCPServer:
 
     def _qa(op) -> str:
         """Run `op(hub, store)` against the Q&A store at the shared hub's root.
-        The guard runs before any side effect: on a URL / cache-clone hub the
-        store would be private to this machine, so nothing is created."""
-        from strata_kb import hub as hub_mod
+        The guard runs before any side effect: on a URL / cache-clone hub, or
+        from a dev repo, the store would not be the shared one, so nothing is
+        created."""
         from strata_kb.errors import KbError
         from strata_kb.serving.accounts import ensure_git_exclude
         from strata_kb.ticketqa import QaStore, qa_db_path
 
-        if not hub_mod.is_local_hub(config.hub):
+        if not hub_serves_own_checkout(config):
             return QA_NEEDS_HUB_SERVER
         hub = _hub()
         if hub is None:

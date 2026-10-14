@@ -566,14 +566,16 @@ def _write_scaffold(dest: Path, rel: str, text: str, report: InitReport) -> None
     report.created.append(rel)
 
 
-# The assistant's skills and commands: what `kb doctor` refreshes after it
-# moved a repo to the hub's strata-kb. CI workflows, config and settings are
-# the repo's own and stay as they are.
+# The assistant's skills and commands, plus the review rubric the skills read:
+# what `kb doctor` refreshes after it moved a repo to the hub's strata-kb. CI
+# workflows, config, settings and `*.local.md` overrides are the repo's own and
+# stay as they are.
 AGENT_FILE_PREFIXES = (
     ".claude/skills/",
     ".claude/commands/",
     ".github/prompts/",
     ".cursor/commands/",
+    "docs/pr-review-rubric.md",
 )
 
 

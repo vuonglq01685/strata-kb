@@ -2645,7 +2645,9 @@ def test_hub_quickstart_documents_ticket_qa(tmp_path: Path):
     assert "**never commit `.kb-qa/`**" in flat
     assert "They work only on the hub itself" in flat
     assert "the stdio server run inside the hub's own checkout" in flat
-    assert "A hub URL read through a local cache clone" in flat
+    assert "a hub URL read through a local cache clone" in flat
+    assert "(`--kb <hub>/.kb`)" in flat
+    assert "Any other target is refused" in flat
     assert "created, and git-excluded, on the first Q&A call" in flat
     assert (
         "`kb_question_ask` and `kb_question_answer` are the first MCP tools that write"

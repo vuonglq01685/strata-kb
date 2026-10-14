@@ -408,7 +408,8 @@ raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các 
   `BA-Q: none | open Q<ids> | waiting Q<ids>`.
 - **Tiếp tục.** Mỗi lần vào, `/dev-implement-ticket` đọc `kb_question_list` của ticket.
   Câu hỏi *đã trả lời* mà bạn chưa đánh dấu được hiển thị cùng các section đã đổi; luồng
-  tải lại ticket, đánh dấu dòng `## Open questions` là `— answered rev N`, và quay lại
+  tải lại ticket, đánh dấu dòng `## Open questions` là `— answered rev N — re-draft` (pha đó điều phối lại
+  author đúng một lần cho dòng này rồi bỏ `— re-draft`), và quay lại
   `dev-design` nếu một section đã đổi chạm vào thiết kế đã duyệt (nó về `draft`). Câu hỏi
   *chờ* (đã trả lời, nhưng revision ticket mới của BA chưa lên hub) chỉ là thông tin: đừng
   hành động theo. Câu hỏi *mở* và chặn thì dừng luồng.
@@ -417,9 +418,11 @@ raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các 
   đọc qua bản clone cache cục bộ, hoặc đích khác, trả lời `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Mọi bên
   gọi đã xác thực đều được ghi và tên là tự khai (`git config user.name`), nên chỉ để theo
   dõi ai đã hỏi, không hơn. Mỗi ticket có tối đa 50 câu hỏi mở. Khi Q&A không dùng được và
-  trong thiết kế hay kế hoạch không có dòng `Q<id>` nào thiếu `— answered rev N`,
-  `/dev-implement-ticket` tiếp tục với `BA-Q: unknown (Q&A unavailable)` kèm một ghi chú;
-  nếu có dòng như vậy thì nó dừng, vì không thể biết trạng thái.
+  trong thiết kế hay kế hoạch mọi dòng `Q<id>` đều có `— answered rev N` (hoặc không có
+  dòng nào), `/dev-implement-ticket` tiếp tục với `BA-Q: unknown (Q&A unavailable)` kèm một
+  ghi chú; nếu có dòng `Q<id>` thiếu nó thì dừng, vì không thể biết trạng thái. Trong
+  `dev-design` và `dev-plan`, câu hỏi nghiệp vụ có `blocks: none` khi đó quay về `OPEN(BA)`;
+  chỉ câu hỏi chặn mới dừng.
 
 ---
 

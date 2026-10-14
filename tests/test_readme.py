@@ -325,7 +325,9 @@ def test_readme_documents_ticket_qa():
     assert "*waiting* (answered, but the answer changes the ticket" in text
     assert "created, and git-excluded, on the first Q&A call" in text
     assert "the stdio server run inside the hub's own checkout" in text
-    assert "A hub URL read through a local cache clone" in text
+    assert "a hub URL read through a local cache clone" in text
+    assert "(`--kb <hub>/.kb`" in text
+    assert "Any other target is refused" in text
     assert "`/ui/questions`" in text
     assert "`/ui/questions/ticket?repo=<repo-id>&ticket=<id>`" in text
     assert "**the BA must re-tick them**" in text

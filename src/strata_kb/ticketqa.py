@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import unicodedata
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,6 +28,8 @@ MAX_ANSWER = 4000
 MAX_CONTEXT = 1000
 MAX_NAME = 100
 MAX_OPEN_PER_TICKET = 50
+MAX_SECTIONS = 50
+MAX_QUESTION_ID = 2**63 - 1  # SQLite INTEGER
 
 State = Literal["open", "waiting", "answered"]
 STATUSES: tuple[str, ...] = ("open", "waiting", "answered", "all")
@@ -92,6 +95,14 @@ def _text(label: str, value: str, cap: int, *, required: bool = True) -> None:
         raise QaError(f"{label} is {len(value)} characters; the limit is {cap}")
 
 
+def _name(label: str, value: str) -> None:
+    """A name or section name: one printable line, so it cannot forge a line
+    in a list, a log or the web page."""
+    _text(label, value, MAX_NAME)
+    if any(unicodedata.category(c).startswith("C") for c in value):
+        raise QaError(f"{label} must not contain a control character")
+
+
 def _check_answer_rev(answer_rev: int | None) -> None:
     if answer_rev is not None and answer_rev < 1:
         raise QaError(f"answer_rev must be 1 or more, not {answer_rev}")
@@ -131,7 +142,7 @@ class QaStore:
         _text("question", question, MAX_QUESTION)
         _text("context", context, MAX_CONTEXT, required=False)
         _text("blocks", blocks, MAX_CONTEXT, required=False)
-        _text("asked_by", asked_by, MAX_NAME)
+        _name("asked_by", asked_by)
         now = _now()
         with closing(self._connect()) as conn, conn:
             conn.execute(
@@ -201,7 +212,7 @@ class QaStore:
         ticket_sections: list[str],
     ) -> Question:
         _text("answer", answer, MAX_ANSWER)
-        _text("answered_by", answered_by, MAX_NAME)
+        _name("answered_by", answered_by)
         _check_answer_rev(answer_rev)
         if answer_rev is not None and not ticket_sections:
             raise QaError(
@@ -209,8 +220,13 @@ class QaStore:
             )
         if answer_rev is None and ticket_sections:
             raise QaError("ticket_sections must be empty when answer_rev is not set")
+        if len(ticket_sections) > MAX_SECTIONS:
+            raise QaError(
+                f"ticket_sections names {len(ticket_sections)} sections; "
+                f"at most {MAX_SECTIONS}"
+            )
         for name in ticket_sections:
-            _text("ticket section name", name, MAX_NAME)
+            _name("ticket section name", name)
         with closing(self._connect()) as conn, conn:
             conn.execute(
                 "BEGIN IMMEDIATE"
@@ -292,6 +308,8 @@ def answer_question(
     answer_rev: int | None,
     ticket_sections: list[str],
 ) -> Question:
+    if not 1 <= id <= MAX_QUESTION_ID:
+        raise QaError(f"id must be a question number from 1 to {MAX_QUESTION_ID}")
     q = store.get(id)
     if q is None:
         raise QaError(f"Q{id} does not exist")

@@ -471,9 +471,9 @@ rest of the hub volume.
 
 - **MCP tools.** `kb_question_ask`, `kb_question_list` and `kb_question_answer`. All
   three, the list included, work only on the hub itself: this hub's HTTP server, or the
-  stdio server run inside the hub's own checkout. A hub URL read through a local cache
-  clone, or any other target, answers `Q&A needs the shared hub server — point MCP at it
-  (kb mcp-setup)`. BA and Dev repos point MCP at the HTTP server with `kb mcp-setup`.
+  stdio server run inside the hub's own checkout (`--kb <hub>/.kb`). Any other target is
+  refused: a dev repo's stdio server, or a hub URL read through a local cache clone,
+  answers `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. BA and Dev repos point MCP at the HTTP server with `kb mcp-setup`.
 - **Who may write.** Any caller the hub authenticates: the bearer token, or a session of
   any role. `asked_by` and `answered_by` are names the caller types, so they track who
   said what and authenticate nobody. At most 50 questions per ticket can be open.

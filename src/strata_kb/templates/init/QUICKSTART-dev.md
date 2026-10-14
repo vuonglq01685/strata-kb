@@ -188,7 +188,8 @@ orchestrating skill then sorts them:
   `kb_question_list` for the ticket. An **answered** question you have not
   marked yet is shown with its changed sections; the flow re-fetches the
   ticket into `docs/impl/<id>/ticket.md`, marks the `## Open questions` line
-  `— answered rev N`, and sends you back to `dev-design` if a changed section
+  `— answered rev N — re-draft` (the phase re-dispatches its author once for
+  it, then drops `— re-draft`), and sends you back to `dev-design` if a changed section
   touches an approved design (it returns to `draft`). A **waiting** question
   (answered, but the BA's new ticket revision is not on the hub yet) is shown
   as information only: do not act on it. An **open** blocking one stops the
@@ -200,10 +201,12 @@ orchestrating skill then sorts them:
   mcp-setup)`. Any authenticated caller may write, and
   the names are self-declared (`git config user.name`): they track who asked,
   nothing more. At most 50 questions per ticket can be open. When Q&A is
-  unavailable and no `Q<id>` line in the design or plan lacks `— answered rev
-  N`, `/dev-implement-ticket` continues with `BA-Q: unknown (Q&A
-  unavailable)` and a note; with such a line it stops, because it cannot know
-  the state.
+  unavailable and every `Q<id>` line in the design or plan carries `— answered
+  rev N` (or there are none), `/dev-implement-ticket` continues with `BA-Q:
+  unknown (Q&A unavailable)` and a note; if any `Q<id>` line lacks it, it
+  stops, because it cannot know the state. In `dev-design` and `dev-plan` a
+  business question with `blocks: none` then falls back to `OPEN(BA)`; only a
+  blocking one stops.
 - **Review.** The pre-code axis of `docs/pr-review-rubric.md` accepts a `Q<id>`
   asked through hub Q&A as the escalation of an ambiguous AC.
 

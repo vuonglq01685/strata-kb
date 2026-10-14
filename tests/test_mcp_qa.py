@@ -218,7 +218,27 @@ async def test_nested_repo_ref_mid_slash_ba(fed_hub, tmp_path):
 
 
 @pytest.mark.anyio
-async def test_stdio_dev_repo_config_stores_qa_db_in_the_hub_root(
+@pytest.mark.parametrize("bad_id", [0, -5, 2**63])
+async def test_answer_with_an_out_of_range_id_is_a_message_not_an_exception(
+    hub_with_ticket, bad_id
+):
+    hub = hub_with_ticket()
+    async with connect_client(
+        create_server(_config(hub.root)), raise_exceptions=True
+    ) as client:
+        out = await _call(
+            client,
+            "kb_question_answer",
+            id=bad_id,
+            answer="A",
+            answered_by="ba1",
+            ticket_sections=[],
+        )
+    assert "question number" in out
+
+
+@pytest.mark.anyio
+async def test_stdio_dev_repo_config_is_refused_and_creates_nothing(
     hub_with_ticket, tmp_path
 ):
     hub = hub_with_ticket()
@@ -226,13 +246,38 @@ async def test_stdio_dev_repo_config_stores_qa_db_in_the_hub_root(
     (dev_repo / ".kb").mkdir(parents=True)
     config = ServerConfig(kb_dir=dev_repo / ".kb", hub=str(hub.root))
     async with connect_client(create_server(config), raise_exceptions=True) as client:
+        outs = [
+            await _call(
+                client, "kb_question_ask", ticket=US1, question="Q?", asked_by="dev1"
+            ),
+            await _call(client, "kb_question_list"),
+            await _call(
+                client,
+                "kb_question_answer",
+                id=1,
+                answer="A",
+                answered_by="b",
+                ticket_sections=[],
+            ),
+        ]
+    assert outs == [QA_NEEDS_HUB_SERVER] * 3
+    assert not (hub.root / ".kb-qa").exists()
+    assert not (dev_repo / ".kb-qa").exists()
+
+
+@pytest.mark.anyio
+async def test_stdio_inside_the_hubs_own_checkout_stores_qa_db_in_the_hub_root(
+    hub_with_ticket,
+):
+    hub = hub_with_ticket()
+    config = ServerConfig(kb_dir=hub.root / ".kb", hub=str(hub.root))
+    async with connect_client(create_server(config), raise_exceptions=True) as client:
         asked = await _call(
             client, "kb_question_ask", ticket=US1, question="Q?", asked_by="dev1"
         )
         listed = await _call(client, "kb_question_list")
     assert asked.startswith("Q1 asked on ") and "Q1 [open]" in listed
     assert (hub.root / ".kb-qa" / "qa.db").is_file()
-    assert not (dev_repo / ".kb-qa").exists()
     exclude = (hub.root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
     assert ".kb-qa/" in exclude.splitlines()
 

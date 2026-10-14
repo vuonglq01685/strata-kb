@@ -152,6 +152,39 @@ def test_caps_and_empties(hub_with_ticket, store):
         answer_question(hub, store, q.id, "A", "x" * 101, None, [])
 
 
+def test_ticket_sections_are_capped_at_fifty(hub_with_ticket, store):
+    hub = hub_with_ticket(rev=3)
+    q = ask_question(hub, store, US1, "Q?", "dev1")
+    with pytest.raises(QaError, match="at most 50"):
+        answer_question(hub, store, q.id, "A", "ba1", 4, [f"S{i}" for i in range(51)])
+    assert store.get(q.id).answer is None  # type: ignore[union-attr]
+    ok = answer_question(hub, store, q.id, "A", "ba1", 4, [f"S{i}" for i in range(50)])
+    assert len(ok.ticket_sections) == 50
+
+
+@pytest.mark.parametrize("bad", ["a\nb", "a\rb", "a\tb", "a\x0bb", "a\x0cb", "a\x00b"])
+def test_names_reject_control_characters(hub_with_ticket, store, bad):
+    hub = hub_with_ticket(rev=3)
+    with pytest.raises(QaError, match="control character"):
+        ask_question(hub, store, US1, "Q?", bad)
+    assert store.list() == []
+    q = ask_question(hub, store, US1, "Q?", "dev1")
+    with pytest.raises(QaError, match="control character"):
+        answer_question(hub, store, q.id, "A", bad, None, [])
+    with pytest.raises(QaError, match="control character"):
+        answer_question(hub, store, q.id, "A", "ba1", 4, [bad])
+    assert store.get(q.id).answer is None  # type: ignore[union-attr]
+    # question and answer text keep their newlines
+    ask_question(hub, store, US1, "line one\nline two", "dev1")
+    assert answer_question(hub, store, q.id, "x\ny", "ba1", None, []).answer == "x\ny"
+
+
+@pytest.mark.parametrize("bad_id", [0, -1, 2**63, 10**30])
+def test_answer_id_outside_sqlite_range_is_a_qa_error(hub_with_ticket, store, bad_id):
+    with pytest.raises(QaError, match="question number"):
+        answer_question(hub_with_ticket(), store, bad_id, "x", "ba1", None, [])
+
+
 def test_fifty_first_open_question_on_a_ticket_is_refused(hub_with_ticket, store):
     hub = hub_with_ticket()
     for i in range(50):

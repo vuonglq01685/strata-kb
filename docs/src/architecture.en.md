@@ -567,9 +567,9 @@ asks the BA through `kb_question_ask`; the question is stored in SQLite at
 `<hub root>/.kb-qa/qa.db`, beside `.kb-auth/` and out of git. This is the one thing
 the hub stores that is not in git, so the three question tools work only against the
 hub itself, that is the shared hub's HTTP server or the stdio server run inside the hub's
-own checkout: on a hub URL read through a local cache clone, or any other target, they
-answer `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, because a
-store there would be private to one machine.
+own checkout (`--kb <hub>/.kb`); any other target is refused: a dev repo's stdio server,
+or a hub URL read through a local cache clone, answers `Q&A needs the shared hub server —
+point MCP at it (kb mcp-setup)`, because a store there would not be the shared one.
 
 A question's state is derived, never stored. It is *open* until answered. An answer
 that changes the ticket records the revision that carries it (`answer_rev`) and the

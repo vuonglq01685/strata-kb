@@ -844,16 +844,18 @@ place the hub stores something that is not in git.
 - **Write path.** Only the MCP tools `kb_question_ask`, `kb_question_list` and
   `kb_question_answer`. All three, the list included, work only against the
   **hub itself**: the shared hub's HTTP server, or the stdio server run inside the
-  hub's own checkout (`hub: "."`, a local path holding `.kb/`). A hub URL read
-  through a local cache clone, or any other target, answers `Q&A needs the shared
-  hub server — point MCP at it (kb mcp-setup)`, because a store there would be
-  private to one machine. BA and Dev repos point MCP at the hub's HTTP server
+  hub's own checkout (`--kb <hub>/.kb`, `hub: "."`, a local path holding `.kb/`).
+  Any other target is refused: a dev repo's stdio server, even one pointing at the
+  hub's path, or a hub URL read through a local cache clone, answers `Q&A needs the
+  shared hub server — point MCP at it (kb mcp-setup)`, because a store there would
+  not be the shared one. BA and Dev repos point MCP at the hub's HTTP server
   with `kb mcp-setup`.
 - **Who may write.** Any caller the hub authenticates: the bearer token, or a
   session of any role. `asked_by` and `answered_by` are names the caller types
   (the skills pass `git config user.name`): tracking, not authentication. Limits:
-  question and answer 4000 characters, context 1000, names 100, and at most 50
-  open questions per ticket.
+  question and answer 4000 characters, context 1000, names 100 (one printable
+  line, no control characters), at most 50 changed sections per answer, and at
+  most 50 open questions per ticket.
 - **States.** *open* (no answer), *waiting* (answered, but the answer changes the
   ticket and that ticket revision is not on the hub yet: shown as "waiting for
   publish") and *answered*. The state is derived, never stored: a ticket's
@@ -1293,8 +1295,12 @@ changed sections, the ticket is re-fetched and, when a changed section touches
 an approved design, the flow goes back to `dev-design`; a *waiting* one is shown
 as information only; an *open* blocking one stops the flow. The `State:` line
 gains a fifth marker, `BA-Q: none | open Q<ids> | waiting Q<ids>`. When the Q&A
-tools are refused and the design and plan hold no unmarked `Q<id>` line, the
-flow continues with `BA-Q: unknown (Q&A unavailable)`. `OPEN(BA)` remains for
+tools are refused and every `Q<id>` line in the design and plan carries
+`— answered rev N` (or there are none), the flow continues with
+`BA-Q: unknown (Q&A unavailable)`; `dev-design` and `dev-plan` then keep a
+`blocks: none` business question as `OPEN(BA)` and stop only on a blocking one.
+A newly answered line is marked `— answered rev N — re-draft`, and the phase
+re-dispatches its author once for it. `OPEN(BA)` remains for
 the case `dev-execute` meets mid-implementation, which returns to `dev-design`.
 The Pre-code axis of the PR review rubric accepts a hub-asked `Q<id>`.
 

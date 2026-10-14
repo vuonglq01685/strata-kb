@@ -456,7 +456,8 @@ trao đổi. Không cần cấu hình gì: câu hỏi nằm trong SQLite tại `
 
 - **MCP tool.** `kb_question_ask`, `kb_question_list` và `kb_question_answer`. Cả ba, kể cả
   list, chỉ chạy trên chính hub: server HTTP của hub này, hoặc server stdio chạy trong
-  checkout của hub. URL hub được đọc qua bản clone cache cục bộ, hoặc đích khác, trả lời
+  checkout của hub (`--kb <hub>/.kb`). Mọi đích khác đều bị từ chối: server stdio của repo
+  Dev, hay URL hub được đọc qua bản clone cache cục bộ, trả lời
   `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`. Repo BA và Dev trỏ
   MCP tới server HTTP bằng `kb mcp-setup`.
 - **Ai được ghi.** Mọi bên gọi mà hub xác thực: bearer token, hoặc phiên của bất kỳ vai trò
