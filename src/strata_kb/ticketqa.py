@@ -251,19 +251,21 @@ def derive_state(q: Question, hub_rev: int | None) -> State:
 
 
 def _read_revision(hub: HubHandle, repo: str, ticket: str) -> int:
-    text = ticketfetch.render(hub, f"{repo}:{ticket}")
-    return planrev.parse_revision(text) or 1
+    """One federation load and one L3 read: no `render`, no git call (the
+    Q&A list asks for every ticket it shows)."""
+    _, doc, l3 = ticketfetch.find(hub, f"{repo}:{ticket}")
+    section = ticketfetch.read_section(l3, doc, ticket)
+    return planrev.parse_revision(section) or 1
 
 
 def ticket_revision(hub: HubHandle, repo: str, ticket: str) -> int | None:
     """The ticket's `> Revision: N` on the hub (1 when absent); None when the
     ticket is no longer published. Any other lookup failure (unreadable file,
-    git error, ambiguity) propagates: it is not "gone"."""
+    ambiguity) propagates: it is not "gone"."""
     try:
-        ticketfetch.find(hub, f"{repo}:{ticket}")
+        return _read_revision(hub, repo, ticket)
     except ticketfetch.TicketNotOnHub:
         return None
-    return _read_revision(hub, repo, ticket)
 
 
 def ask_question(

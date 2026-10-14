@@ -229,3 +229,54 @@ def test_bearer_and_dev_role_can_view(web_client, hub_dir, token):
     resp = web_client.get(path)
     assert resp.status_code == 200
     assert 'href="/ui/questions"' in resp.text
+
+
+def test_asker_and_section_names_are_escaped(web_client_logged_in, hub_with_ticket):
+    hub = hub_with_ticket(rev=1)
+    store = _store(hub)
+    q = ask_question(hub, store, US1, "plain?", "<b>dev</b>")
+    answer_question(hub, store, q.id, "ok", "<i>ba</i>", 2, ["<script>x</script>"])
+    text = web_client_logged_in.get(
+        f"/ui/questions/ticket?repo={REPO}&ticket={US1}"
+    ).text
+    assert "<b>dev</b>" not in text and "&lt;b&gt;dev&lt;/b&gt;" in text
+    assert "<i>ba</i>" not in text
+    assert "<script>x</script>" not in text
+    assert "&lt;script&gt;x&lt;/script&gt;" in text
+
+
+def test_hostile_repo_param_is_escaped_in_breadcrumbs(web_client_logged_in):
+    resp = web_client_logged_in.get(
+        "/ui/questions/ticket",
+        params={"repo": "<script>boom</script>", "ticket": "T-1"},
+    )
+    assert resp.status_code == 200
+    assert "<script>boom" not in resp.text
+    assert "&lt;script&gt;boom" in resp.text
+
+
+def _corrupt_db(hub_dir):
+    path = qa_db_path(hub_dir)
+    path.parent.mkdir()
+    path.write_bytes(b"this is not a sqlite database" * 20)
+
+
+def test_corrupt_db_is_503_on_qa_pages(web_client_logged_in, hub_dir):
+    _corrupt_db(hub_dir)
+    for path in (
+        "/ui/questions",
+        "/ui/questions/ticket?repo=ba-one&ticket=T-1",
+    ):
+        resp = web_client_logged_in.get(path)
+        assert resp.status_code == 503, path
+        assert "Q&amp;A unavailable" in resp.text
+
+
+def test_plan_ticket_page_survives_corrupt_db(
+    web_client_logged_in, hub_with_ticket, hub_dir
+):
+    hub_with_ticket(rev=1)
+    _corrupt_db(hub_dir)
+    resp = web_client_logged_in.get(f"/ui/tickets/{MISSION_ID}/{US1}?repo={REPO}")
+    assert resp.status_code == 200
+    assert "unresolved question" not in resp.text

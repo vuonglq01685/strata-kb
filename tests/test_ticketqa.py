@@ -293,3 +293,31 @@ def test_blocks_is_capped_and_answer_rev_must_be_positive(hub_with_ticket, store
         with pytest.raises(QaError, match="answer_rev must be 1 or more"):
             store.answer(q.id, "A", "ba1", bad, ["Scope"])
     assert store.get(q.id).answer is None  # type: ignore[union-attr]
+
+
+def test_ticket_revision_loads_once_and_makes_no_git_call(hub_with_ticket, monkeypatch):
+    hub = hub_with_ticket(rev=4)
+    finds = []
+    real_find = ticketfetch.find
+
+    def counting_find(*args):
+        finds.append(args)
+        return real_find(*args)
+
+    def forbidden(*_a, **_k):
+        raise AssertionError("ticket_revision must not render or call git")
+
+    monkeypatch.setattr(ticketfetch, "find", counting_find)
+    monkeypatch.setattr(ticketfetch, "render", forbidden)
+    monkeypatch.setattr(ticketfetch.gitio, "head_commit", forbidden)
+
+    assert ticket_revision(hub, REPO, US1) == 4
+    assert len(finds) == 1
+
+
+def test_ticket_revision_none_when_gone_and_error_when_unreadable(hub_with_ticket):
+    hub = hub_with_ticket(rev=2)
+    assert ticket_revision(hub, REPO, "TAL-GONE") is None
+    ticketfetch.find(hub, US1)[2].unlink()
+    with pytest.raises(ticketfetch.TicketFetchError, match="could not read"):
+        ticket_revision(hub, REPO, US1)

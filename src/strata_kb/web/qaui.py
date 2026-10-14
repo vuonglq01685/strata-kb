@@ -67,9 +67,7 @@ def _ticket_href(
     groups: dict[tuple[str, str], str], repo: str, ticket: str
 ) -> str | None:
     group = groups.get((repo, ticket))
-    if group is None:
-        return None
-    return f"/ui/tickets/{quote(group)}/{quote(ticket)}?repo={quote(repo, safe='')}"
+    return None if group is None else planstatus.plan_href(repo, group, ticket)
 
 
 def _age(asked_at: str) -> str:
@@ -130,12 +128,24 @@ def qa_routes(config: ServerConfig) -> list[Route]:
             detail="The federation is the only read source.",
         )
 
+    def _unavailable(exc: Exception) -> HTMLResponse:
+        logger.warning("Q&A pages cannot read the store: %s", exc, exc_info=True)
+        return render_error_page(
+            config,
+            status=503,
+            title="Q&A unavailable",
+            detail="The question store could not be read. See the server log.",
+        )
+
     def questions_page(request: Request) -> HTMLResponse:
         show_all = request.query_params.get("all") == "1"
         hub = api.hub_handle(config)
         if hub is None:
             return _hub_unreachable()
-        rows = _rows(hub)
+        try:
+            rows = _rows(hub)
+        except (sqlite3.Error, KbError) as exc:
+            return _unavailable(exc)
         return _render_page(
             "questions.html",
             config,
@@ -166,7 +176,10 @@ def qa_routes(config: ServerConfig) -> list[Route]:
         hub = api.hub_handle(config)
         if hub is None:
             return _hub_unreachable()
-        rows = _rows(hub, ticket_ref=ticket, repo=repo)
+        try:
+            rows = _rows(hub, ticket_ref=ticket, repo=repo)
+        except (sqlite3.Error, KbError) as exc:
+            return _unavailable(exc)
         # the hub revision is the same on every row of one ticket
         hub_rev = rows[0][2] if rows else None
         return _render_page(
