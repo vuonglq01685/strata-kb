@@ -165,3 +165,47 @@ def test_ensure_git_exclude_is_idempotent(tmp_path, run_git):
 
 def test_ensure_git_exclude_outside_git_is_noop(tmp_path):
     assert ensure_git_exclude(tmp_path) is False
+
+
+def _forged(
+    params: str = "n=16384,r=8,p=1", salt_len: int = 16, key_len: int = 64
+) -> str:
+    import base64
+
+    b64 = lambda n: base64.b64encode(b"x" * n).decode()  # noqa: E731
+    return f"scrypt${params}${b64(salt_len)}${b64(key_len)}"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        _forged("n=1048576,r=8,p=1"),  # maxmem would exceed INT_MAX
+        _forged("n=16384,r=32,p=16"),
+        _forged("n=2,r=1,p=1"),  # weak
+        _forged(key_len=1),
+        _forged(salt_len=4),
+        _forged(key_len=63),
+    ],
+)
+def test_non_current_hash_is_rejected_not_raised(tmp_path, stored):
+    assert check_password("pw", stored) is False
+    a = Accounts(tmp_path / "users.db")
+    with pytest.raises(AccountError):
+        a.add_hashed("u", stored, "dev")
+    assert a.count() == 0
+
+
+def test_lone_surrogate_password_does_not_raise(tmp_path):
+    h = hash_password("pw\ud800")
+    assert check_password("pw\ud800", h) and not check_password("pw", h)
+    a = Accounts(tmp_path / "users.db")
+    a.add("u", "\udc80", "dev")
+    assert a.verify("u", "\udc80") is not None
+
+
+def test_username_with_surrounding_whitespace_is_rejected(tmp_path):
+    a = Accounts(tmp_path / "users.db")
+    for name in (" u", "u ", " "):
+        with pytest.raises(AccountError):
+            a.add(name, "pw", "dev")
+    assert a.count() == 0

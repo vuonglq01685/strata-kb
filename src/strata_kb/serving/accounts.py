@@ -31,9 +31,6 @@ _SCHEME = "scrypt"
 _N, _R, _P = 2**14, 8, 1
 _SALT_BYTES = 16
 _KEY_BYTES = 64
-# Upper bounds on parameters read back from a stored hash, so a corrupt row
-# cannot make `verify` allocate gigabytes.
-_MAX_N, _MAX_R, _MAX_P = 2**20, 32, 16
 _SESSION_KEY_BYTES = 32
 _AUTH_DIR_NAME = ".kb-auth"
 _ENV_ADMIN = "STRATA_KB_BOOTSTRAP_ADMIN"
@@ -69,44 +66,43 @@ def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
 
-def _scrypt(password: str, salt: bytes, n: int, r: int, p: int, dklen: int) -> bytes:
+def _scrypt(password: str, salt: bytes) -> bytes:
+    # surrogatepass: a lone surrogate in a submitted password must hash, not raise.
     return hashlib.scrypt(
-        password.encode("utf-8"),
+        password.encode("utf-8", errors="surrogatepass"),
         salt=salt,
-        n=n,
-        r=r,
-        p=p,
-        dklen=dklen,
-        maxmem=256 * n * r * p,
+        n=_N,
+        r=_R,
+        p=_P,
+        dklen=_KEY_BYTES,
+        maxmem=256 * _N * _R * _P,
     )
 
 
 def hash_password(password: str) -> str:
     """`scrypt$n=16384,r=8,p=1$<salt-b64>$<hash-b64>` with a fresh random salt."""
     salt = secrets.token_bytes(_SALT_BYTES)
-    key = _scrypt(password, salt, _N, _R, _P, _KEY_BYTES)
+    key = _scrypt(password, salt)
     return f"{_SCHEME}$n={_N},r={_R},p={_P}${_b64(salt)}${_b64(key)}"
 
 
-def _parse_hash(stored: str) -> tuple[int, int, int, bytes, bytes] | None:
-    """(n, r, p, salt, key) of a well-formed stored hash, else None."""
+def _parse_hash(stored: str) -> tuple[bytes, bytes] | None:
+    """(salt, key) of a stored hash in exactly the current format, else None.
+
+    Only the current parameters are accepted: a stored hash is untrusted input
+    (DB row, env var), and anything else is either unverifiable or weak.
+    """
     try:
         scheme, params, salt_b64, key_b64 = stored.split("$")
-        if scheme != _SCHEME:
+        if scheme != _SCHEME or params != f"n={_N},r={_R},p={_P}":
             return None
-        values = dict(item.split("=") for item in params.split(","))
-        n, r, p = int(values["n"]), int(values["r"]), int(values["p"])
         salt = base64.b64decode(salt_b64, validate=True)
         key = base64.b64decode(key_b64, validate=True)
-    except (ValueError, KeyError, binascii.Error):
+    except (ValueError, binascii.Error):
         return None
-    if not (
-        1 < n <= _MAX_N and n & (n - 1) == 0 and 0 < r <= _MAX_R and 0 < p <= _MAX_P
-    ):
+    if len(salt) != _SALT_BYTES or len(key) != _KEY_BYTES:
         return None
-    if not salt or not key:
-        return None
-    return n, r, p, salt, key
+    return salt, key
 
 
 def check_password(password: str, stored: str) -> bool:
@@ -114,8 +110,11 @@ def check_password(password: str, stored: str) -> bool:
     parsed = _parse_hash(stored)
     if parsed is None:
         return False
-    n, r, p, salt, key = parsed
-    return hmac.compare_digest(_scrypt(password, salt, n, r, p, len(key)), key)
+    salt, key = parsed
+    try:
+        return hmac.compare_digest(_scrypt(password, salt), key)
+    except ValueError:
+        return False
 
 
 def password_version(stored: str) -> str:
@@ -181,9 +180,12 @@ class Accounts:
         return self.add_hashed(username, hash_password(password), role)
 
     def add_hashed(self, username: str, password_hash: str, role: str) -> User:
-        username = username.strip()
-        if not username:
-            raise AccountError("username must not be empty")
+        # Usernames are stored verbatim everywhere; surrounding whitespace is refused
+        # so `add` and `get`/`verify` can never disagree about the key.
+        if not username or username != username.strip():
+            raise AccountError(
+                "username must be non-empty without surrounding whitespace"
+            )
         _check_role(role)
         if _parse_hash(password_hash) is None:
             raise AccountError(
