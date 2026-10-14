@@ -157,7 +157,9 @@ def _check_headers(text: str) -> list[Issue]:
                     f"'> Related ticket:' must be a ticket id or `none` (got '{value}')",
                 )
             )
-    if ticket.PARENT_MISSION_LINE_RE.search(visible):
+    # Raw text, unmasked: planrev.parent_pin reads it that way, so lint and
+    # publish must agree on what counts as a parent-mission line.
+    if ticket.PARENT_MISSION_LINE_RE.search(text):
         issues.append(
             Issue(
                 "error",

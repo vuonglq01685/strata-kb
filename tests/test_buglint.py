@@ -256,6 +256,20 @@ def test_parent_mission_on_a_bug_is_an_error():
     )
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "> Parent mission: M-billing @ rev 2",
+        "<!--\n> Parent mission: M-billing @ rev 2\n-->",
+    ],
+)
+def test_parent_mission_line_anywhere_in_a_bug_is_an_error(line):
+    # planrev.parent_pin reads the raw text, so lint must too.
+    text = _bug(override={"## Impact": f"All exports.\n{line}"})
+    errors = _errors(_lint(text))
+    assert any("not a parent mission" in e for e in errors), errors
+
+
 @pytest.mark.parametrize("related", ["../etc", "a b/c", "-x", "", "x/y"])
 def test_related_ticket_must_be_none_or_a_safe_id(related):
     errors = _errors(_lint(_bug(related=related)))
