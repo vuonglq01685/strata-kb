@@ -278,6 +278,7 @@ thực từ một bản cũ.
 | Kế hoạch đã duyệt, hoặc đang hiện thực dở | `/dev-execute <id>` |
 | Code đã tự viết, cần phần mô tả PR | `/dev-handover <id>` |
 | Quên mất ticket đang ở đâu | `/dev-implement-ticket <id>` |
+| Bug do BA báo (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
 | Chỉ muốn kiểm tra một trích dẫn | `kb resolve <file>` |
 
 Mọi điểm vào đều kiểm tra lại độ mới của trích dẫn trước tiên. Hub có thể đã

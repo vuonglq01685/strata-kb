@@ -276,6 +276,7 @@ nothing. Wait for the BA; do not implement from an older copy.
 | Plan approved, or execution in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
+| A BA-reported bug (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
 | Just checking a citation | `kb resolve <file>` |
 
 Every entry point re-checks citation freshness first. The hub may have published

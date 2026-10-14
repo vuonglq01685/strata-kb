@@ -98,9 +98,12 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
 def split_assets(hub: HubHandle, ticket_ref: str) -> tuple[list[Path], list[str]]:
     """`(found, missing)` for the assets the fetched text references: files
     under the plan document's `assets/`, and the names of those not on disk
-    (diverted to the object store) or that are symlinks."""
+    (diverted to the object store) or that are symlinks. A symlinked
+    `assets/` folder, or one resolving outside the hub, holds nothing."""
     folder = find(hub, ticket_ref)[2].parent / ASSETS_DIR
     names = dict.fromkeys(ASSET_REF_RE.findall(render(hub, ticket_ref)))
+    if folder.is_symlink() or not folder.resolve().is_relative_to(hub.root.resolve()):
+        return [], list(names)
     found = [
         folder / n
         for n in names

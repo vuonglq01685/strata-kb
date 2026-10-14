@@ -100,6 +100,37 @@ def test_ticket_type_ignores_a_type_line_in_a_comment_or_fence():
     assert ticket.ticket_type("# T\n```\n> Type: bug\n```\n") == "story"
 
 
+def test_ticket_type_reads_only_the_header_block():
+    body_quote = "# T\n> Revision: 1\n\n## Summary\n> Type: individual accounts only\n"
+    assert ticket.ticket_type(body_quote) == "story"
+    assert ticket.ticket_type("# T\n\n## Summary\n> Type: bug\n") == "story"
+
+
+def test_story_with_a_type_blockquote_in_its_body_lints_without_a_type_error():
+    text = (
+        "# TAL-1 — A story\n> Revision: 1\n\n## Summary\n"
+        "> Type: individual accounts only\n"
+    )
+    assert not any("ype" in e for e in _errors(_lint(text)))
+
+
+def test_header_severity_wins_over_a_severity_quote_in_the_body():
+    text = _bug(
+        override={"## Actual result": "> Severity: S9\nHTTP 500 on export."},
+    )
+    assert _errors(_lint(text)) == []
+
+
+def test_body_severity_quote_does_not_stand_in_for_a_missing_header():
+    text = _bug(severity=None, override={"## Actual result": "> Severity: S2\nx"})
+    assert any("Severity" in e for e in _errors(_lint(text)))
+
+
+def test_related_ticket_is_read_from_the_header_only():
+    text = _bug(related="none", override={"## Impact": "> Related ticket: a b/c\nx"})
+    assert _errors(_lint(text)) == []
+
+
 # --- pass cases ---
 
 
@@ -399,7 +430,10 @@ def test_unfilled_template_fails_lint_on_placeholders():
     errors = _errors(report)
     assert not report.passed
     assert any("Steps to reproduce" in e for e in errors)
-    assert any("Attachments" in e or "placeholder" in e for e in errors)
+    assert (
+        "image 'BUG-<n>/<file>.png' is still a template placeholder — fill it in"
+        in errors
+    )
 
 
 def test_filled_template_passes():

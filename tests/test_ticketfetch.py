@@ -240,3 +240,17 @@ def test_assets_of_skips_a_missing_asset_and_a_ticket_without_images(
     assert ticketfetch.assets_of(hub, "BUG-12") == []
     publish_plan(hub.root, "ba-two", tmp_path / "ba-two", block)
     assert ticketfetch.assets_of(hub, "ba-two:" + US1) == []
+
+
+def test_split_assets_treats_a_symlinked_assets_folder_as_missing(
+    fed_hub, tmp_path, run_git
+):
+    hub, name = _bug_hub(fed_hub, tmp_path, run_git)
+    assets = ticketfetch.assets_of(hub, "BUG-12")[0].parent
+    outside = tmp_path / "outside-assets"
+    shutil.copytree(assets, outside)
+    shutil.rmtree(assets)
+    assets.symlink_to(outside, target_is_directory=True)
+    found, missing = ticketfetch.split_assets(hub, "BUG-12")
+    assert found == []
+    assert missing == [name]

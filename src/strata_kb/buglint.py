@@ -6,7 +6,7 @@ context, revision and DoR checks are `lintcore` / `planrev` /
 `ticketlint` primitives; this module holds what is specific to the bug
 contract (docs/superpowers/specs/2026-10-14-bug-hotfix-ticket-design.md).
 
-`attachment_images` and `image_problems` are public: `kb ticket publish`
+`attachment_images` and `image_problems` are public: `kb plan-ingest`
 validates the same images before copying them.
 """
 
@@ -135,7 +135,7 @@ def _check_steps(text: str) -> list[Issue]:
 
 
 def _check_headers(text: str) -> list[Issue]:
-    visible = mdmask._visible_text(text)
+    visible = ticket.header_block(text)
     issues: list[Issue] = []
     sev = ticket.SEVERITY_RE.search(visible)
     if sev is None or sev.group(1) not in ticket.SEVERITIES:

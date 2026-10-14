@@ -139,8 +139,9 @@ Re-entry is derived, never stored:
   reopen; `gh` absent → `PR ? unknown (gh not installed)`.
 - no branch matches `git branch --list "*<BUG-id>*"` and HEAD is the
   default branch → offer the exact `git switch -c fix/<BUG-id>` (hotfix:
-  `git switch -c hotfix/<BUG-id> <production-line>`, the line the Dev
-  named) and create it once the Dev agrees.
+  `git switch -c hotfix/<BUG-id> <production-line>`; this session may never
+  have named the production line, so ask the Dev for it first) and create
+  it once the Dev agrees.
 - the current branch names a *different* ticket id → STOP: "two tickets in
   flight; switch branches first".
 
@@ -154,7 +155,7 @@ If you catch yourself thinking any of these, you are skipping the Iron Law:
 - Proposing a fix before the reproduction test fails, or skipping the test
   because "it is simple"
 - Each fix reveals a new problem somewhere else (that is step 4's stop rule)
-- "One more fix attempt" after two have already failed
+- "One more fix attempt" after three have already failed
 
 ## Hard rules
 

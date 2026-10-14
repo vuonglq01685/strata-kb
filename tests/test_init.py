@@ -3121,6 +3121,7 @@ def test_dev_implement_ticket_fetches_from_hub_first():
     for name in names:
         assert "kb ticket fetch" in initcmd.read_template(name), name
     assert "*/ticket.md" in initcmd.read_template("impl-gitignore.txt")
+    assert "*/assets/" in initcmd.read_template("impl-gitignore.txt")
 
 
 def test_other_dev_skills_accept_a_fetched_ticket_file():
