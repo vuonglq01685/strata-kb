@@ -265,9 +265,13 @@ def build_intake_routes(
         if found is None:
             return JSONResponse({"state": "unknown"}, status_code=404)
         if auth is None:
-            return JSONResponse(
-                {"state": found.get("state", ""), "pr_url": found.get("pr_url", "")}
-            )
+            public = {
+                "state": found.get("state", ""),
+                "pr_url": found.get("pr_url", ""),
+            }
+            if "merged" in found:
+                public["merged"] = found["merged"]
+            return JSONResponse(public)
         return JSONResponse(found)
 
     async def publish(request: Request) -> JSONResponse:
@@ -384,6 +388,17 @@ def build_intake_routes(
                         archive,
                         kind=kind,
                     )
+                    # The registry `_authorize` read for THIS request decides,
+                    # never a second read.
+                    entry = registry.resolve(claims["repository"])
+                    merged: bool | None = None
+                    merge_detail = ""
+                    if pr_url and entry is not None and entry.auto_merge:
+                        merged, merge_detail = await run_in_threadpool(
+                            intake.auto_merge_pr, cfg, pr_url
+                        )
+                    elif pr_url:
+                        merged = False
             except intake.IntakeError as exc:
                 store.set(rid, source_commit, "error", detail=exc.detail)
                 return _err(exc)
@@ -419,8 +434,20 @@ def build_intake_routes(
                     },
                     status_code=500,
                 )
-            store.set(rid, source_commit, "done", pr_url=pr_url)
-            return JSONResponse({"repo_id": rid, "pr_url": pr_url})
+            store.set(
+                rid,
+                source_commit,
+                "done",
+                pr_url=pr_url,
+                detail=merge_detail,
+                merged=merged,
+            )
+            body: dict = {"repo_id": rid, "pr_url": pr_url}
+            if merged is not None:
+                body["merged"] = merged
+            if merge_detail:
+                body["detail"] = merge_detail
+            return JSONResponse(body)
         finally:
             # `except Exception` above does not catch a BaseException --
             # notably asyncio.CancelledError, raised into this coroutine when

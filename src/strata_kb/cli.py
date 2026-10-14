@@ -2447,6 +2447,7 @@ def publish(
         raise typer.Exit(1) from None
 
     if plan.route == "intake":
+        merged_seen: list[bool] = []
         try:
             ba_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
@@ -2458,6 +2459,7 @@ def publish(
                     if plan.refresh_plan
                     else ()
                 ),
+                on_merged=merged_seen.append,
             )
         except (
             OSError,
@@ -2469,7 +2471,9 @@ def publish(
         ) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
-        if pr_url:
+        if pr_url and merged_seen and merged_seen[-1]:
+            typer.echo(f"kb publish: merged on the hub — {pr_url}")
+        elif pr_url:
             typer.echo(f"kb publish: PR on the hub — {pr_url}")
             typer.echo("Content goes live when the PR is merged on the hub.")
         else:

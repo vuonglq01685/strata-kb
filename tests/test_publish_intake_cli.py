@@ -620,3 +620,53 @@ class TestBaPlanRefresh:
         assert result.exit_code == 1
         assert "could not refresh demo-plan" in result.output
         assert "kb-publish/" not in _git(bare, "tag", "--list")
+
+
+def _ci_env(monkeypatch):
+    monkeypatch.setenv(
+        "ACTIONS_ID_TOKEN_REQUEST_URL", "https://actions.local/token?x=1"
+    )
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "req-tok")
+
+
+@pytest.mark.parametrize(
+    "extra,prefix",
+    [({"merged": True}, "merged: "), ({"merged": False}, "PR: "), ({}, "PR: ")],
+)
+def test_ci_publish_prints_merged_only_when_merged(
+    child, monkeypatch, capsys, extra, prefix
+):
+    root, _ = child
+    _ci_env(monkeypatch)
+    http = FakeHTTP(
+        {
+            "https://kb.test/intake/manifest": (200, {"files": {}}),
+            "https://actions.local/token": (200, {"value": "oidc-jwt"}),
+            "https://kb.test/intake/publish": (
+                200,
+                {"repo_id": "child-a", "pr_url": "https://gh/pull/8", **extra},
+            ),
+        }
+    )
+    out = cipublish.run(root / ".kb", "https://kb.test", "child-a", http=http)
+    assert out == "https://gh/pull/8"
+    assert f"{prefix}https://gh/pull/8" in capsys.readouterr().out
+
+
+def test_publish_via_intake_reports_merged_flag(child):
+    root, _ = child
+    seen = []
+    pr = publish_mod.publish_via_intake(
+        root / ".kb",
+        "https://kb.test",
+        "child-a",
+        poll_interval=0,
+        timeout=5,
+        http_get_json=lambda url: (
+            200,
+            {"state": "done", "pr_url": "https://gh/pull/4", "merged": True},
+        ),
+        on_merged=seen.append,
+    )
+    assert pr == "https://gh/pull/4"
+    assert seen == [True]

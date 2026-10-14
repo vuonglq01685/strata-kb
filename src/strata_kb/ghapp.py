@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 API = "https://api.github.com"
 _GH_URL_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$")
+_PR_URL_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/?$")
 
 
 class GHAppError(RuntimeError):
@@ -139,6 +140,38 @@ def create_or_get_pr(
         if status2 == 200 and isinstance(prs, list) and prs:
             return prs[0]["html_url"]
     raise GHAppError(f"create PR on '{repo_full}' -> {status}")
+
+
+def parse_pr_url(url: str) -> tuple[str, int]:
+    """`https://github.com/owner/repo/pull/12` -> ("owner/repo", 12)."""
+    m = _PR_URL_RE.match(url)
+    if not m:
+        raise GHAppError(f"'{url}' is not a GitHub pull request URL")
+    return m.group(1), int(m.group(2))
+
+
+def merge_pr(
+    repo_full: str,
+    token: str,
+    number: int,
+    method: str = "merge",
+    http=_default_http,
+) -> None:
+    """Merge a PR. A repo that disallows merge commits answers 405 to
+    `merge`; retry once as `squash` before giving up."""
+    status, data = _call(
+        "PUT",
+        f"{API}/repos/{repo_full}/pulls/{number}/merge",
+        token,
+        {"merge_method": method},
+        http,
+    )
+    if status == 405 and method == "merge":
+        return merge_pr(repo_full, token, number, "squash", http)
+    if status == 200:
+        return
+    message = data.get("message", "") if isinstance(data, dict) else ""
+    raise GHAppError(f"merge PR #{number} on '{repo_full}' -> {status}: {message}")
 
 
 def find_open_pr(

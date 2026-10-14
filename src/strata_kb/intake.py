@@ -1269,7 +1269,7 @@ INTAKE_GIT_TIMEOUT_SECONDS = 300
 
 
 class StatusStore:
-    """(repo_id, commit) -> {state, pr_url, detail}; thread-safe; optional JSON persistence."""
+    """(repo_id, commit) -> {state, pr_url, detail[, merged]}; thread-safe; optional JSON persistence."""
 
     def __init__(self, path: Path | None = None) -> None:
         self._path = path
@@ -1286,14 +1286,19 @@ class StatusStore:
         return f"{repo_id}@{commit}"
 
     def set(
-        self, repo_id: str, commit: str, state: str, pr_url: str = "", detail: str = ""
+        self,
+        repo_id: str,
+        commit: str,
+        state: str,
+        pr_url: str = "",
+        detail: str = "",
+        merged: bool | None = None,
     ) -> None:
         with self._lock:
-            self._data[self._key(repo_id, commit)] = {
-                "state": state,
-                "pr_url": pr_url,
-                "detail": detail,
-            }
+            entry: dict = {"state": state, "pr_url": pr_url, "detail": detail}
+            if merged is not None:
+                entry["merged"] = merged
+            self._data[self._key(repo_id, commit)] = entry
             if self._path is not None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 # newline-exempt: server-side PR-state file under
@@ -1333,6 +1338,9 @@ class IntakeConfig:
     trusted_proxies: int = 0  # X-Forwarded-For hops to trust; 0 = ignore the header
     pr_hook: Callable[..., str] | None = (
         None  # test seam -- None = ghapp.create_or_get_pr
+    )
+    merge_hook: Callable[[str], None] | None = (
+        None  # test seam -- receives the PR URL; None = ghapp.merge_pr
     )
 
 
@@ -1859,3 +1867,25 @@ def _publish_in_worktree(
         base=base,
         http=http,
     )
+
+
+def auto_merge_pr(cfg: IntakeConfig, pr_url: str) -> tuple[bool, str]:
+    """Merge the publish PR (registry `auto_merge: true`). Returns
+    (merged, detail); a merge failure never fails the publish -- the PR just
+    stays open for a human, as without auto-merge."""
+    try:
+        if cfg.merge_hook is not None:
+            cfg.merge_hook(pr_url)
+        else:
+            http = cfg.http or ghapp._default_http
+            repo_full, number = ghapp.parse_pr_url(pr_url)
+            token = ghapp.mint_installation_token(cfg.creds, repo_full, http=http)
+            ghapp.merge_pr(repo_full, token, number, http=http)
+    except (ghapp.GHAppError, gitio.GitError) as exc:
+        logger.warning("auto-merge of %s failed: %s", pr_url, exc)
+        return False, f"auto-merge failed -- PR left open: {exc}"
+    try:
+        hub_mod.pull_once(cfg.hub_ref)
+    except gitio.GitError as exc:
+        logger.warning("hub pull after auto-merge of %s failed: %s", pr_url, exc)
+    return True, ""
