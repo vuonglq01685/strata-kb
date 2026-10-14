@@ -271,6 +271,32 @@ line: they are your call, not a re-ground.
 Run `/sa-ticket-ground` by hand only when `kb ticket check` fails with
 `re-run /sa-ticket-ground`.
 
+## 3.9 Reporting a bug
+
+A defect in something already live is a **bug ticket**, not a story: no "As a … I
+want …", and its acceptance is "the steps no longer reproduce the wrong result".
+Run `/ba-bug-report` (installed by `kb init --kind ba`). It asks what broke, the
+environment, the exact steps, expected and actual result, severity and
+screenshots, then drafts `tickets/bugs/BUG-<n>.md` from `docs/tickets/BUG-TEMPLATE.md`
+and lints it until `DoR: PASS`. A bug skips the maturity review and the technical
+grounding.
+
+- **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next
+  release), `> Severity: S1..S4` (required), optional `> Related ticket: <id|none>`.
+  No `> Parent mission:`.
+- **Sections.** Summary, Environment, Pre-conditions, Steps to reproduce, Expected
+  result, Actual result, Attachments, Impact, Definition of Ready.
+- **Attachments.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced in
+  `## Attachments` as `![caption](BUG-<n>/<file>.png)`. No screenshot: write
+  `N/A — <reason>`.
+- **Your part.** Tick the Definition of Ready after reading the draft (the agent
+  never does), commit the bug with its `BUG-<n>/` folder and publish it. `kb
+  publish` copies the images to the plan and the hub's ticket page shows them; the
+  Dev then runs `/dev-fix-bug BUG-<n>`.
+
+`kb ticket lint tickets/bugs/BUG-<n>.md` (and the CI gate) checks a bug against
+this contract on its own; it also checks the image files exist.
+
 ---
 
 # 4. Mission plans — for large features
@@ -792,7 +818,7 @@ kb mission lint missions/M-checkout.md
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
-**Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/sa-ticket-ground`, `/kb-publish`.
+**Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/sa-ticket-ground`, `/kb-publish`.
 
 ---
 

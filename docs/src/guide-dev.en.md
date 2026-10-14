@@ -276,6 +276,7 @@ nothing. Wait for the BA; do not implement from an older copy.
 | Plan approved, or execution in progress | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
+| A BA-reported bug (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
 | Just checking a citation | `kb resolve <file>` |
 
 Every entry point re-checks citation freshness first. The hub may have published
@@ -355,6 +356,25 @@ the Copilot and Cursor wrappers — the review still runs, but as a single pass
 reading only what it was handed, and it is a **report, not a gate**: the
 phase stops there and hands the result to you instead of advancing on its own
 say-so.
+
+## 4.5 Fixing a bug
+
+A bug the BA published is `BUG-<n>` (`> Type: bug` or `hotfix`, `> Severity:
+S1`–`S4`). It has no user story and no acceptance criteria: it is done when its
+steps no longer reproduce the wrong result. `/dev-fix-bug BUG-<n>` runs it in the
+style of `superpowers:systematic-debugging`:
+
+1. **Intake** — fetch the bug. `kb ticket fetch BUG-<n>` writes
+   `docs/impl/<id>/ticket.md` and copies the bug's screenshots (PNG or WebP) to
+   `docs/impl/<id>/assets/`; it warns once per image missing from the hub clone,
+   and you open `<hub>/assets/<name>`. MCP `kb_ticket_fetch` returns text only.
+   Branch `fix/<BUG-id>`, or `hotfix/<BUG-id>` from the production line you name.
+2. **Reproduce** — a failing test that shows the Actual result. No fix without it.
+3. **Root cause** — written hypotheses in `docs/impl/<id>/rootcause.md`. Three
+   failed hypotheses stop the flow for an architecture talk with you.
+4. **Fix** — one change at the root cause, full suite green.
+5. **Handover** — `/dev-handover` with bug rules: no design or plan, and the
+   reproduction test plus the root cause replace them.
 
 ---
 
@@ -638,7 +658,7 @@ Linux (CI) is that caveat, not real drift.
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
 
 **Slash commands:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
-`/dev-execute`, `/dev-handover`, `/dev-code-seed`.
+`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`.
 
 ---
 

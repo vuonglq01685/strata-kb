@@ -133,3 +133,55 @@ def export_body(text: str) -> str:
         if not dropping:
             kept.append(line)
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip() + "\n"
+
+
+# '> Type: bug|hotfix' under the H1 is the type discriminator. No such
+# line -> a user story, exactly as before: every pre-existing ticket stays
+# a story without an edit.
+TYPE_RE = re.compile(r"^>[ \t]*Type:[ \t]*(.*?)[ \t]*$", re.M)
+TICKET_TYPES: tuple[str, ...] = ("story", "bug", "hotfix")
+
+_FIRST_SECTION_RE = re.compile(r"^## ", re.M)
+
+
+def header_block(text: str) -> str:
+    """The visible text from the top down to the first '## ' heading: the
+    title and its '> Key: value' lines. A '> Type:' quote further down is
+    body prose, not a header."""
+    visible = mdmask._visible_text(text)
+    m = _FIRST_SECTION_RE.search(visible)
+    return visible if m is None else visible[: m.start()]
+
+
+def ticket_type(text: str) -> str:
+    """'story' when there is no '> Type:' line, else its whole value
+    lower-cased, minus a trailing '# comment'. An unknown (or empty) value is
+    returned as written so lint can report it. Only the header block counts
+    (`header_block`); a line inside a comment or fence is not a header."""
+    m = TYPE_RE.search(header_block(text))
+    if m is None:
+        return "story"
+    return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
+
+
+# Bug / hotfix contract (`buglint.py`). Like REQUIRED_HEADINGS this is a
+# compatibility contract for the BA install, the MCP server and CI.
+BUG_REQUIRED_HEADINGS: tuple[str, ...] = (
+    "## Summary",
+    "## Environment",
+    "## Pre-conditions",
+    "## Steps to reproduce",
+    "## Expected result",
+    "## Actual result",
+    "## Attachments",
+    "## Impact",
+    "## Definition of Ready",
+)
+BUG_RECOMMENDED_HEADINGS: tuple[str, ...] = ("## Open questions",)
+
+SEVERITIES: tuple[str, ...] = ("S1", "S2", "S3", "S4")
+
+# Header lines matched with their raw value (possibly empty) so lint can
+# tell "line absent" from "line present but blank".
+SEVERITY_RE = re.compile(r"^>[ \t]*Severity:[ \t]*(.*?)[ \t]*$", re.M)
+RELATED_TICKET_RE = re.compile(r"^>[ \t]*Related ticket:[ \t]*(.*?)[ \t]*$", re.M)

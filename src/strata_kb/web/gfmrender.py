@@ -30,6 +30,9 @@ _FORMATTER = HtmlFormatter(nowrap=True, classprefix="hl-")
 # a loose list item renders as `<li>\n<p>[ ] …`
 _TASK_RE = re.compile(r"<li>(\n?<p>)?\[([ xX])\] ")
 _BR_RE = re.compile(r"<br\s*/?>", re.I)
+# planingest's published bug attachment; the hub serves it at /assets/<name>.
+# Not imported: `web` stays free of the plan stack.
+_ASSET_SRC_RE = re.compile(r"^assets/([0-9a-f]{64}\.(?:png|webp))$")
 
 
 def _highlight(code: str, lang: str, _attrs: str) -> str:
@@ -91,11 +94,18 @@ def _task(m: re.Match[str]) -> str:
     return f'<li class="task">{m.group(1) or ""}<input type="checkbox" {box}disabled> '
 
 
+def _asset_srcs(children: list[Token]) -> None:
+    for c in children:
+        if c.type == "image" and (m := _ASSET_SRC_RE.match(str(c.attrGet("src")))):
+            c.attrSet("src", f"/assets/{m.group(1)}")
+
+
 def render(md: str) -> str:
     tokens = _MD.parse(md)
     for t in tokens:
         if t.children:
             t.children = _line_breaks(t.children)
+            _asset_srcs(t.children)
     out = _MD.renderer.render(tokens, _MD.options, {})
     return _TASK_RE.sub(_task, out)
 

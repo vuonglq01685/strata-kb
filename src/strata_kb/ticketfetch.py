@@ -11,7 +11,7 @@ from strata_kb import gitio, query
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.mdutils import slice_section
-from strata_kb.planingest import promote_headings
+from strata_kb.planingest import ASSET_REF_RE, ASSETS_DIR, promote_headings
 from strata_kb.planstatus import plan_docs, safe_name
 
 
@@ -93,3 +93,26 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
         "— do not edit; amend in the BA repo."
     )
     return f"# {title}\n\n{provenance}\n\n{promote_headings(body.strip(chr(10)))}\n"
+
+
+def split_assets(hub: HubHandle, ticket_ref: str) -> tuple[list[Path], list[str]]:
+    """`(found, missing)` for the assets the fetched text references: files
+    under the plan document's `assets/`, and the names of those not on disk
+    (diverted to the object store) or that are symlinks. A symlinked
+    `assets/` folder, or one resolving outside the hub, holds nothing."""
+    folder = find(hub, ticket_ref)[2].parent / ASSETS_DIR
+    names = dict.fromkeys(ASSET_REF_RE.findall(render(hub, ticket_ref)))
+    if folder.is_symlink() or not folder.resolve().is_relative_to(hub.root.resolve()):
+        return [], list(names)
+    found = [
+        folder / n
+        for n in names
+        if (folder / n).is_file() and not (folder / n).is_symlink()
+    ]
+    return found, [n for n in names if folder / n not in found]
+
+
+def assets_of(hub: HubHandle, ticket_ref: str) -> list[Path]:
+    """The files under the plan document's `assets/` that the fetched text
+    references (see `split_assets`)."""
+    return split_assets(hub, ticket_ref)[0]

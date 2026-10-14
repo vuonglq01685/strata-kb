@@ -2836,7 +2836,13 @@ def test_ba_mission_pipeline_line_names_the_new_step():
         assert needle in _ba_wrapper_text(name), name
 
 
-NON_DEV_WRAPPER_SKILLS = ("sa-ticket-ground", "ba-ticket-author", "ba-mission-plan")
+NON_DEV_WRAPPER_SKILLS = (
+    "sa-ticket-ground",
+    "ba-ticket-author",
+    "ba-mission-plan",
+    "ba-bug-report",
+    "dev-fix-bug",
+)
 
 
 def test_copilot_and_cursor_ba_sa_wrappers_differ_only_on_frontmatter_line_two():
@@ -3335,3 +3341,179 @@ def test_ba_publish_runs_only_on_a_publish_tag_ref():
     # group and cancel a pending publish.
     assert "concurrency" not in wf
     assert job["concurrency"] == {"group": "kb-publish", "cancel-in-progress": False}
+
+
+# --- 1.25.0: bug / hotfix tickets ---------------------------------------------
+#
+# Deliberately NOT in DEV_WORKFLOW_SKILLS (same reasoning as dev-code-seed
+# above): dev-fix-bug is a standalone flow of its own (reproduce -> root cause
+# -> fix -> handover), so the design/plan/execute SHARED-* canon (freshness
+# re-check of a story's kb-context, the design->plan->execute->handover Next
+# step text, the review contract) does not apply. It has its own Next step
+# block and its own pins below.
+
+BUG_SKILLS = ("ba-bug-report", "dev-fix-bug")
+
+
+def _bug_names(skill: str) -> tuple[str, ...]:
+    return _dev_wrapper_names(skill)
+
+
+@pytest.mark.parametrize("skill", BUG_SKILLS)
+def test_bug_skill_templates_exist_as_package_resources(skill):
+    base = resources.files("strata_kb").joinpath("templates/init")
+    for name in _bug_names(skill):
+        assert base.joinpath(name).is_file(), name
+    assert base.joinpath("bodies", f"{skill}.md").is_file()
+
+
+@pytest.mark.parametrize("skill", BUG_SKILLS)
+def test_bug_skill_frontmatter(skill):
+    claude = _read_init_template(f"claude-skill-{skill}.md")
+    assert claude.startswith(f"---\nname: {skill}\ndescription: ")
+    command = _read_init_template(f"claude-command-{skill}.md")
+    assert command.startswith("---\ndescription: ")
+    assert "argument-hint:" in command.split("\n---\n", 1)[0]
+    assert f"Invoke the `{skill}` skill" in command
+    assert "mode: agent" in _read_init_template(f"copilot-{skill}.prompt.md")
+    assert f"name: {skill}\n" in _read_init_template(f"cursor-{skill}.md")
+
+
+def test_bug_skill_copilot_and_cursor_differ_only_in_frontmatter():
+    for skill in BUG_SKILLS:
+        copilot = _read_init_template(f"copilot-{skill}.prompt.md").splitlines()
+        cursor = _read_init_template(f"cursor-{skill}.md").splitlines()
+        assert copilot[:1] + copilot[2:] == cursor[:1] + cursor[2:], skill
+
+
+def _full_forms(skill: str) -> tuple[str, ...]:
+    """Skill, Copilot and Cursor carry the whole body; the Claude command is a
+    thin invoker of the skill."""
+    names = _bug_names(skill)
+    return (names[0], names[2], names[3])
+
+
+def test_ba_bug_report_carries_the_six_steps_and_the_template():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        for step in (
+            "Intake",
+            "Related ticket",
+            "Draft",
+            "Ground",
+            "Lint",
+            "Hand over",
+        ):
+            assert f"**{step}**" in text, f"{name} missing step {step}"
+        assert "docs/tickets/BUG-TEMPLATE.md" in text, name
+        assert "tickets/bugs/BUG-<n>.md" in text, name
+        assert "tickets/bugs/BUG-<n>/" in text, name
+        assert "PNG or WebP" in text, name
+        assert "`kb_ticket_lint`" in text and "kb ticket lint" in text, name
+        assert "DoR: PASS" in text, name
+        assert "kb_context_new" in text, name
+        assert "kb publish" in text, name
+
+
+def test_ba_bug_report_hard_rules():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        assert "Never invent steps, values or error text" in text, name
+        assert "`OPEN(<owner>)`" in text and "## Open questions" in text, name
+        assert "One bug per ticket" in text, name
+        assert "Never edit a done story to describe a bug" in text, name
+        assert "> Parent mission:" in text, name  # named as forbidden on a bug
+
+
+def test_ba_bug_report_does_not_run_story_only_gates():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        assert "/sa-ticket-ground" not in text, name
+        assert "Maturity review" not in text, name
+
+
+def test_dev_fix_bug_carries_the_iron_law_and_the_stop_rules():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST" in text, name
+        assert "No fix without a failing reproduction test first" in text, name
+        assert "docs/impl/<id>/rootcause.md" in text, name
+        assert "Three failed hypotheses" in text, name
+        assert "question the architecture" in text, name
+        assert "superpowers:systematic-debugging" in text, name
+        assert "Counterpart in the superpowers plugin" in text, name
+
+
+def test_dev_fix_bug_carries_the_five_steps():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        for step in ("Intake", "Reproduce", "Root cause", "Fix", "Handover"):
+            assert f"**{step}**" in text, f"{name} missing step {step}"
+        assert "fix/<BUG-id>" in text and "hotfix/<BUG-id>" in text, name
+        assert "kb impl tidy" in text, name
+        assert "`kb_ticket_fetch`" in text and "kb ticket fetch BUG-<n>" in text, name
+        assert "docs/impl/<id>/assets/" in text, name
+        assert "`/dev-handover`" in text, name
+        assert "red flags" in text.lower(), name
+        assert "quick fix for now" in text, name
+
+
+def test_dev_fix_bug_ends_with_its_own_next_step_block():
+    for name in _full_forms("dev-fix-bug"):
+        text = _read_init_template(name)
+        assert "## Next step" in text, name
+        assert "(next in flow)" in text, name
+        assert (
+            "State: repro <✅|⬜> · root cause <✅|⬜> · fix <✅|⬜> · PR <"
+        ) in text, name
+
+
+def test_dev_fix_bug_is_outside_the_story_workflow_canon():
+    assert "dev-fix-bug" not in DEV_WORKFLOW_SKILLS
+
+
+def test_ba_bug_report_never_ticks_a_dor_box():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        assert "Tick NO `## Definition of Ready` box yourself" in text, name
+        assert "the BA ticks them all after reading the draft" in text, name
+        assert "Tick no `## Definition of Ready` box on a bug" in text, name
+        assert "the lint proves" not in text, name
+
+
+def test_dev_fix_bug_handover_overrides_the_story_wording():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert (
+            'Skip its "Freshness re-check" when the bug has no `## KB context`' in text
+        ), name
+        assert "design, plan and tasks as `n/a (bug)`" in text, name
+        assert (
+            "maps the reproduction test (Steps to reproduce → Expected result)" in text
+        ), name
+        assert "instead of acceptance criteria" in text, name
+        assert "against the production line the Dev named at Intake" in text, name
+        assert "not `git merge-base <default-branch> HEAD`" in text, name
+
+
+def test_dev_fix_bug_failed_fix_returns_to_root_cause_and_never_loops():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "A fix that fails" in text, name
+        assert "clear the `Root cause:` line of `rootcause.md`" in text, name
+        assert "return to step 3 (Root cause)" in text, name
+        assert "three or more rows of the hypothesis log failed" in text, name
+        assert "never a fourth hypothesis" in text, name
+        assert "this state never loops back into Fix" in text, name
+
+
+def test_dev_fix_bug_offers_the_branch_command_instead_of_creating_it():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "Create the branch" not in text, name
+        assert (
+            "Offer the exact branch command and create the branch once the Dev agrees"
+            in text
+        ), name
+        assert "git switch -c fix/<BUG-id>" in text, name
+        assert "git switch -c hotfix/<BUG-id> <production-line>" in text, name

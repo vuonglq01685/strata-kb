@@ -9,6 +9,7 @@ no hub, and no clock: the output is a pure function of the working tree.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import unicodedata
@@ -19,12 +20,14 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import (
+    buglint,
     kinds,
     lintcore,
     missionlint,
     missionnext,
     models,
     planrev,
+    ticket,
     ticketlint,
 )
 from strata_kb.codeingest import core
@@ -38,6 +41,10 @@ HUB_UNREACHABLE = "hub-unreachable"
 # Prose the L2 keeps; every table is kept regardless (build._check_tables).
 _MISSION_PROSE = ("Summary", "Business goal")
 _TICKET_PROSE = ("User Story", "Acceptance Criteria")
+_BUG_PROSE = ("Summary", "Steps to reproduce", "Expected result", "Actual result")
+ASSETS_DIR = "assets"
+# A published bug's image reference (`_attach` writes it); ticketfetch reads it.
+ASSET_REF_RE = re.compile(rf"{ASSETS_DIR}/([0-9a-f]{{64}}\.(?:png|webp))")
 _DROPPED_SECTIONS = ("## Review record", "## Definition of Ready")
 _ATX_RE = re.compile(r"^(#{1,6})(?=[ \t]|$)")
 _SENTENCE_RE = re.compile(r"^(.+?[.!?])(?:\s|$)")
@@ -63,6 +70,8 @@ class _Item:
     text: str
     is_mission: bool
     group: str = ""
+    is_bug: bool = False
+    assets: tuple[tuple[str, bytes], ...] = ()  # (sha-named file, content)
 
 
 def _fenced(lines: list[str]) -> list[bool]:
@@ -164,8 +173,9 @@ def _prose(l3_body: str, headings: tuple[str, ...]) -> list[str]:
     return [re.sub(r"\n{3,}", "\n\n", b).strip() for b in blocks if "\n" in b.strip()]
 
 
-def _l2_body(l3_body: str, is_mission: bool) -> str:
-    parts = _prose(l3_body, _MISSION_PROSE if is_mission else _TICKET_PROSE)
+def _l2_body(l3_body: str, is_mission: bool, is_bug: bool = False) -> str:
+    prose = _MISSION_PROSE if is_mission else _BUG_PROSE if is_bug else _TICKET_PROSE
+    parts = _prose(l3_body, prose)
     parts += extract_tables(l3_body)
     return "\n\n".join(parts)
 
@@ -187,7 +197,7 @@ def _section(item: _Item) -> CodeSection | None:
         title=title,
         summary=_summary(item.text, title),
         group=item.group,
-        l2_md=_l2_body(l3, item.is_mission),
+        l2_md=_l2_body(l3, item.is_mission, item.is_bug),
         l3_md=l3,
     )
 
@@ -241,6 +251,45 @@ def _lint_reason(report) -> str | None:
     return f"lint error: {errors[0]}{more}"
 
 
+def _via_symlink(base: Path, rel: str) -> bool:
+    cur = base
+    for part in Path(rel).parts:
+        cur = cur / part
+        if cur.is_symlink():
+            return True
+    return False
+
+
+def _attach(
+    text: str, stem: str, base_dir: Path
+) -> tuple[str, tuple[tuple[str, bytes], ...]] | str:
+    """Read each `## Attachments` image of a bug and rewrite its reference to
+    `assets/<sha256>.<ext>`. Returns `(text, assets)`, or the reason the bug
+    cannot ship. A symlinked image (or folder) is refused: publish must not
+    copy files from outside the repo."""
+    mapping: dict[str, str] = {}
+    assets: dict[str, bytes] = {}
+    root = base_dir.resolve()
+    for src in buglint.attachment_images(text):
+        if src in mapping:
+            continue
+        if problems := buglint.image_problems(src, stem, None):
+            return problems[0]  # lint catches these; this is defence
+        path = base_dir / src
+        if _via_symlink(base_dir, src) or not path.resolve().is_relative_to(root):
+            return f"image '{src}' is a symlink or lies outside the ticket's folder — copy the real file"
+        if not path.is_file():
+            return f"image '{src}' not found next to the ticket"
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            return f"cannot read image '{src}': {exc.strerror or exc}"
+        name = f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
+        mapping[src] = f"{ASSETS_DIR}/{name}"
+        assets[name] = data
+    return buglint.rewrite_images(text, mapping), tuple(assets.items())
+
+
 def _select(
     repo_root: Path, missions_dir: Path, tickets_dir: Path, report: PlanIngestReport
 ) -> list[_Item]:
@@ -288,9 +337,17 @@ def _select(
         if reason:
             report.skipped.append((file, reason))
             continue
+        is_bug = ticket.ticket_type(text) in ("bug", "hotfix")
+        assets: tuple[tuple[str, bytes], ...] = ()
+        if is_bug:
+            attached = _attach(text, path.stem, path.parent)
+            if isinstance(attached, str):
+                report.skipped.append((file, attached))
+                continue
+            text, assets = attached
         pin = planrev.parent_pin(text)
         group = pin[0] if pin and pin[0] in live else TICKETS_GROUP
-        published.append(_Item(us_id, file, text, False, group))
+        published.append(_Item(us_id, file, text, False, group, is_bug, assets))
     return published
 
 
@@ -327,6 +384,27 @@ def _drop_index_entry(kb_dir: Path, doc_id: str) -> None:
         models.save_yaml_model(index_path, index)
     except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError) as exc:
         raise PlanIngestError(f"cannot update {index_path}: {exc}") from exc
+
+
+def _sync_assets(doc_dir: Path, wanted: dict[str, bytes]) -> None:
+    """`<doc_dir>/assets/` holds exactly `wanted` (name -> bytes); the folder
+    goes when nothing is wanted."""
+    folder = doc_dir / ASSETS_DIR
+    if folder.is_symlink():
+        folder.unlink()
+    if not wanted:
+        shutil.rmtree(folder, ignore_errors=True)
+        return
+    folder.mkdir(exist_ok=True)
+    for stale in folder.iterdir():
+        if stale.name in wanted:
+            continue
+        if stale.is_dir() and not stale.is_symlink():
+            shutil.rmtree(stale)
+        else:
+            stale.unlink()
+    for name, data in wanted.items():
+        (folder / name).write_bytes(data)
 
 
 def run(
@@ -390,6 +468,7 @@ def run(
         for stale in doc_dir.glob("*.md"):
             if stale.name not in written:
                 stale.unlink()
+        _sync_assets(doc_dir, {n: d for i in items for n, d in i.assets})
         manifest = models.Manifest(
             id=doc_id,
             title=title,

@@ -374,3 +374,160 @@ def test_unreadable_mission_raises(tmp_path: Path):
     (tmp_path / "missions" / "M-bad.md").write_bytes(b"\xff\xfe\x00bad")
     with pytest.raises(planingest.PlanIngestError, match="M-bad.md"):
         run_plan(tmp_path)
+
+
+# --- bug attachments ------------------------------------------------------
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+_DOR_DONE = (
+    "- [x] Steps reproduce the actual result on the stated environment\n"
+    "- [x] Every open question has an owner"
+)
+
+
+def _bug_text(images: tuple[str, ...] = ("BUG-12/toast.png",)) -> str:
+    from tests.test_buglint import _bug
+
+    body = "\n".join(f"![toast]({src})" for src in images) or "N/A — none"
+    return _bug(
+        override={"## Attachments": body, "## Definition of Ready": _DOR_DONE},
+        extra="",
+    )
+
+
+def _sha(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def _write_bug(root: Path, text: str, png: bytes | None = _PNG) -> None:
+    write_repo(root, {}, {"bugs/BUG-12.md": text})
+    if png is not None:
+        folder = root / "tickets" / "bugs" / "BUG-12"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "toast.png").write_bytes(png)
+
+
+def test_bug_publishes_with_sha_named_asset_and_rewritten_refs(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    report = run_plan(tmp_path)
+    assert report.published == ["BUG-12"] and not report.skipped
+    name = f"{_sha(_PNG)}.png"
+    assert (tmp_path / ".kb" / "demo-plan" / "assets" / name).read_bytes() == _PNG
+    assert f"![toast](assets/{name})" in doc_file(tmp_path, "tickets.raw.md")
+    assert "BUG-12/toast.png" not in doc_file(tmp_path, "tickets.raw.md")
+
+
+def test_bug_l2_keeps_reproduction_prose_only(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    run_plan(tmp_path)
+    l2 = doc_file(tmp_path, "tickets.md")
+    for kept in ("Steps to reproduce", "Expected result", "Actual result", "Summary"):
+        assert f"### {kept}" in l2
+    for dropped in ("Environment", "Impact", "Pre-conditions", "User Story"):
+        assert f"### {dropped}" not in l2
+
+
+def test_rerun_without_the_image_deletes_the_asset(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    run_plan(tmp_path)
+    assets = tmp_path / ".kb" / "demo-plan" / "assets"
+    assert any(assets.iterdir())
+    _write_bug(tmp_path, _bug_text(images=()), png=None)
+    (tmp_path / "tickets" / "bugs" / "BUG-12" / "toast.png").unlink()
+    report = run_plan(tmp_path)
+    assert report.published == ["BUG-12"]
+    assert not assets.exists() or not any(assets.iterdir())
+
+
+def test_unreferenced_old_asset_is_pruned_and_shared_asset_kept(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    run_plan(tmp_path)
+    assets = tmp_path / ".kb" / "demo-plan" / "assets"
+    stray = assets / ("0" * 64 + ".png")
+    stray.write_bytes(b"old")
+    run_plan(tmp_path)
+    assert not stray.exists()
+    assert (assets / f"{_sha(_PNG)}.png").exists()
+
+
+def test_bug_with_missing_image_is_skipped(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text(), png=None)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert report.skipped and "not found" in report.skipped[0][1]
+
+
+def test_bug_with_symlinked_image_is_skipped_and_not_copied(tmp_path: Path):
+    outside = tmp_path / "secret.png"
+    outside.write_bytes(_PNG)
+    _write_bug(tmp_path, _bug_text(), png=None)
+    folder = tmp_path / "tickets" / "bugs" / "BUG-12"
+    folder.mkdir()
+    (folder / "toast.png").symlink_to(outside)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert "symlink" in report.skipped[0][1]
+    assert not (tmp_path / ".kb" / "demo-plan" / "assets").exists()
+
+
+def test_bug_with_symlinked_folder_is_skipped(tmp_path: Path):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "toast.png").write_bytes(_PNG)
+    _write_bug(tmp_path, _bug_text(), png=None)
+    (tmp_path / "tickets" / "bugs" / "BUG-12").symlink_to(outside)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert "symlink" in report.skipped[0][1]
+
+
+def test_assets_folder_does_not_break_ownership_check_or_cleanup(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    run_plan(tmp_path)
+    run_plan(tmp_path)  # second run: _check_owned sees manifest + assets/
+    (tmp_path / "tickets" / "bugs" / "BUG-12.md").unlink()
+    run_plan(tmp_path)  # nothing qualifies: whole doc dir (assets too) removed
+    assert not (tmp_path / ".kb" / "demo-plan").exists()
+
+
+def test_bug_image_listed_in_attachments_and_elsewhere_is_rewritten_everywhere(
+    tmp_path: Path,
+):
+    from tests.test_buglint import _bug
+
+    line = "![toast](BUG-12/toast.png)"
+    text = _bug(
+        override={
+            "## Actual result": f"HTTP 500.\n{line}",
+            "## Attachments": line,
+            "## Definition of Ready": _DOR_DONE,
+        }
+    )
+    _write_bug(tmp_path, text)
+    assert run_plan(tmp_path).published == ["BUG-12"]
+    name = f"{_sha(_PNG)}.png"
+    for f in ("tickets.md", "tickets.raw.md"):
+        body = doc_file(tmp_path, f)
+        assert "BUG-12/toast.png" not in body
+        assert body.count(f"![toast](assets/{name})") >= 1
+    assert doc_file(tmp_path, "tickets.raw.md").count(f"assets/{name}") == 2
+
+
+def test_bug_image_in_another_bugs_folder_is_skipped(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text(images=("BUG-13/x.png",)), png=None)
+    other = tmp_path / "tickets" / "bugs" / "BUG-13"
+    other.mkdir()
+    (other / "x.png").write_bytes(_PNG)
+    report = run_plan(tmp_path)
+    assert report.published == []
+    assert "not under 'BUG-12/'" in report.skipped[0][1]
+
+
+def test_attach_checks_the_bug_folder_itself(tmp_path: Path):
+    # defence in depth: lint already rejects this, _attach must too
+    (tmp_path / "BUG-13").mkdir()
+    (tmp_path / "BUG-13" / "x.png").write_bytes(_PNG)
+    got = planingest._attach(_bug_text(images=("BUG-13/x.png",)), "BUG-12", tmp_path)
+    assert isinstance(got, str) and "not under 'BUG-12/'" in got

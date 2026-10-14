@@ -168,6 +168,26 @@ them straight away. The first story of such a mission is the **foundation
 slice**: what the architecture document says must exist before any feature
 story, with every other story depending on it in `## Sequencing`.
 
+## Report a bug
+
+A defect in something already live is a bug ticket, not a story. Run
+`/ba-bug-report` (installed by `kb init --kind ba`): it asks what broke, the
+environment, the exact steps, expected and actual result, severity and
+screenshots, drafts `tickets/bugs/BUG-<n>.md` from
+`docs/tickets/BUG-TEMPLATE.md` and lints it until `DoR: PASS`.
+
+- Header lines: `> Type: bug|hotfix` (a hotfix ships ahead of the next
+  release), `> Severity: S1|S2|S3|S4` (required), optional
+  `> Related ticket: <id|none>`. No `> Parent mission:`.
+- Screenshots: PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced in
+  `## Attachments` as `![caption](BUG-<n>/<file>.png)`. None: write
+  `N/A — <reason>`.
+- You tick the Definition of Ready after reading the draft, commit the bug
+  with its `BUG-<n>/` folder and publish it (`/kb-publish`, or merge to
+  `main`). The Dev then runs `/dev-fix-bug BUG-<n>`.
+- By hand: `kb ticket lint tickets/bugs/BUG-<n>.md` (it also checks the image
+  files exist).
+
 ## Mission plans — for large features
 
 A feature that spans several User Stories gets a **mission plan** first;

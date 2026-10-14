@@ -424,3 +424,41 @@ def test_fetch_refuses_traversal_and_absolute_ids(
 
     assert list(work.iterdir()) == []
     assert not outside.exists()
+
+
+def test_fetch_copies_bug_assets_next_to_ticket(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    from tests.test_ticketfetch import _bug_hub
+
+    _, name = _bug_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", "BUG-12", "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    impl = work / "docs" / "impl" / "BUG-12"
+    assert f"](assets/{name})" in (impl / "ticket.md").read_text(encoding="utf-8")
+    assert (impl / "assets" / name).is_file()
+
+
+def test_fetch_warns_per_asset_missing_from_the_hub_clone(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    from strata_kb import ticketfetch
+    from tests.test_ticketfetch import _bug_hub
+
+    hub, name = _bug_hub(fed_hub, tmp_path, run_git)
+    ticketfetch.assets_of(hub, "BUG-12")[0].unlink()
+    work = tmp_path / "dev-repo"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", "BUG-12", "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    assert f"warning: assets/{name} is not in the hub clone" in result.output
+    assert f"/assets/{name}" in result.output
+    assert not (work / "docs" / "impl" / "BUG-12" / "assets").exists()

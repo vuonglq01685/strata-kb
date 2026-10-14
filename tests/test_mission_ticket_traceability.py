@@ -213,7 +213,7 @@ def _real_ticket_text(block: str) -> str:
         # Ticked, not '- [ ]': this fixture is a real, fully-formed
         # ticket that is meant to lint completely clean end-to-end
         # (`ticket_report.issues == []` below) — an unticked DoR box is
-        # only a warning (ticketlint._check_dor_checklist, HIGH-1), but
+        # only a warning (lintcore.check_dor_checklist, HIGH-1), but
         # a warning is still an issue, and ticking it is a real, BA-made
         # decision this fixture can legitimately make for itself.
         "## Definition of Ready": "- [x] Every citation resolves",

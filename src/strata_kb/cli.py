@@ -172,16 +172,17 @@ This repo can be one of four kinds:
           the main hub. Does not host the company-wide MCP/Web service.
 
   ba    — Requirements repo. Drafts Dev-ready tickets grounded in the KB
-          via the ba-ticket-author skill, versions them under tickets/,
-          and gates them with a CI Definition-of-Ready check. Never
-          ingests or summarizes KB content; publishes only its own plan
+          via the ba-ticket-author skill (bugs and hotfixes via
+          ba-bug-report), versions them under tickets/, and gates them
+          with a CI Definition-of-Ready check. Never ingests or
+          summarizes KB content; publishes only its own plan
           (`<repo_id>-plan`) to the hub.
 
   dev   — Product code repo. Implements BA tickets grounded in the KB via the
           dev-implement-ticket workflow (design → plan → execute → handover,
-          TDD enforced), and, from Stage B on, publishes generated knowledge
-          about its own source code back to the hub. Never ingests outside
-          documents.
+          TDD enforced; bugs via dev-fix-bug) and, from Stage B on, publishes
+          generated knowledge about its own source code back to the hub.
+          Never ingests outside documents.
 """
 
 
@@ -428,7 +429,7 @@ def init(
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
-            "run /ba-ticket-author"
+            "run /ba-ticket-author (or /ba-bug-report for a bug or hotfix)"
         )
         typer.echo(
             "  4. kb publish    (or /kb-publish)"
@@ -448,7 +449,8 @@ def init(
         )
         typer.echo(
             "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
-            "run /dev-implement-ticket <ticket>"
+            "run /dev-implement-ticket <ticket> "
+            "(or /dev-fix-bug <BUG-id> for a bug or hotfix)"
         )
     quickstart_name = {
         "ba": "QUICKSTART-BA.md",
@@ -3094,12 +3096,15 @@ def ticket_fetch(
 ) -> None:
     """Read a ticket from the hub by id and save it as a local ticket file.
     Always overwrites; the BA's repo stays the place to amend it."""
+    import shutil
+
     from strata_kb import ticketfetch
 
     handle = _hub_or_exit(hub, kb_dir)
     try:
         repo, doc, _ = ticketfetch.find(handle, ticket)
         text = ticketfetch.render(handle, ticket)
+        files, missing = ticketfetch.split_assets(handle, ticket)
     except ticketfetch.TicketFetchError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
@@ -3111,9 +3116,19 @@ def ticket_fetch(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
+        if files:
+            (path.parent / "assets").mkdir(exist_ok=True)
+        for f in files:
+            shutil.copyfile(f, path.parent / "assets" / f.name)
     except OSError as exc:
         typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
+    for name in missing:
+        typer.secho(
+            f"warning: assets/{name} is not in the hub clone — open it on the hub at /assets/{name}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     typer.echo(f"fetched: {repo}:{doc} §{ticket_id} -> {path}")
 
 

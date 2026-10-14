@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from strata_kb import (
     acquality,
+    buglint,
     lintcore,
     mission,
     missionlint,
@@ -94,7 +95,7 @@ _FILL_EXEMPT: frozenset[str] = frozenset(
     {
         "## KB context",  # parsed by check_context_block
         "## Business flow",  # check_diagram
-        "## Definition of Ready",  # _check_dor_checklist, below
+        "## Definition of Ready",  # lintcore.check_dor_checklist
     }
 )
 
@@ -478,39 +479,6 @@ def _check_nfr_targets(text: str) -> list[Issue]:
     return issues
 
 
-_DOR_HEADING = "## Definition of Ready"
-
-
-def _check_dor_checklist(text: str) -> list[Issue]:
-    """The checklist must exist; ticking it is the BA's job at review
-    time, so an unticked box is a warning — the wrappers forbid the agent
-    from ticking one itself."""
-    body = lintcore.section_body(text, _DOR_HEADING)
-    if body is None:
-        return []
-    rows = [
-        m
-        for line in body.splitlines()
-        if (m := lintcore.CHECKBOX_STATE_RE.match(line.strip()))
-    ]
-    if not rows:
-        return [
-            Issue(
-                "error",
-                f"'{_DOR_HEADING}' has no '- [ ]' checklist rows — keep the "
-                "template's checklist",
-            )
-        ]
-    return [
-        Issue(
-            "warning",
-            f"Definition of Ready item is not ticked: '{m.group('text').strip()}'",
-        )
-        for m in rows
-        if m.group("mark") == " "
-    ]
-
-
 def check_parent_mission(
     text: str,
     path: Path | None,
@@ -671,6 +639,27 @@ def lint(
     # mark) would otherwise mismatch every one of them — see
     # `searchdb.tokenize`'s identical rationale and its test's NFD fixture.
     text = unicodedata.normalize("NFC", text)
+    kind = ticket.ticket_type(text)
+    if kind in ("bug", "hotfix"):
+        return buglint.lint(
+            text,
+            hub,
+            path=path,
+            missions_dir=missions_dir,
+            fail_on_stale=fail_on_stale,
+            ticket_id=ticket_id,
+            load_mission=load_mission,
+        )
+    if kind != "story":
+        return LintReport(
+            issues=[
+                Issue(
+                    "error",
+                    f"unknown ticket type '{kind}' — use one of: story "
+                    "(no Type line), bug, hotfix",
+                )
+            ]
+        )
     issues: list[Issue] = []
     notes: list[str] = []
     issues += lintcore.check_title(text)
@@ -705,7 +694,7 @@ def lint(
     issues += _check_extended_sections(text)
     issues += _check_owned_unknowns(text)
     issues += _check_nfr_targets(text)
-    issues += _check_dor_checklist(text)
+    issues += lintcore.check_dor_checklist(text)
     issues += planrev.check_revision(text)
     issues += lintcore.check_review_record(text)
 

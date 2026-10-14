@@ -46,3 +46,19 @@ def test_inline_html_is_shown_as_text_and_br_breaks_the_line():
 def test_an_html_block_never_swallows_the_markdown_after_it():
     out = render("<div>\n- [ ] item\n**bold**\n")
     assert "item" in out and "bold" in out and "<div>" not in out
+
+
+def test_asset_image_src_is_rewritten_to_the_hub_asset_route():
+    name = "a" * 64 + ".png"
+    out = render(f"![toast](assets/{name})\n")
+    assert f'src="/assets/{name}"' in out
+
+
+def test_other_image_srcs_are_left_alone():
+    for src in (
+        "assets/short.png",
+        "assets/" + "a" * 64 + ".gif",
+        "other/" + "a" * 64 + ".png",
+        "https://x.test/a.png",
+    ):
+        assert f'src="{src}"' in render(f"![x]({src})\n")

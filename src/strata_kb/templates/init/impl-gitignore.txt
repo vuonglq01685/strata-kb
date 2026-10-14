@@ -13,3 +13,7 @@
 # A ticket fetched from the hub (`kb ticket fetch`) is derivable from it —
 # the BA repo owns the source, so never commit the copy.
 */ticket.md
+
+# Assets of a fetched ticket (`kb ticket fetch`) are hub-derived screenshots
+# that may hold personal data — derivable from the hub, never committed.
+*/assets/

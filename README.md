@@ -142,9 +142,9 @@ manifest is not detectable; `--assets none|s3` (hub) records the asset store.
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and
 Cursor**: `/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`,
 `/kb-docker-setup` on hub and child repos; `/ba-ticket-author`,
-`/ba-mission-plan`, `/sa-ticket-ground` and `/kb-publish` (it publishes the
-plan) on a `ba` repo; the five
-dev-workflow commands on a `dev` repo. MCP client wiring ships as
+`/ba-mission-plan`, `/ba-bug-report`, `/sa-ticket-ground` and `/kb-publish` (it
+publishes the plan) on a `ba` repo; the five
+dev-workflow commands and `/dev-fix-bug` on a `dev` repo. MCP client wiring ships as
 `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
 stdio on the hub, HTTP-with-env-vars everywhere else.
 
@@ -1067,6 +1067,22 @@ revision that is not on the hub is one `stale` finding, `baseline not on hub`.
 Only cited sections count. It needs the same `STRATA_KB_HUB` variable
 and `KB_HUB_TOKEN` secret as `kb-ticket-lint.yml`.
 
+**Bug tickets.** A defect in something already live is a bug ticket, not a
+story. `/ba-bug-report` drafts it as `tickets/bugs/BUG-<n>.md` from
+`docs/tickets/BUG-TEMPLATE.md` (installed by `kb init --kind ba`). Under the
+title it carries `> Type: bug|hotfix` (a hotfix ships ahead of the next
+release), `> Severity: S1..S4` (required) and optionally `> Related ticket:
+<id|none>`; it has no `> Parent mission:`. Sections: Summary, Environment,
+Pre-conditions, Steps to reproduce, Expected result, Actual result,
+Attachments, Impact, Definition of Ready. Screenshots are PNG or WebP files in
+`tickets/bugs/BUG-<n>/`, referenced in `## Attachments` as
+`![caption](BUG-<n>/<file>.png)`, or `N/A — <reason>`. `kb ticket lint`, MCP
+`kb_ticket_lint` and `kb-ticket-lint.yml` lint a bug against this contract
+automatically; stories are unchanged. `kb plan-ingest` (so `kb publish` and the
+merge-to-`main` CI) publishes a ready bug with its images copied to
+`<repo>-plan/assets/<sha256>.<ext>`, and the hub's ticket page renders them.
+The BA ticks the Definition of Ready; the agent never does.
+
 Scaffold with `kb init --kind ba`; the generated `QUICKSTART-BA.md` covers
 `kb mcp-setup` (`/kb-mcp-setup`), which writes the hub's HTTP MCP credentials
 (`STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN`) into `.env` and verifies them
@@ -1106,6 +1122,7 @@ sidecar file.
 | Plan approved, or execution underway | `/dev-execute <id>` |
 | Code hand-implemented, needs a PR write-up | `/dev-handover <id>` |
 | Lost track of where a ticket stands | `/dev-implement-ticket <id>` |
+| A BA-reported bug (`BUG-<n>`) | `/dev-fix-bug BUG-<n>` |
 | Just checking a citation | `kb resolve <file>` |
 
 Work lives in `docs/impl/<ticket-id>/design.md` (every ticket, one paragraph for a small one) and
@@ -1144,6 +1161,18 @@ no local mission file. A ticket whose mission moved on after it was written is
 `draft` on the BA side (`kb mission next`, reason `parent mission rev <M> affects
 this story`) and is left out of `-plan`: a Dev sees the story as *not ready* in
 the Ticket menu, and `kb ticket fetch` finds nothing until the BA amends and republishes.
+
+**Fixing a bug.** `/dev-fix-bug BUG-<n>` (or a saved bug's path) is the bug
+counterpart of `/dev-implement-ticket`, in the style of
+`superpowers:systematic-debugging`: Intake (fetch, then branch `fix/<BUG-id>`,
+or `hotfix/<BUG-id>` off the production line the Dev names) → Reproduce (a
+failing test that shows the Actual result; no fix without it) → Root cause
+(written hypotheses in `docs/impl/<id>/rootcause.md`; three failed ones stop the
+flow for an architecture talk) → Fix (one change at the root cause) → Handover
+(`/dev-handover` with bug rules: no design or plan, the reproduction test and
+the root cause replace them). `kb ticket fetch BUG-<n>` also copies the bug's
+images to `docs/impl/<id>/assets/` and warns once per image missing from the
+hub clone (open `<hub>/assets/<name>`); MCP `kb_ticket_fetch` returns text only.
 
 ### `kb code-ingest` — the generated document
 
