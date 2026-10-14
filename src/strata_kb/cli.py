@@ -125,6 +125,9 @@ code_sync_app = typer.Typer(
 )
 app.add_typer(code_sync_app, name="code-sync")
 
+user_app = typer.Typer(help="Hub UI accounts: add, passwd, role, remove, list, hash.")
+app.add_typer(user_app, name="user")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -519,7 +522,7 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
             raise typer.Exit(1)
         typer.echo(
             "Hub running — Web UI: http://localhost:8321/ui "
-            "(sign in with the token from .env)"
+            "(first account: docker compose exec hub kb user add <name> --role admin)"
         )
     else:
         if not no_docker:
@@ -530,9 +533,8 @@ def _docker_setup_hub(path: Path, force: bool, no_docker: bool) -> None:
             )
         typer.echo("Next steps:")
         typer.echo("  1. docker compose up -d")
-        typer.echo(
-            "  2. Open http://localhost:8321/ui (sign in with the token from .env)"
-        )
+        typer.echo("  2. docker compose exec hub kb user add <name> --role admin")
+        typer.echo("  3. Open http://localhost:8321/ui and sign in")
     typer.echo("Point remote MCP clients at the hub:")
     typer.echo('  { "mcpServers": { "strata-kb": { "type": "http",')
     typer.echo('    "url": "http://<host>:8321/mcp",')
@@ -2445,6 +2447,7 @@ def publish(
         raise typer.Exit(1) from None
 
     if plan.route == "intake":
+        merged_seen: list[bool] = []
         try:
             ba_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
@@ -2456,6 +2459,7 @@ def publish(
                     if plan.refresh_plan
                     else ()
                 ),
+                on_merged=merged_seen.append,
             )
         except (
             OSError,
@@ -2467,7 +2471,9 @@ def publish(
         ) as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
-        if pr_url:
+        if pr_url and merged_seen and merged_seen[-1]:
+            typer.echo(f"kb publish: merged on the hub — {pr_url}")
+        elif pr_url:
             typer.echo(f"kb publish: PR on the hub — {pr_url}")
             typer.echo("Content goes live when the PR is merged on the hub.")
         else:
@@ -4076,3 +4082,114 @@ def doctor(
     if result.stale:
         raise typer.Exit(2)
     typer.echo("kb doctor: OK")
+
+
+def _accounts(kb_dir: Path):
+    from strata_kb.serving.accounts import (
+        AccountError,
+        Accounts,
+        auth_dir_for,
+        ensure_git_exclude,
+    )
+
+    # A mistyped --kb must not create a stray .kb-auth/ beside the typo.
+    if not kb_dir.is_dir():
+        raise _account_fail(
+            AccountError(f"KB directory {kb_dir} does not exist; pass --kb <hub>/.kb")
+        )
+    # Before the first server start, `kb user add` must not leave users.db
+    # committable either.
+    ensure_git_exclude(kb_dir.parent)
+    return Accounts(auth_dir_for(kb_dir) / "users.db")
+
+
+def _account_fail(exc: Exception) -> typer.Exit:
+    typer.secho(str(exc), fg=typer.colors.RED, err=True)
+    return typer.Exit(1)
+
+
+def _ask_password() -> str:
+    return typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+
+
+_KB_OPT = typer.Option(Path(".kb"), "--kb", help="KB directory")
+
+
+@user_app.command("add")
+def user_add(
+    username: str = typer.Argument(..., help="Login name (case-insensitive)"),
+    role: str = typer.Option(..., "--role", help="admin, ba or dev"),
+    kb_dir: Path = _KB_OPT,
+) -> None:
+    """Create a hub UI account; the password is prompted for twice."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).add(username, _ask_password(), role)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"added {username} ({role})")
+
+
+@user_app.command("passwd")
+def user_passwd(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> None:
+    """Set a new password for an account."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).set_password(username, _ask_password())
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"password updated for {username}")
+
+
+@user_app.command("role")
+def user_role(
+    username: str = typer.Argument(...),
+    role: str = typer.Argument(..., help="admin, ba or dev"),
+    kb_dir: Path = _KB_OPT,
+) -> None:
+    """Change an account's role (the last admin cannot be demoted)."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).set_role(username, role)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"{username} is now {role}")
+
+
+@user_app.command("remove")
+def user_remove(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> None:
+    """Delete an account (the last admin cannot be removed)."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        _accounts(kb_dir).remove(username)
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    typer.echo(f"removed {username}")
+
+
+@user_app.command("list")
+def user_list(kb_dir: Path = _KB_OPT) -> None:
+    """List accounts: username, role, created. Never prints hashes."""
+    from strata_kb.serving.accounts import AccountError
+
+    try:
+        users = _accounts(kb_dir).list()
+    except AccountError as exc:
+        raise _account_fail(exc) from None
+    for u in users:
+        typer.echo(f"{u.username}\t{u.role}\t{u.created_at}")
+
+
+@user_app.command("hash")
+def user_hash() -> None:
+    """Print a password hash for STRATA_KB_BOOTSTRAP_PASSWORD_HASH (touches no DB)."""
+    from strata_kb.serving.accounts import hash_password
+
+    pw_hash = hash_password(_ask_password())
+    typer.echo(pw_hash)
+    # Compose expands `$` in .env, so the value must be single-quoted there.
+    typer.echo(f"STRATA_KB_BOOTSTRAP_PASSWORD_HASH='{pw_hash}'", err=True)

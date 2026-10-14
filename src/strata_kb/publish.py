@@ -1828,11 +1828,15 @@ def publish_via_intake(
     timeout: float = 600.0,
     http_get_json=None,
     plan_inputs: tuple[Path, ...] = (),
+    on_merged: Callable[[bool], None] | None = None,
 ) -> str:
     """Dev-machine intake flow: tag kb-publish/<ts>, push, poll for the PR URL.
 
     `plan_inputs`: folders a ba repo's generated `-plan` is built from. `.kb/`
     is gitignored there, so these must be clean too.
+
+    `on_merged`: called with the status' `merged` flag when the (newer) hub
+    reports one -- the return value stays the PR URL.
 
     Zero secrets: the tag push uses the developer's normal child-repo git
     access; the child's CI (OIDC) does the actual upload.
@@ -1895,6 +1899,8 @@ def publish_via_intake(
         status, data = get_json(status_url)
         if status == 200:
             if data.get("state") == "done":
+                if on_merged is not None and "merged" in data:
+                    on_merged(bool(data["merged"]))
                 return data.get("pr_url", "")
             if data.get("state") == "error":
                 # The public status view carries no `detail` (it can echo raw

@@ -1,3 +1,6 @@
+import tempfile
+from pathlib import Path
+
 import httpx
 import pytest
 from starlette.applications import Starlette
@@ -5,7 +8,21 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from strata_kb.serving.auth import COOKIE_NAME, TokenAuthMiddleware, make_session
+from strata_kb.serving.accounts import Accounts
+from strata_kb.serving.auth import (
+    COOKIE_NAME,
+    SessionAuth,
+    TokenAuthMiddleware,
+    make_user_session,
+)
+
+# A real (throwaway) accounts store: the cookie names a user, and the
+# middleware looks that user up.
+_DIR = tempfile.TemporaryDirectory()
+_KEY = b"k" * 32
+_ACCOUNTS = Accounts(Path(_DIR.name) / "users.db")
+_USER = _ACCOUNTS.add("tester", "throwaway-pw", "admin")
+_SESSION = SessionAuth(_KEY, _ACCOUNTS)
 
 
 @pytest.fixture
@@ -33,7 +50,7 @@ def _app():
 
 
 def _client():
-    return TestClient(TokenAuthMiddleware(_app(), "secret-token"))
+    return TestClient(TokenAuthMiddleware(_app(), "secret-token", session=_SESSION))
 
 
 def test_api_without_token_401_json():
@@ -48,18 +65,18 @@ def test_bearer_header_passes():
 
 
 def test_cookie_passes():
-    # M4: the cookie is a signed session derived from the token, not the
-    # token itself -- a raw token value no longer authorises (see
+    # The cookie is a signed user session, not the token -- a raw token value
+    # no longer authorises (see
     # tests/test_web_session.py::test_a_raw_token_cookie_no_longer_authorises).
     c = _client()
-    c.cookies.set(COOKIE_NAME, make_session("secret-token"))
+    c.cookies.set(COOKIE_NAME, make_user_session(_KEY, _USER))
     assert c.get("/api/docs").status_code == 200
 
 
 def test_wrong_cookie_401():
-    # A well-formed session signed with the WRONG token must not verify.
+    # A well-formed session signed with the WRONG key must not verify.
     c = _client()
-    c.cookies.set(COOKIE_NAME, make_session("wrong-token"))
+    c.cookies.set(COOKIE_NAME, make_user_session(b"x" * 32, _USER))
     assert c.get("/api/docs").status_code == 401
 
 
@@ -68,9 +85,9 @@ def test_wrong_cookie_401():
 # Fix round 1 (Critical): _authorized parsed Cookie headers with stdlib
 # SimpleCookie while auth.is_authorized_request (added for /api/health) used
 # Starlette's cookie_parser -- they disagreed on 8/26 measured real
-# Cookie-header shapes. Fixed by making _authorized delegate to
-# is_authorized_request and moving _credential_presented's cookie read onto
-# the same parser.
+# Cookie-header shapes. Fixed by routing _authorized and
+# is_authorized_request through one shared helper (auth._authorize) and moving
+# _credential_presented's cookie read onto the same parser.
 #
 # Fix round 2 (Critical): that fix left the Authorization axis still
 # diverging -- _authorized read it via Request.headers.get (Starlette's
@@ -96,7 +113,7 @@ def test_wrong_cookie_401():
 # happens to be right.
 
 TOKEN = "secret-token"
-_VALID_SESSION = make_session(TOKEN)
+_VALID_SESSION = make_user_session(_KEY, _USER)
 
 
 def _scope(headers: list[tuple[str, str]]) -> dict:
@@ -257,7 +274,7 @@ _PROBE_SHAPES = [
 
 
 def test_authorized_implies_credential_presented_and_charged_guesses_are_charged():
-    mw = TokenAuthMiddleware(_app(), TOKEN)
+    mw = TokenAuthMiddleware(_app(), TOKEN, session=_SESSION)
     for name, headers, expect_authorized, expect_charged in _PROBE_SHAPES:
         scope = _scope(headers)
         authorized = mw._authorized(scope)
@@ -326,7 +343,9 @@ async def test_invalid_utf8_header_bytes_are_401_not_crash():
     # UTF-8 byte sequence to the ASGI app, no matter what bytes are passed
     # in. A raw httpx.ASGITransport preserves the exact wire bytes a real
     # ASGI server would deliver, so it's used directly instead.
-    transport = httpx.ASGITransport(app=TokenAuthMiddleware(_app(), "secret-token"))
+    transport = httpx.ASGITransport(
+        app=TokenAuthMiddleware(_app(), "secret-token", session=_SESSION)
+    )
     async with httpx.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:

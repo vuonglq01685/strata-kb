@@ -201,8 +201,12 @@ def run(
         except (json.JSONDecodeError, AttributeError):
             detail = _decode(raw[:200] if isinstance(raw, bytes) else raw)
         raise CIPublishError(f"intake rejected the publish (HTTP {status}): {detail}")
-    pr_url = json.loads(raw).get("pr_url", "")
-    typer.echo(
-        f"PR: {pr_url}" if pr_url else "published (no content change on the hub)"
-    )
+    result = json.loads(raw)
+    pr_url = result.get("pr_url", "")
+    if not pr_url:
+        typer.echo("published (no content change on the hub)")
+    elif result.get("merged") is True:
+        typer.echo(f"merged: {pr_url}")
+    else:
+        typer.echo(f"PR: {pr_url}")
     return pr_url

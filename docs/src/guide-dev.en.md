@@ -110,25 +110,25 @@ protection for you. Add **`pr-lint` to the branch's required checks**.
 > Once required, it blocks **every** pull request lacking the required
 > sections — including bot pull requests such as a dependency bump or a revert.
 
-## 2.4 Ask about the hub's auto-merge policy
+## 2.4 Ask whether the hub auto-merges your repo
 
-`-code` pull requests on the hub may be auto-merged; `-svc` pull requests must
-never be. Ask your hub maintainer how it is configured, and make sure of one
-thing:
+Auto-merge is a per-repo switch on the hub's Registry page; a hub admin turns it
+on for your repo. Ask your hub maintainer whether it is on, and know what it does:
 
 > `kb ci-publish` opens **one** hub pull request per push, not one per document.
 > The intake keys the publish branch by repository id and reuses it while a PR is
 > pending — so a push carrying a regenerated `-code` alongside an already-merged
 > `-svc` amend lands **both** in that same PR.
 >
-> The auto-merge rule must therefore be **path-scoped to
-> `.kb/<repo_id>-code/**`**, never a whole-PR or whole-repo rule. A rule that
-> fires on "this is a dev repo's `-code` publish" silently defeats the `-svc`
-> review gate the two-document split exists to protect.
+> With the switch on, the hub merges the **whole** PR right after opening it,
+> `-svc` content included. The `-svc` review therefore happens locally, in
+> `/dev-code-seed` step 4, before the section reaches `reviewed` — never at the hub.
 
-This auto-merge rule is also what keeps the hub from lagging main: without it,
-every push adds to one pending hub PR that someone has to merge. `kb doctor`
-reports when the hub's `-code` lags.
+If the merge fails, the PR stays open for the hub maintainer and the publish still
+counts as done. `kb publish` and `kb ci-publish` print "merged" when it merged (the CI step summary still shows `hub PR: <url>`).
+With the switch on, the hub does not lag main: without it, every push adds to one
+pending hub PR that someone has to merge. `kb doctor` reports when the hub's
+`-code` lags.
 
 ---
 
@@ -179,8 +179,9 @@ intake for up to ten minutes waiting on a tag-triggered CI run this repository
 does not have, then fail with a misleading error.
 
 That hub pull request is reviewed by an analyst or architect, like any other hub
-content. `-svc` is curated knowledge; it publishes through review, never
-auto-merge.
+content — unless the hub has auto-merge switched on for your repo, in which case
+the hub merges it on the repo's next intake publish (`kb publish --pr` itself does not
+go through intake); the `-svc` review you did in step 4 is the only one.
 
 ---
 

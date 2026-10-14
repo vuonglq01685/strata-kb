@@ -238,3 +238,62 @@ def test_read_file_decodes_and_404_is_none():
         ghapp.read_file("a/b", "t", "x", "main", http=FakeHTTP([(500, {})]))
     with pytest.raises(ghapp.GHAppError):  # a directory listing is not a file
         ghapp.read_file("a/b", "t", "x", "main", http=FakeHTTP([(200, [])]))
+
+
+def test_parse_pr_url():
+    assert ghapp.parse_pr_url("https://github.com/o/r/pull/12") == ("o/r", 12)
+    assert ghapp.parse_pr_url("https://github.com/o-1/r_x.y/pull/3/") == (
+        "o-1/r_x.y",
+        3,
+    )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://github.com/o/r/issues/12",
+        "u/pull/9",
+        "https://x.io/o/r/pull/1",
+        "https://github.com/o/r/pull/12\n",
+        "https://github.com/../r/pull/1",
+        "https://github.com/o/../pull/1",
+        "https://github.com/o/./pull/1",
+        "https://github.com/o/r%2Fx/pull/1",
+        "https://github.com/o/r/pull/12/files",
+    ],
+)
+def test_parse_pr_url_rejects(bad):
+    with pytest.raises(ghapp.GHAppError):
+        ghapp.parse_pr_url(bad)
+
+
+def test_merge_pr_puts_merge_method():
+    http = FakeHTTP([(200, {"merged": True})])
+    assert ghapp.merge_pr("acme/hub", "tok", 12, http=http) is None
+    req = http.requests[0]
+    assert req.get_method() == "PUT"
+    assert req.full_url.endswith("/repos/acme/hub/pulls/12/merge")
+    assert json.loads(req.data) == {"merge_method": "merge"}
+
+
+def test_merge_pr_falls_back_to_squash_on_405():
+    http = FakeHTTP([(405, {"message": "no merge commits"}), (200, {})])
+    ghapp.merge_pr("acme/hub", "tok", 12, http=http)
+    assert [json.loads(r.data)["merge_method"] for r in http.requests] == [
+        "merge",
+        "squash",
+    ]
+
+
+def test_merge_pr_raises_with_status_and_message_on_409():
+    http = FakeHTTP([(409, {"message": "Head branch was modified"})])
+    with pytest.raises(ghapp.GHAppError, match="409: Head branch was modified") as ei:
+        ghapp.merge_pr("acme/hub", "ghs_secret", 12, http=http)
+    assert "ghs_secret" not in str(ei.value)
+    assert len(http.requests) == 1
+
+
+def test_merge_pr_405_on_squash_too_raises():
+    http = FakeHTTP([(405, {"message": "a"}), (405, {"message": "b"})])
+    with pytest.raises(ghapp.GHAppError, match="405: b"):
+        ghapp.merge_pr("acme/hub", "tok", 12, http=http)

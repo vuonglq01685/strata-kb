@@ -7,9 +7,10 @@ into it; merging their PRs here is the review gate.
 1. **Set up Docker serving** — run `kb docker-setup` (in Claude Code /
    Copilot Chat / Cursor: `/kb-docker-setup`). It creates `.env`, generates
    `STRATA_KB_HTTP_TOKEN`, and starts the service (`docker compose up -d`) —
-   web UI at http://localhost:8321/ui (sign in with the token). The token is
-   auto-generated for convenience — replace it with your own secret for real
-   deployments. Manual fallback: `cp .env.example .env`, edit the token,
+   web UI at http://localhost:8321/ui (sign in with a hub account — create
+   the first one in step 5). The token is auto-generated for convenience —
+   replace it with your own secret for real deployments. It serves `/api`,
+   `/mcp` and CI; people sign in to the UI with an account. Manual fallback: `cp .env.example .env`, edit the token,
    then `docker compose up -d`. Without Docker:
    `python -m strata_kb.mcp --hub . --transport http`
    (requires the `STRATA_KB_HTTP_TOKEN` env var). The server pulls the hub
@@ -50,6 +51,41 @@ into it; merging their PRs here is the review gate.
    still succeeds and the PR opens, but the dev CLI will time out waiting
    for a PR that actually opened, and uploads lose incrementality (every
    publish becomes a full upload).
+5. **Create the first admin account** — people sign in to the web UI with a
+   username and password; the bearer token is for `/api`, `/mcp` and CI. The
+   accounts live in `.kb-auth/` (`users.db` and `session.key`) in the hub
+   root. **Never commit `.kb-auth/`** — a new hub's `.gitignore` lists it, and the
+   running hub adds it to `.git/info/exclude`. Deleting `.kb-auth/session.key`
+   logs everyone out. Pick one way:
+   - **Command:** `docker compose exec hub kb user add <name> --role admin`
+     (prompts for the password twice).
+   - **Bootstrap env:** set `STRATA_KB_BOOTSTRAP_ADMIN=<name>` and
+     `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'` in `.env`, where `<hash>` is
+     the output of `kb user hash` (it prompts for the password and prints a
+     ready-to-paste line; run it on any machine with strata-kb installed).
+     **Keep the single quotes**: Docker Compose expands `$` in `.env`, and the
+     hash contains several. Plaintext passwords are never accepted. The pair applies only while no account exists; once one does,
+     a stale value is ignored.
+
+   Roles are `admin`, `ba` and `dev`. More commands:
+   `kb user passwd|role|remove|list`. The last admin cannot be removed or demoted. Only an
+   `admin` sees and uses the **Registry** page (step 6); the bearer token can
+   view the UI read-only but never opens it.
+6. **Manage the registry and auto-merge from the UI (optional)** — an admin
+   opens **Registry** (`/ui/registry`) to add or remove a child repo, and to
+   switch **auto-merge** on or off per repo. Each change is a commit on the
+   hub's default branch (`registry: <action> <repo> (by <user>)`), pushed
+   by the same GitHub App as in step 4, and never force-pushed. The page is
+   read-only (a banner says why) when intake is not configured or the hub
+   has no git remote. **If the default branch is protected, the App must be
+   allowed to push to it**, or every edit is rejected. With auto-merge on
+   for a repo, the intake merges that repo's publish PR itself right after
+   opening it; the App needs `Contents: Read and write` and `Pull requests:
+   Read and write` (the same two permissions as step 4). Auto-merge merges
+   the **whole** PR, so a `-svc` amend riding along merges without a hub
+   review — that review happens in the dev's repo before publish. If the
+   merge fails the PR stays open for a human and the publish still counts as
+   done; `kb publish` and `kb ci-publish` print "merged" only when it merged.
 
 ## Asset storage
 

@@ -2112,8 +2112,16 @@ def test_quickstart_dev_documents_the_auto_merge_policy(tmp_path: Path):
     # claimed to be.
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
+    flat = " ".join(text.split())
     assert "auto-merg" in text.lower()
-    assert "hub-side branch-protection" in text
+    # 1.26.0: a per-repo switch on the Registry page that merges the whole PR
+    assert "per-repo switch" in flat
+    assert "merges the **whole** publish PR" in flat
+    assert "hub-side branch-protection" not in text
+    assert "path-scoped" not in text
+    assert "never auto-merged" not in text
+    # step 7: an auto-merge repo's seed PR merges on its own
+    assert "unless the hub has auto-merge switched on" in flat
 
 
 def test_init_kind_dev_scaffolds_the_code_workflow(tmp_path: Path):
@@ -2546,6 +2554,28 @@ def test_hub_scaffold_ignores_the_search_index(tmp_path):
     initcmd.init_repo(tmp_path, "hub")
     text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert ".kb-work/" in text
+
+
+def test_hub_scaffold_ignores_the_accounts_directory(tmp_path: Path):
+    """1.26.0: `<hub>/.kb-auth/` holds users.db and session.key; a hub
+    maintainer running `git add -A` must never commit it."""
+    init_repo(tmp_path, "hub")
+    text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".kb-auth/" in text.splitlines()
+
+
+def test_hub_quickstart_documents_accounts_registry_and_auto_merge(tmp_path: Path):
+    init_repo(tmp_path, "hub")
+    flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    assert "sign in with the token" not in flat
+    assert "docker compose exec hub kb user add <name> --role admin" in flat
+    assert "kb user hash" in flat
+    assert "STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'" in flat
+    assert "Never commit `.kb-auth/`" in flat
+    assert "Deleting `.kb-auth/session.key` logs everyone out" in flat
+    assert "/ui/registry" in flat
+    assert "`Contents: Read and write` and `Pull requests: Read and write`" in flat
+    assert "the App must be allowed to push to it" in flat
 
 
 def test_hub_gitignore_is_protected_from_a_second_init(tmp_path: Path):

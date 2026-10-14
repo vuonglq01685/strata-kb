@@ -201,3 +201,12 @@ def test_bundled_manifests_roundtrip_byte_identical(tmp_path: Path):
         out = tmp_path / man.name
         models.save_yaml_model(out, obj)
         assert out.read_text(encoding="utf-8") == text, f"{man} would change on save"
+
+
+def test_registry_entry_auto_merge_defaults_false_and_plain_string_still_loads():
+    reg = models.Registry.model_validate(
+        {"repos": {"a/b": "rb", "c/d": {"repo_id": "rd", "auto_merge": True}}}
+    )
+    first, second = reg.resolve("a/b"), reg.resolve("c/d")
+    assert first is not None and first.auto_merge is False
+    assert second is not None and second.auto_merge is True

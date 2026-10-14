@@ -2,8 +2,18 @@
 
 import time
 
-from strata_kb.serving.auth import COOKIE_NAME, SESSION_MAX_AGE, make_session
+from strata_kb.serving.accounts import Accounts, load_or_create_session_key
+from strata_kb.serving.auth import COOKIE_NAME, SESSION_MAX_AGE, make_user_session
 from strata_kb.serving.ratelimit import LOGIN_MAX_ATTEMPTS
+
+
+def _login(client, admin_user):
+    username, password = admin_user
+    return client.post(
+        "/ui/login",
+        data={"username": username, "password": password},
+        follow_redirects=False,
+    )
 
 
 def test_failed_header_auth_is_eventually_429(web_client):
@@ -51,7 +61,11 @@ def test_the_header_path_and_the_login_form_share_one_bucket(web_client):
     limiter is decoration."""
     for _ in range(LOGIN_MAX_ATTEMPTS):
         web_client.get("/api/docs", headers={"Authorization": "Bearer wrong"})
-    resp = web_client.post("/ui/login", data={"token": "wrong"}, follow_redirects=False)
+    resp = web_client.post(
+        "/ui/login",
+        data={"username": "nobody", "password": "wrong"},
+        follow_redirects=False,
+    )
     assert resp.status_code == 429
 
 
@@ -82,27 +96,29 @@ def test_exempt_paths_never_spend_the_bucket(web_client):
     assert [web_client.get("/api/health").status_code for _ in range(n)] == [200] * n
 
 
-def test_anonymous_browsing_never_spends_the_bucket(web_client, token):
+def test_anonymous_browsing_never_spends_the_bucket(web_client, admin_user):
     """Critical fix round 1: the limiter used to count every credential-free
     hit (a logged-out GET /, the browser's automatic /favicon.ico, ...), so
     5 ordinary anonymous page loads exhausted the bucket and the very next
-    login POST -- even with the CORRECT token -- came back 429. None of
+    login POST -- even with the CORRECT password -- came back 429. None of
     these requests present an Authorization header or a session cookie, so
     none of them is "a failed attempt at the shared secret" and none of them
     may spend M6's bucket."""
     for _ in range(LOGIN_MAX_ATTEMPTS):
         assert web_client.get("/", follow_redirects=False).status_code == 302
-    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
+    resp = _login(web_client, admin_user)
     assert resp.status_code == 303
 
 
-def test_expired_own_cookie_does_not_lock_out_the_correct_token(web_client, token):
+def test_expired_own_cookie_does_not_lock_out_the_correct_password(
+    web_client, admin_user, hub_dir
+):
     """Final review item 1: SESSION_MAX_AGE (12h) guarantees every user's OWN
     cookie -- issued by this same server, correctly signed -- eventually
-    fails verify_session's age check. Before the fix, _credential_presented
+    fails read_user_session's age check. Before the fix, _credential_presented
     charges it on every page view exactly like a wrong guess (M6's own
     rule), so ordinary browsing with a stale cookie locks the user out of
-    logging back in with the CORRECT token. Reproduces the reviewer's exact
+    logging back in with the CORRECT password. Reproduces the reviewer's exact
     sequence: 3 page loads, each firing the main /ui request plus the
     browser's automatic /favicon.ico (not covered by the /ui/static/
     exemption).
@@ -112,7 +128,14 @@ def test_expired_own_cookie_does_not_lock_out_the_correct_token(web_client, toke
     appends ".local") -- without it the fix's own clearing Set-Cookie can
     never find and remove a manually-seeded cookie (jar.clear() no-ops on a
     domain miss), a quirk of this test double a real browser never hits."""
-    stale_cookie = make_session(token, now=time.time() - SESSION_MAX_AGE - 1)
+    auth_dir = hub_dir / ".kb-auth"
+    user = Accounts(auth_dir / "users.db").get(admin_user[0])
+    assert user is not None
+    stale_cookie = make_user_session(
+        load_or_create_session_key(auth_dir),
+        user,
+        now=time.time() - SESSION_MAX_AGE - 1,
+    )
     web_client.cookies.set(COOKIE_NAME, stale_cookie, domain="testserver.local")
 
     codes = []
@@ -122,7 +145,7 @@ def test_expired_own_cookie_does_not_lock_out_the_correct_token(web_client, toke
     # Budget must never be exhausted by the user's own dead cookie.
     assert 429 not in codes
 
-    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
+    resp = _login(web_client, admin_user)
     assert resp.status_code == 303
 
 
@@ -134,7 +157,7 @@ def test_a_forged_session_cookie_is_still_charged_every_time(web_client):
     scripted attacker resending a fixed Cookie header ignores the server's
     Set-Cookie response the same way, so this is the channel the fix must
     keep closed."""
-    forged = {COOKIE_NAME: "1234567890.notarealsignature"}
+    forged = {COOKIE_NAME: "1234567890.dXNlcg.0123456789abcdef.notarealsignature"}
     codes = [
         web_client.get("/ui", cookies=forged, follow_redirects=False).status_code
         for _ in range(LOGIN_MAX_ATTEMPTS + 3)

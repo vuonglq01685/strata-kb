@@ -10,17 +10,25 @@
 <div class="login-card">
   <span class="brand-mark">KB</span>
   <h1>Sign in to CENTER·KB</h1>
-  <p class="lede">Paste the access token from
-    <code class="inline">STRATA_KB_HTTP_TOKEN</code> to continue.</p>
+  <p class="lede">Sign in with your hub account.</p>
   {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+  {% if no_accounts %}<div class="error-banner">No account exists yet. Create one with:
+    <code class="inline">docker compose exec hub kb user add &lt;name&gt; --role admin</code>
+    — or set <code class="inline">STRATA_KB_BOOTSTRAP_ADMIN</code> and
+    <code class="inline">STRATA_KB_BOOTSTRAP_PASSWORD_HASH</code> (from
+    <code class="inline">kb user hash</code>) in .env and restart.</div>{% endif %}
   <form method="post" action="/ui/login">
     <label style="display:flex; flex-direction:column; gap:6px">
-      <span class="kicker">Access token</span>
-      <input type="password" name="token" placeholder="••••••••••••••••" autofocus required>
+      <span class="kicker">Username</span>
+      <input type="text" name="username" autocomplete="username" autofocus required>
+    </label>
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Password</span>
+      <input type="password" name="password" autocomplete="current-password" required>
     </label>
     <button type="submit">Sign in</button>
   </form>
-  <p class="meta-line">The same token authorizes /api and /mcp.</p>
+  <p class="meta-line">/api and /mcp keep using the bearer token.</p>
 </div>
 </body>
 </html>

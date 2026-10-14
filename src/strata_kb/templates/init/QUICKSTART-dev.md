@@ -35,25 +35,19 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
    never does is *create* `-svc` content — `--scaffold-svc` is never
    passed there. The one-time seed below runs `kb publish --pr`, which
    opens the hub PR directly instead of going through the tag.
-   Whether the hub PR `kb ci-publish` opens for `<repo_id>-code` then
-   auto-merges is a **hub-side branch-protection/labeling policy** — not
-   `kb-code.yml`'s own behavior — so ask the hub maintainer whether (and
-   how) auto-merge is configured for this repo's PRs. It is safe to
-   automate because `-code` is deterministic and LLM-free by
-   construction. `<repo_id>-svc` PRs are never auto-merged: that
-   document is LLM-drafted and always needs a human review before it can
-   publish.
-   **One consequence that matters more than it sounds:** `kb ci-publish`
-   opens **one** hub PR per publish, not one per document — the intake
-   keys the publish branch by repo id and reuses it while a PR is
-   pending, so a publish carrying a regenerated `-code` alongside an
-   already-merged `-svc` amend lands both in that **same** PR. A hub
-   auto-merge rule that fires on "this is a `dev` repo's `-code` publish"
-   would therefore also auto-merge whatever `-svc` content rode along
-   with it. **The auto-merge rule must be path-scoped** — matching only
-   changed paths under `.kb/<repo_id>-code/**` — never a whole-PR or
-   whole-repo rule, or it silently defeats the `-svc` review gate this
-   two-document split exists to protect.
+   Whether the hub PR `kb ci-publish` opens is merged for you is a
+   **per-repo switch** on the hub's Registry page (an admin turns
+   *auto-merge* on for this repo). Ask the hub maintainer whether it is on.
+   When it is on, the hub merges the **whole** publish PR right after
+   opening it — including any `<repo_id>-svc` content riding along: the
+   intake keys the publish branch by repo id and reuses it while a PR is
+   pending, so one PR can carry a regenerated `-code` and a merged `-svc`
+   amend, and the switch cannot tell them apart. The `-svc` review
+   therefore happens **locally**, in `/dev-code-seed` step 4, before the
+   section reaches `reviewed` — never at the hub. If the merge fails, the
+   PR stays open for the hub maintainer and the publish still counts as
+   done. `kb publish` and `kb ci-publish` print "merged" when it merged (the CI step summary still shows `hub PR: <url>`).
+   With the switch off, a hub BA or architect merges the PR as before.
 4. **Connect the shared MCP server** — run `kb mcp-setup` (in your assistant:
    `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token, writes
    both into `.env`, makes sure git ignores that file, and then verifies them
@@ -111,10 +105,11 @@ and it walks seven steps:
    a PR on the hub — plain `kb publish` also works, through the tag and
    `kb-code.yml`, but `--pr` opens the review PR straight away.
    **That hub PR is reviewed by a BA or architect**, the same
-   as any other hub content — this is curated knowledge, not generated
-   knowledge, so it publishes through review, not auto-merge (see the
-   auto-merge policy note in step 3 of "Setup once" above — it is not
-   repeated here).
+   as any other hub content — unless the hub has auto-merge switched on
+   for this repo: then the hub merges it on the repo's next intake publish,
+   and the `-svc` review you did in step 4 is the only one (see the
+   auto-merge note in step 3 of "Setup once" above). `kb publish --pr` does
+   not go through intake, so it does not merge the PR by itself.
 
 Budget **10–15 min per service** for step 4 — that is the honest cost of
 a seed, and it is a one-time cost. Everything after the seed publishes is

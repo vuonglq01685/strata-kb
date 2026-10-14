@@ -243,7 +243,7 @@ Một tiến trình phục vụ ba nhóm đối tượng qua HTTP:
 |---|---|---|
 | `/mcp` | AI agent | Bearer token |
 | `/api/…` | người gọi lập trình | Bearer token hoặc cookie phiên |
-| `/ui` | con người | đăng nhập bằng token, lưu cookie phiên |
+| `/ui` | con người | đăng nhập bằng tài khoản hub, lưu cookie phiên; token chỉ mở UI ở chế độ chỉ đọc |
 
 UI có menu **Ticket** nằm cạnh Document (`/ui/tickets`) cho các mission và ticket mà
 repo `ba` publish (mục 8.4).
@@ -377,8 +377,8 @@ chủ đích.
 
 Chúng không thể dùng chung một tài liệu vì ba lý do độc lập: `-code` bị ghi đè
 toàn bộ trong khi `-svc` tích luỹ dần; `-svc` mang section `pending` trong lúc
-seed còn `-code` thì luôn phải build sạch; và `-code` có thể được hub tự động
-merge còn `-svc` thì luôn cần người review.
+seed còn `-code` thì luôn phải build sạch; và `-code` có thể được công tắc auto-merge
+của repo tự động merge còn `-svc` thì cần người review (làm tại máy, trước khi publish).
 
 `-code` không bao giờ được commit: revision của nó nằm trong manifest, không
 nằm trong `index.yaml`, nên index đã commit của repo dev không đổi khi code
@@ -582,15 +582,23 @@ hub.
 
 - Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính
   sách referrer và permissions; HSTS trên https.
-- Cookie phiên của UI là giá trị đã ký, có hạn, dẫn xuất từ token — không bao giờ
-  là chính token.
+- Cookie phiên của UI là giá trị đã ký, có hạn, dùng khoá `<hub>/.kb-auth/session.key`
+  — không bao giờ là bearer token, thứ mà mọi repo con đều giữ. Cookie mang tên
+  người dùng chứ không mang vai trò; vai trò được đọc từ CSDL tài khoản ở mỗi
+  request. Tài khoản nằm trong `.kb-auth/`, không bao giờ được commit.
+- Trang Registry (`/ui/registry`) chỉ dành cho admin, nên bearer token xem được UI
+  nhưng không bao giờ sửa được registry. Mỗi lần sửa là một commit trên nhánh mặc
+  định của hub, đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc
+  `auto_merge` của repo khiến intake merge cả PR publish ngay sau khi mở; merge
+  thất bại thì PR vẫn mở và publish vẫn `done` với `merged: false`.
 - Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form
   đăng nhập, nên không thể né khoá bằng cách chuyển sang header.
 - Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc
   định là bỏ qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc
   định khi đứng sau proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và
   một người gọi có thể làm cạn giới hạn của tất cả.
-- Xác thực HTTP dừng ở bearer token. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
+- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục
+  bộ cho UI — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
   cho Internet công cộng.
 
 ---

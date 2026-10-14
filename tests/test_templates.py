@@ -3517,3 +3517,19 @@ def test_dev_fix_bug_offers_the_branch_command_instead_of_creating_it():
         ), name
         assert "git switch -c fix/<BUG-id>" in text, name
         assert "git switch -c hotfix/<BUG-id> <production-line>" in text, name
+
+
+def test_hub_env_example_mentions_the_bootstrap_vars_only_as_comments():
+    text = _read_init_template("env.example")
+    for var in ("STRATA_KB_BOOTSTRAP_ADMIN", "STRATA_KB_BOOTSTRAP_PASSWORD_HASH"):
+        lines = [ln for ln in text.splitlines() if var in ln]
+        assert lines, var
+        assert all(ln.lstrip().startswith("#") for ln in lines), var
+    assert "kb user hash" in text
+
+
+def test_hub_env_example_single_quotes_the_bootstrap_hash():
+    # Compose interpolates `$` in .env; an unquoted scrypt hash arrives mangled.
+    text = _read_init_template("env.example")
+    assert "# STRATA_KB_BOOTSTRAP_PASSWORD_HASH='" in text
+    assert "Single-quote the hash" in text

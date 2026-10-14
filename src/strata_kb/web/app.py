@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager
 
@@ -20,20 +21,35 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
-from strata_kb.serving.auth import TokenAuthMiddleware
+from strata_kb.serving.accounts import (
+    Accounts,
+    auth_dir_for,
+    bootstrap_from_env,
+    ensure_git_exclude,
+    load_or_create_session_key,
+)
+from strata_kb.serving.auth import SessionAuth, TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
-from strata_kb.web import api, planui, ui
+from strata_kb.web import api, planui, registry_routes, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
 
 
-def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=None):
+def create_app(
+    config: ServerConfig,
+    token: str,
+    mcp_server=None,
+    intake_cfg=None,
+    registry_push=None,
+):
     """One ASGI app: / → /ui redirect, /api/*, /ui/*, /intake/* (optional), and
     /mcp (mounted FastMCP).
 
     mcp_server=None (unit tests): no /mcp branch, no lifespan requirement.
-    intake_cfg=None (default): no /intake/* routes — publish intake disabled.
+    intake_cfg=None (default): no /intake/* routes — publish intake disabled,
+    and the admin Registry page is read-only.
+    registry_push: test seam for the Registry page's push (None = real push).
     """
     from strata_kb import searchdb
     from strata_kb.serving.ratelimit import (
@@ -55,16 +71,31 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     trusted_proxies = trusted_proxies_from_env()
     auth_limiter = SlidingWindowLimiter(LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
 
+    # Accounts live beside the KB, never inside a tree the hub publishes:
+    # keep them out of git before anything is written there.
+    ensure_git_exclude(config.kb_dir.parent)
+    auth_dir = auth_dir_for(config.kb_dir)
+    accounts = Accounts(auth_dir / "users.db")
+    bootstrap_from_env(accounts, os.environ)
+    session = SessionAuth(load_or_create_session_key(auth_dir), accounts)
+
     async def root(request: Request) -> RedirectResponse:
         return RedirectResponse("/ui", status_code=302)
 
     routes: list = [Route("/", root, methods=["GET"])]
     routes += api.build_routes(config)
     routes += ui.build_routes(
-        config, token, login_limiter=auth_limiter, trusted_proxies=trusted_proxies
+        config,
+        token,
+        login_limiter=auth_limiter,
+        trusted_proxies=trusted_proxies,
+        session=session,
     )
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
     routes += planui.plan_routes(config)
+    routes += registry_routes.build_registry_routes(
+        config, intake_cfg, session, push=registry_push
+    )
     if intake_cfg is not None:
         from strata_kb import gitio
         from strata_kb import hub as hub_mod
@@ -152,6 +183,10 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     )
     return SecurityHeadersMiddleware(
         TokenAuthMiddleware(
-            app, token, limiter=auth_limiter, trusted_proxies=trusted_proxies
+            app,
+            token,
+            limiter=auth_limiter,
+            trusted_proxies=trusted_proxies,
+            session=session,
         )
     )

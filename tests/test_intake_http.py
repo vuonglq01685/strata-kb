@@ -655,6 +655,179 @@ def test_intake_matching_kind_is_accepted(client, hub_with_registry):
     assert _post_kind(c, _jwt(pem), "dev").status_code == 200
 
 
+def _set_auto_merge(hub, value):
+    (hub / "federation" / "registry.yaml").write_text(
+        "repos:\n  acme/flight-docs:\n    repo_id: flight-docs\n"
+        f"    auto_merge: {str(value).lower()}\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture
+def merge_env(intake_cfg, hub_with_registry, keypair):
+    """(client, pem, merged_urls, hub): merge_hook records the PR URLs."""
+    merged: list[str] = []
+    intake_cfg.merge_hook = merged.append
+    store = intake.StatusStore(intake_cfg.status_path)
+    app = Starlette(routes=intake_routes.build_intake_routes(intake_cfg, store))
+    return TestClient(app), keypair[0], merged, hub_with_registry, intake_cfg
+
+
+def test_auto_merge_entry_merges_and_reports_merged(merge_env):
+    c, pem, merged, hub, _ = merge_env
+    _set_auto_merge(hub, True)
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "repo_id": "flight-docs",
+        "pr_url": "u/pull/9",
+        "merged": True,
+    }
+    assert merged == ["u/pull/9"]
+    st = _get_status(c, _jwt(pem)).json()
+    assert st["state"] == "done" and st["merged"] is True
+    assert _public_status(c).json() == {
+        "state": "done",
+        "pr_url": "u/pull/9",
+        "merged": True,
+    }
+
+
+@pytest.mark.parametrize("flag", [None, False])
+def test_plain_and_false_entries_never_merge(merge_env, flag):
+    c, pem, merged, hub, _ = merge_env
+    if flag is not None:  # None = the plain "repo: rid" registry fixture
+        _set_auto_merge(hub, flag)
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["merged"] is False
+    assert merged == []
+    assert _get_status(c, _jwt(pem)).json()["merged"] is False
+
+
+def test_merge_failure_keeps_publish_done_with_detail(merge_env):
+    c, pem, _, hub, cfg = merge_env
+    _set_auto_merge(hub, True)
+
+    def boom(url):
+        raise ghapp.GHAppError("merge PR #9 on 'acme/hub' -> 409: conflict")
+
+    cfg.merge_hook = boom
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["merged"] is False and body["pr_url"] == "u/pull/9"
+    assert "409: conflict" in body["detail"]
+    st = _get_status(c, _jwt(pem)).json()
+    assert st["state"] == "done" and st["merged"] is False
+    assert "409" in st["detail"]
+    public = _public_status(c).json()  # detail stays OIDC-only
+    assert public == {"state": "done", "pr_url": "u/pull/9", "merged": False}
+
+
+def test_merge_oserror_keeps_publish_done_with_pr_url(merge_env):
+    c, pem, _, hub, cfg = merge_env
+    _set_auto_merge(hub, True)
+
+    sentinel = "SENTINEL-PEM-MATERIAL"
+
+    def unreachable(url):
+        raise OSError(f"github unreachable {sentinel}")
+
+    cfg.merge_hook = unreachable
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["merged"] is False and body["pr_url"] == "u/pull/9"
+    # Only GHAppError text is safe to expose; anything else is a fixed line.
+    assert body["detail"] == "auto-merge failed -- PR left open (see hub log)"
+    st = _get_status(c, _jwt(pem)).json()
+    assert st["state"] == "done" and st["merged"] is False
+    assert st["pr_url"] == "u/pull/9"
+    assert sentinel not in resp.text and sentinel not in json.dumps(st)
+
+
+def test_hub_pull_failure_after_merge_still_reports_merged(merge_env, monkeypatch):
+    import sqlite3
+
+    c, pem, merged, hub, _ = merge_env
+    _set_auto_merge(hub, True)
+
+    def pull_fails(ref):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(intake.hub_mod, "pull_once", pull_fails)
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["merged"] is True
+    assert merged == ["u/pull/9"]
+    assert _get_status(c, _jwt(pem)).json()["state"] == "done"
+
+
+def test_no_change_publish_does_not_merge(merge_env):
+    c, pem, merged, hub, cfg = merge_env
+    _set_auto_merge(hub, True)
+    cfg.pr_hook = lambda *a, **k: ""
+    resp = _post(c, _jwt(pem))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"repo_id": "flight-docs", "pr_url": ""}
+    assert merged == []
+    assert "merged" not in _get_status(c, _jwt(pem)).json()
+
+
+def test_decision_uses_registry_read_by_authorize(merge_env, monkeypatch):
+    c, pem, merged, hub, _ = merge_env
+    _set_auto_merge(hub, True)
+    real = intake.authorize
+
+    def authorize_then_flip(claims, registry):
+        rid = real(claims, registry)
+        _set_auto_merge(hub, False)  # disk changes after the read
+        return rid
+
+    monkeypatch.setattr(intake, "authorize", authorize_then_flip)
+    assert _post(c, _jwt(pem)).json()["merged"] is True
+    assert merged == ["u/pull/9"]
+
+
+def test_auto_merge_pr_default_path_mints_token_and_merges(intake_cfg, monkeypatch):
+    pulls = []
+    monkeypatch.setattr(intake.hub_mod, "pull_once", lambda ref: pulls.append(ref))
+    calls = []
+    intake_cfg.http = FakeHTTP([(200, {"id": 1}), (201, {"token": "t"}), (200, {})])
+    real_http = intake_cfg.http
+    intake_cfg.http = lambda req: (calls.append(req), real_http(req))[1]
+    ok, detail = intake.auto_merge_pr(intake_cfg, "https://github.com/acme/hub/pull/9")
+    assert (ok, detail) == (True, "")
+    assert calls[-1].get_method() == "PUT"
+    assert calls[-1].full_url.endswith("/repos/acme/hub/pulls/9/merge")
+    assert pulls == [intake_cfg.hub_ref]
+
+
+def test_auto_merge_pr_survives_hub_pull_failure(intake_cfg, monkeypatch):
+    def pull_fails(ref):
+        raise gitio.GitError("not ff")
+
+    monkeypatch.setattr(intake.hub_mod, "pull_once", pull_fails)
+    intake_cfg.merge_hook = lambda url: None
+    assert intake.auto_merge_pr(intake_cfg, "u/pull/9") == (True, "")
+
+
+def test_auto_merge_pr_bad_url_is_a_failed_merge_not_a_raise(intake_cfg):
+    ok, detail = intake.auto_merge_pr(intake_cfg, "u/pull/9")
+    assert ok is False and "not a GitHub pull request URL" in detail
+
+
+def test_auto_merge_pr_non_ghapp_error_text_is_not_exposed(intake_cfg):
+    def boom(url):
+        raise KeyError("-----BEGIN PRIVATE KEY----- SENTINEL")
+
+    intake_cfg.merge_hook = boom
+    ok, detail = intake.auto_merge_pr(intake_cfg, "u/pull/9")
+    assert ok is False
+    assert detail == "auto-merge failed -- PR left open (see hub log)"
+
+
 def test_publish_rate_limited_429(hub_with_registry, keypair, tmp_path, monkeypatch):
     from strata_kb.serving.ratelimit import SlidingWindowLimiter
 

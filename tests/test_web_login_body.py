@@ -1,5 +1,5 @@
 """2026-10-10 review §5.2 #2 / #3: `POST /ui/login` is reachable without a
-token, so its body must be bounded however it is framed, and no submitted
+credential, so its body must be bounded however it is framed, and no submitted
 value may turn into a 500."""
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def test_a_chunked_login_body_is_refused_at_the_cap(hub_dir, token):
     stop reading at LOGIN_MAX_BODY, not buffer the lot (the PoC sent 120
     1 MiB fields for +123 MiB RSS)."""
     app = _asgi_app(hub_dir, token)
-    chunk = b"token=" + b"x" * 1018  # 1 KiB
+    chunk = b"password=" + b"x" * 1015  # 1 KiB
     total_chunks = 10 * 1024
     pulled = 0
     sent: list[dict] = []
@@ -72,22 +72,43 @@ def test_many_small_fields_are_a_client_error_not_a_500(web_client):
 
 def test_a_multipart_file_part_on_login_is_refused(web_client):
     resp = web_client.post(
-        "/ui/login", files={"token": ("t.txt", b"abc")}, follow_redirects=False
+        "/ui/login", files={"password": ("t.txt", b"abc")}, follow_redirects=False
     )
     assert resp.status_code in (400, 413)
 
 
 @pytest.mark.parametrize("guess", ["héllo", "токен", "🔑" * 3])
-def test_a_non_ascii_guess_is_a_failed_login_not_a_500(web_client, guess):
-    resp = web_client.post("/ui/login", data={"token": guess}, follow_redirects=False)
+def test_a_non_ascii_guess_is_a_failed_login_not_a_500(web_client, admin_user, guess):
+    # Odd unicode in either field, against a real and an unknown account.
+    for username, password in [(admin_user[0], guess), (guess, guess)]:
+        resp = web_client.post(
+            "/ui/login",
+            data={"username": username, "password": password},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 200
+        assert "Wrong username or password" in resp.text
+
+
+def test_a_lone_surrogate_username_is_a_failed_login_not_a_500(web_client):
+    # %ED%A0%80 is a UTF-8-encoded lone surrogate; Python's decoder keeps it
+    # as-is under surrogateescape-style form decoding, and sqlite cannot bind it.
+    resp = web_client.post(
+        "/ui/login",
+        content=b"username=%ED%A0%80&password=%ED%A0%80",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+        follow_redirects=False,
+    )
     assert resp.status_code == 200
-    assert "Invalid token" in resp.text
+    assert "Wrong username or password" in resp.text
 
 
 def test_non_ascii_guesses_spend_the_lockout(web_client):
     codes = [
         web_client.post(
-            "/ui/login", data={"token": "ñ"}, follow_redirects=False
+            "/ui/login",
+            data={"username": "ñ", "password": "ñ"},
+            follow_redirects=False,
         ).status_code
         for _ in range(LOGIN_MAX_ATTEMPTS + 1)
     ]
@@ -95,6 +116,11 @@ def test_non_ascii_guesses_spend_the_lockout(web_client):
     assert codes[-1] == 429
 
 
-def test_the_right_token_still_logs_in(web_client, token):
-    resp = web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
+def test_the_right_password_still_logs_in(web_client, admin_user):
+    username, password = admin_user
+    resp = web_client.post(
+        "/ui/login",
+        data={"username": username, "password": password},
+        follow_redirects=False,
+    )
     assert resp.status_code == 303

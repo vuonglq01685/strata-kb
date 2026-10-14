@@ -197,6 +197,9 @@ class RegistryEntry(BaseModel):
     workflow: str = ""
     # "" = not pinned; the leaf's own kind is inferred at read time.
     kind: str = ""
+    # True = intake merges this repo's publish PRs itself. Default off: a
+    # human merges, as before.
+    auto_merge: bool = False
 
     @field_validator("kind")
     @classmethod

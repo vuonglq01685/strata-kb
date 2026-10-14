@@ -616,10 +616,30 @@ def web_client_https(hub_dir: Path, token: str):
 
 
 @pytest.fixture
-def web_client_logged_in(web_client, token: str):
+def admin_user(hub_dir: Path) -> tuple[str, str]:
+    """An `admin` account (throwaway random password) in the hub's accounts
+    store; returns (username, password). Works before or after web_client:
+    the store is a file, read on every login."""
+    import secrets
+
+    from strata_kb.serving.accounts import Accounts
+
+    password = secrets.token_urlsafe(12)
+    Accounts(hub_dir / ".kb-auth" / "users.db").add("admin", password, "admin")
+    return "admin", password
+
+
+@pytest.fixture
+def web_client_logged_in(web_client, admin_user: tuple[str, str]):
     """web_client, already carrying a real session cookie from a genuine
     /ui/login round trip."""
-    web_client.post("/ui/login", data={"token": token}, follow_redirects=False)
+    username, password = admin_user
+    resp = web_client.post(
+        "/ui/login",
+        data={"username": username, "password": password},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
     return web_client
 
 

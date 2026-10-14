@@ -24,20 +24,32 @@ def _normalised(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_readme_pins_the_path_scoped_auto_merge_constraint():
+def test_readme_pins_the_per_repo_auto_merge_switch():
     text = _normalised(_readme_text())
-    # The real gate-integrity teeth: `kb ci-publish` opens ONE PR per push
-    # (keyed by repo id, not by document -- intake.py:302-330), so a
-    # whole-PR or whole-repo auto-merge rule for "-code" would also
-    # auto-merge any "-svc" amend riding along in that same PR.
+    # `kb ci-publish` opens ONE PR per push (keyed by repo id, not by
+    # document), so the per-repo auto-merge switch merges the whole PR and the
+    # "-svc" review has to happen locally, before publish.
     assert "opens one hub PR per publish, not per document" in text
-    assert "path-scoped to `.kb/<repo_id>-code/**`" in text
-    assert "never a whole-PR or whole-repo rule" in text
+    assert "per-repo switch on the hub's Registry page" in text
+    assert "auto-merge merges the **whole PR**" in text
+    assert "`/dev-code-seed` step 4" in text
+    # the old hub-side, path-scoped rule is gone
+    assert "path-scoped" not in text
+
+
+def test_readme_documents_hub_accounts_and_the_registry_page():
+    text = _normalised(_readme_text())
+    assert "sign in with the token" not in text
+    assert "`<hub>/.kb-auth/` (`users.db` and `session.key`)" in text
+    assert "`STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH`" in text
+    assert "`STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`" in text
+    assert "only `admin` sees and uses the **Registry** page" in text
+    assert "`contents: write` and `pull_requests: write`" in text
 
 
 def test_readme_pins_why_code_and_svc_cannot_share_one_document():
     text = _normalised(_readme_text())
-    assert "One document can't carry both publish policies at once." in text
+    assert "One document can't carry both review styles at once." in text
 
 
 def test_readme_shows_the_real_query_output():
@@ -240,3 +252,23 @@ def test_readme_never_tells_users_to_commit_a_hub_credential():
     text = _normalised(_readme_text())
     assert "never put a token in `hub:`" in text
     assert "whose `.kb/config.yaml` `hub:` URL carries a credential" not in text
+
+
+def test_no_doc_claims_ci_publish_stays_silent_about_a_merge():
+    """cipublish.py echoes `merged: <pr_url>` when intake reports merged;
+    only the CI step summary says `hub PR: <url>`."""
+    from strata_kb.initcmd import read_template
+
+    texts = [
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+        read_template("QUICKSTART-dev.md"),
+        read_template("QUICKSTART-hub.md"),
+        *(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "docs/src").glob("*.md")),
+    ]
+    for text in texts:
+        flat = _normalised(text)
+        assert "`kb ci-publish` does not report it" not in flat
+        assert "`kb ci-publish` không báo" not in flat
+        assert "`kb ci-publish` không in gì" not in flat
+    assert 'print "merged"' in _normalised(_readme_text())
