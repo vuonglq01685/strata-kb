@@ -242,6 +242,13 @@ comes back clean — no BLOCKER and no SUGGESTED left — is option 1
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
 
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
+
 ## Next step — ALWAYS end your response with this block
 
 Close every response with a state line and an ordered list of next steps.

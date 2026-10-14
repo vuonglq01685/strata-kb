@@ -11,7 +11,8 @@ Two ways in:
 
 - **Dispatched** by the `dev-design` / `dev-plan` orchestrator as a
   subagent, under the review-dispatch contract those skills carry: a fresh
-  context, artefacts passed as file paths, the model named.
+  context, artefacts passed as file paths, the model named (the standard
+  tier, as for authors).
 - **Directly** by the Dev: `/dev-sa <question>` for the ticket in flight.
 
 **Inputs.** The question; `docs/impl/<id>/ticket.md` (the ticket in flight);
@@ -49,12 +50,13 @@ code and say so.
    or, for the business case:
 
        business question: <why this changes what an AC means>
+       What the AC could mean either way: <reading A> / <reading B>
        Evidence: `path:line` or `doc §section`, one per line
 
    The caller writes the result into `## Technical decisions` of
    `design.md` (or `plan.md`) as `- SA-<n>: <decision> — why — evidence`,
-   numbering it itself. Called directly, show the Dev that exact line and
-   write the file only when the Dev asks.
+   numbering it itself. You return text only and never write the file;
+   called directly, show the Dev that exact line for them to record.
 
 ## Hard rules
 

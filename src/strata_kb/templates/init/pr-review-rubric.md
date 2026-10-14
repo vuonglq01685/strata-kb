@@ -30,7 +30,9 @@ Used by A1 (design review) and A2 (plan review), before any human gate.
       its own task block. **BLOCKER**
 - [ ] (A2) Any task with no test declares `Exempt: <config|ci|docs|style>` and
       names its verification — see `docs/tdd-exemptions.md`. **BLOCKER**
-- [ ] An ambiguity is carried as `OPEN(BA)`, never resolved by guessing. **BLOCKER**
+- [ ] An ambiguity is carried either as `OPEN(BA)` or as a `## Open questions`
+      `Q<id>` asked through hub Q&A, never resolved by guessing. A listed
+      question with `blocks: none` is a known open item, not a gap. **BLOCKER**
 
 ## Merge-risk axes
 

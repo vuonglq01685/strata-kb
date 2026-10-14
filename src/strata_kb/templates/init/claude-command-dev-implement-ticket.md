@@ -7,8 +7,8 @@ Invoke the `dev-implement-ticket` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the ticket when given; when empty,
 ask for it during Intake.
 
-Pipeline: Intake → Check → Resolve → Ground → Placeholders → design → plan
-→ execute → handover. This command is also the safe re-entry point: called again on a
+Pipeline: Intake → Questions → Check → Resolve → Ground → Placeholders →
+design → plan → execute → handover. This command is also the safe re-entry point: called again on a
 ticket already in progress it reports state and offers the next step rather
 than redoing finished phases.
 
@@ -60,19 +60,25 @@ ticket's `## Dependencies` (`Blocked by:` / `Blocks:`) and, when a
 (from the local mission file, else `kb_get_section` `<doc> <M-id>` at `l3`,
 CLI fallback `kb get <doc> <M-id> --level l3`, from the hub), and stops if there is no `kb-context` block to resolve;
 **Questions** calls `kb_question_list(ticket=<id>, status=all)` on every entry
-and handles each question by state (the tool works only against the shared
-hub server: on `Q&A needs the shared hub server — point MCP at it (kb
-mcp-setup)`, or when the client does not expose it, stop and tell the Dev,
-never treat it as "no questions"): **answered** and not yet marked in the
-design/plan `## Open questions` → show the answer with its changed sections,
-re-fetch the ticket with `kb_ticket_fetch` into `docs/impl/<id>/ticket.md`,
-mark the line `— answered rev N`, and go back to `dev-design` when a changed
-section touches an approved design; **waiting** → show the answer as
-information only, say which revision it waits for, do not act on it;
-**open** and blocking → say so in the state line (`BA-Q: open Q<ids>`), do not
-continue past the gate, and give the Dev the hub Q&A link (`STRATA_KB_HUB_URL`
-plus `/ui/questions/ticket?repo=<repo-id>&ticket=<id>`; path only when unset;
-never show `STRATA_KB_HTTP_TOKEN`); **Check the
+and handles each question by state. The tools work only against the shared
+hub server: when `kb_question_list` answers `Q&A needs the shared hub server —
+point MCP at it (kb mcp-setup)`, or the client does not expose it, read the
+local `docs/impl/<id>/design.md` and `plan.md` — with no `Q<id>` line without
+`— answered rev N`, continue with `BA-Q: unknown (Q&A unavailable)` and a
+one-line note to the Dev; with any such line, STOP and tell the Dev, because
+its state cannot be known, never treating it as "no questions". **answered**
+and not yet marked in the design/plan `## Open questions` → show the answer
+with its changed sections, re-fetch the ticket with `kb_ticket_fetch` into
+`docs/impl/<id>/ticket.md`, mark the line `— answered rev N` (N = the
+answer's `answer_rev`, else the hub rev), and go back to `dev-design` when a
+changed section touches an approved design (it goes back to `status: draft`);
+**waiting** → show the answer as information only, say which revision it
+waits for, do not act on it; **open** and blocking (`blocks:` names an AC) →
+say so in the state line (`BA-Q: open Q<ids>`), do not continue past the gate,
+and give the Dev the hub Q&A link (`STRATA_KB_HUB_URL` plus
+`/ui/questions/ticket?repo=<repo-id>&ticket=<id>`; path only when unset; never
+show `STRATA_KB_HTTP_TOKEN`); an open question that blocks no AC does not stop
+the flow but still shows in the state line; **Check the
 grounding** runs MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
 fallback `kb ticket check docs/impl/<id>/ticket.md`, which reads the local
 `-code` only when the hub holds none) when the ticket has a `## Technical grounding` section: PASS
@@ -138,6 +144,10 @@ ticket STOPs — two tickets in flight, switch branches first.
 - `hist.*` entries are appended only by `kb svc note`, never hand-edited.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+`BA-Q:` comes from `kb_question_list`: `none`, `open Q<ids>` or
+`waiting Q<ids>`, a mixed state written `open Q1; waiting Q2`, and
+`unknown (Q&A unavailable)` when the Q&A tools are refused (see Questions).
 
 ## Next step — ALWAYS end your response with this block
 

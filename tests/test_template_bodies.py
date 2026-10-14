@@ -422,7 +422,8 @@ def test_dev_design_and_plan_claude_commands_carry_the_question_rules(name):
         "## Questions raised",
         "dispatch `dev-sa`",
         "kb_question_ask",
-        "A blocking open BA question stops the gate",
+        "A blocking open BA question (a question line without `— answered rev N` "
+        "whose `blocks:` names an AC) stops the gate",
         HUB_ONLY_ERROR,
     ):
         assert phrase in text, (name, phrase)
@@ -461,7 +462,15 @@ def test_dev_implement_ticket_resumes_from_the_question_states(name):
         "do not continue past the gate",
         "BA-Q: open Q<ids>",
         HUB_ONLY_ERROR,
-        'never treat it as "no questions"',
+        "BA-Q: unknown (Q&A unavailable)",
+        "no `Q<id>` line without `— answered rev N`",
+        "STOP and tell the Dev",
+        'never treating it as "no questions"'
+        if name.startswith("claude-command")
+        else 'never treat it as "no questions"',
+        "`answer_rev`",
+        "back to `status: draft`",
+        "blocks no AC",
     ):
         assert phrase in text, (name, phrase)
 
@@ -482,3 +491,112 @@ def test_dev_sa_body_pins_inputs_sources_output_and_limits():
         "- SA-<n>: <decision> — why — evidence",
     ):
         assert phrase in text, phrase
+
+
+# --- fix round 1: author dispatch, rubric, BA-Q derivation, dev-sa limits ----
+
+_AUTHOR_DISPATCH = [
+    ("dev-design.md", "claude-command-dev-design.md"),
+    ("dev-plan.md", "claude-command-dev-plan.md"),
+]
+
+
+@pytest.mark.parametrize(("body", "command"), _AUTHOR_DISPATCH)
+def test_author_dispatch_carries_the_questions_rule(body, command):
+    texts = (_body(body), " ".join(read_template(command).split()))
+    for text in texts:
+        for phrase in (
+            "the Questions rule above",
+            "lists what it could not decide under `## Questions raised`",
+            "tags each item `business` or `technical` with `blocks: <AC ids|none>`",
+            "never calls the hub or asks the BA itself",
+            "After each author or fix round returns, handle its "
+            "`## Questions raised` before the reviewer is dispatched",
+        ):
+            assert phrase in text, (body, phrase)
+
+
+@pytest.mark.parametrize(("body", "command"), _AUTHOR_DISPATCH)
+def test_gate_counts_only_question_lines_without_an_answered_marker(body, command):
+    for text in (_body(body), " ".join(read_template(command).split())):
+        assert "a question line without `— answered rev N`" in text, body
+        assert "whose `blocks:` names an AC" in text, body
+        assert "(the rubric's Pre-code axis says so)" in text, body
+        assert "dev-sa" in text and "standard" in text and "tier" in text, body
+
+
+def test_dev_design_says_an_answered_line_re_dispatches_the_author():
+    text = _body("dev-design.md")
+    assert "an answered line means re-dispatching the `design-author`" in text
+    assert "with the re-fetched ticket" in text
+
+
+def test_no_template_asserts_the_open_questions_line_in_the_artefact():
+    for name in (
+        "dev-design.md",
+        "dev-plan.md",
+    ):
+        assert "Asked of the BA" not in _body(name), name
+    for name in (
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+    ):
+        assert "Asked of the BA" not in read_template(name), name
+
+
+def test_pr_review_rubric_pre_code_axis_accepts_a_hub_question_as_open_ba():
+    text = " ".join(read_template("pr-review-rubric.md").split())
+    assert (
+        "An ambiguity is carried either as `OPEN(BA)` or as a `## Open questions` "
+        "`Q<id>` asked through hub Q&A, never resolved by guessing."
+    ) in text
+    assert (
+        "A listed question with `blocks: none` is a known open item, not a gap." in text
+    )
+    assert "carried as `OPEN(BA)`, never" not in text
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "bodies/dev-execute.md",
+        "bodies/dev-handover.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-command-dev-execute.md",
+        "claude-command-dev-handover.md",
+    ],
+)
+def test_local_skills_derive_ba_q_from_the_local_question_lines(name):
+    text = " ".join(BASE.joinpath(name).read_text(encoding="utf-8").split())
+    assert "`BA-Q:` comes from the local `## Open questions` lines" in text, name
+    assert "`open Q1; waiting Q2`" in text, name
+    assert "`unknown (Q&A unavailable)`" in text, name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_implement_ticket_derives_ba_q_from_kb_question_list(name):
+    text = " ".join(BASE.joinpath(name).read_text(encoding="utf-8").split())
+    assert "`BA-Q:` comes from `kb_question_list`" in text, name
+    assert "`open Q1; waiting Q2`" in text, name
+    assert "Intake → Questions → Check" in text, name
+
+
+def test_dev_sa_returns_text_only_and_names_the_business_reading():
+    text = _body("dev-sa.md")
+    assert "You return text only and never write the file" in text
+    assert "write the file only when the Dev asks" not in text
+    assert "What the AC could mean either way: <reading A> / <reading B>" in text
+    assert "the standard tier, as for authors" in text
+    command = " ".join(read_template("claude-command-dev-sa.md").split())
+    assert "plus what the AC could mean either way" in command
+    assert "It returns text only" in command

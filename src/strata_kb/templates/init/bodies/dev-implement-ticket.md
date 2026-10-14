@@ -2,8 +2,8 @@
 # /dev-implement-ticket — implement a BA ticket, grounded and re-entrant
 
 You are the ORCHESTRATOR of the ticket-implementation pipeline: Intake →
-Check → Resolve → Ground → Placeholders → design → plan → execute → handover. You
-are also the **safe re-entry point** for this pipeline — called again on a
+Questions → Check → Resolve → Ground → Placeholders → design → plan → execute →
+handover. You are also the **safe re-entry point** for this pipeline — called again on a
 ticket that already has work in progress, you detect how far it got and
 offer the next step instead of redoing phases that are already finished.
 
@@ -59,9 +59,13 @@ edit above it.
   the ticket is not Ready.
 - **Questions** — on every entry, for the ticket in flight, call
   `kb_question_list(ticket=<id>, status=all)` and handle each question by
-  its state. The tool has no CLI twin and works only against the shared hub
-  server: when it answers `Q&A needs the shared hub server — point MCP at it
-  (kb mcp-setup)`, or your client does not expose it, stop and tell the Dev
+  its state. The tools have no CLI twin and work only against the shared
+  hub server. When `kb_question_list` answers `Q&A needs the shared hub
+  server — point MCP at it (kb mcp-setup)`, or your client does not expose
+  it, read the local `docs/impl/<id>/design.md` and `plan.md`: with no
+  `Q<id>` line without `— answered rev N`, continue with
+  `BA-Q: unknown (Q&A unavailable)` and a one-line note to the Dev; with
+  any such line, STOP and tell the Dev, because its state cannot be known
   — never treat it as "no questions".
   - **answered**, not yet marked in the design/plan `## Open questions` →
     show each answer with its changed sections, re-fetch the ticket with
@@ -175,6 +179,10 @@ edit above it.
 - `hist.*` entries are appended only by `kb svc note`, never hand-edited.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+`BA-Q:` comes from `kb_question_list`: `none`, `open Q<ids>` or
+`waiting Q<ids>`, a mixed state written `open Q1; waiting Q2`, and
+`unknown (Q&A unavailable)` when the Q&A tools are refused (see Questions).
 
 ## Next step — ALWAYS end your response with this block
 

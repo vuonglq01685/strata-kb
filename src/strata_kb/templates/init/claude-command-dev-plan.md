@@ -102,20 +102,21 @@ a different session to pick up cold.
 The `plan-author` never calls the hub: what it could not decide goes into
 a `## Questions raised` section of its draft, each item tagged `business`
 or `technical` with `blocks: <AC ids|none>`, and you handle each one.
-**technical** → dispatch `dev-sa` as a subagent, write its decision into the
-draft's `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`,
-then re-dispatch the author with those decisions. **business** → call
+**technical** → dispatch `dev-sa` as a subagent (standard model tier, as for
+authors), write its decision into the draft's `## Technical decisions` as
+`- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
 `kb_question_ask(ticket, question, asked_by, context, blocks)` and move the
 item to the draft's `## Open questions` as
 `- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
 returned by `dev-sa` is handled the same way. `kb_question_ask` works only
 against the shared hub server: on `Q&A needs the shared hub server — point
 MCP at it (kb mcp-setup)` stop and tell the Dev, never reading it as "no
-questions". A blocking open BA question stops the gate and the Dev gets the
+questions". A blocking open BA question (a question line without `— answered rev N`
+whose `blocks:` names an AC) stops the gate and the Dev gets the
 hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
 path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
 one does not stop the gate and the A2 reviewer reads it as a known open
-item, not a defect.
+item, not a defect (the rubric's Pre-code axis says so).
 
 ## A2 — independent plan review (before GATE 2)
 
@@ -123,8 +124,12 @@ Dispatch a `plan-author` subagent to turn the approved design into the plan —
 it gets the design file path, the ticket's acceptance criteria, the
 `cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
-format, the ordering rules — and nothing else. Then review it with a
-different context.
+format, the ordering rules, and the Questions rule above (it lists what it
+could not decide under `## Questions raised`, tags each item `business` or
+`technical` with `blocks: <AC ids|none>`, and never calls the hub or asks the
+BA itself) — and nothing else. After each author or fix round returns, handle
+its `## Questions raised` before the reviewer is dispatched. Then review it
+with a different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
@@ -197,6 +202,13 @@ left open; NOTE and NITS are recorded, not fixed.
 - `hist.*` entries are appended only by `kb svc note`, never hand-edited.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
 
 ## Next step — ALWAYS end your response with this block
 

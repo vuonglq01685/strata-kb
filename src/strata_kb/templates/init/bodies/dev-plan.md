@@ -113,17 +113,17 @@ does not:
 
 - **technical** → dispatch `dev-sa` as a subagent (fresh context; the
   question, `docs/impl/<ticket-id>/ticket.md` and the draft passed as file
-  paths; model named), write its decision into the draft's
-  `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`, then
-  re-dispatch the author (or the fix round) with those decisions.
+  paths; model named — the standard tier, as for authors), write its
+  decision into the draft's `## Technical decisions` as
+  `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author (or
+  the fix round) with those decisions.
 - **business** → call `kb_question_ask(ticket, question, asked_by, context,
   blocks)` (`asked_by` = `git config user.name`; `context` = where in the
   plan it came up; `blocks` = the AC ids, or empty) and move the item to
   the draft's `## Open questions` as
   `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
   `business question:`, treat the item as business and handle it the same
-  way. The first line under `## Open questions` reads "Asked of the BA, not
-  yet answered — known open items, not defects."
+  way.
 
 `kb_question_ask` has no CLI twin and works only against the shared hub
 server. Any other MCP target answers `Q&A needs the shared hub server —
@@ -135,10 +135,11 @@ wrote; read only that line and never show `STRATA_KB_HTTP_TOKEN`) followed
 by the path `kb_question_ask` returned; if it is unset, give the path only.
 
 **Gate.** A blocking open BA question stops the gate: a plan whose
-`## Open questions` holds a question with `blocks:` naming an AC cannot pass
-GATE 2. Stop and give the Dev the hub Q&A link. A non-blocking open BA
-question does not stop the gate (`blocks: none`); it stays listed, and
-the A2 reviewer reads it as a known open item, not a defect. The answer is
+`## Open questions` holds a question line without `— answered rev N`
+whose `blocks:` names an AC cannot pass GATE 2. Stop and give the Dev the
+hub Q&A link. A non-blocking open BA question does not stop the gate
+(`blocks: none`); it stays listed, and the A2 reviewer reads it as a known
+open item, not a defect (the rubric's Pre-code axis says so). The answer is
 picked up by `dev-implement-ticket` on its next entry.
 
 ## A2 — independent plan review (before GATE 2)
@@ -147,8 +148,12 @@ Dispatch a `plan-author` subagent to turn the approved design into the plan —
 it gets the design file path, the ticket's acceptance criteria, the
 `cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
-format, the ordering rules — and nothing else. Then review it with a
-different context.
+format, the ordering rules, and the Questions rule above (it lists what it
+could not decide under `## Questions raised`, tags each item `business` or
+`technical` with `blocks: <AC ids|none>`, and never calls the hub or asks the
+BA itself) — and nothing else. After each author or fix round returns, handle
+its `## Questions raised` before the reviewer is dispatched. Then review it
+with a different context.
 
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
@@ -221,6 +226,13 @@ left open; NOTE and NITS are recorded, not fixed.
 - `hist.*` entries are appended only by `kb svc note`, never hand-edited.
 - Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
 - KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
 
 ## Next step — ALWAYS end your response with this block
 

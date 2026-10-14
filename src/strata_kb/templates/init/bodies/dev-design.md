@@ -85,17 +85,17 @@ does not:
 
 - **technical** → dispatch `dev-sa` as a subagent (fresh context; the
   question, `docs/impl/<ticket-id>/ticket.md` and the draft passed as file
-  paths; model named), write its decision into the draft's
-  `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`, then
-  re-dispatch the author (or the fix round) with those decisions.
+  paths; model named — the standard tier, as for authors), write its
+  decision into the draft's `## Technical decisions` as
+  `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author (or
+  the fix round) with those decisions.
 - **business** → call `kb_question_ask(ticket, question, asked_by, context,
   blocks)` (`asked_by` = `git config user.name`; `context` = where in the
   design it came up; `blocks` = the AC ids, or empty) and move the item to
   the draft's `## Open questions` as
   `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
   `business question:`, treat the item as business and handle it the same
-  way. The first line under `## Open questions` reads "Asked of the BA, not
-  yet answered — known open items, not defects."
+  way.
 
 `kb_question_ask` has no CLI twin and works only against the shared hub
 server. Any other MCP target answers `Q&A needs the shared hub server —
@@ -107,20 +107,27 @@ wrote; read only that line and never show `STRATA_KB_HTTP_TOKEN`) followed
 by the path `kb_question_ask` returned; if it is unset, give the path only.
 
 **Gate.** A blocking open BA question stops the gate: a design whose
-`## Open questions` holds a question with `blocks:` naming an AC cannot pass
-GATE 1. Stop and give the Dev the hub Q&A link. A non-blocking open BA
-question does not stop the gate (`blocks: none`); it stays listed, and
-the A1 reviewer reads it as a known open item, not a defect. The answer is
-picked up by `dev-implement-ticket` on its next entry.
+`## Open questions` holds a question line without `— answered rev N`
+whose `blocks:` names an AC cannot pass GATE 1. Stop and give the Dev the
+hub Q&A link. A non-blocking open BA question does not stop the gate
+(`blocks: none`); it stays listed, and the A1 reviewer reads it as a known
+open item, not a defect (the rubric's Pre-code axis says so). The answer is
+picked up by `dev-implement-ticket` on its next entry; an answered line
+means re-dispatching the `design-author` with the re-fetched ticket.
 
 ## A1 — independent design review (before GATE 1)
 
 Write the design in its own context: dispatch a `design-author` subagent with
 the resolved context cache path, the ticket's acceptance criteria, the
 conventions paths, and this phase's own authoring rules above — what the
-design must cover, and how placeholders and standard values are cited — and
-let it write `docs/impl/<ticket-id>/design.md` with `status: draft`. You
-orchestrate; you do not draft and then judge your own draft.
+design must cover, and how placeholders and standard values are cited —
+and the Questions rule above: it lists what it could not decide under
+`## Questions raised`, tags each item `business` or `technical` with
+`blocks: <AC ids|none>`, and never calls the hub or asks the BA itself —
+and let it write `docs/impl/<ticket-id>/design.md` with `status: draft`.
+After each author or fix round returns, handle its `## Questions raised`
+before the reviewer is dispatched. You orchestrate; you do not draft and
+then judge your own draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
@@ -205,6 +212,13 @@ so `design ✅` reads correctly if the ticket is re-opened.
 For `dev-design`, option 1 below is always `/dev-plan <ticket-id>` once
 GATE 1 passes — unless `path: spike`, where option 1 is `/dev-handover
 <ticket-id>`; a blocker takes its place instead.
+
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
 
 ## Next step — ALWAYS end your response with this block
 

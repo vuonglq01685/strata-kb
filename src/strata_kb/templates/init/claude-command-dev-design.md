@@ -80,29 +80,35 @@ AC that cannot be implemented as written becomes `OPEN(BA)`, raised as a
 The `design-author` never calls the hub: what it could not decide goes into
 a `## Questions raised` section of its draft, each item tagged `business`
 or `technical` with `blocks: <AC ids|none>`, and you handle each one.
-**technical** → dispatch `dev-sa` as a subagent, write its decision into the
-draft's `## Technical decisions` as `- SA-<n>: <decision> — why — evidence`,
-then re-dispatch the author with those decisions. **business** → call
+**technical** → dispatch `dev-sa` as a subagent (standard model tier, as for
+authors), write its decision into the draft's `## Technical decisions` as
+`- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
 `kb_question_ask(ticket, question, asked_by, context, blocks)` and move the
 item to the draft's `## Open questions` as
 `- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
 returned by `dev-sa` is handled the same way. `kb_question_ask` works only
 against the shared hub server: on `Q&A needs the shared hub server — point
 MCP at it (kb mcp-setup)` stop and tell the Dev, never reading it as "no
-questions". A blocking open BA question stops the gate and the Dev gets the
+questions". A blocking open BA question (a question line without `— answered rev N`
+whose `blocks:` names an AC) stops the gate and the Dev gets the
 hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
 path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
 one does not stop the gate and the A1 reviewer reads it as a known open
-item, not a defect.
+item, not a defect (the rubric's Pre-code axis says so).
 
 ## A1 — independent design review (before GATE 1)
 
 Write the design in its own context: dispatch a `design-author` subagent with
 the resolved context cache path, the ticket's acceptance criteria, the
 conventions paths, and this phase's own authoring rules above — what the
-design must cover, and how placeholders and standard values are cited — and
-let it write `docs/impl/<ticket-id>/design.md` with `status: draft`. You
-orchestrate; you do not draft and then judge your own draft.
+design must cover, and how placeholders and standard values are cited —
+and the Questions rule above: it lists what it could not decide under
+`## Questions raised`, tags each item `business` or `technical` with
+`blocks: <AC ids|none>`, and never calls the hub or asks the BA itself —
+and let it write `docs/impl/<ticket-id>/design.md` with `status: draft`.
+After each author or fix round returns, handle its `## Questions raised`
+before the reviewer is dispatched. You orchestrate; you do not draft and
+then judge your own draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
@@ -177,6 +183,13 @@ no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
 For `dev-design`, option 1 below is always `/dev-plan <ticket-id>` once
 GATE 1 passes — unless `path: spike`, where option 1 is `/dev-handover
 <ticket-id>`; a blocker takes its place instead.
+
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
 
 ## Next step — ALWAYS end your response with this block
 
