@@ -30,6 +30,14 @@ def test_add_entry_validates_repo_id_and_uniqueness():
     assert added is not None and added.auto_merge
 
 
+def test_add_entry_refuses_repo_id_that_case_collides_with_a_published_dir():
+    reg = Registry()
+    with pytest.raises(KbError, match="collides"):
+        add_entry(reg, "e/f", "Old-Repo", existing_dirs=["old-repo"])
+    # the same spelling is a plain re-add of a removed repo, which is fine
+    assert add_entry(reg, "e/f", "old-repo", existing_dirs=["old-repo"]).resolve("e/f")
+
+
 def test_add_entry_rejects_repo_id_claimed_by_mapping_entry():
     reg = Registry(repos={"a/b": {"repo_id": "rb", "workflow": "w"}})
     with pytest.raises(KbError):
@@ -96,12 +104,13 @@ def git_identity(monkeypatch):
 
 def test_commit_registry_lands_on_default_branch(fed_hub, run_git, git_identity):
     pushed = []
-    commit_registry(
+    changed = commit_registry(
         fed_hub,
         "repos: {}\n",
         "registry: test (by admin)",
         lambda wt, br: pushed.append((wt, br)),
     )
+    assert changed is True
     assert [br for _, br in pushed] == [gitio.default_branch(fed_hub)]
     # worktree removed, hub checkout untouched
     assert not pushed[0][0].exists()
@@ -128,11 +137,29 @@ def test_commit_registry_rejects_invalid_text_without_pushing(fed_hub):
         commit_registry(
             fed_hub, "repos: {a/b: [}", "m", lambda wt, br: pushed.append(br)
         )
-    with pytest.raises(KbError):
+    with pytest.raises(KbError) as bad:
         commit_registry(
             fed_hub, "repos: {x: 1, y: 2, z: 3}\nbogus: 1\n", "m", lambda w, b: None
         )
+    # one short line, not pydantic's multi-line dump
+    assert "\n" not in str(bad.value) and "http" not in str(bad.value)
     assert pushed == []
+
+
+def test_commit_registry_unchanged_text_is_false_and_not_pushed(fed_hub, git_identity):
+    pushed = []
+    wt_text = {}
+
+    def land(wt: Path, br: str) -> None:
+        wt_text["sha"] = gitio.head_commit(wt)
+
+    commit_registry(fed_hub, "repos: {a/b: rb}\n", "m", land)
+    # fast-forward the hub checkout onto it, as a real push + pull would
+    gitio._run(fed_hub, "reset", "--hard", wt_text["sha"])
+    changed = commit_registry(
+        fed_hub, "repos: {a/b: rb}\n", "m", lambda w, b: pushed.append(b)
+    )
+    assert changed is False and pushed == []
 
 
 def test_commit_registry_removes_worktree_when_push_raises(fed_hub, git_identity):

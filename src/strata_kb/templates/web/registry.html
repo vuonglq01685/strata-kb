@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="stack-md">
+  <div class="page-head">
+    <p class="kicker accent">Administration</p>
+    <h1>Registry</h1>
+    <p class="lede">Repositories allowed to publish to this hub. Every change is a commit on the hub's default branch.</p>
+  </div>
+
+  {% if notice %}<div class="notice-banner" role="status">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="error-banner" role="alert">{{ error }}</div>{% endif %}
+  {% if read_only %}<div class="warn-banner" role="status">{{ read_only }}</div>{% endif %}
+
+  {% if not read_only %}
+  <form class="panel reg-add" method="post" action="/ui/registry/add">
+    <div class="panel-head"><h2>Add a repository</h2></div>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="reg-add-grid">
+      <label class="reg-field"><span class="kicker">Repository</span>
+        <input type="text" name="repo" placeholder="owner/repo" value="{{ form.repo | default('') }}" required></label>
+      <label class="reg-field"><span class="kicker">repo_id</span>
+        <input type="text" name="repo_id" placeholder="my-repo" value="{{ form.repo_id | default('') }}" required></label>
+      <label class="reg-field"><span class="kicker">Kind</span>
+        <select name="kind">
+          <option value="">inferred</option>
+          {% for k in kinds %}<option value="{{ k }}" {{ 'selected' if form and form.kind == k else '' }}>{{ k }}</option>{% endfor %}
+        </select></label>
+      <label class="reg-field reg-wide"><span class="kicker">Workflow pin (optional)</span>
+        <input type="text" name="workflow" placeholder="owner/repo/.github/workflows/kb-code.yml@refs/heads/main" value="{{ form.workflow | default('') }}"></label>
+      <label class="check"><input type="checkbox" name="auto_merge" {{ 'checked' if form and form.auto_merge else '' }}> Auto-merge its publish PRs</label>
+      <button type="submit" class="btn">Add repository</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <section class="panel" aria-label="Registered repositories">
+    <div class="panel-head"><h2>Repositories</h2><span class="note">{{ rows | length }} registered</span></div>
+    <div class="sec-table">
+      <div class="reg-grid head">
+        <span>Repository</span><span>repo_id</span><span>Kind</span><span>Workflow pin</span><span>Auto-merge</span><span></span>
+      </div>
+      {% for r in rows %}
+      <div class="reg-grid">
+        <span class="reg-repo">{{ r.repo }}</span>
+        <span class="mono">{{ r.repo_id }}</span>
+        <span>{% if r.kind %}<span class="badge badge-{{ r.kind }}">{{ r.kind }}</span>{% else %}<span class="muted">inferred</span>{% endif %}</span>
+        <span class="mono reg-pin">{% if r.workflow %}{{ r.workflow }}{% else %}<span class="muted">any workflow</span>{% endif %}</span>
+        <span>
+          {% if read_only %}
+          <span class="muted">{{ 'on' if r.auto_merge else 'off' }}</span>
+          {% else %}
+          <form method="post" action="/ui/registry/auto-merge">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="repo" value="{{ r.repo }}">
+            <input type="hidden" name="on" value="{{ '0' if r.auto_merge else '1' }}">
+            <button type="submit" class="switch {{ 'on' if r.auto_merge else '' }}" role="switch"
+                    aria-checked="{{ 'true' if r.auto_merge else 'false' }}"
+                    aria-label="Auto-merge for {{ r.repo }}"><span class="knob"></span></button>
+          </form>
+          {% endif %}
+        </span>
+        <span>
+          {% if not read_only and confirm != r.repo %}
+          <form method="post" action="/ui/registry/remove">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="repo" value="{{ r.repo }}">
+            <button type="submit" class="btn btn-quiet">Remove</button>
+          </form>
+          {% endif %}
+        </span>
+      </div>
+      {% if not read_only and confirm == r.repo %}
+      <form class="reg-confirm" method="post" action="/ui/registry/remove">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="repo" value="{{ r.repo }}">
+        <input type="hidden" name="confirm" value="yes">
+        <p>Remove <b>{{ r.repo }}</b> from the registry? It can no longer publish here.
+           Content already published under <code class="inline">federation/{{ r.repo_id }}/</code> is not deleted.</p>
+        <button type="submit" class="btn btn-danger">Confirm remove</button>
+        <a class="btn btn-quiet" href="/ui/registry">Cancel</a>
+      </form>
+      {% endif %}
+      {% else %}
+      <div class="empty-state"><p>No repository is registered yet.</p></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel" aria-label="Recent changes">
+    <div class="panel-head"><h2>Recent changes</h2><span class="note">last {{ history | length }} commits to federation/registry.yaml</span></div>
+    {% for h in history %}
+    <div class="queue-row"><span class="cite">{{ h.sha }}</span><span class="file">{{ h.subject }}</span><span class="note">{{ h.date }}</span></div>
+    {% else %}
+    <div class="empty-state"><p>No registry commits yet.</p></div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

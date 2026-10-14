@@ -30,18 +30,26 @@ from strata_kb.serving.accounts import (
 )
 from strata_kb.serving.auth import SessionAuth, TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
-from strata_kb.web import api, planui, ui
+from strata_kb.web import api, planui, registry_routes, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
 
 
-def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=None):
+def create_app(
+    config: ServerConfig,
+    token: str,
+    mcp_server=None,
+    intake_cfg=None,
+    registry_push=None,
+):
     """One ASGI app: / → /ui redirect, /api/*, /ui/*, /intake/* (optional), and
     /mcp (mounted FastMCP).
 
     mcp_server=None (unit tests): no /mcp branch, no lifespan requirement.
-    intake_cfg=None (default): no /intake/* routes — publish intake disabled.
+    intake_cfg=None (default): no /intake/* routes — publish intake disabled,
+    and the admin Registry page is read-only.
+    registry_push: test seam for the Registry page's push (None = real push).
     """
     from strata_kb import searchdb
     from strata_kb.serving.ratelimit import (
@@ -85,6 +93,9 @@ def create_app(config: ServerConfig, token: str, mcp_server=None, intake_cfg=Non
     )
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
     routes += planui.plan_routes(config)
+    routes += registry_routes.build_registry_routes(
+        config, intake_cfg, session, push=registry_push
+    )
     if intake_cfg is not None:
         from strata_kb import gitio
         from strata_kb import hub as hub_mod

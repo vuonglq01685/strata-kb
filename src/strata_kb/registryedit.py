@@ -10,7 +10,7 @@ rules must never block an unrelated edit.
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -45,7 +45,11 @@ def add_entry(
     kind: str = "",
     workflow: str = "",
     auto_merge: bool = False,
+    existing_dirs: Iterable[str] = (),
 ) -> Registry:
+    """`existing_dirs`: the entry directory names under federation/ on the
+    hub, so a repo-id that differs from a removed repo's only in case is
+    refused now, not when it first publishes."""
     repo = repo.strip()
     if not repo or any(c.isspace() for c in repo):
         raise KbError("repository must be non-empty with no whitespace (owner/repo)")
@@ -56,7 +60,7 @@ def add_entry(
     claimed = _claimed_ids(reg)
     if repo_id in claimed:
         raise KbError(f"repo-id '{repo_id}' is already claimed by another repository")
-    normalize_repo_id(repo_id, claimed)
+    normalize_repo_id(repo_id, [*claimed, *existing_dirs])
     if kind and kind not in kinds.HUB_KINDS:
         raise KbError(f"kind must be one of {list(kinds.HUB_KINDS)} or empty")
     try:
@@ -102,9 +106,11 @@ def commit_registry(
     text: str,
     message: str,
     push: Callable[[Path, str], None],
-) -> None:
+) -> bool:
     """Commit `text` as federation/registry.yaml on the hub's default branch
     (in a throwaway detached worktree) and hand it to `push(worktree, branch)`.
+
+    False (and no push) when `text` is what the branch already holds.
 
     The hub checkout is never touched. Only the registry path is staged, so
     stray files in the worktree (.kb-auth/) cannot ride along.
@@ -114,8 +120,12 @@ def commit_registry(
 
     try:
         Registry.model_validate(yaml.safe_load(text))
-    except (yaml.YAMLError, ValidationError) as exc:
-        raise KbError(f"refusing to write an invalid registry: {exc}") from exc
+    except ValidationError as exc:
+        raise KbError(
+            f"refusing to write an invalid registry: {exc.errors()[0]['msg']}"
+        ) from exc
+    except yaml.YAMLError as exc:
+        raise KbError("refusing to write an invalid registry: not valid YAML") from exc
     branch = gitio.default_branch(hub_root)
     with tempfile.TemporaryDirectory(prefix="kb-registry-") as tmp:
         work = Path(tmp) / "hub"
@@ -126,8 +136,10 @@ def commit_registry(
             target = work / _REL_REGISTRY
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8", newline="\n")
-            gitio.commit_paths(work, message, [_REL_REGISTRY])
+            if not gitio.commit_paths(work, message, [_REL_REGISTRY]):
+                return False
             push(work, branch)
+            return True
         finally:
             with _hub_write_lock:
                 gitio.worktree_remove(hub_root, work)
