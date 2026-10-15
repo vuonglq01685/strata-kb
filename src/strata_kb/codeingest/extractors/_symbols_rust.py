@@ -67,8 +67,8 @@ def _variants(owner: str, enum: Node) -> list[_Name]:
     body = enum.child_by_field_name("body")
     return [
         (f"{owner}.{text(v.child_by_field_name('name'))}", "member")
-        for v in (body.named_children if body is not None else [])
-        if v.type == "enum_variant"
+        for attrs, v in (attrs_before(body) if body is not None else [])
+        if v.type == "enum_variant" and not is_cfg_test(attrs)
     ]
 
 

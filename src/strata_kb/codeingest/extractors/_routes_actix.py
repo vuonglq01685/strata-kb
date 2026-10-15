@@ -267,14 +267,20 @@ class ActixPlay(Interp):
         shaped = False
         if step.name == "service" and len(args) == 1:
             val = self.eval(frame, args[0])
+            # a container / attributed handler, or something nothing proves
+            # is ordinary (`shared::svc()`): both are routing on an unknown
             shaped = (
-                isinstance(val, Cont) or self.service_fn(frame, args[0]) is not None
+                val is None
+                or isinstance(val, Cont)
+                or self.service_fn(frame, args[0]) is not None
             )
         elif step.name == "route" and len(args) == 2:
-            self.eval(frame, args[0])
-            shaped = isinstance(self.eval(frame, args[1]), Method)
+            lit = self.string_of(frame, args[0]) is not None
+            shaped = isinstance(self.eval(frame, args[1]), Method) or lit
         elif step.name == "configure" and len(args) == 1:
-            shaped = self.takes_config(frame, args[0])
+            shaped = (
+                self.takes_config(frame, args[0]) or self.eval(frame, args[0]) is None
+            )
         else:
             self.eval_args(frame, step.node)
         if shaped:

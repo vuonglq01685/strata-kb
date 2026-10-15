@@ -58,7 +58,7 @@ _ROUTING_BODY = re.compile(
     r"|get|post|put|delete|patch)\b"
 )
 _MOD_RS = ("mod.rs", "lib.rs", "main.rs")
-_ITEM_TYPES = frozenset({"struct_item", "enum_item", "union_item", "type_item"})
+_ITEM_TYPES = frozenset({"struct_item", "enum_item", "union_item"})
 MAX_RESOLVE_DEPTH = 24
 
 
@@ -112,6 +112,8 @@ class Mod:
         self.mods: dict[str, Mod] = {}
         self.consts: dict[str, str | None] = {}
         self.types: set[str] = set()
+        self.clashes: set[str] = set()  # `use` aliases bound to different paths
+        self.aliases: dict[str, tuple[str, ...]] = {}  # `type A = B<..>;` -> B
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,8 @@ def scoped_mod(mod: Mod, use: Node) -> Mod:
     inner = Mod(mod.file, mod.parent)
     inner.root = mod.root
     inner.uses = {**mod.uses, **dict(named)}
+    inner.clashes = mod.clashes - {a for a, _p in named}
+    inner.aliases = mod.aliases
     inner.globs = [*mod.globs, *globs]
     inner.fns, inner.mods, inner.consts, inner.types = (
         mod.fns,
@@ -364,11 +368,12 @@ class Index:
                 self.macro_use.add(text(item.child_by_field_name("name")))
             elif is_cfg_test(attrs):
                 if kind == "mod_item" and item.child_by_field_name("body") is None:
-                    self._skip_test_mod(item, attrs, base)
+                    self._skip_test_mod(mod, item, attrs, base)
             elif kind == "use_declaration":
                 named, globs = flatten_use(item)
                 for alias, path in named:
-                    mod.uses.setdefault(alias, path)
+                    if mod.uses.setdefault(alias, path) != path:
+                        mod.clashes.add(alias)  # one name, two paths
                 mod.globs.extend(globs)
             elif kind == "function_item":
                 self._add_fn(mod, item, attrs, None)
@@ -383,12 +388,21 @@ class Index:
                     name = text(item.child_by_field_name("name"))
                     mutable = any(c.type == "mutable_specifier" for c in item.children)
                     value = item.child_by_field_name("value")
-                    mod.consts[name] = None if mutable else string_of(value)
+                    new = None if mutable else string_of(value)
+                    # declared twice (cfg variants) with another value: unknown
+                    mod.consts[name] = new if mod.consts.get(name, new) == new else None
                 if kind == "macro_invocation":
                     name = (segments(item.child_by_field_name("macro")) or ("",))[-1]
                     self._macro_calls.append((name, f"{mod.file}:{line_of(item)}"))
                 if _ROUTER_WORD.search(text(item)):
                     self.router_items.append(f"{mod.file}:{line_of(item)}")
+            elif (
+                kind == "type_item"
+            ):  # an alias is what it names, not a type of its own
+                name = text(item.child_by_field_name("name"))
+                target = segments(item.child_by_field_name("type")) or ()
+                if mod.aliases.setdefault(name, target) != target:
+                    mod.aliases[name] = ()  # declared twice, differently: unknown
             elif kind in _ITEM_TYPES:
                 mod.types.add(text(item.child_by_field_name("name")))
             elif kind in ("impl_item", "trait_item"):
@@ -405,10 +419,14 @@ class Index:
             self.impls[owner][fn.name].append(fn)
         return fn
 
-    def _skip_test_mod(self, item: Node, attrs: list[Attr], base: str) -> None:
+    def _skip_test_mod(
+        self, mod: Mod, item: Node, attrs: list[Attr], base: str
+    ) -> None:
         """`#[cfg(test)] mod tests;`: its file (and what it declares) is test
         code, not an orphan root."""
-        rel = self._mod_file(attrs, base, text(item.child_by_field_name("name")))
+        rel = self._mod_file(
+            attrs, base, text(item.child_by_field_name("name")), self._anchor(mod, base)
+        )
         if rel is not None:
             self._test_files.add(rel)
             self._test_dirs.add(self._children_dir(rel, False))
@@ -433,7 +451,7 @@ class Index:
             mod.mods[name] = child
             self._work.append((child, body, posixpath.join(base, name)))
             return
-        rel = self._mod_file(attrs, base, name)
+        rel = self._mod_file(attrs, base, name, self._anchor(mod, base))
         if rel is None:
             self.sites.append(f"{mod.file}:{line_of(item)}")
         elif rel in self.by_file:
@@ -441,11 +459,22 @@ class Index:
         else:
             mod.mods[name] = self._new_mod(rel, mod, False)
 
-    def _mod_file(self, attrs: list[Attr], base: str, name: str) -> str | None:
+    @staticmethod
+    def _anchor(mod: Mod, base: str) -> str:
+        inline = mod.parent is not None and mod.parent.file == mod.file
+        return base if inline else posixpath.dirname(mod.file)
+
+    def _mod_file(
+        self, attrs: list[Attr], base: str, name: str, anchor: str | None = None
+    ) -> str | None:
+        """`anchor`: the directory a `#[path]` is relative to (the declaring
+        file's own directory unless the `mod` sits in an inline module)."""
         explicit = next((a for a in attrs if a.name == "path"), None)
         if explicit is not None:
             lit = string_of(explicit.value)
-            rel = posixpath.normpath(posixpath.join(base, lit)) if lit else None
+            rel = (
+                posixpath.normpath(posixpath.join(anchor or base, lit)) if lit else None
+            )
             return rel if rel in self._fileset else None
         for cand in (f"{base}/{name}.rs", f"{base}/{name}/mod.rs"):
             cand = posixpath.normpath(cand)
@@ -544,6 +573,11 @@ class Index:
             return None
         seen.add(key)
         try:
+            if name in mod.aliases:
+                target = mod.aliases[name]
+                return self._resolve(mod, target, seen, depth + 1) if target else None
+            if name in mod.clashes:
+                return None
             if name in mod.uses:
                 return self._resolve(mod, mod.uses[name], seen, depth + 1)
             if head and name in self.extern_crates:

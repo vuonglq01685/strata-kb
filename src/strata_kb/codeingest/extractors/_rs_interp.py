@@ -399,6 +399,8 @@ class Interp:
         val = self.eval(frame, value) if value is not None else None
         val = self.on_let(frame, node, val)
         mutable = any(c.type == "mutable_specifier" for c in node.children)
+        if mutable and isinstance(val, Str):
+            val = None  # a `let mut` string may be rewritten: never a path
         if (
             not mutable
             and val is None
@@ -574,7 +576,8 @@ class Interp:
         right = node.child_by_field_name("right")
         val = self.eval(frame, right) if right is not None else None
         if left is not None and left.type == "identifier":
-            frame.env.assign(text(left), val)
+            # a name written again is no constant: a string stays unknown
+            frame.env.assign(text(left), None if isinstance(val, Str) else val)
         return None
 
     # -- chains and calls -------------------------------------------------

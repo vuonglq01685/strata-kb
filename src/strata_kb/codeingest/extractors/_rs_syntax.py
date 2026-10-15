@@ -136,15 +136,69 @@ def attrs_before(parent: Node) -> Iterator[tuple[list[Attr], Node]]:
             pending = []
 
 
+_CFG_TOKEN = re.compile(r'[A-Za-z_][\w]*|"(?:[^"\\]|\\.)*"|[(),=]')
+
+
+def _cfg_value(source: str, under_test: bool) -> bool | None:
+    """Three-valued value of a cfg predicate when `test` is `under_test`.
+    `test` is known; every other predicate (`feature = ".."`, `unix`) is
+    unknown (None). Iterative: a hostile nest cannot recurse."""
+    tokens = _CFG_TOKEN.findall(source)
+    stack: list[tuple[str, list[bool | None]]] = [("", [])]
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if tok == "(":
+            stack.append(("", []))
+        elif tok == ")":
+            if len(stack) > 1:
+                op, args = stack.pop()
+                stack[-1][1].append(_cfg_combine(op, args))
+        elif tok in (",", "="):
+            pass
+        elif nxt == "(":
+            stack.append((tok, []))
+            i += 1  # the paren opened a frame already named by `tok`
+        elif nxt == "=":
+            stack[-1][1].append(None)  # `feature = "x"`
+            i += 2
+        elif not tok.startswith('"'):
+            stack[-1][1].append(under_test if tok == "test" else None)
+        i += 1
+    while len(stack) > 1:
+        op, args = stack.pop()
+        stack[-1][1].append(_cfg_combine(op, args))
+    top = stack[0][1]
+    return top[0] if len(top) == 1 else None
+
+
+def _cfg_combine(op: str, args: list[bool | None]) -> bool | None:
+    if op == "not":
+        return None if len(args) != 1 or args[0] is None else not args[0]
+    if op == "any":
+        return (
+            True if True in args else (False if all(a is False for a in args) else None)
+        )
+    if op == "all":
+        return (
+            False if False in args else (True if all(a is True for a in args) else None)
+        )
+    return args[0] if op == "" and len(args) == 1 else None
+
+
 def is_cfg_test(attrs: list[Attr]) -> bool:
-    """`#[cfg(test)]`, `#[test]`, `#[tokio::test]`, `#[actix_web::test]`..."""
+    """Test-only code: `#[test]` (also `tokio::test` ..), or a `#[cfg(..)]`
+    that holds with `test` on and cannot hold with it off (`test`,
+    `all(test, ..)`). Any other gate may hold in a product build, so the item
+    stays: `not(test)`, `any(test, feature = ..)`, `feature = "test-utils"`."""
     for attr in attrs:
         if attr.name in _TEST_ATTRS:
             return True
-        if attr.name == "cfg" and re.search(
-            r"(?<!not\()\btest\b", "".join(text(attr.args).split())
-        ):
-            return True
+        if attr.name == "cfg":
+            flat = text(attr.args)
+            if _cfg_value(flat, False) is False:  # cannot hold without `test`
+                return True
     return False
 
 

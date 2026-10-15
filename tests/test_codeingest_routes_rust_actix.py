@@ -520,8 +520,8 @@ async fn fetch(client: &reqwest::Client, m: &HashMap<String, String>) {
     let _ = reqwest::get("https://example.com/a").await;
     let _ = client.get("https://example.com/b").send().await;
     let _ = m.get("k");
-    let _ = tokio::spawn(async {}).route("/not", 1);
-    let r = Registry::new().route("/a", handler);
+    let _ = tokio::spawn(async {}).route(1, 2, 3);
+    let r = Registry::new().route(handler);
     let _ = get(handler);
 }
 

@@ -202,18 +202,14 @@ def tracked_files(root: Path) -> list[str] | None:
     the wrong root — an empty tree would be a lie). See `_git_ls_files` for
     the dedup rationale and the `-z` note.
 
-    This has no `src/` caller — `walk_tree()` calls
-    `_walk_tree_with_git_state()`, which calls
-    `_git_ls_files()` directly (it needs `is_repo` and "has tracked
-    paths" as two separate facts, which this function's single collapsed
-    `None` can't give it) — so this function is now a test/diagnostic
-    entry point only: `tests/test_codeingest_extractors.py` calls it
-    directly to assert the merge-conflict dedup independently of the
-    rest of the tree-building pipeline. Kept rather than deleted because
-    that assertion reads more clearly against this function's own
-    simple, direct contract than against `_git_ls_files`'s two-tuple one,
-    and removing a still-tested, still-documented public function for a
-    docstring fix alone is not worth the churn."""
+    `walk_tree()` does not call this (it calls `_git_ls_files()` through
+    `_walk_tree_with_git_state()`, which needs `is_repo` and "has tracked
+    paths" as two separate facts that this function's single collapsed
+    `None` cannot give it). The one `src/` caller is the Rust route adapter
+    (`_routes_rust._bin_files`), which reads back the tracked `src/bin/`
+    files the walker prunes; `tests/test_codeingest_extractors.py` also
+    calls it to assert the merge-conflict dedup independently of the rest
+    of the tree-building pipeline."""
     is_repo, paths = _git_ls_files(root)
     if not is_repo:
         return None
