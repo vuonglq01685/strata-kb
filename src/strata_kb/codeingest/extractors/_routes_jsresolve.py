@@ -77,6 +77,9 @@ class ModuleResolver:
             base,
             *(stem + e for e in _EXTS),
             *(f"{base}/index{e}" for e in _EXTS),
+            # a typings-only module, last so a real source file wins
+            stem + ".d.ts",
+            f"{base}/index.d.ts",
         ]
         return next((c for c in candidates if c in self._sources), None)
 

@@ -27,6 +27,7 @@ file walk before this extractor sees them, so they are not counted.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -65,6 +66,8 @@ _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
     ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/")),
     ("test", re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/")),
+    # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code
+    ("config", re.compile(r"\.config\.[cm]?[jt]s$|(?:^|/)\.[^/]*\.[cm]?[jt]s$")),
 )
 _HEADER = "| Name | Kind | File |"
 _RULE = "| --- | --- | --- |"
@@ -79,6 +82,9 @@ class Symbol:
     name: str
     kind: str  # function|class|interface|type|const|enum|member|css-var
     file: str
+
+
+_Entry = tuple[str, str, bool]  # (name, kind, is the file's own default export)
 
 
 @dataclass
@@ -111,7 +117,7 @@ class _Reader:
         sources = frozenset(f for f in files if f.endswith(_EXTS))
         self._resolver = ModuleResolver(root, files, sources)
         self._surfaces: dict[str, _Surface] = {}
-        self._public: dict[str, tuple[list[tuple[str, str]], set[str]]] = {}
+        self._memo: dict[str, tuple[list[_Entry], set[str]]] = {}
 
     def _surface(self, rel: str) -> _Surface:
         if rel not in self._surfaces:
@@ -145,63 +151,91 @@ class _Reader:
         defaults = frozenset({default}) if once and default else frozenset()
         return _Surface(names, found.reexports if found else (), sites, defaults)
 
-    def public(
-        self, rel: str, seen: frozenset[str] = frozenset()
-    ) -> tuple[list[tuple[str, str]], set[str]]:
+    def public(self, rel: str) -> tuple[list[_Entry], set[str]]:
         """Names `rel` exports (its own plus followed re-exports) and the
-        sites that make that list uncertain. `seen` stops import cycles."""
-        if not seen and rel in self._public:
-            return self._public[rel]
+        sites that make that list uncertain."""
+        names, sites, _cuts = self._public(rel, frozenset())
+        return names, sites
+
+    def _public(
+        self, rel: str, seen: frozenset[str]
+    ) -> tuple[list[_Entry], set[str], frozenset[str]]:
+        """Third item: the ancestors in `seen` a cycle was cut at. A result
+        that depended on such a cut is only valid under that `seen`, so only
+        cut-free results are memoized."""
+        if rel in self._memo:
+            return *self._memo[rel], frozenset()
         surface = self._surface(rel)
-        names = list(surface.names)
+        names = [(n, k, n.split(".")[0] in surface.defaults) for n, k in surface.names]
         sites = set(surface.sites)
+        cuts: set[str] = set()
         for reexport in surface.reexports:
-            more, extra = self._follow(rel, reexport, seen | {rel})
+            more, extra, cut = self._follow(rel, reexport, seen | {rel})
             names += more
             sites |= extra
-        if not seen:
-            self._public[rel] = (names, sites)
-        return names, sites
+            cuts |= cut
+        cuts.discard(rel)
+        if not cuts:
+            self._memo[rel] = (names, sites)
+        return names, sites, frozenset(cuts)
 
     def _follow(
         self, rel: str, reexport: Reexport, seen: frozenset[str]
-    ) -> tuple[list[tuple[str, str]], set[str]]:
+    ) -> tuple[list[_Entry], set[str], frozenset[str]]:
         target = self._resolver.resolve(rel, reexport.spec)
         outside = target is None and self._resolver.is_external(rel, reexport.spec)
         site = f"{rel}:{reexport.line}"
         if reexport.kind == "star":
             if target is None:
-                return [], {site}  # names unknown
+                return [], {site}, frozenset()  # names unknown
             if target in seen:
-                return [], set()
-            names, sites = self.public(target, seen)
-            skip = self._surface(target).defaults | {DEFAULT_NAME}
-            return [(n, k) for n, k in names if n.split(".")[0] not in skip], sites
+                return [], set(), frozenset({target})
+            names, sites, cuts = self._public(target, seen)
+            # `export *` never carries the target's own default
+            return [e for e in names if not e[2]], sites, cuts
         sites = {site} if target is None and not outside else set()
         if reexport.kind == "ns":
-            return [(exported, "const") for _star, exported in reexport.names], sites
-        there = (
-            self.public(target, seen)[0]
-            if target is not None and target not in seen
-            else []
-        )
-        kinds = dict(there)
-        names: list[tuple[str, str]] = []
+            return (
+                [(exported, "const", False) for _s, exported in reexport.names],
+                sites,
+                frozenset(),
+            )
+        there: list[_Entry] = []
+        cuts: frozenset[str] = frozenset()
+        if target is not None and target in seen:
+            # a cycle: only the target's own declarations, for the kinds
+            surface = self._surface(target)
+            there = [
+                (n, k, n.split(".")[0] in surface.defaults) for n, k in surface.names
+            ]
+        elif target is not None:
+            there, _sites, cuts = self._public(target, seen)
+        default = next((n for n, _k, d in there if d and "." not in n), None)
+        names: list[_Entry] = []
         for imported, exported in reexport.names:
-            names.append((exported, kinds.get(imported, "const")))
-            prefix = imported + "."
+            source = (default or DEFAULT_NAME) if imported == DEFAULT_NAME else imported
+            kind = next((k for n, k, _d in there if n == source), "const")
+            is_default = exported == DEFAULT_NAME
+            if is_default and target is not None:  # named after the target
+                exported = (
+                    default
+                    if default and default != DEFAULT_NAME
+                    else PurePosixPath(target).stem
+                )
+            names.append((exported, kind, is_default))
+            prefix = source + "."
             names += [
-                (f"{exported}.{n[len(prefix) :]}", k)
-                for n, k in there
+                (f"{exported}.{n[len(prefix) :]}", k, is_default)
+                for n, k, _d in there
                 if n.startswith(prefix)
             ]
-        return names, sites
+        return names, sites, cuts
 
     def symbols(self, rel: str) -> tuple[list[Symbol], set[str]]:
         names, sites = self.public(rel)
         stem = PurePosixPath(rel).stem
         return [
-            Symbol(stem if n == DEFAULT_NAME else n, k, rel) for n, k in names
+            Symbol(stem if n == DEFAULT_NAME else n, k, rel) for n, k, _d in names
         ], sites
 
 
@@ -224,12 +258,18 @@ def _row_detail(skipped: Counter[str], sites: set[str]) -> str:
 
 
 def _slugs(keys: list[str]) -> list[str]:
-    own = [_ROOT_SLUG if k == "." else assign_slugs([k])[0] for k in keys]
-    # a directory literally named `root` must not take the root's id
-    return [
-        s if own.count(s) == 1 else f"{s}-{assign_slugs([k])[0][-6:]}"
-        for s, k in zip(own, keys, strict=True)
-    ]
+    """One unique id slug per key. Normalization maps `a-b` and `a_b` to the
+    same slug, so a collision re-slugs the whole set (same pattern as pages);
+    the repo root is always `root`, and a directory that would take that id
+    gets a suffix instead."""
+    others = [k for k in keys if k != "."]
+    own = [assign_slugs([k])[0] for k in others]
+    slugs = own if len(set(own)) == len(own) else assign_slugs(others)
+    by_key = {
+        k: f"{s}-{hashlib.sha256(k.encode()).hexdigest()[:6]}" if s == _ROOT_SLUG else s
+        for k, s in zip(others, slugs, strict=True)
+    }
+    return [_ROOT_SLUG if k == "." else by_key[k] for k in keys]
 
 
 def _section(slug: str, label: str, found: set[Symbol]) -> CodeSection:

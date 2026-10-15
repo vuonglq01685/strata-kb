@@ -251,6 +251,9 @@ def test_reexport_barrel_chain_alias_and_cycle(tmp_path):
     assert got[("src/index.ts", "Deep")] == "class"  # two hops, cycle terminates
     assert got[("src/index.ts", "Mid")] == "const"
     assert got[("src/index.ts", "Renamed")] == "class"  # kind from the target
+    assert [r[0] for r in rows(result, "sym.root") if r[2] == "src/index.ts"].count(
+        "Renamed"
+    ) == 1
     assert got[("src/index.ts", "ns")] == "const"
     assert cover(result, ".", "typescript").status == "complete"
 
@@ -355,10 +358,72 @@ def test_tsx_and_javascript_get_their_own_rows(tmp_path):
 
 
 @needs_ts
-def test_commonjs_only_file_has_no_symbols_and_stays_complete(tmp_path):
-    result = solo(tmp_path, "module.exports = { a: 1 };\n", "jest.config.js")
-    assert not result.sections
+def test_commonjs_exports_listed(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "lib/a.js",
+        "exports.foo = 1;\nmodule.exports.bar = function(){};\nexports['baz'] = 2;\n",
+    )
+    write(
+        tmp_path,
+        "lib/b.js",
+        "const a = 1, c = () => 1;\n"
+        "module.exports = { a, b: c, run() {}, fn: function () {}, secret: 'sk-live-1' };\n",
+    )
+    write(tmp_path, "lib/c.js", "function Thing(){}\nmodule.exports = Thing;\n")
+    write(tmp_path, "lib/d.js", "module.exports = function named() {};\n")
+    result = run_symbols(tmp_path)
+    got = {(r[2], r[0]): r[1] for r in rows(result, "sym.root")}
+    assert got == {
+        ("lib/a.js", "foo"): "const",
+        ("lib/a.js", "bar"): "function",
+        ("lib/a.js", "baz"): "const",
+        ("lib/b.js", "a"): "const",
+        ("lib/b.js", "b"): "function",
+        ("lib/b.js", "run"): "function",
+        ("lib/b.js", "fn"): "function",
+        ("lib/b.js", "secret"): "const",
+        ("lib/c.js", "Thing"): "function",
+        ("lib/d.js", "named"): "function",
+    }
+    assert "sk-live" not in section(result, "sym.root").l2_md
     assert cover(result, ".", "javascript").status == "complete"
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    "line",
+    [
+        "module.exports = require('./x');",
+        "module.exports = factory();",
+        "module.exports = class {};",
+        "module.exports = function () {};",
+        "module.exports = { ...base, a: 1 };",
+        "module.exports = exports = {};",
+        "exports[key] = 1;",
+    ],
+)
+def test_commonjs_unreadable_forms_are_sites(tmp_path, line):
+    result = solo(tmp_path, line + "\n", "lib/x.js")
+    row = cover(result, ".", "javascript")
+    assert row.status == "partial"
+    assert "lib/x.js:1" in row.detail
+
+
+@needs_ts
+def test_tool_config_files_skipped_and_counted(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "jest.config.js", "module.exports = { preset: 'ts-jest' };\n")
+    write(tmp_path, "vite.config.ts", "export default defineConfig({});\n")
+    write(tmp_path, "babel.config.cjs", "module.exports = (api) => ({});\n")
+    write(tmp_path, ".eslintrc.js", "module.exports = { root: true };\n")
+    write(tmp_path, "src/keep.js", "exports.keep = 1;\n")
+    result = run_symbols(tmp_path)
+    assert names(result) == ["keep"]
+    row = cover(result, ".", "javascript")
+    assert (row.status, row.detail) == ("complete", "skipped 3 config")
+    assert cover(result, ".", "typescript").detail == "skipped 1 config"
 
 
 # --- CSS / SCSS ------------------------------------------------------------
@@ -579,3 +644,141 @@ def test_detect(tmp_path):
     assert not ext.detect(tmp_path)
     write(tmp_path, "a.ts", "export const a = 1;\n")
     assert ext.detect(tmp_path)
+
+
+# --- review round 1 ----------------------------------------------------------
+
+
+@needs_ts
+def test_star_default_exclusion_keeps_names_the_target_also_reexports(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/u.ts", "export const Foo = { A: 1 };\n")
+    write(
+        tmp_path,
+        "src/t.ts",
+        "import { Foo } from './u';\nexport * from './u';\nexport default Foo;\n",
+    )
+    write(tmp_path, "src/barrel.ts", "export * from './t';\n")
+    got = {
+        r[0] for r in rows(run_symbols(tmp_path), "sym.root") if r[2] == "src/barrel.ts"
+    }
+    assert got == {"Foo", "Foo.A"}
+
+
+@needs_ts
+def test_colliding_scope_slugs_get_distinct_ids(tmp_path):
+    write(tmp_path, "top.ts", "export const top = 1;\n")
+    write(tmp_path, "root/a.ts", "export const inRootDir = 1;\n")
+    for d, n in (("packages/a-b", "ab1"), ("packages/a_b", "ab2")):
+        package(tmp_path, d, n)
+        write(tmp_path, f"{d}/x.ts", f"export const {n} = 1;\n")
+    ids = [s.id for s in run_symbols(tmp_path).sections]
+    assert len(ids) == len(set(ids)) == 4
+    assert "sym.root" in ids  # the repo root keeps the plain id
+    assert not [i for i in ids if i in ("sym.packages-a-b", "sym.packages-a_b")]
+
+
+@needs_ts
+def test_css_false_positives_not_listed(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "a.scss",
+        '.a { content: "--in-string: 1"; background: url(data:x/--in-url:1); --real: 1; } // --trailing: 2\n'
+        "@supports (--feature: 1) { .b { --kept: 2 } }\n",
+    )
+    write(tmp_path, "b.css", ".a { background: url('//cdn/--u: 1'); --css-real: 1 }\n")
+    result = run_symbols(tmp_path)
+    assert sorted(names(result)) == ["--css-real", "--kept", "--real"]
+
+
+@needs_ts
+def test_star_reexport_resolves_declaration_file(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "src/types.d.ts",
+        "export interface Shape {}\nexport declare const K: number;\n",
+    )
+    write(tmp_path, "src/index.ts", "export * from './types';\n")
+    result = run_symbols(tmp_path)
+    got = {(r[2], r[0]): r[1] for r in rows(result, "sym.root")}
+    assert got == {
+        ("src/index.ts", "Shape"): "interface",
+        ("src/index.ts", "K"): "const",
+    }
+    assert cover(result, ".", "typescript").status == "complete"
+
+
+@needs_ts
+def test_default_reexports_take_the_targets_default(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/card.ts", "export default class Card {}\n")
+    write(tmp_path, "src/btn.ts", "export default function () {}\n")
+    write(
+        tmp_path,
+        "src/index.ts",
+        "export { default as Card2 } from './card';\nexport { default } from './card';\n",
+    )
+    write(tmp_path, "src/b2.ts", "export { default } from './btn';\n")
+    write(tmp_path, "src/all.ts", "export * from './index';\nexport * from './b2';\n")
+    got = {(r[2], r[0]): r[1] for r in rows(run_symbols(tmp_path), "sym.root")}
+    assert got[("src/index.ts", "Card2")] == "class"
+    assert (
+        got[("src/index.ts", "Card")] == "class"
+    )  # the target's declared default name
+    assert got[("src/b2.ts", "btn")] == "function"  # anonymous: the target's stem
+    # `export *` carries Card2 but not the defaults
+    assert [k for k in got if k[0] == "src/all.ts"] == [("src/all.ts", "Card2")]
+
+
+@needs_ts
+def test_imported_then_exported_keeps_members(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "src/codes.ts",
+        "export const Codes = { A: 1, B: 2 };\nexport default class K {}\n",
+    )
+    write(
+        tmp_path,
+        "src/index.ts",
+        "import { Codes } from './codes';\nimport K from './codes';\n"
+        "import * as codes from './codes';\nexport { Codes, K, codes };\n",
+    )
+    got = {(r[2], r[0]): r[1] for r in rows(run_symbols(tmp_path), "sym.root")}
+    idx = {n: k for (f, n), k in got.items() if f == "src/index.ts"}
+    assert idx == {
+        "Codes": "const",
+        "Codes.A": "member",
+        "Codes.B": "member",
+        "K": "class",
+        "codes": "const",
+    }
+
+
+@needs_ts
+def test_unresolved_imported_then_exported_is_a_site(tmp_path):
+    result = solo(tmp_path, "import { x } from './gone';\nexport { x };\n")
+    assert "x" in names(result)
+    assert cover(result, ".", "typescript").status == "partial"
+
+
+@needs_ts
+def test_shared_reexport_target_is_computed_once(tmp_path, monkeypatch):
+    package(tmp_path, ".")
+    write(tmp_path, "src/a.ts", "export * from './b';\nexport * from './c';\n")
+    write(tmp_path, "src/b.ts", "export * from './d';\n")
+    write(tmp_path, "src/c.ts", "export * from './d';\n")
+    write(tmp_path, "src/d.ts", "export * from './e';\n")
+    write(tmp_path, "src/e.ts", "export const e = 1;\n")
+    calls: list[str] = []
+    original = symbols._Reader._follow
+
+    def spy(self, rel, reexport, seen):
+        calls.append(rel)
+        return original(self, rel, reexport, seen)
+
+    monkeypatch.setattr(symbols._Reader, "_follow", spy)
+    run_symbols(tmp_path)
+    assert calls.count("src/d.ts") == 1

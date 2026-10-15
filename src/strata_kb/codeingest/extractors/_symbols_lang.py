@@ -249,9 +249,79 @@ def _locals(root: Node) -> dict[str, tuple[str, Node | None]]:
     return table
 
 
+def _imports(root: Node) -> dict[str, tuple[str, str]]:
+    """local name -> (module specifier, imported name; `*` for a namespace)."""
+    table: dict[str, tuple[str, str]] = {}
+    for stmt in root.named_children:
+        if stmt.type != "import_statement":
+            continue
+        spec = _ts.string_literal(stmt.child_by_field_name("source") or stmt)
+        clause = next(
+            (c for c in stmt.named_children if c.type == "import_clause"), None
+        )
+        if spec is None or clause is None:
+            continue
+        for part in clause.named_children:
+            if part.type == "identifier":
+                table[_ts.node_text(part)] = (spec, DEFAULT_NAME)
+            elif part.type == "namespace_import" and part.named_children:
+                table[_ts.node_text(part.named_children[-1])] = (spec, "*")
+            elif part.type == "named_imports":
+                for item in part.named_children:
+                    name = _export_name(item.child_by_field_name("name"))
+                    alias = item.child_by_field_name("alias")
+                    local = _export_name(alias) if alias is not None else name
+                    if name is not None and local is not None:
+                        table[local] = (spec, name)
+    return table
+
+
+def _is_module_exports(node: Node | None) -> bool:
+    return (
+        node is not None
+        and node.type == "member_expression"
+        and _ts.node_text(node.child_by_field_name("object") or node) == "module"
+        and _ts.node_text(node.child_by_field_name("property") or node) == "exports"
+    )
+
+
+def _cjs_slot(left: Node | None) -> tuple[str, str | None] | None:
+    """("whole", None) for `module.exports =`, ("prop", name|None) for
+    `exports.x =` / `module.exports.x =` (None: computed name), else None."""
+    if left is None:
+        return None
+    if _is_module_exports(left):
+        return "whole", None
+    if left.type not in ("member_expression", "subscript_expression"):
+        return None
+    target = left.child_by_field_name("object")
+    if not (
+        target is not None
+        and (
+            (target.type == "identifier" and _ts.node_text(target) == "exports")
+            or _is_module_exports(target)
+        )
+    ):
+        return None
+    if left.type == "member_expression":
+        return "prop", _ts.node_text(left.child_by_field_name("property") or left)
+    index = left.child_by_field_name("index")
+    return "prop", _ts.string_literal(index) if index is not None else None
+
+
+def _value_kind(value: Node | None) -> str:
+    if value is not None and value.type in _FUNCTION_VALUES:
+        return "function"
+    if value is not None and value.type == "class":
+        return "class"
+    return "const"
+
+
 class _Reader:
     def __init__(self, root: Node):
         self.locals = _locals(root)
+        self.imports = _imports(root)
+        self.imported: list[Reexport] = []
         self.out: list[tuple[str, str]] = []
         self.unreadable: list[int] = []
         self.default_name: str | None = None
@@ -291,20 +361,95 @@ class _Reader:
             self.emit(DEFAULT_NAME, kind, None)
 
     def clause(self, clause: Node, type_only: bool) -> None:
-        for spec in clause.named_children:
-            if spec.type != "export_specifier":
+        for spec_node in clause.named_children:
+            if spec_node.type != "export_specifier":
                 continue
-            name = spec.child_by_field_name("name")
-            alias = spec.child_by_field_name("alias")
+            name = spec_node.child_by_field_name("name")
+            alias = spec_node.child_by_field_name("alias")
             local = _export_name(name)
             exported = _export_name(alias) if alias is not None else local
             if local is None or exported is None:
-                self.unreadable.append(_ts.line_of(spec))
+                self.unreadable.append(_ts.line_of(spec_node))
+                continue
+            if local not in self.locals and local in self.imports:
+                spec, imported = self.imports[local]
+                kind = "ns" if imported == "*" else "named"
+                pair = ("*" if kind == "ns" else imported, exported)
+                self.imported.append(
+                    Reexport(kind, spec, (pair,), _ts.line_of(spec_node))
+                )
                 continue
             if exported == DEFAULT_NAME:
                 self.default_name = DEFAULT_NAME
-            typed = type_only or any(c.type == "type" for c in spec.children)
+            typed = type_only or any(c.type == "type" for c in spec_node.children)
             self.local(local, exported, "type" if typed else "const")
+
+    def cjs(self, root: Node) -> None:
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            stack.extend(reversed(node.children))
+            if node.type != "assignment_expression":
+                continue
+            slot = _cjs_slot(node.child_by_field_name("left"))
+            if slot is None:
+                continue
+            value = _unwrap(node.child_by_field_name("right"))
+            if slot[0] == "prop":
+                if slot[1] is None:
+                    self.unreadable.append(_ts.line_of(node))
+                else:
+                    object_ = (
+                        value if value is not None and value.type == "object" else None
+                    )
+                    self.emit(slot[1], _value_kind(value), object_)
+            else:
+                self.module_exports(node, value)
+
+    def module_exports(self, node: Node, value: Node | None) -> None:
+        if value is not None and value.type == "identifier":
+            name = _ts.node_text(value)
+            self.local(name, name, "const")
+        elif value is not None and value.type == "object":
+            for child in value.named_children:
+                self.cjs_member(child)
+        elif (
+            value is not None
+            and value.type in ("function_expression", "class", "generator_function")
+            and value.child_by_field_name("name") is not None
+        ):
+            self.emit(
+                _ts.node_text(value.child_by_field_name("name") or value),
+                _value_kind(value),
+                None,
+            )
+        else:  # require(..), a call, an anonymous function/class, a chain
+            self.unreadable.append(_ts.line_of(node))
+
+    def cjs_member(self, child: Node) -> None:
+        if child.type == "comment":
+            return
+        if child.type == "shorthand_property_identifier":
+            name = _ts.node_text(child)
+            self.emit(name, self.locals.get(name, ("const", None))[0], None)
+        elif child.type in ("pair", "method_definition"):
+            is_pair = child.type == "pair"
+            name = _prop_name(child.child_by_field_name("key" if is_pair else "name"))
+            value = _unwrap(child.child_by_field_name("value")) if is_pair else None
+            if name is None:
+                self.unreadable.append(_ts.line_of(child))
+            elif not is_pair:
+                self.emit(name, "function", None)
+            elif value is not None and value.type == "identifier":
+                self.emit(
+                    name,
+                    self.locals.get(_ts.node_text(value), ("const", None))[0],
+                    None,
+                )
+            else:
+                self.emit(name, _value_kind(value), None)
+        else:  # spread_element, anything unknown
+            self.unreadable.append(_ts.line_of(child))
 
     def statement(self, stmt: Node) -> None:
         kinds = {c.type for c in stmt.children}
@@ -346,31 +491,33 @@ def _export_name(node: Node | None) -> str | None:
     return _ts.string_literal(node) if node.type == "string" else _ts.node_text(node)
 
 
-def _js_read(tree: Tree) -> _Reader:
+def _js_read(tree: Tree, source: bytes) -> _Reader:
     reader = _Reader(tree.root_node)
     for stmt in tree.root_node.named_children:
         if stmt.type == "export_statement":
             reader.statement(stmt)
+    if b"exports" in source:
+        reader.cjs(tree.root_node)
     return reader
 
 
-def _js_exports(tree: Tree, _source: bytes) -> list[tuple[str, str]]:
-    return _js_read(tree).out
+def _js_exports(tree: Tree, source: bytes) -> list[tuple[str, str]]:
+    return _js_read(tree, source).out
 
 
-def _js_extras(tree: Tree, _source: bytes) -> Extras:
-    reexports: list[Reexport] = []
-    reader = _js_read(tree)
+def _js_extras(tree: Tree, source: bytes) -> Extras:
+    reader = _js_read(tree, source)
+    reexports: list[Reexport] = list(reader.imported)
     unreadable = list(reader.unreadable)
     for stmt in tree.root_node.named_children:
-        source = (
+        from_node = (
             stmt.child_by_field_name("source")
             if stmt.type == "export_statement"
             else None
         )
-        if source is None:
+        if from_node is None:
             continue
-        spec = _ts.string_literal(source)
+        spec = _ts.string_literal(from_node)
         line = _ts.line_of(stmt)
         if spec is None:
             unreadable.append(line)
@@ -407,46 +554,65 @@ def _js_extras(tree: Tree, _source: bytes) -> Extras:
 # -- CSS / SCSS --------------------------------------------------------------
 
 _BLOCK_COMMENT = re.compile(rb"/\*.*?\*/", re.S)
-_LINE_COMMENT = re.compile(rb"^[ \t]*//[^\n]*", re.M)
+_STRING = re.compile(rb""""(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'""")
+_URL = re.compile(rb"url\([^)\n]*\)", re.I)
+_SUPPORTS = re.compile(rb"@supports[^{;]*")
+_LINE_COMMENT = re.compile(rb"//[^\n]*")
 _CUSTOM_PROP = re.compile(rb"(?<![\w-])(--[\w-]+)\s*:")
 _PROPERTY_AT_RULE = re.compile(rb"@property\s+(--[\w-]+)")
 _DYNAMIC_PROP = re.compile(rb"(?<![\w-])--[\w-]*#\{")
 
 
-def _strip_comments(source: bytes) -> bytes:
-    # replaced by blanks of the same line count so line numbers survive
-    keep = lambda m: re.sub(rb"[^\n]", b" ", m.group(0))  # noqa: E731
-    return _LINE_COMMENT.sub(keep, _BLOCK_COMMENT.sub(keep, source))
+def _blank(pattern: re.Pattern[bytes], text: bytes) -> bytes:
+    # same line count, so line numbers survive
+    return pattern.sub(lambda m: re.sub(rb"[^\n]", b" ", m.group(0)), text)
 
 
-def _css_exports(_tree: Tree, source: bytes) -> list[tuple[str, str]]:
-    # shortcut: regex, not the tree -- the SCSS grammar loses every
-    # declaration after `--x: #{$v}`; a `--x:` inside a string is listed too.
-    text = _strip_comments(source)
-    names = {m.group(1) for m in _CUSTOM_PROP.finditer(text)}
-    names |= {m.group(1) for m in _PROPERTY_AT_RULE.finditer(text)}
-    return sorted((n.decode("utf-8", "replace"), "css-var") for n in names)
+def _clean_style(source: bytes, scss: bool) -> bytes:
+    """`source` with everything that can hold a `--x:` lookalike blanked:
+    comments, strings, `url(..)`, `@supports (..)` conditions."""
+    text = _blank(_BLOCK_COMMENT, source)
+    for pattern in (_STRING, _URL, _SUPPORTS, *([_LINE_COMMENT] if scss else [])):
+        text = _blank(pattern, text)
+    return text
 
 
-def _css_extras(_tree: Tree, source: bytes) -> Extras:
-    # a custom property named by interpolation (`--#{$k}: v`) has no static name
-    text = _strip_comments(source)
-    lines = {text.count(b"\n", 0, m.start()) + 1 for m in _DYNAMIC_PROP.finditer(text)}
-    return Extras((), tuple(sorted(lines)))
+def _css_reader(scss: bool) -> Exporter:
+    def exports(_tree: Tree, source: bytes) -> list[tuple[str, str]]:
+        # shortcut: regex, not the tree -- the SCSS grammar loses every
+        # declaration after `--x: #{$v}`.
+        text = _clean_style(source, scss)
+        names = {m.group(1) for m in _CUSTOM_PROP.finditer(text)}
+        names |= {m.group(1) for m in _PROPERTY_AT_RULE.finditer(text)}
+        return sorted((n.decode("utf-8", "replace"), "css-var") for n in names)
+
+    return exports
+
+
+def _css_extras(scss: bool) -> Callable[[Tree, bytes], Extras]:
+    def extras(_tree: Tree, source: bytes) -> Extras:
+        # a custom property named by interpolation (`--#{$k}: v`) has no static name
+        text = _clean_style(source, scss)
+        lines = {
+            text.count(b"\n", 0, m.start()) + 1 for m in _DYNAMIC_PROP.finditer(text)
+        }
+        return Extras((), tuple(sorted(lines)))
+
+    return extras
 
 
 EXPORTERS: dict[str, Exporter] = {
     **dict.fromkeys(_JS_LANGS, _js_exports),
-    "css": _css_exports,
-    "scss": _css_exports,
+    "css": _css_reader(False),
+    "scss": _css_reader(True),
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     **dict.fromkeys(_JS_LANGS, _js_extras),
-    "css": _css_extras,
-    "scss": _css_extras,
+    "css": _css_extras(False),
+    "scss": _css_extras(True),
 }
 HINTS: dict[str, re.Pattern[bytes]] = {
-    **dict.fromkeys(_JS_LANGS, re.compile(rb"\bexport\b")),
+    **dict.fromkeys(_JS_LANGS, re.compile(rb"\bexports?\b")),
     "css": re.compile(rb"--"),
     "scss": re.compile(rb"--"),
 }
