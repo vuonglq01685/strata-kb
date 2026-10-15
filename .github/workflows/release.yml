@@ -86,6 +86,10 @@ jobs:
           mkdir -p /tmp/data/.kb /tmp/data/federation
           echo "docs: []" > /tmp/data/.kb/index.yaml
           echo "docs: []" > /tmp/data/federation/index.yaml
+          # The image runs as user `app` and, since 1.26.0, writes the account
+          # store and session key to /data/.kb-auth/ at start; the runner owns
+          # /tmp/data, so let `app` write there.
+          chmod -R a+rwX /tmp/data
           docker run -d --name kb -p 8321:8321 \
             -e STRATA_KB_HTTP_TOKEN=smoke-test-token-0123456789abcdef0123456789 \
             -v /tmp/data:/data \
@@ -94,7 +98,7 @@ jobs:
             curl -sf http://localhost:8321/api/health && break
             sleep 2
           done
-          curl -sf http://localhost:8321/api/health
+          curl -sf http://localhost:8321/api/health || { docker logs kb; exit 1; }
           code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8321/api/docs)
           test "$code" = "401"
           docker rm -f kb
