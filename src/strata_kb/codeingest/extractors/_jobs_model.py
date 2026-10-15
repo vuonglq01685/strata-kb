@@ -51,7 +51,9 @@ _PLACEHOLDER_RE = re.compile(r"[${]|%[^%\s]+%")
 # An identifier, or identifiers joined by `.` `:` `::` `\\` `-` `/` (a dotted
 # task, a scoped class, an artisan `report:send`, a k8s name). No spaces,
 # quotes, `=`, `@` or brackets: nothing that can carry a credential.
-_NAME_RE = re.compile(r"[\w$]+(?:(?:::|[.:\\/-])[\w$]+)*")
+# A backslash is only a namespace separator before an upper-case segment
+# (`App\\Jobs\\Prune`); `\\t`, `\\n`, `\\x41`, `\\u0041` are escapes, not names.
+_NAME_RE = re.compile(r"[\w$]+(?:(?:::|[.:/-]|\\(?=[A-Z_])(?![UX][0-9a-fA-F]))[\w$]+)*")
 
 
 def name_only(text: str | None) -> str | None:
@@ -84,8 +86,8 @@ class Ctx:
         return DYNAMIC
 
     def add(self, name: str, schedule: str, handler: str, node: Node) -> None:
-        if name not in _SENTINELS and name_only(name) is None:
-            name = self.dyn(node)  # rejected name: listed as dynamic, sited
+        if name == DYNAMIC or (name not in _SENTINELS and name_only(name) is None):
+            name = self.dyn(node)  # unknown or rejected name: dynamic, sited
         if handler not in _SENTINELS and name_only(handler) is None:
             handler = "-"
         self.jobs.append(
@@ -137,10 +139,11 @@ def enclosing(node: Node, types: frozenset[str]) -> str:
 
 
 def first_token(text: str) -> str:
-    """The command name of a command line: arguments (which can carry
-    credentials) are never kept."""
-    parts = [p for p in text.split() if not re.fullmatch(r"\w+=\S*", p)]
-    return parts[0] if parts else DYNAMIC
+    """The command name of a command line: its first token, only when that
+    token is name-shaped. Nothing is skipped or reinterpreted (`VAR="a b" cmd`
+    is not a command name), and arguments are never kept."""
+    parts = text.split()
+    return parts[0] if parts and name_only(parts[0]) else DYNAMIC
 
 
 def qualified(owner: str, method: str) -> str:

@@ -340,6 +340,8 @@ def test_celery_beat_schedule_periodic_task_and_add_periodic_task(tmp_path):
     write(
         tmp_path,
         "proj/celery.py",
+        "from celery.schedules import crontab\n"
+        "from datetime import timedelta\n"
         "app.conf.beat_schedule = {\n"
         '    "nightly": {"task": "proj.tasks.clean", "schedule": crontab(minute=0, hour=3)},\n'
         '    "poll": {"task": "proj.tasks.poll", "schedule": 30.0},\n'
@@ -360,7 +362,7 @@ def test_celery_beat_schedule_periodic_task_and_add_periodic_task(tmp_path):
         "beat": ("timedelta(seconds=30)", "beat"),
         "every-ten": ("interval 10.0s", "test"),
     }
-    assert row(result).detail == f"{_coverage.JOBS_DETAIL}; proj/celery.py:4"
+    assert row(result).detail == f"{_coverage.JOBS_DETAIL}; proj/celery.py:6"
     assert "hi" not in result.sections[0].l2_md
 
 
@@ -753,8 +755,12 @@ SECRET_CASES = {
     ),
     "celery": (
         "c.py",
+        "from celery.schedules import crontab, schedule\n"
         "app.conf.beat_schedule = {\n"
-        "  'k pw=SECRET6': {'task': 't pw=SECRET7', 'schedule': 30.0},\n}\n"
+        "  'k pw=SECRET6': {'task': 't pw=SECRET7', 'schedule': 30.0},\n"
+        "  'a': {'task': 't', 'schedule': crontab(minute=0, app='redis://u:SECRET28@h')},\n"
+        "  'b': {'task': 't', 'schedule': schedule(run_every=10, nowfun='SECRET29')},\n"
+        "  'c': {'task': 't', 'schedule': other.schedule('SECRET30')},\n}\n"
         "sender.add_periodic_task(10.0, test.s('SECRET8'), name='n SECRET9')\n",
     ),
     "laravel": (
@@ -763,7 +769,9 @@ SECRET_CASES = {
         "  $schedule->exec('mysqldump -uroot -pSECRET10 db')->daily();\n"
         "  $schedule->command('PGPASSWORD=SECRET11 pg_dump')->daily();\n"
         "  $schedule->command('report:send --tenant=SECRET12')->daily();\n"
-        "  $schedule->job('Jobs\\\\Prune --pw=SECRET13')->daily();\n}}\n",
+        "  $schedule->job('Jobs\\\\Prune --pw=SECRET13')->daily();\n"
+        "  $schedule->command('MYSQL_PWD=\"correct horse battery SECRET26\" mysqldump app')->daily();\n"
+        "  $schedule->command('PGPASSWORD=\"hunter2 SECRET27 tail\" pg_dump')->daily();\n}}\n",
     ),
     "symfony": (
         "T.php",
@@ -926,3 +934,98 @@ def test_each_yaml_manifest_is_read_once(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs, "_read", counting)
     run_jobs(tmp_path)
     assert reads.count("k/c.yaml") == 1
+
+
+# --- fix round 3 -----------------------------------------------------------------
+
+
+@needs_ts
+def test_laravel_command_name_is_first_token_only_when_name_shaped(tmp_path):
+    write(
+        tmp_path,
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->command('report:send --tenant=acme')->daily();\n"
+        "  $schedule->command('X=1 run')->daily();\n"
+        "  $schedule->command('MYSQL_PWD=\"a b\" dump')->daily();\n"
+        "}}\n",
+    )
+    result = run_jobs(tmp_path)
+    names = sorted(r[0] for r in rows_of(result, "app/Console/Kernel.php"))
+    assert names == ["(dynamic)", "(dynamic)", "report:send"]
+    assert "Kernel.php:4" in row(result).detail and "Kernel.php:5" in row(result).detail
+
+
+@needs_ts
+def test_every_dynamic_name_leaves_a_site(tmp_path):
+    write(
+        tmp_path,
+        "S.cs",
+        "class S { void M() { RecurringJob.AddOrUpdate(Id(), () => X.Y(), Cron.Daily); } }\n",
+    )
+    write(
+        tmp_path,
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n  $schedule->job($x)->daily();\n}}\n",
+    )
+    detail = row(run_jobs(tmp_path)).detail
+    assert "app/Console/Kernel.php:3" in detail
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    "value",
+    [
+        "opts as RepeatOptions",
+        "opts!",
+        "c ? x : y",
+        "await getOpts()",
+        "(opts)",
+        "opts satisfies R",
+    ],
+)
+def test_bullmq_non_literal_repeat_forms_are_dynamic(tmp_path, value):
+    write(
+        tmp_path,
+        "q.ts",
+        f"import {{ Queue }} from 'bullmq';\nasync function f() {{ q.add('j', {{}}, {{ repeat: {value} }}); }}\n",
+    )
+    result = run_jobs(tmp_path)
+    assert rows_of(result, "q.ts")[0][:2] == ["j", "(dynamic)"]
+    assert "q.ts:2" in row(result).detail
+
+
+@needs_ts
+def test_celery_schedule_calls_keep_only_known_fields_from_celery(tmp_path):
+    write(
+        tmp_path,
+        "c.py",
+        "from celery.schedules import crontab as cron, schedule, solar\n"
+        "app.conf.beat_schedule = {\n"
+        "  'ok': {'task': 't', 'schedule': cron('*/15', 4)},\n"
+        "  'sun': {'task': 't', 'schedule': solar('sunset', -37.81, 144.96)},\n"
+        "  'ev': {'task': 't', 'schedule': schedule(run_every=10)},\n"
+        "  'bad1': {'task': 't', 'schedule': cron(minute=0, app='x')},\n"
+        "  'bad2': {'task': 't', 'schedule': schedule(run_every=10, nowfun='x')},\n"
+        "  'bad3': {'task': 't', 'schedule': other.crontab(minute=0)},\n"
+        "  'bad4': {'task': 't', 'schedule': timedelta(seconds=3)},\n"
+        "}\n",
+    )
+    got = {r[0]: r[1] for r in rows_of(run_jobs(tmp_path), "c.py")}
+    assert got == {
+        "ok": "cron('*/15', 4)",
+        "sun": "solar('sunset', -37.81, 144.96)",
+        "ev": "schedule(run_every=10)",
+        "bad1": "(dynamic)",
+        "bad2": "(dynamic)",
+        "bad3": "(dynamic)",
+        "bad4": "(dynamic)",
+    }
+
+
+def test_name_only_backslash_is_a_namespace_separator_not_an_escape():
+    from strata_kb.codeingest.extractors._jobs_model import name_only
+
+    assert name_only("App\\Jobs\\Prune") == "App\\Jobs\\Prune"
+    for bad in ("b\\tX", "a\\nb", "\\x41", "a\\\\b", "a\\u0041b", "a=b", 'a"b'):
+        assert name_only(bad) is None, bad

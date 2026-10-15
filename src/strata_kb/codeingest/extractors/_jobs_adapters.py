@@ -232,6 +232,10 @@ def _node_cron(ctx: Ctx) -> None:
         )
 
 
+# a `repeat:` value that is not an object but plainly not a schedule either
+_PLAIN_LITERALS = frozenset({"true", "false", "null", "undefined", "number", "string"})
+
+
 def _bull_name(pair: Node) -> str:
     obj = pair.parent
     args = obj.parent if obj is not None else None
@@ -253,7 +257,7 @@ def _bullmq(ctx: Ctx) -> None:
         if value is None:
             continue
         if value.type != "object":
-            if value.type in ("identifier", "member_expression", "call_expression"):
+            if value.type not in _PLAIN_LITERALS:
                 ctx.add(_bull_name(pair), ctx.dyn(pair), "-", pair)
             continue
         if any(c.type == "spread_element" for c in value.named_children):
@@ -312,18 +316,92 @@ def _py_literal(node: Node | None) -> bool:
     return node is not None and (_lit(node) is not None or num(node) is not None)
 
 
-def _py_schedule(ctx: Ctx, node: Node | None, at: Node) -> str:
+# schedule call -> its ordered parameters; only these are ever read
+_PY_FIELDS = {
+    "crontab": ("minute", "hour", "day_of_week", "day_of_month", "month_of_year"),
+    "schedule": ("run_every",),
+    "solar": ("event", "lat", "lon"),
+    "timedelta": (
+        "days",
+        "seconds",
+        "microseconds",
+        "milliseconds",
+        "minutes",
+        "hours",
+        "weeks",
+    ),
+}
+_PY_MODULES = {
+    "crontab": ("celery.schedules", "celery"),
+    "schedule": ("celery.schedules", "celery"),
+    "solar": ("celery.schedules", "celery"),
+    "timedelta": ("datetime",),
+}
+
+
+def _celery_bindings(root: Node) -> dict[str, str]:
+    """Local name -> schedule callee (`crontab`, `timedelta`, ...) for the
+    names imported from celery / datetime."""
+    bound: dict[str, str] = {}
+    for node in _walk(root):
+        if node.type != "import_from_statement":
+            continue
+        module = _text(node.child_by_field_name("module_name"))
+        for item in node.named_children:
+            if item.type == "dotted_name" and item is not node.child_by_field_name(
+                "module_name"
+            ):
+                name, alias = _text(item), _text(item)
+            elif item.type == "aliased_import":
+                name = _text(item.child_by_field_name("name"))
+                alias = _text(item.child_by_field_name("alias"))
+            else:
+                continue
+            if module in _PY_MODULES.get(name, ()):
+                bound[alias] = name
+    return bound
+
+
+def _schedule_callee(fn: Node | None, bound: dict[str, str]) -> str | None:
+    if fn is None:
+        return None
+    if fn.type == "identifier":
+        return bound.get(_text(fn))
+    if fn.type == "attribute":
+        leaf = _text(fn.child_by_field_name("attribute"))
+        owner = _text(fn.child_by_field_name("object"))
+        if owner in _PY_MODULES.get(leaf, ()) or (
+            leaf in _PY_MODULES and owner == "schedules"
+        ):
+            return leaf
+    return None
+
+
+def _py_value(node: Node | None) -> bool:
+    if node is not None and node.type == "unary_operator":  # -37.81
+        return _text(node).startswith("-") and num(node.named_children[-1]) is not None
+    return _py_literal(node)
+
+
+def _py_schedule(ctx: Ctx, node: Node | None, at: Node, bound: dict[str, str]) -> str:
     if node is None:
         return ctx.dyn(at)
     seconds = num(node)
     if seconds:
         return f"interval {seconds}s"
-    if (
-        node.type == "call"
-        and _last(node.child_by_field_name("function")) in _PY_SCHEDULES
-    ):
+    callee = (
+        _schedule_callee(node.child_by_field_name("function"), bound)
+        if node.type == "call"
+        else None
+    )
+    if callee is not None:
+        fields = _PY_FIELDS[callee]
         positional, keywords = _py_call_args(node)
-        if all(_py_literal(a) for a in [*positional, *keywords.values()]):
+        if (
+            len(positional) <= len(fields)
+            and set(keywords) <= set(fields)
+            and all(_py_value(a) for a in [*positional, *keywords.values()])
+        ):
             return " ".join(_text(node).split())
     return ctx.dyn(at)
 
@@ -337,7 +415,7 @@ def _dict_get(node: Node, key: str) -> Node | None:
     return None
 
 
-def _beat(ctx: Ctx, table: Node | None, at: Node) -> None:
+def _beat(ctx: Ctx, table: Node | None, at: Node, bound: dict[str, str]) -> None:
     if table is None or table.type != "dictionary":
         ctx.dyn(at)
         return
@@ -355,7 +433,7 @@ def _beat(ctx: Ctx, table: Node | None, at: Node) -> None:
         task = _lit(_dict_get(value, "task")) or "-"
         ctx.add(
             name or DYNAMIC,
-            _py_schedule(ctx, _dict_get(value, "schedule"), pair),
+            _py_schedule(ctx, _dict_get(value, "schedule"), pair, bound),
             task,
             pair,
         )
@@ -375,7 +453,7 @@ def _sig_name(node: Node) -> str:
     return _text(node) if node.type in ("identifier", "attribute") else DYNAMIC
 
 
-def _periodic_decorators(ctx: Ctx, node: Node) -> None:
+def _periodic_decorators(ctx: Ctx, node: Node, bound: dict[str, str]) -> None:
     definition = node.child_by_field_name("definition")
     if definition is None or definition.type != "function_definition":
         return
@@ -393,23 +471,29 @@ def _periodic_decorators(ctx: Ctx, node: Node) -> None:
         keywords = _py_call_args(expr)[1] if expr.type == "call" else {}
         fname = _text(definition.child_by_field_name("name"))
         handler = qualified(enclosing(definition, _PY_CLASSES), fname)
-        ctx.add(fname, _py_schedule(ctx, keywords.get("run_every"), dec), handler, dec)
+        ctx.add(
+            fname,
+            _py_schedule(ctx, keywords.get("run_every"), dec, bound),
+            handler,
+            dec,
+        )
 
 
 def _celery(ctx: Ctx) -> None:
+    bound = _celery_bindings(ctx.root)
     for node in _walk(ctx.root):
         if (
             node.type == "assignment"
             and _last(node.child_by_field_name("left")) in _BEAT_KEYS
         ):
-            _beat(ctx, node.child_by_field_name("right"), node)
+            _beat(ctx, node.child_by_field_name("right"), node, bound)
         elif (
             node.type == "keyword_argument"
             and _text(node.child_by_field_name("name")) in _BEAT_KEYS
         ):
-            _beat(ctx, node.child_by_field_name("value"), node)
+            _beat(ctx, node.child_by_field_name("value"), node, bound)
         elif node.type == "decorated_definition":
-            _periodic_decorators(ctx, node)
+            _periodic_decorators(ctx, node, bound)
         elif (
             node.type == "call"
             and _last(node.child_by_field_name("function")) == "add_periodic_task"
@@ -420,7 +504,7 @@ def _celery(ctx: Ctx) -> None:
                 continue
             handler = _sig_name(positional[1])
             name = _lit(keywords.get("name")) or handler
-            ctx.add(name, _py_schedule(ctx, positional[0], node), handler, node)
+            ctx.add(name, _py_schedule(ctx, positional[0], node, bound), handler, node)
 
 
 _PYTHON = [
