@@ -103,7 +103,7 @@ def test_sa_full_wrappers_carry_the_workflow_and_sources(name):
         "--mission",
         "do **not** load `db.*` or `api.*`",
         "The record has no directory field",
-        "depth 4 and 600 lines",
+        "paths deeper than `struct.tree` shows",
         "Never edit a BA-owned section",
         "not a reviewer",
     ):
@@ -115,3 +115,71 @@ def test_sa_wrappers_never_offer_flow_or_failure_fields(name):
     text = _read_init_template(name)
     assert "- Flow:" not in text
     assert "- Failure modes:" not in text
+
+
+def _sa_body() -> str:
+    return " ".join(_read_init_template("claude-skill-sa-ticket-ground.md").split())
+
+
+def test_sa_prompt_mentions_struct_coverage_and_jobs_rule():
+    body = _sa_body()
+    for phrase in (
+        "struct.coverage",
+        "`route.*`",
+        "`page.*`",
+        "`job.*`",
+        "`sym.*`",
+        "`struct.files.*`",
+        "in <path> [NEW: D<n>]",
+        "never complete",
+        "Open decisions",
+        "paths deeper than `struct.tree` shows",
+        "route.<slug> — <METHOD> <path>",
+        "page.<slug> — <path>",
+        "job.<slug> — <Name>",
+        "sym.<slug> — <Name>",
+        "`svc.*`, `int.*`",
+    ):
+        assert phrase in body, phrase
+    assert "depth 4" not in body
+
+
+def test_sa_prompt_is_identical_across_rendered_wrappers():
+    # The body lives once in bodies/; every full wrapper renders it.
+    canon = _sa_body()
+    for name in SA_FULL_WRAPPERS[1:]:
+        assert "struct.coverage" in " ".join(_read_init_template(name).split()), name
+    assert "in <path> [NEW: D<n>]" in canon
+
+
+def test_ticket_template_has_pages_jobs_symbols_fields():
+    text = _read_init_template("ticket-template.md")
+    assert "- Routes: api.<tag> | route.<file> — <METHOD> <path>" in text
+    assert "- Pages: page.<app> — <path>, … — or `none`" in text
+    assert "- Jobs: job.<file> — <name>, … — or `none`" in text
+    assert "- Symbols: sym.<package> — <Name>, … — or `none`" in text
+    assert text.index("- Routes:") < text.index("- Pages:") < text.index("- Jobs:")
+    assert text.index("- Jobs:") < text.index("- Symbols:") < text.index("- Externals:")
+    assert "as listed in struct.tree or struct.files.*" in text
+
+
+def test_kb_code_workflow_installs_code_extra():
+    text = _read_init_template("kb-code.yml")
+    assert text.count('pip install "strata-kb[code]=={version}"') == 2
+    assert "pip install strata-kb==" not in text
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '- run: pip install "strata-kb[code]==1.2.3"',
+        "- run: pip install strata-kb==1.2.3",
+    ],
+)
+def test_version_pin_is_read_with_or_without_the_extra(tmp_path, line):
+    from strata_kb.codeingest import sync
+
+    wf = tmp_path / sync.KB_CODE_WORKFLOW
+    wf.parent.mkdir(parents=True)
+    wf.write_text(line + "\n", encoding="utf-8")
+    assert sync.ci_pin(tmp_path) == "1.2.3"

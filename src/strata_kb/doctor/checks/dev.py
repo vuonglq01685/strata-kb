@@ -64,6 +64,22 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
     return issues
 
 
+def check_code_extra() -> list[Issue]:
+    """Dev repo: without the `code` extra the route/page/job/symbol sections
+    are all `not scanned`, and the ticket gate can never accept a [NEW]."""
+    from strata_kb.codeingest.extractors import _ts
+
+    if _ts.available():
+        return []
+    return [
+        Issue(
+            "warning",
+            "strata-kb[code] is not installed — routes, pages, jobs and symbols "
+            "will be 'not scanned'; pip install \"strata-kb[code]\"",
+        )
+    ]
+
+
 def check_hub_lag(
     kb_dir: Path, repo_root: Path, handle: HubHandle | None, repo_id: str | None
 ) -> list[Issue]:

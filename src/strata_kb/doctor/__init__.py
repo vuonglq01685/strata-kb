@@ -19,7 +19,11 @@ from strata_kb.doctor.checks.assets import (  # noqa: F401 -- re-exported
     check_asset_store,
 )
 from strata_kb.doctor.checks.context import check_context
-from strata_kb.doctor.checks.dev import check_dev_sync, check_hub_lag
+from strata_kb.doctor.checks.dev import (
+    check_code_extra,
+    check_dev_sync,
+    check_hub_lag,
+)
 from strata_kb.doctor.checks.hub import (  # noqa: F401 -- re-exported
     _fed_tree_digest,
     _ignoring_digests,
@@ -174,6 +178,7 @@ def run(
         if cfg_kind == "dev":
             repo_root = kb_dir.resolve().parent
             issues += check_dev_sync(kb_dir, repo_root, repo_id)
+            issues += check_code_extra()
             issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
     has_stale = False
     if context_text is not None:

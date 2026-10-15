@@ -649,3 +649,34 @@ def test_fed_tree_digest_has_one_home_in_federation():
 
     assert doctor._fed_tree_digest is federation._fed_tree_digest
     assert hub_checks._FED_TOP_SKIP is federation._FED_TOP_SKIP
+
+
+def test_doctor_warns_without_code_extra(monkeypatch):
+    from strata_kb.codeingest.extractors import _ts
+    from strata_kb.doctor.checks.dev import check_code_extra
+
+    monkeypatch.setattr(_ts, "available", lambda: False)
+    issues = check_code_extra()
+    assert [i.level for i in issues] == ["warning"]
+    assert "strata-kb[code] is not installed" in issues[0].message
+    assert 'pip install "strata-kb[code]"' in issues[0].message
+
+
+def test_doctor_quiet_with_code_extra(monkeypatch):
+    from strata_kb.codeingest.extractors import _ts
+    from strata_kb.doctor.checks.dev import check_code_extra
+
+    monkeypatch.setattr(_ts, "available", lambda: True)
+    assert check_code_extra() == []
+
+
+def test_fix_pins_keeps_the_code_extra(tmp_path):
+    from strata_kb.doctor import remote
+
+    _workflow(tmp_path, '      - run: pip install "strata-kb[code]==1.0.0"\n')
+    remote.fix_pins(tmp_path, "1.28.0")
+    text = (tmp_path / ".github" / "workflows" / "kb-code.yml").read_text()
+    assert 'pip install "strata-kb[code]==1.28.0"' in text
+    assert remote.version_issues(tmp_path, "1.28.0") == [] or all(
+        "pins" not in i.message for i in remote.version_issues(tmp_path, "1.28.0")
+    )

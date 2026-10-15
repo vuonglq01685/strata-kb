@@ -50,7 +50,7 @@ _VERSION_RE = re.compile(
 # cannot loop.
 UPGRADED_ENV = "STRATA_KB_DOCTOR_UPGRADED"
 # `pip install strata-kb==X` in a repo's CI workflows (codeingest.sync's pin).
-_PIN_RE = re.compile(r"strata-kb==([^\s\"']+)")
+_PIN_RE = re.compile(r"strata-kb(?:\[[^\]]*\])?==([^\s\"']+)")
 CONNECT_TIMEOUT = 30  # a human is waiting on `kb doctor`
 READ_TIMEOUT = 300  # hashing a large hub entry, or a TTL pull, takes a while
 
@@ -253,6 +253,7 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
     from strata_kb.codeingest import hublag
     from strata_kb.doctor import (
         DoctorResult,
+        check_code_extra,
         check_dev_sync,
         check_usage_hooks,
         check_usage_log,
@@ -305,6 +306,7 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
     if kind == "dev":
         repo_root = kb_dir.resolve().parent
         issues += check_dev_sync(kb_dir, repo_root, repo_id)
+        issues += check_code_extra()
         if repo_id:
             report = hublag.check_against(
                 repo_root, kb_dir, repo_id, facts.get("code_sections")
@@ -423,7 +425,10 @@ def fix_pins(repo_root: Path | None, hub_version: str) -> list[str]:
         old = sorted({p for p in _PIN_RE.findall(text) if p != hub_version})
         if not old:
             continue
-        new_text = _PIN_RE.sub(f"strata-kb=={hub_version}", text)
+        # keep the `[extra]` the pin was written with: replace the version only
+        new_text = _PIN_RE.sub(
+            lambda m: m.group(0)[: m.start(1) - m.start(0)] + hub_version, text
+        )
         try:
             wf.write_text(new_text, encoding="utf-8", newline="\n")
         except OSError:
