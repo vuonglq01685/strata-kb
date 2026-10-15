@@ -113,6 +113,10 @@ _NOT_INSTALLED_WARNING = (
     "symbols not scanned: tree-sitter is not installed (install strata-kb[code])"
 )
 _ROOT_SLUG = "root"
+# Kind of a name re-exported around an import cycle before its target is
+# known; `symbols()` replaces it with the concrete kind another path found,
+# else `const`.
+_UNKNOWN = "?"
 
 
 @dataclass(frozen=True)
@@ -243,6 +247,7 @@ class _Reader:
             )
         there: list[_Entry] = []
         cuts: frozenset[str] = frozenset()
+        cycle = target is not None and target in seen
         if target is not None and target in seen:
             # a cycle: only the target's own declarations, for the kinds
             surface = self._surface(target)
@@ -257,11 +262,15 @@ class _Reader:
         for imported, exported in reexport.names:
             from_default = imported == DEFAULT_NAME
             source = (default or DEFAULT_NAME) if from_default else imported
-            # a plain `const` may be a cycle's guess; a specific kind wins
             kinds = [k for n, k, _d in there if n == source]
-            kind = next(
-                (k for k in kinds if k != "const"), kinds[0] if kinds else "const"
-            )
+            concrete = [k for k in kinds if k != _UNKNOWN]
+            if any(n.startswith(source + ".") for n, _k, _d in there):
+                # declaration merging: the members belong to the value
+                concrete = [
+                    k for k in concrete if k not in ("type", "interface")
+                ] or concrete
+            guess = _UNKNOWN if cycle or _UNKNOWN in kinds else "const"
+            kind = concrete[0] if concrete else guess
             is_default = exported == DEFAULT_NAME
             if is_default and from_default and target is not None:
                 named = default if default and default != DEFAULT_NAME else None
@@ -280,8 +289,13 @@ class _Reader:
     def symbols(self, rel: str) -> tuple[list[Symbol], set[str]]:
         names, sites = self.public(rel)
         stem = PurePosixPath(rel).stem
+        known = {n for n, k, _d in names if k != _UNKNOWN}
         return [
-            Symbol(stem if n == DEFAULT_NAME else n, k, rel) for n, k, _d in names
+            Symbol(
+                stem if n == DEFAULT_NAME else n, "const" if k == _UNKNOWN else k, rel
+            )
+            for n, k, _d in names
+            if k != _UNKNOWN or n not in known
         ], sites
 
 

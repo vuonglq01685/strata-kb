@@ -902,3 +902,101 @@ def test_scss_map_keys_inside_a_value_are_not_declarations(tmp_path):
         "--multi",
         "--real",
     ]
+
+
+# --- review round 3 ----------------------------------------------------------
+
+
+@needs_ts
+def test_commonjs_shadowing_is_tracked_per_name(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "lib/a.js",
+        "function register(module) { exports[module.name] = module }\nexports.top = 1;\n",
+    )
+    write(tmp_path, "lib/b.js", "function load(module) { exports.hidden = 1 }\n")
+    write(
+        tmp_path,
+        "lib/c.js",
+        "function w(exports = {}) { exports.inner = 1 }\nexports.top = 1;\n",
+    )
+    write(
+        tmp_path,
+        "lib/d.js",
+        "function w() { if (x) { var exports = {}; } exports.inner = 1 }\n"
+        "function v(module) { module.exports = require('x') }\n"
+        "exports.top = 1;\n",
+    )
+    result = run_symbols(tmp_path)
+    got = {(r[2], r[0]) for r in rows(result, "sym.root")}
+    assert ("lib/b.js", "hidden") in got  # only `module` is shadowed there
+    assert ("lib/c.js", "inner") not in got
+    assert ("lib/d.js", "inner") not in got
+    assert {("lib/a.js", "top"), ("lib/c.js", "top"), ("lib/d.js", "top")} <= got
+    row = cover(result, ".", "javascript")
+    assert "lib/a.js:1" in row.detail  # `exports[module.name]` is computed
+    assert "lib/d.js" not in row.detail
+
+
+@needs_ts
+def test_commonjs_bare_module_passed_to_a_call_is_a_site(tmp_path):
+    result = solo(tmp_path, "require('./plugin')(module);\n", "lib/x.js")
+    assert "lib/x.js:1" in cover(result, ".", "javascript").detail
+
+
+@needs_ts
+def test_commonjs_property_from_a_local_takes_the_locals_kind(tmp_path):
+    result = solo(
+        tmp_path,
+        "function helper() {}\nconst Codes = { A: 1 };\n"
+        "exports.helper = helper;\nexports.Codes = Codes;\n",
+        "lib/x.js",
+    )
+    got = {r[0]: r[1] for r in rows(result, "sym.root")}
+    assert got == {"helper": "function", "Codes": "const", "Codes.A": "member"}
+
+
+@needs_ts
+def test_local_exported_as_default_is_named_after_the_local(tmp_path):
+    result = solo(
+        tmp_path, "const Q = { A: 1 };\nexport { Q as default };\n", "src/loc.ts"
+    )
+    assert {r[0]: r[1] for r in rows(result, "sym.root")} == {
+        "Q": "const",
+        "Q.A": "member",
+    }
+
+
+@needs_ts
+def test_declaration_merging_reexport_keeps_the_value_kind(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "src/st.ts",
+        "export type Status = typeof Status[keyof typeof Status];\n"
+        "export const Status = { A: 'a' } as const;\n",
+    )
+    write(tmp_path, "src/rst.ts", "export { Status } from './st';\n")
+    got = {
+        r[0]: r[1]
+        for r in rows(run_symbols(tmp_path), "sym.root")
+        if r[2] == "src/rst.ts"
+    }
+    assert got == {"Status": "const", "Status.A": "member"}
+
+
+def test_css_declarations_scan_is_linear(tmp_path):
+    # 4000 declarations after a huge blanked comment: quadratic slicing would crawl
+    text = (
+        b"/*"
+        + b" " * 400_000
+        + b"*/"
+        + b"".join(b"a{--v%d:1}\n" % i for i in range(4000))
+    )
+    import time
+
+    start = time.perf_counter()
+    found = _symbols_lang._declarations(_symbols_lang._clean_style(text, False))
+    assert len(found) == 4000
+    assert time.perf_counter() - start < 2

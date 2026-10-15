@@ -277,21 +277,24 @@ def _imports(root: Node) -> dict[str, tuple[str, str]]:
     return table
 
 
-def _is_module_exports(node: Node | None) -> bool:
+def _is_module_exports(node: Node | None, shadow: frozenset[str] = frozenset()) -> bool:
     return (
-        node is not None
+        "module" not in shadow
+        and node is not None
         and node.type == "member_expression"
         and _ts.node_text(node.child_by_field_name("object") or node) == "module"
         and _ts.node_text(node.child_by_field_name("property") or node) == "exports"
     )
 
 
-def _cjs_slot(left: Node | None) -> tuple[str, str | None] | None:
+def _cjs_slot(
+    left: Node | None, shadow: frozenset[str]
+) -> tuple[str, str | None] | None:
     """("whole", None) for `module.exports =`, ("prop", name|None) for
     `exports.x =` / `module.exports.x =` (None: computed name), else None."""
     if left is None:
         return None
-    if _is_module_exports(left):
+    if _is_module_exports(left, shadow):
         return "whole", None
     if left.type not in ("member_expression", "subscript_expression"):
         return None
@@ -299,8 +302,12 @@ def _cjs_slot(left: Node | None) -> tuple[str, str | None] | None:
     if not (
         target is not None
         and (
-            (target.type == "identifier" and _ts.node_text(target) == "exports")
-            or _is_module_exports(target)
+            (
+                target.type == "identifier"
+                and _ts.node_text(target) == "exports"
+                and "exports" not in shadow
+            )
+            or _is_module_exports(target, shadow)
         )
     ):
         return None
@@ -323,9 +330,9 @@ _FUNCTION_NODES = frozenset(
 )
 
 
-def _shadows_exports(fn: Node) -> bool:
-    """True when a parameter or a top-level local of `fn` is named `exports`
-    or `module` (conservative: the whole function is then not read)."""
+def _bound_names(fn: Node) -> frozenset[str]:
+    """`exports` / `module` when a parameter, a `var` anywhere in the body
+    (hoisted) or a top-level `let`/`const` of `fn` rebinds them."""
     params = fn.child_by_field_name("parameters") or fn.child_by_field_name("parameter")
     bound: list[str] = []
     if params is not None and params.type == "identifier":
@@ -334,29 +341,38 @@ def _shadows_exports(fn: Node) -> bool:
         for param in params.named_children:
             bound += _pattern_names(param.child_by_field_name("pattern") or param)
     body = fn.child_by_field_name("body")
-    for stmt in (
-        body.named_children
-        if body is not None and body.type == "statement_block"
-        else []
-    ):
-        if stmt.type in _VARIABLE_DECLS:
-            for declarator in stmt.named_children:
+    stack = [body] if body is not None else []
+    while stack:
+        node = stack.pop()
+        if node.type == "variable_declaration" or (
+            node.type == "lexical_declaration"
+            and node.parent is not None
+            and body is not None
+            and node.parent.id == body.id
+        ):
+            for declarator in node.named_children:
                 bound += _pattern_names(declarator.child_by_field_name("name"))
-    return "exports" in bound or "module" in bound
+        if (
+            body is not None and node.id == body.id
+        ) or node.type not in _FUNCTION_NODES:
+            stack.extend(node.children)
+    return frozenset(bound) & {"exports", "module"}
 
 
-def _passes_exports(call: Node) -> bool:
-    """`f(module.exports, ..)` / `f(exports, ..)` can add names this reader
-    cannot list; `Object.defineProperty(exports, '__esModule', ..)` cannot."""
+def _passes_exports(call: Node, shadow: frozenset[str]) -> bool:
+    """`f(module.exports, ..)`, `f(exports, ..)` or `f(module)` can add names
+    this reader cannot list; `Object.defineProperty(exports, '__esModule',
+    ..)` cannot."""
     args = call.child_by_field_name("arguments")
     given = args.named_children if args is not None else []
-    hit = [
-        a
-        for a in given
-        if _is_module_exports(a)
-        or (a.type == "identifier" and _ts.node_text(a) == "exports")
-    ]
-    if not hit:
+
+    def is_module(a: Node) -> bool:
+        bare = a.type == "identifier" and _ts.node_text(a) in ("exports", "module")
+        return _is_module_exports(a, shadow) or (
+            bare and _ts.node_text(a) not in shadow
+        )
+
+    if not any(is_module(a) for a in given):
         return False
     fn = call.child_by_field_name("function")
     marker = (
@@ -445,31 +461,35 @@ class _Reader:
                 continue
             if self.import_reexport(local, exported, spec_node):
                 continue
-            if exported == DEFAULT_NAME:
-                self.default_name = DEFAULT_NAME
+            if (
+                exported == DEFAULT_NAME
+            ):  # named after the local, like `export default Q`
+                exported = self.default_name = local
             typed = type_only or any(c.type == "type" for c in spec_node.children)
             self.local(local, exported, "type" if typed else "const")
 
     def cjs(self, root: Node) -> None:
-        stack = [root]
+        stack = [(root, frozenset[str]())]
         while stack:
-            node = stack.pop()
-            if node.type in _FUNCTION_NODES and _shadows_exports(node):
-                continue  # `exports` / `module` there is not the module's
-            stack.extend(reversed(node.children))
+            node, shadow = stack.pop()
+            if node.type in _FUNCTION_NODES:
+                shadow = shadow | _bound_names(node)
+            stack.extend((c, shadow) for c in reversed(node.children))
             if node.type == "call_expression":
-                if _passes_exports(node):
+                if _passes_exports(node, shadow):
                     self.unreadable.append(_ts.line_of(node))
                 continue
             if node.type != "assignment_expression":
                 continue
-            slot = _cjs_slot(node.child_by_field_name("left"))
+            slot = _cjs_slot(node.child_by_field_name("left"), shadow)
             if slot is None:
                 continue
             value = _unwrap(node.child_by_field_name("right"))
             if slot[0] == "prop":
                 if slot[1] is None:
                     self.unreadable.append(_ts.line_of(node))
+                elif value is not None and value.type == "identifier":
+                    self.local(_ts.node_text(value), slot[1], "const")
                 else:
                     object_ = (
                         value if value is not None and value.type == "object" else None
@@ -568,7 +588,7 @@ def _js_read(tree: Tree, source: bytes) -> _Reader:
     for stmt in tree.root_node.named_children:
         if stmt.type == "export_statement":
             reader.statement(stmt)
-    if b"exports" in source:
+    if b"exports" in source or b"module" in source:
         reader.cjs(tree.root_node)
     return reader
 
@@ -657,7 +677,10 @@ def _declarations(text: bytes) -> list[bytes]:
     found = []
     for m in _CUSTOM_PROP.finditer(text):
         start = m.start(1)
-        before = text[:start].rstrip()[-1:]
+        i = start
+        while i > 0 and text[i - 1 : i].isspace():
+            i -= 1
+        before = text[i - 1 : i] if i else b""
         depth = bisect_left(opens, start) - bisect_left(closes, start)
         if depth <= 0 and before in (b"", b"{", b";", b"}"):
             found.append(m.group(1))
@@ -699,7 +722,7 @@ EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     "scss": _css_extras(True),
 }
 HINTS: dict[str, re.Pattern[bytes]] = {
-    **dict.fromkeys(_JS_LANGS, re.compile(rb"\bexports?\b")),
+    **dict.fromkeys(_JS_LANGS, re.compile(rb"\b(?:exports?|module)\b")),
     "css": re.compile(rb"--"),
     "scss": re.compile(rb"--"),
 }
