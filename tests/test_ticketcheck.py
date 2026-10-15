@@ -1622,8 +1622,14 @@ def _synth_doc(*, coverage: bool = True, revision: str = "abc1234"):
             "jobs",
             "| Name | Schedule | Handler | File |\n| --- | --- | --- | --- |\n"
             "| createPartition | 0 3 * * * | M.createPartition | apps/api/src/m.ts |\n"
+            "| nightly cleanup | 0 2 * * * | - | apps/api/src/m.ts |\n"
             "| (anonymous) | 0 4 * * * | - | apps/api/src/m.ts |\n"
             "| (anonymous) | 0 5 * * * | - | apps/api/src/m.ts |\n",
+        ),
+        "sym.apps-web": (
+            "symbols",
+            "| Name | Kind | File |\n| --- | --- | --- |\n"
+            "| --brand | css-variable | apps/web/src/a.css |\n",
         ),
         _SYMS: (
             "symbols",
@@ -2002,3 +2008,97 @@ def test_multi_row_scope_uses_the_row_matching_the_file_language():
     assert any(
         "coverage of apps/web (symbols, css) is partial" in e for e in errors(worst)
     )
+
+
+# --- Task 11 fix round 2 --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "sid", "good", "bad"),
+    [
+        ("Routes", _MEDIA, "GET /media/ping", "GET /bogus"),
+        ("Pages", _PAGES, "/admin", "/bogus"),
+        ("Jobs", _JOBS, "`createPartition`", "`nope`"),
+        ("Symbols", _SYMS, "`AdminController`", "`Ghost`"),
+    ],
+)
+def test_repeated_id_checks_every_segment(field, sid, good, bad):
+    ok = run_synth([f"- {field}: {sid} — {good}, {sid} — {good}"])
+    assert errors(ok) == [], errors(ok)
+    report = run_synth([f"- {field}: {sid} — {good}, {sid} — {bad}"])
+    (msg,) = errors(report)
+    assert f"is not in {sid}" in msg, msg
+
+
+@pytest.mark.parametrize(
+    ("field", "sid", "cite"),
+    [
+        ("Routes", _MEDIA, "GET /media/ping"),
+        ("Pages", _PAGES, "/admin"),
+        ("Jobs", _JOBS, "`createPartition`"),
+        ("Symbols", _SYMS, "`AdminController`"),
+    ],
+)
+def test_citation_before_the_first_id_is_not_attached(field, sid, cite):
+    report = run_synth([f"- {field}: {cite} via {sid}"])
+    (msg,) = errors(report)
+    assert "not attached to a section id" in msg and "(line 9)" in msg, msg
+
+
+def test_citation_before_first_id_is_judged_per_line_not_per_segment():
+    report = run_synth(
+        [f"- Routes: GET /x via {_MEDIA} — GET /media/ping, {_API} — POST /api/x"]
+    )
+    assert sum("not attached" in e for e in errors(report)) == 1
+
+
+def test_backticked_job_name_with_spaces_is_kept_whole():
+    exists = run_synth(["- Jobs: `nightly cleanup` in apps/api/src/n.ts [NEW: tbd]"])
+    assert any(
+        "job 'nightly cleanup' already exists in " + _JOBS in e for e in errors(exists)
+    ), errors(exists)
+    cited = run_synth([f"- Jobs: {_JOBS} — `nightly cleanup`"])
+    assert errors(cited) == [], errors(cited)
+
+
+def test_css_variable_keeps_its_dashes():
+    exists = run_synth(["- Symbols: --brand in apps/web/src/b.css [NEW: tbd]"])
+    assert any(
+        "symbol '--brand' already exists in sym.apps-web" in e for e in errors(exists)
+    ), errors(exists)
+    cited = run_synth(["- Symbols: sym.apps-web — --brand"])
+    assert errors(cited) == [], errors(cited)
+
+
+def test_coverage_languages_come_from_the_extractor_table():
+    from strata_kb.codeingest.extractors import _ts
+
+    assert not hasattr(ticketcheck, "_EXT_LANGUAGE")
+    assert ticketcheck.LANG_BY_SUFFIX is _ts.LANG_BY_SUFFIX
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "route.ts",
+        "page.tsx",
+        "job.ts",
+        "sym.css",
+        "db.ts",
+        "api.js",
+        "struct.md",
+        "cmd.py",
+        "int.json",
+    ],
+)
+def test_bare_framework_file_names_are_never_ids(name):
+    for tail in (f"(see {name})", f"see {name}.", f"see {name}, then"):
+        report = run_synth([f"- Routes: {_MEDIA} — GET /media/ping {tail}"])
+        assert errors(report) == [], (tail, errors(report))
+
+
+def test_ids_that_merely_start_like_an_extension_still_count():
+    report = run_synth([f"- Routes: {_MEDIA} — GET /media/ping, route.tsx-extra"])
+    assert any("unknown id 'route.tsx-extra'" in e for e in errors(report))
+    report = run_synth(["- Routes: db.json_events"])
+    assert any("unknown id 'db.json_events'" in e for e in errors(report))

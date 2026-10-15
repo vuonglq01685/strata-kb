@@ -31,6 +31,7 @@ import yaml
 from pydantic import ValidationError
 
 from strata_kb import groundingdrift, lintcore, mission, models, ticket
+from strata_kb.codeingest.extractors._ts import LANG_BY_SUFFIX
 from strata_kb.doctor import Issue
 from strata_kb.errors import KbError
 from strata_kb.lintcore import LintReport
@@ -68,12 +69,19 @@ def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
     return out
 
 
-# `route|page|job|sym` are not matched when glued to a path or file name
-# (`app/api/route.ts`, `users.route.ts`, `+page.svelte`, `export.job.ts`),
-# so a file name is never read as a section id.
+# A framework file name is not a section id. Two guards: `route|page|job|sym`
+# are not matched when glued to a path or file name (`app/api/route.ts`,
+# `users.route.ts`, `+page.svelte`, `export.job.ts`); and for every prefix a
+# bare `<prefix>.<source-extension>` that ends there (`route.ts`, `db.ts`,
+# `api.js.`) is not an id, while `route.tsx-extra` or `db.json_events` still are.
+_SOURCE_EXTS = (
+    "ts|tsx|js|jsx|mjs|cjs|mts|cts|py|go|rs|java|kt|cs|php|swift|dart|vue|svelte"
+    "|css|scss|sql|prisma|md|yaml|yml|json"
+)
 ID_RE = re.compile(
     r"\b(?:svc|db|api|int|cmd|dep|struct|(?<![\w/.+-])(?:route|page|job|sym))"
-    r"\.[A-Za-z0-9_][A-Za-z0-9_.-]*"
+    rf"\.(?!(?:{_SOURCE_EXTS})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_]))"
+    r"[A-Za-z0-9_][A-Za-z0-9_.-]*"
 )
 NEW_RE = re.compile(r"\[NEW(?::\s*(?P<reason>[^\]]*))?\]")
 ROUTE_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)")
@@ -771,7 +779,10 @@ _PARAM_RE = re.compile(
 )
 # A path in prose: starts with `/`, not glued to a word (`apps/web` is not one).
 _CITED_PATH_RE = re.compile(r"(?<![\w/.\-])(/[^\s`,;]*)")
-_SEPARATOR_RE = re.compile(r"^\s*[—–-]+\s*")
+# A dash separator: an em/en dash, or a hyphen followed by a space -- never the
+# leading `--` of a CSS custom property.
+_SEPARATOR_RE = re.compile(r"^\s*(?:[—–]|-(?=\s))+\s*")
+_FIELD_PREFIX_RE = re.compile(r"^\s*-\s*(?:[A-Za-z][A-Za-z ]*?:)?")
 
 
 def normalise_path(p: str) -> str:
@@ -814,13 +825,38 @@ def _name_keys(body: str) -> dict[str, str]:
     return {n: n for (n,) in _table_values(body, "name") if n not in _PLACEHOLDER_NAMES}
 
 
-def _segment_after(line: str, sid: str) -> str:
-    """The text between the first `sid` on `line` and the next section id."""
-    ids = list(ID_RE.finditer(line))
-    for i, m in enumerate(ids):
-        if m.group(0).rstrip(".") == sid:
-            return line[m.end() : ids[i + 1].start() if i + 1 < len(ids) else None]
-    return ""
+def _id_segments(line: str) -> tuple[str, list[tuple[str, str]]]:
+    """`(preamble, [(id, segment)])`: the line split at EVERY section id
+    occurrence; the text before the first id is the preamble, each later
+    stretch belongs to the id that starts it."""
+    ms = list(ID_RE.finditer(line))
+    if not ms:
+        return line, []
+    segments = [
+        (
+            m.group(0).rstrip("."),
+            line[m.end() : ms[i + 1].start() if i + 1 < len(ms) else None],
+        )
+        for i, m in enumerate(ms)
+    ]
+    return line[: ms[0].start()], segments
+
+
+def _unattached_citation(first_id: str, preamble: str) -> str | None:
+    """The citation written before the line's first id (so owned by none), judged
+    by the kind of that id: a route for `api.`/`route.`, a path for `page.`, a
+    backticked name for `job.`/`sym.`; None when there is none."""
+    text = _FIELD_PREFIX_RE.sub("", preamble, count=1)
+    if first_id.startswith(("api.", "route.")):
+        m = ROUTE_RE.search(text)
+        return f"{m.group(1)} {m.group(2).rstrip('.,;:)`')}" if m else None
+    if first_id.startswith("page."):
+        m = _CITED_PATH_RE.search(text)
+        return m.group(1).rstrip(".,;:)`") if m else None
+    if first_id.startswith(("job.", "sym.")):
+        m = CODE_SPAN_RE.search(text)
+        return m.group(1).strip() if m else None
+    return None
 
 
 def _cited_name(text: str) -> str:
@@ -903,9 +939,17 @@ def _check_tables_routes_commands(
     for lineno, line in _id_lines(section):
         if NEW_RE.search(line):
             continue
-        ids = [i for i in ID_RE.findall(line)]
-        for raw in ids:
-            raw = raw.rstrip(".")
+        preamble, segments = _id_segments(line)
+        if segments:
+            stray = _unattached_citation(segments[0][0], preamble)
+            if stray is not None:
+                issues.append(
+                    Issue(
+                        "error",
+                        f"citation '{stray}' is not attached to a section id — write `<id> — <citation>` (line {lineno})",
+                    )
+                )
+        for raw, segment in segments:
             # db.<table>.<column>
             if raw.startswith("db.") and raw.count(".") >= 2 and raw not in known:
                 table, column = raw.rsplit(".", 1)
@@ -926,18 +970,10 @@ def _check_tables_routes_commands(
                     )
             # api.<tag> / route.<slug> — METHOD /path
             elif raw.startswith(("api.", "route.")) and raw in known:
-                # one route id on the line: any order; several: each id owns
-                # the text up to the next id
-                owners = [
-                    i for i in ids if i.rstrip(".").startswith(("api.", "route."))
-                ]
-                text = line if len(owners) <= 1 else _segment_after(line, raw)
-                _check_route_citation(raw, text, lineno, doc, unreadable, issues)
+                _check_route_citation(raw, segment, lineno, doc, unreadable, issues)
             # page.<slug> — /path, job.<slug> — name, sym.<slug> — Name
             elif raw.startswith(("page.", "job.", "sym.")) and raw in known:
-                _check_listed_citation(
-                    raw, _segment_after(line, raw), lineno, doc, unreadable, issues
-                )
+                _check_listed_citation(raw, segment, lineno, doc, unreadable, issues)
             # cmd.<x> — `command`
             elif raw.startswith("cmd.") and raw in known:
                 spans = CODE_SPAN_RE.findall(line)
@@ -1489,31 +1525,6 @@ def _coverage(
     return out
 
 
-# File extension -> the language name `struct.coverage` rows carry.
-_EXT_LANGUAGE = {
-    ".ts": "typescript",
-    ".mts": "typescript",
-    ".cts": "typescript",
-    ".tsx": "tsx",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".mjs": "javascript",
-    ".cjs": "javascript",
-    ".css": "css",
-    ".scss": "scss",
-    ".py": "python",
-    ".java": "java",
-    ".kt": "kotlin",
-    ".kts": "kotlin",
-    ".cs": "csharp",
-    ".go": "go",
-    ".rs": "rust",
-    ".php": "php",
-    ".swift": "swift",
-    ".dart": "dart",
-}
-
-
 def _scope_status(
     cov: dict[str, dict[str, list[_CovRow]]], area: str, path: str
 ) -> tuple[str, str, str]:
@@ -1537,7 +1548,7 @@ def _scope_status(
         return path, _NOT_SCANNED, ""
     best = max(covering, key=len)
     rows = scopes[best]
-    language = _EXT_LANGUAGE.get(posixpath.splitext(path)[1].lower())
+    language = LANG_BY_SUFFIX.get(posixpath.splitext(path)[1].lower())
     matching = [r for r in rows if language and r.framework.lower() == language]
     deciding = max(matching or rows, key=_rank)
     framework = (
@@ -1599,7 +1610,7 @@ def _listed_in(field: str, thing: str, body: str) -> bool:
         return (
             re.search(rf"(?<![\w/.-]){re.escape(thing)}(?![\w/.-])", body) is not None
         )
-    return _cited_name(thing) in _name_keys(body)
+    return thing in _name_keys(body)
 
 
 def _existing_section(
