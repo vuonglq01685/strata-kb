@@ -39,25 +39,48 @@ def _containers(spec: dict[str, yaml.Node]) -> str:
     return ", ".join(n for n in names if n) or "-"
 
 
+def _cronjob(rel: str, doc: yaml.Node) -> tuple[Job, str | None]:
+    root = _mapping(doc)
+    spec = _mapping(root.get("spec"))
+    sched = spec.get("schedule")
+    schedule = _scalar(sched)
+    line = (sched or doc).start_mark.line + 1
+    site = f"{rel}:{line}" if schedule is None else None
+    name = _scalar(_mapping(root.get("metadata")).get("name")) or DYNAMIC
+    job = Job(
+        name, " ".join((schedule or DYNAMIC).split()), _containers(spec), rel, line
+    )
+    return job, site
+
+
+def _documents(rel: str, doc: yaml.Node | None, sites: list[str]) -> list[yaml.Node]:
+    """The CronJob mappings of one YAML document, unwrapping `kind: List`."""
+    root = _mapping(doc)
+    kind = _scalar(root.get("kind"))
+    if kind == "CronJob" and doc is not None:
+        return [doc]
+    if kind is not None and kind.endswith("List") and "items" in root:
+        items = root["items"]
+        if not isinstance(items, yaml.SequenceNode):
+            sites.append(f"{rel}:{items.start_mark.line + 1}")
+            return []
+        return [d for item in items.value for d in _documents(rel, item, sites)]
+    return []
+
+
 def scan(rel: str, text: str) -> tuple[list[Job], list[str]]:
-    """(jobs, `file:line` sites) of one YAML file; never raises."""
+    """(jobs, `file:line` sites) of one YAML file. A file PyYAML cannot read
+    (a Helm template, absurd nesting) is one `file:1` site."""
     try:
         docs = list(yaml.compose_all(text, Loader=yaml.SafeLoader))
-    except yaml.YAMLError:
+        jobs: list[Job] = []
+        sites: list[str] = []
+        for doc in docs:
+            for cron in _documents(rel, doc, sites):
+                job, site = _cronjob(rel, cron)
+                jobs.append(job)
+                if site is not None:
+                    sites.append(site)
+    except (yaml.YAMLError, RecursionError):
         return [], [f"{rel}:1"]
-    jobs: list[Job] = []
-    sites: list[str] = []
-    for doc in docs:
-        root = _mapping(doc)
-        if _scalar(root.get("kind")) != "CronJob":
-            continue
-        spec = _mapping(root.get("spec"))
-        sched = spec.get("schedule")
-        schedule = _scalar(sched)
-        line = (sched or doc).start_mark.line + 1
-        if schedule is None:
-            schedule = DYNAMIC
-            sites.append(f"{rel}:{line}")
-        name = _scalar(_mapping(root.get("metadata")).get("name")) or DYNAMIC
-        jobs.append(Job(name, " ".join(schedule.split()), _containers(spec), rel, line))
     return jobs, sites

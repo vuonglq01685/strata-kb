@@ -21,6 +21,17 @@ if TYPE_CHECKING:
 
 _CLASSES = frozenset({"class_declaration", "object_declaration"})
 _METHODS = frozenset({"method_declaration", "function_declaration"})
+_ANNOTATIONS = ("annotation", "marker_annotation")
+# java.util.concurrent.TimeUnit -> the suffix `every 5m` already uses
+_UNITS = {
+    "NANOSECONDS": "ns",
+    "MICROSECONDS": "us",
+    "MILLISECONDS": "ms",
+    "SECONDS": "s",
+    "MINUTES": "m",
+    "HOURS": "h",
+    "DAYS": "d",
+}
 
 
 def _java_annotation(node: Node) -> tuple[str, dict[str, Node]]:
@@ -56,13 +67,17 @@ def _kotlin_annotation(node: Node) -> tuple[str, dict[str, Node]]:
 
 def _schedule(ctx: Ctx, pairs: dict[str, Node], at: Node) -> str:
     if "cron" in pairs:
-        return cron_text(pairs["cron"]) or ctx.dyn(at)
+        text = cron_text(pairs["cron"])
+        return "disabled" if text == "-" else text or ctx.dyn(at)
     for key in ("every", "fixedRate", "fixedDelay"):
         if key not in pairs:
             continue
-        millis = num(pairs[key])
-        if millis:
-            return f"interval {millis}ms"
+        amount = num(pairs[key])
+        if amount and "timeUnit" in pairs:
+            unit = _UNITS.get(_text(pairs["timeUnit"]).rsplit(".", 1)[-1])
+            return f"interval {amount}{unit}" if unit else ctx.dyn(at)
+        if amount:
+            return f"interval {amount}ms"
         text = cron_text(pairs[key])
         return f"every {text}" if text else ctx.dyn(at)
     for key in ("fixedRateString", "fixedDelayString"):
@@ -72,19 +87,41 @@ def _schedule(ctx: Ctx, pairs: dict[str, Node], at: Node) -> str:
     return ctx.dyn(at)
 
 
+def _label(node: Node, kotlin: bool) -> tuple[str, dict[str, Node]]:
+    label, pairs = _kotlin_annotation(node) if kotlin else _java_annotation(node)
+    return label.rsplit(".", 1)[-1], pairs  # `@org.x.Scheduled` too
+
+
+def _owner_method(node: Node) -> Node | None:
+    """The method an annotation belongs to, also when nested in
+    `@Schedules({...})`; None when a class comes first."""
+    cur = node.parent
+    while cur is not None and cur.type not in _CLASSES:
+        if cur.type in _METHODS:
+            return cur
+        cur = cur.parent
+    return None
+
+
 def _scheduled(ctx: Ctx) -> None:
+    kotlin = ctx.rel.endswith((".kt", ".kts"))
     for node in _walk(ctx.root):
-        if node.type not in ("annotation", "marker_annotation"):
+        if node.type not in _ANNOTATIONS:
             continue
-        label, pairs = (
-            _kotlin_annotation(node)
-            if ctx.rel.endswith((".kt", ".kts"))
-            else _java_annotation(node)
-        )
-        if label != "Scheduled":
+        label, pairs = _label(node, kotlin)
+        target = _owner_method(node)
+        if label == "Schedules":
+            # the nested @Scheduled annotations are read on their own; a
+            # container without any (a constant, a computed array) is a miss
+            if not any(
+                c is not node
+                and c.type in _ANNOTATIONS
+                and _label(c, kotlin)[0] == "Scheduled"
+                for c in _walk(node)
+            ):
+                ctx.dyn(node)
             continue
-        target = node.parent.parent if node.parent is not None else None
-        if target is None or target.type not in _METHODS:
+        if label != "Scheduled" or target is None:
             continue
         method = _text(
             target.child_by_field_name("name")
@@ -102,4 +139,4 @@ def _scheduled(ctx: Ctx) -> None:
         )
 
 
-SCANNERS = [Scanner(re.compile(rb"\bScheduled\b"), _scheduled)]
+SCANNERS = [Scanner(re.compile(rb"\bSchedule[ds]\b"), _scheduled)]

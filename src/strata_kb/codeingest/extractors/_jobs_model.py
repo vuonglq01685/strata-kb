@@ -41,8 +41,9 @@ _NUMBER_TYPES = frozenset(
     }
 )
 _NUMBER_RE = re.compile(r"(\d[\d_]*(?:\.\d+)?)[lLfFdDuU]*")
-# `${app.cron}`, `{my.cron}`, `#{...}`: a config reference, not a schedule
-_PLACEHOLDER_RE = re.compile(r"[${]")
+# `${app.cron}`, `{my.cron}`, `{{ x }}`, `%env(X)%`: a config reference, not
+# a schedule
+_PLACEHOLDER_RE = re.compile(r"[${]|%[^%\s]+%")
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,13 @@ def enclosing(node: Node, types: frozenset[str]) -> str:
             return _text(named)
         current = current.parent
     return ""
+
+
+def first_token(text: str) -> str:
+    """The command name of a command line: arguments (which can carry
+    credentials) are never kept."""
+    parts = text.split()
+    return parts[0] if parts else DYNAMIC
 
 
 def qualified(owner: str, method: str) -> str:

@@ -9,8 +9,6 @@ a reader (or a later ticket-grounding check) can tell "none found" from
 
 from __future__ import annotations
 
-import re
-
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.types import CodeSection, CoverageRow
 
@@ -32,11 +30,20 @@ _HEADER = "| Area | Scope | Framework/language | Status | Detail |"
 _RULE = "| --- | --- | --- | --- | --- |"
 
 
-_SITE_RE = re.compile(r":\d+$")
+# Details that are prose, not a place in the code; everything else (a
+# `file:line`, or a bare file name) is a site and subject to the L2 cap.
+_PROSE_PREFIXES = (
+    JOBS_DETAIL,
+    NOT_INSTALLED,
+    "no adapter for",
+    "unsupported router:",
+    "not a git repository",
+    "no tracked files",
+)
 
 
 def _is_site(detail: str) -> bool:
-    return _SITE_RE.search(detail) is not None
+    return not detail.startswith(_PROSE_PREFIXES)
 
 
 def _join_sites(sites: list[str], limit: int | None) -> str:

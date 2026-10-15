@@ -530,3 +530,199 @@ def test_same_stem_files_get_distinct_ids_and_output_is_deterministic(tmp_path):
     assert first == second
     ids = [s.id for s in first.sections]
     assert len(set(ids)) == 2 == len(ids)
+
+
+# --- fix round 1 -----------------------------------------------------------------
+
+
+def blob_of(result) -> str:
+    return " ".join(s.l2_md + s.l3_md for s in result.sections)
+
+
+@needs_ts
+def test_spring_time_unit_is_applied_or_dynamic(tmp_path):
+    write(
+        tmp_path,
+        "A.java",
+        "class A {\n"
+        "  @Scheduled(fixedRate = 5, timeUnit = TimeUnit.SECONDS)\n"
+        "  void a() {}\n"
+        "  @Scheduled(fixedDelay = 2, timeUnit = TimeUnit.MINUTES)\n"
+        "  void b() {}\n"
+        "  @Scheduled(fixedRate = 5, timeUnit = unit)\n"
+        "  void c() {}\n"
+        '  @Scheduled(cron = "-")\n'
+        "  void d() {}\n"
+        "}\n",
+    )
+    result = run_jobs(tmp_path)
+    got = {r[0]: r[1] for r in rows_of(result, "A.java")}
+    assert got == {
+        "a": "interval 5s",
+        "b": "interval 2m",
+        "c": "(dynamic)",
+        "d": "disabled",
+    }
+    assert "A.java:6" in row(result).detail
+
+
+@needs_ts
+def test_spring_qualified_annotation_and_schedules_container(tmp_path):
+    write(
+        tmp_path,
+        "B.java",
+        "class B {\n"
+        '  @org.springframework.scheduling.annotation.Scheduled(cron = "0 0 1 * * *")\n'
+        "  void q() {}\n"
+        '  @Schedules({@Scheduled(cron = "0 0 2 * * *"), @Scheduled(fixedRate = 1000)})\n'
+        "  void many() {}\n"
+        "  @Schedules(OTHER)\n"
+        "  void opaque() {}\n"
+        "}\n",
+    )
+    result = run_jobs(tmp_path)
+    got = sorted((r[0], r[1]) for r in rows_of(result, "B.java"))
+    assert got == [
+        ("many", "0 0 2 * * *"),
+        ("many", "interval 1000ms"),
+        ("q", "0 0 1 * * *"),
+    ]
+    assert "B.java:6" in row(result).detail
+
+
+@needs_ts
+def test_symfony_parameter_refs_are_dynamic_and_method_option(tmp_path):
+    write(
+        tmp_path,
+        "src/T.php",
+        "<?php\n"
+        "#[AsCronTask('%env(NIGHTLY_CRON)%')]\n"
+        "class N {}\n"
+        "#[AsCronTask('0 3 * * *', method: 'run')]\n"
+        "class M { public function run() {} }\n"
+        "class O {\n"
+        "  #[AsPeriodicTask(frequency: '%app.freq%')]\n"
+        "  public function t() {}\n"
+        "}\n",
+    )
+    result = run_jobs(tmp_path)
+    got = {r[0]: (r[1], r[2]) for r in rows_of(result, "src/T.php")}
+    assert got == {
+        "N": ("(dynamic)", "N.__invoke"),
+        "M": ("0 3 * * *", "M.run"),
+        "t": ("(dynamic)", "O.t"),
+    }
+    assert "NIGHTLY_CRON" not in blob_of(result) and "app.freq" not in blob_of(result)
+    assert row(result).detail.endswith("src/T.php:2; src/T.php:7")
+
+
+@needs_ts
+def test_laravel_never_emits_command_arguments(tmp_path):
+    write(
+        tmp_path,
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->exec('mysqldump -uroot -pHUNTER2 db')->daily();\n"
+        "  $schedule->command('report:send --tenant=acme')->daily();\n"
+        "  $schedule->exec('PGPASSWORD=s3cret pg_dump')->daily();\n"
+        "}}\n",
+    )
+    result = run_jobs(tmp_path)
+    names = sorted(r[0] for r in rows_of(result, "app/Console/Kernel.php"))
+    assert names == ["(exec)", "(exec)", "report:send"]
+    for leaked in ("HUNTER2", "acme", "s3cret", "mysqldump"):
+        assert leaked not in blob_of(result)
+
+
+@needs_ts
+def test_laravel_modifiers_are_part_of_the_schedule(tmp_path):
+    write(
+        tmp_path,
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->command('a')->daily()->at('13:00');\n"
+        "  $schedule->command('b')->weekdays()->hourly();\n"
+        "  $schedule->command('c')->daily()->at(env('AT'));\n"
+        "}}\n",
+    )
+    result = run_jobs(tmp_path)
+    got = {r[0]: r[1] for r in rows_of(result, "app/Console/Kernel.php")}
+    assert got == {"a": "daily at 13:00", "b": "hourly weekdays", "c": "(dynamic)"}
+    assert "app/Console/Kernel.php:5" in row(result).detail
+    assert "AT" not in blob_of(result).replace("DAT", "")
+
+
+def test_k8s_deep_nesting_is_a_site_not_a_crash(tmp_path):
+    write(tmp_path, "k/c.yaml", "kind: CronJob\nx: " + "[" * 3000 + "]" * 3000 + "\n")
+    result = run_jobs(tmp_path)
+    assert result.sections == []
+    assert row(result).detail == f"{_coverage.JOBS_DETAIL}; k/c.yaml:1"
+
+
+def test_k8s_list_items_are_read_and_opaque_lists_are_sited(tmp_path):
+    write(
+        tmp_path,
+        "k/l.yaml",
+        "apiVersion: v1\nkind: List\nitems:\n"
+        "- kind: CronJob\n  metadata: {name: a}\n  spec: {schedule: '0 1 * * *'}\n"
+        "- kind: ConfigMap\n  metadata: {name: c}\n",
+    )
+    result = run_jobs(tmp_path)
+    assert rows_of(result, "k/l.yaml")[0][:2] == ["a", "0 1 * * *"]
+
+
+def test_one_failing_file_cannot_abort_extract(tmp_path, monkeypatch):
+    write(tmp_path, "k/c.yaml", K8S)
+    write(tmp_path, "m.ts", "export const x = 1;\n")
+
+    def boom(*_a, **_k):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(jobs._jobs_k8s, "scan", boom)
+    monkeypatch.setattr(jobs, "_scan_source", boom)
+    result = run_jobs(tmp_path)
+    assert result.sections == []
+    assert "k/c.yaml:1" in row(result).detail
+    assert any("boom" in w for w in result.warnings)
+
+
+@needs_ts
+def test_bullmq_needs_the_library_and_a_schedule_key(tmp_path):
+    write(
+        tmp_path,
+        "ui.ts",
+        "const bulletStyle = 1;\nconst anim = { repeat: { count: 3 } };\n",
+    )
+    write(
+        tmp_path,
+        "q.ts",
+        "import { Queue } from 'bullmq';\n"
+        "const anim = { repeat: { count: 3 } };\n"
+        "q.add('legacy', {}, { repeat: { cron: '0 5 * * *' } });\n",
+    )
+    result = run_jobs(tmp_path)
+    assert [s.title for s in result.sections] == ["q.ts"]
+    assert rows_of(result, "q.ts")[0][:2] == ["legacy", "0 5 * * *"]
+
+
+@needs_ts
+def test_node_cron_only_calls_bound_to_the_import(tmp_path):
+    write(
+        tmp_path,
+        "a.js",
+        "// node-cron lives elsewhere\nagenda.schedule('in 20 minutes', 'send email');\n",
+    )
+    write(
+        tmp_path,
+        "b.js",
+        "import nodeCron, { schedule as every } from 'node-cron';\n"
+        "const other = require('agenda');\n"
+        "nodeCron.schedule('0 1 * * *', one);\n"
+        "every('0 2 * * *', two);\n"
+        "other.schedule('x', 'y');\n"
+        "const c = require('node-cron');\n"
+        "c.schedule('0 3 * * *', three);\n",
+    )
+    result = run_jobs(tmp_path)
+    assert [s.title for s in result.sections] == ["b.js"]
+    assert sorted(r[0] for r in rows_of(result, "b.js")) == ["one", "three", "two"]

@@ -110,6 +110,15 @@ def _scan_source(
     return ctx.jobs, [*sites, *ctx.sites]
 
 
+def _scan_manifest(
+    root: Path, rel: str, _warnings: list[str]
+) -> tuple[list[Job], list[str]]:
+    data = _read(root, rel)
+    if data is None:
+        return [], [f"{rel}:1"]
+    return _jobs_k8s.scan(rel, data.decode("utf-8", errors="replace"))
+
+
 def _cells(*cells: str) -> str:
     return "| " + " | ".join(escape_cell(c) for c in cells) + " |"
 
@@ -170,18 +179,21 @@ class JobsExtractor:
                 entry.sources += 1
                 if not available:
                     continue
-                found, sites = _scan_source(root, rel, warnings)
+                scan = _scan_source
             elif _is_yaml(rel):
                 data = _read(root, rel)
                 if data is None or b"CronJob" not in data:
                     continue
                 entry = state.setdefault(key, _ScopeState())
                 entry.manifests += 1
-                found, sites = _jobs_k8s.scan(
-                    rel, data.decode("utf-8", errors="replace")
-                )
+                scan = _scan_manifest
             else:
                 continue
+            try:
+                found, sites = scan(root, rel, warnings)
+            except Exception as exc:  # noqa: BLE001 -- degrade, never crash: no single file may abort the run
+                warnings.append(f"jobs: {rel} failed: {exc!r}")
+                found, sites = [], [f"{rel}:1"]
             if found:
                 by_file.setdefault(rel, []).extend(found)
             # "; " separates sites in the coverage detail, so a file name

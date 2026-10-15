@@ -24,6 +24,7 @@ from strata_kb.codeingest.extractors._jobs_model import (
     Scanner,
     cron_text,
     enclosing,
+    first_token,
     num,
     qualified,
 )
@@ -94,20 +95,99 @@ def _fn_name(node: Node | None) -> str:
     return ANONYMOUS
 
 
+def _import_names(clause: Node) -> tuple[set[str], set[str]]:
+    receivers: set[str] = set()
+    funcs: set[str] = set()
+    for part in clause.named_children:
+        if part.type == "identifier":
+            receivers.add(_text(part))
+        elif part.type == "namespace_import":
+            receivers.update(_text(c) for c in part.named_children)
+        elif part.type == "named_imports":
+            for spec in part.named_children:
+                name = _text(spec.child_by_field_name("name"))
+                alias = _text(spec.child_by_field_name("alias")) or name
+                (
+                    receivers
+                    if name == "default"
+                    else funcs
+                    if name == "schedule"
+                    else set()
+                ).add(alias)
+    return receivers, funcs
+
+
+def _pattern_names(pattern: Node) -> set[str]:
+    out: set[str] = set()
+    for part in pattern.named_children:
+        if (
+            part.type == "shorthand_property_identifier_pattern"
+            and _text(part) == "schedule"
+        ):
+            out.add("schedule")
+        elif (
+            part.type == "pair_pattern"
+            and _text(part.child_by_field_name("key")) == "schedule"
+        ):
+            out.add(_text(part.child_by_field_name("value")))
+    return out
+
+
+def _node_cron_bindings(root: Node) -> tuple[set[str], set[str]]:
+    """Local names bound to the `node-cron` module and to its `schedule`."""
+    receivers: set[str] = set()
+    funcs: set[str] = set()
+    for node in _walk(root):
+        if node.type == "import_statement":
+            source = _lit(node.child_by_field_name("source"))
+            clause = next(
+                (c for c in node.named_children if c.type == "import_clause"), None
+            )
+            if source == "node-cron" and clause is not None:
+                got = _import_names(clause)
+                receivers |= got[0]
+                funcs |= got[1]
+        elif node.type == "variable_declarator":
+            value = node.child_by_field_name("value")
+            args = (
+                _args(value)
+                if value is not None and value.type == "call_expression"
+                else []
+            )
+            if (
+                value is None
+                or _text(value.child_by_field_name("function")) != "require"
+            ):
+                continue
+            if not args or _lit(args[0]) != "node-cron":
+                continue
+            target = node.child_by_field_name("name")
+            if target is None:
+                continue
+            if target.type == "identifier":
+                receivers.add(_text(target))
+            elif target.type == "object_pattern":
+                funcs |= _pattern_names(target)
+    return receivers, funcs
+
+
 def _node_cron(ctx: Ctx) -> None:
+    receivers, funcs = _node_cron_bindings(ctx.root)
     for call in _walk(ctx.root):
         if call.type != "call_expression":
             continue
         fn = call.child_by_field_name("function")
         if fn is None:
             continue
-        callee = (
-            _text(fn.child_by_field_name("property"))
-            if fn.type == "member_expression"
-            else _text(fn)
-        )
+        if fn.type == "member_expression":
+            bound = (
+                _text(fn.child_by_field_name("object")) in receivers
+                and _text(fn.child_by_field_name("property")) == "schedule"
+            )
+        else:
+            bound = fn.type == "identifier" and _text(fn) in funcs
         args = _args(call)
-        if callee != "schedule" or len(args) < 2:
+        if not bound or len(args) < 2:
             continue
         schedule = cron_text(args[0]) or ctx.dyn(call)
         handler = _fn_name(args[1])
@@ -135,11 +215,13 @@ def _bullmq(ctx: Ctx) -> None:
         if value is None or value.type != "object":
             continue
         pattern = _object_value(value, "pattern") or _object_value(value, "cron")
-        every = num(_object_value(value, "every"))
+        every = _object_value(value, "every")
+        if pattern is None and every is None:
+            continue  # `repeat: { count: 3 }` is some other library's option
         if pattern is not None:
             schedule = cron_text(pattern) or ctx.dyn(pair)
-        elif every:
-            schedule = f"interval {every}ms"
+        elif num(every):
+            schedule = f"interval {num(every)}ms"
         else:
             schedule = ctx.dyn(pair)
         ctx.add(_bull_name(pair), schedule, "-", pair)
@@ -148,7 +230,7 @@ def _bullmq(ctx: Ctx) -> None:
 _JS = [
     Scanner(re.compile(rb"@nestjs/schedule"), _nest),
     Scanner(re.compile(rb"node-cron"), _node_cron),
-    Scanner(re.compile(rb"bull", re.IGNORECASE), _bullmq),
+    Scanner(re.compile(rb"bullmq|['\"]bull['\"]"), _bullmq),
 ]
 
 # --- Python (Celery) --------------------------------------------------------------
@@ -310,6 +392,18 @@ _FREQUENCY_RE = re.compile(
     r"(?:cron|every\w*|hourly\w*|daily\w*|twiceDaily\w*|weekly\w*|monthly\w*"
     r"|twiceMonthly|quarterly\w*|yearly\w*|lastDayOfMonth)"
 )
+_MODIFIERS = frozenset(
+    {"at", "days", "weekdays", "weekends", "between", "unlessBetween"}
+    | {
+        "sundays",
+        "mondays",
+        "tuesdays",
+        "wednesdays",
+        "thursdays",
+        "fridays",
+        "saturdays",
+    }
+)
 _PHP_CLOSURES = frozenset({"anonymous_function", "arrow_function"})
 _PHP_CLASSES = frozenset({"class_declaration"})
 
@@ -330,7 +424,7 @@ def _short(name: str) -> str:
 def _php_name(node: Node) -> str:
     lit = _lit(node)
     if lit is not None:
-        return lit
+        return first_token(lit)  # a command line may carry credentials
     if node.type in _PHP_CLOSURES:
         return ANONYMOUS
     if node.type in ("object_creation_expression", "class_constant_access_expression"):
@@ -357,6 +451,10 @@ def _schedule_start(node: Node) -> str | None:
 
 
 def _frequency(ctx: Ctx, start: Node) -> str:
+    """The frequency method plus the literal `at` / day modifiers of the
+    chain; a non-literal argument makes the whole schedule dynamic."""
+    freq = ""
+    modifiers: list[str] = []
     cur = start
     while (
         cur.parent is not None
@@ -365,16 +463,27 @@ def _frequency(ctx: Ctx, start: Node) -> str:
     ):
         cur = cur.parent
         method = _text(cur.child_by_field_name("name"))
-        if not _FREQUENCY_RE.fullmatch(method):
+        is_freq = _FREQUENCY_RE.fullmatch(method) is not None
+        if not (is_freq and not freq) and method not in _MODIFIERS:
             continue
         args = _php_args(cur)
         if method == "cron":
-            return (cron_text(args[0]) if args else None) or ctx.dyn(cur)
-        values = [_lit(a) or num(a) for a in args]
-        if None in values:
-            return ctx.dyn(cur)
-        return " ".join([method, *(v for v in values if v is not None)])
-    return ctx.dyn(start)
+            text = cron_text(args[0]) if args else None
+            part = text or ctx.dyn(cur)
+        else:
+            values = [_lit(a) or num(a) for a in args]
+            part = (
+                ctx.dyn(cur)
+                if None in values
+                else " ".join([method, *(v for v in values if v is not None)])
+            )
+        if part == DYNAMIC:
+            return DYNAMIC
+        if is_freq and not freq:
+            freq = part
+        else:
+            modifiers.append(part)
+    return " ".join([freq, *modifiers]) if freq else ctx.dyn(start)
 
 
 def _laravel(ctx: Ctx) -> None:
@@ -383,7 +492,8 @@ def _laravel(ctx: Ctx) -> None:
         if kind is None:
             continue
         args = _php_args(node)
-        name = _php_name(args[0]) if args else DYNAMIC
+        # `exec` takes a shell command line: never a name
+        name = "(exec)" if kind == "exec" else _php_name(args[0]) if args else DYNAMIC
         handler = name if kind == "job" else "-"
         ctx.add(name, _frequency(ctx, node), handler, node)
 
@@ -431,7 +541,8 @@ def _symfony(ctx: Ctx) -> None:
             schedule = f"every {text}" if text else ctx.dyn(attr)
         own = _text(target.child_by_field_name("name"))
         if target.type == "class_declaration":
-            ctx.add(own, schedule, f"{own}.__invoke", attr)
+            entry = _lit(named.get("method")) or "__invoke"
+            ctx.add(own, schedule, f"{own}.{entry}", attr)
         else:
             ctx.add(
                 own, schedule, qualified(enclosing(target, _PHP_CLASSES), own), attr

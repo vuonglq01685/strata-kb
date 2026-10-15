@@ -163,3 +163,15 @@ def test_prose_details_sort_first_and_are_never_capped_or_hidden():
     assert _coverage.JOBS_DETAIL in l2
     assert "a/f19.ts:1" in l2 and "a/f20.ts:1" not in l2
     assert "+5 more" in l2
+
+
+def test_bare_file_sites_are_capped_but_known_prose_is_not():
+    rows = [
+        CoverageRow("schema", ".", "sql", "partial", f"db/m{n:02d}.sql")
+        for n in range(25)
+    ] + [CoverageRow("schema", ".", "sql", "partial", "unsupported router: wouter")]
+    (row,) = merge_rows(rows)
+    assert row.detail.startswith("unsupported router: wouter; db/m00.sql")
+    l2 = render_section([row]).l2_md
+    assert "unsupported router: wouter" in l2
+    assert "db/m19.sql" in l2 and "db/m20.sql" not in l2 and "+5 more" in l2
