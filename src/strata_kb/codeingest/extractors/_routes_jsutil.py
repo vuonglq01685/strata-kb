@@ -29,6 +29,7 @@ _CLASS_TYPES = ("class_declaration", "abstract_class_declaration")
 _TEST_RE = re.compile(
     r"(?:^|/)(?:__tests__|__mocks__)/|\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$"
 )
+_SUFFIX_RE = re.compile(r"\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$")
 _SCRIPT_EXT_RE = re.compile(r"\.[cm]?[jt]sx?$")
 
 
@@ -59,15 +60,17 @@ def _site(rel: str, node: Node) -> str:
     return f"{rel}:{_ts.line_of(node)}"
 
 
-def _source_files(files: list[str], skip_tests: bool = True) -> list[str]:
-    """JS/TS files of a scope. File-system routers (Next, Nuxt) pass
-    `skip_tests=False`: every file under their route dirs is a route."""
+def _source_files(files: list[str], tests: str = "all") -> list[str]:
+    """JS/TS files of a scope. `tests`: "all" skips test dirs and suffixes,
+    "suffix" only `*.test.*` / `*.spec.*` (Nitro ignores those itself), "none"
+    skips nothing -- file-system routers list every file under a route dir."""
     return [
         f
         for f in files
         if _ts.language_for(f) in _JS_LANGS
         and not f.endswith(".d.ts")
-        and not (skip_tests and _TEST_RE.search(f))
+        and not (tests == "all" and _TEST_RE.search(f))
+        and not (tests == "suffix" and _SUFFIX_RE.search(f))
     ]
 
 
@@ -246,7 +249,8 @@ def _unwrap_type(name: str) -> tuple[str, bool | None]:
             name = array.group(1) or array.group(2)
         elif wrapper:
             name = wrapper.group(2)
-            forced = {"Partial": False, "Required": True}.get(wrapper.group(1), forced)
+            if forced is None:  # the outermost wrapper decides
+                forced = {"Partial": False, "Required": True}.get(wrapper.group(1))
         else:
             return name, forced
 

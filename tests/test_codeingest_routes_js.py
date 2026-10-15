@@ -702,3 +702,47 @@ def test_request_type_wrappers_are_unwrapped_for_field_lookup(tmp_path):
     assert sec.l3_md.count("| name | string | yes |") == 1  # CreateDto[]
     assert sec.l3_md.count("| name | string | no |") == 1  # Partial<...>
     assert "outside the repo" not in sec.l3_md
+
+
+# --- review round 2 ---------------------------------------------------------
+
+
+def test_express_untracked_call_and_array_args_are_sites(tmp_path):
+    package(tmp_path, ".", "express")
+    write(
+        tmp_path,
+        "a.js",
+        "module.exports = (router) => {\n"
+        '  router.get("/users", asyncHandler(list));\n'
+        '  router.post("/login", passport.authenticate("local"), h);\n'
+        '  router.put("/x", [auth], h);\n'
+        '  router["get"]("/y", h);\n'
+        '  cache.get("k", { ttl: 1 });\n'
+        "};\n",
+    )
+    assert detail(run_routes(tmp_path), ".").split("; ") == [
+        "a.js:2",
+        "a.js:3",
+        "a.js:4",
+        "a.js:5",
+    ]
+
+
+def test_nuxt_skips_test_suffix_files_only(tmp_path):
+    package(tmp_path, ".", "nuxt")
+    write(tmp_path, "server/api/a.ts", "export default 1\n")
+    write(tmp_path, "server/api/a.test.ts", "export default 1\n")
+    write(tmp_path, "server/api/b.spec.ts", "export default 1\n")
+    write(tmp_path, "server/api/tests/c.ts", "export default 1\n")
+    assert all_routes(run_routes(tmp_path)) == [
+        ("ANY", "/api/a"),
+        ("ANY", "/api/tests/c"),
+    ]
+
+
+def test_outermost_type_wrapper_wins():
+    from strata_kb.codeingest.extractors import _routes_jsutil as u
+
+    assert u._unwrap_type("Required<Partial<X>>") == ("X", True)
+    assert u._unwrap_type("Partial<Required<X>>") == ("X", False)
+    assert u._unwrap_type("Partial<X>[]") == ("X", False)

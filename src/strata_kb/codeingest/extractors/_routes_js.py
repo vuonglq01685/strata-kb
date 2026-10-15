@@ -334,7 +334,7 @@ def _next_exports(tree: Tree) -> tuple[list[tuple[str, int]], bool]:
 
 def next_js(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     result = AdapterResult()
-    for rel in _source_files(files, skip_tests=False):
+    for rel in _source_files(files, tests="none"):
         local = _local(rel, scope)
         local = local[4:] if local.startswith("src/") else local
         parts = local.split("/")
@@ -387,7 +387,7 @@ _NUXT_ROOTS = {"server/api/": "api", "server/routes/": ""}
 
 def nuxt(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     result = AdapterResult()
-    for rel in _source_files(files, skip_tests=False):
+    for rel in _source_files(files, tests="suffix"):
         local = _local(rel, scope)
         for base, prefix in _NUXT_ROOTS.items():
             if not local.startswith(base):

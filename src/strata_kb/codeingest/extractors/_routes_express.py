@@ -429,16 +429,19 @@ def _add_mount(info: _FileInfo, file_set: set[str], key: str, call: Node) -> Non
             info.mounts.setdefault(key, []).append(mount)
 
 
+_NOT_A_HANDLER = frozenset(
+    {"object", "string", "number", "template_string", "true", "false", "null"}
+)
+
+
 def _suspicious_unbound(
     info: _FileInfo, call: Node, verb: str, args: list[Node], imports_express: bool
 ) -> None:
     """`x.get('/p', handler)` on a receiver we cannot track (a parameter, a
     field, a factory result) is probably a route we cannot attribute."""
-    if len(args) < 2 or args[1].type not in (
-        *_FUNCTION_TYPES,
-        "identifier",
-        "member_expression",
-    ):
+    # a literal / object 2nd arg is a config or value (`axios.get(u, {..})`,
+    # `cache.get('k', 1)`); anything else may be middleware or a handler
+    if len(args) < 2 or args[1].type in _NOT_A_HANDLER:
         return
     # any string path counts (`':id'`, `'*'`), not only one starting with "/"
     if _lit(args[0]) is not None or imports_express:
@@ -472,7 +475,9 @@ def _analyse_calls(
         fn = node.child_by_field_name("function")
         if fn is not None and fn.type == "subscript_expression":
             # app[method]("/x", h): the verb is computed
-            if _recv_key(fn.child_by_field_name("object")) in info.kinds:
+            tracked = _recv_key(fn.child_by_field_name("object")) in info.kinds
+            args = _args(node)
+            if tracked or (len(args) >= 2 and _lit(args[0]) is not None):
                 info.sites.append(_site(info.rel, node))
             continue
         if fn is None or fn.type != "member_expression":
