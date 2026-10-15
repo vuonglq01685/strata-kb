@@ -10,11 +10,14 @@ resolved here per file before the class walk:
   namespaces, at most `_MAX_HOPS` files deep
 - `const|let|var X = Get` (or `= common.Get`)
 
-A name imported from a relative file whose export chain could not be followed
-(missing file, hop cap, cycle) is a *suspect*: it may be a verb, so using it
-as a decorator is a site. Custom decorators the repo defines itself
-(`SetMetadata`, no verb inside) resolve to a plain declaration and are not
-suspects.
+Specifiers resolve through `_routes_jsresolve.ModuleResolver` against every
+tracked repo file (not just the scope), incl. tsconfig paths and workspace
+packages. A name imported from a relative file that does not exist, or whose
+export chain could not be followed (missing file, hop cap, cycle), is a
+*suspect*: it may be a verb, so using it as a decorator is a site. An
+unresolvable non-relative import (registry package) is not a suspect. Custom
+decorators the repo defines itself (`SetMetadata`, no verb inside) resolve to a
+plain declaration and are not suspects.
 
 shortcut: CommonJS `require` bindings, destructured aliases and renames made
 by a barrel file that never mentions `@nestjs/common` are not followed.
@@ -22,14 +25,12 @@ by a barrel file that never mentions `@nestjs/common` are not followed.
 
 from __future__ import annotations
 
-import posixpath
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from strata_kb.codeingest.extractors._routes_jsresolve import ModuleResolver
 from strata_kb.codeingest.extractors._routes_jsutil import (
-    _EXTS,
-    _SCRIPT_EXT_RE,
     _last_name,
     _lit,
     _parse,
@@ -89,9 +90,13 @@ class _Exports:
 
 
 class AliasResolver:
-    def __init__(self, root: Path, files: list[str], trees: dict[str, Tree]) -> None:
+    def __init__(
+        self, root: Path, repo_files: list[str], trees: dict[str, Tree]
+    ) -> None:
         self._root = root
-        self._files = frozenset(_source_files(files))
+        self._modules = ModuleResolver(
+            root, repo_files, frozenset(_source_files(repo_files))
+        )
         self._trees = trees  # shared with the caller; read lazily otherwise
         self._exports_cache: dict[str, _Exports] = {}
 
@@ -104,16 +109,6 @@ class AliasResolver:
         return {k for k, v in exports.names.items() if k != v and v in _TRACKED}
 
     # -- file graph ----------------------------------------------------------
-
-    def _resolve(self, rel: str, spec: str | None) -> str | None:
-        if spec is None or not spec.startswith("."):
-            return None
-        base = posixpath.normpath(posixpath.join(posixpath.dirname(rel), spec))
-        stem = _SCRIPT_EXT_RE.sub("", base)
-        candidates = [base]
-        candidates += [stem + ext for ext in _EXTS]
-        candidates += [f"{base}/index{ext}" for ext in _EXTS]
-        return next((c for c in candidates if c in self._files), None)
 
     def _tree(self, rel: str) -> Tree | None:
         if rel not in self._trees:
@@ -139,10 +134,14 @@ class AliasResolver:
         source = _lit(node.child_by_field_name("source"))
         if source is None:
             return
-        target = self._resolve(rel, source)
-        if source != NEST_PKG and target is None:
-            return
-        exports = self._exports(target, stack) if target else None
+        target = self._modules.resolve(rel, source)
+        exports: _Exports | None = None
+        if target is not None:
+            exports = self._exports(target, stack)
+        elif source.startswith("."):
+            exports = _Exports(opaque=True)  # same-repo file we cannot find
+        elif source != NEST_PKG:
+            return  # a registry package: nothing to follow, nothing to flag
         for part in _walk(node):
             if part.type == "import_specifier":
                 name = _text(part.child_by_field_name("name"))
@@ -188,6 +187,9 @@ class AliasResolver:
                 if real is not None and names.aliases.get(name) != real:
                     names.aliases[name] = real
                     changed = True
+                elif _is_suspect(value, names) and name not in names.suspects:
+                    names.suspects.add(name)
+                    changed = True
             if not changed:
                 break
 
@@ -226,34 +228,39 @@ class AliasResolver:
                 name = _text(spec.child_by_field_name("name"))
                 alias = _text(spec.child_by_field_name("alias")) or name
                 if source is None:
-                    out.names[alias] = names.aliases.get(name, name)
+                    if name in names.suspects:
+                        out.opaque = True  # the exported name may be a verb
+                    else:
+                        out.names[alias] = names.aliases.get(name, name)
                 elif source == NEST_PKG:
                     out.names[alias] = name
                 elif source.startswith("."):
-                    sub = self._exports(self._resolve(rel, source), stack)
+                    sub = self._exports(self._modules.resolve(rel, source), stack)
                     if name in sub.names:
                         out.names[alias] = sub.names[name]
                     else:
                         out.opaque = out.opaque or sub.opaque or not sub.names
         elif decl is not None:
             for declared in _declared_names(decl):
-                out.names[declared] = names.aliases.get(declared, declared)
+                if declared in names.suspects:
+                    out.opaque = True
+                else:
+                    out.names[declared] = names.aliases.get(declared, declared)
         elif source is not None and any(c.type == "*" for c in stmt.children):
             if source == NEST_PKG:
                 for real in _TRACKED:
                     out.names.setdefault(real, real)
             elif source.startswith("."):
-                sub = self._exports(self._resolve(rel, source), stack)
+                sub = self._exports(self._modules.resolve(rel, source), stack)
                 for key, real in sub.names.items():
                     out.names.setdefault(key, real)
                 out.opaque = out.opaque or sub.opaque
         else:
             value = stmt.child_by_field_name("value")
-            if value is not None:  # `export default X`
+            if _is_suspect(value, names):
+                out.opaque = True
+            elif value is not None:  # `export default X`
                 out.names["default"] = _alias_of(value, names) or "default"
-            for child in stmt.named_children:
-                if child.type == "identifier":  # older grammars: no value field
-                    out.names["default"] = names.aliases.get(_text(child), "default")
 
 
 def _declared_names(decl: Node) -> list[str]:
@@ -265,6 +272,14 @@ def _declared_names(decl: Node) -> list[str]:
         if item.type == "variable_declarator" and name and name.type == "identifier":
             out.append(_text(name))
     return out
+
+
+def _is_suspect(value: Node | None, names: Names) -> bool:
+    return (
+        value is not None
+        and value.type in ("identifier", "member_expression")
+        and names.suspect(_text(value))
+    )
 
 
 def _alias_of(value: Node | None, names: Names) -> str | None:

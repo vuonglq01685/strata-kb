@@ -524,7 +524,9 @@ def _resolve_export(get_info, rel: str, name: str, depth: int = 0) -> _NodeKey |
     return None
 
 
-def express(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
+def express(
+    root: Path, scope: Scope, files: list[str], _repo_files: list[str]
+) -> AdapterResult:
     result = AdapterResult()
     candidates = _source_files(files)
     file_set = set(candidates)

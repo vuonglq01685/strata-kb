@@ -1,6 +1,7 @@
 """JS/TS route adapters for `routes.py`: NestJS, Next.js, Nuxt (Express lives in `_routes_express.py`).
 
-Each adapter takes `(repo root, Scope, that scope's tracked files)` and
+Each adapter takes `(repo root, Scope, that scope's tracked files, all tracked
+repo files)` and
 returns an `AdapterResult`: the `Route`s it could resolve statically, plus
 `dynamic_sites` -- a `file:line` for every recognised routing form that did
 NOT become a route.
@@ -208,11 +209,13 @@ def _global_prefix(loaded: list[tuple[str, Tree]], sites: list[str]) -> str | No
     return only
 
 
-def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
+def nest(
+    root: Path, scope: Scope, files: list[str], repo_files: list[str]
+) -> AdapterResult:
     result = AdapterResult()
     loaded = _scan(root, files, _NEST_HINT, result)
     trees = dict(loaded)
-    resolver = AliasResolver(root, files, trees)
+    resolver = AliasResolver(root, repo_files, trees)
     # a controller file may hold no `@nestjs/common` text at all and use only
     # aliases a lib exports: scan files that use one of those names too
     seeds = {a for rel, _t in loaded for a in resolver.exported_aliases(rel)}
@@ -222,11 +225,10 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
             + b"|".join(map(re.escape, map(str.encode, sorted(seeds))))
             + rb")\b"
         )
-        rest = [f for f in files if f not in trees]
-        loaded += [
-            (r, t) for r, t in _scan(root, rest, pattern, result) if r not in trees
-        ]
-        trees.update(loaded)
+        seen = {r for r, _t in loaded}
+        extra = _scan(root, [f for f in files if f not in seen], pattern, result)
+        loaded += extra
+        trees.update(extra)
     prefix = _global_prefix(loaded, result.dynamic_sites)
     consumed: set[tuple[str, int]] = set()
     found: list[Route] = []
@@ -341,7 +343,9 @@ def _next_exports(tree: Tree) -> tuple[list[tuple[str, int]], bool]:
     return names, star
 
 
-def next_js(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
+def next_js(
+    root: Path, scope: Scope, files: list[str], repo_files: list[str]
+) -> AdapterResult:
     result = AdapterResult()
     for rel in _source_files(files, tests="none"):
         local = _local(rel, scope)
@@ -394,7 +398,9 @@ _NUXT_METHODS = frozenset(
 _NUXT_ROOTS = {"server/api/": "api", "server/routes/": ""}
 
 
-def nuxt(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
+def nuxt(
+    root: Path, scope: Scope, files: list[str], repo_files: list[str]
+) -> AdapterResult:
     result = AdapterResult()
     for rel in _source_files(files, tests="suffix"):
         local = _local(rel, scope)

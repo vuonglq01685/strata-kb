@@ -952,6 +952,163 @@ def test_nest_alias_only_file_without_nest_mentions_is_still_scanned(tmp_path):
     assert all_routes(result) == [("GET", "/a/x")]
 
 
+def _ctrl(imp: str, name: str) -> str:
+    return (
+        "import { Controller } from '@nestjs/common';\n"
+        f"import {{ {name} }} from '{imp}';\n"
+        f"@Controller('a') class A {{\n  @{name}('x') x() {{}}\n}}\n"
+    )
+
+
+def test_nest_alias_in_same_repo_file_outside_scope_is_followed(tmp_path):
+    write(
+        tmp_path,
+        "libs/shared/http.ts",
+        "export { Get as HttpGet } from '@nestjs/common';\n",
+    )
+    nest_app(
+        tmp_path,
+        "apps/api",
+        files={"src/a.controller.ts": _ctrl("../../../libs/shared/http", "HttpGet")},
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "apps/api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x")]
+
+
+def test_nest_decorator_from_missing_relative_file_is_a_site(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/a.controller.ts": _ctrl("../x/missing", "Roles")
+            + "import { Unused } from '../x/gone';\n"
+        },
+    )
+    result = run_routes(tmp_path)
+    assert detail(result, "api") == "api/src/a.controller.ts:4"
+
+
+@pytest.mark.parametrize(
+    "lib",
+    [
+        "import { G } from './missing';\nexport const HttpGet = G;\n",
+        "import { G } from './missing';\nexport { G as HttpGet };\n",
+        "import G from './missing';\nexport { G as HttpGet };\n",
+    ],
+)
+def test_nest_suspect_status_survives_reexport_forms(tmp_path, lib):
+    nest_app(
+        tmp_path,
+        "api",
+        files={"src/lib.ts": lib, "src/a.controller.ts": _ctrl("./lib", "HttpGet")},
+    )
+    assert coverage(run_routes(tmp_path), "routes", "api") == "partial"
+
+
+def test_nest_suspect_default_export_survives(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": "import G from './missing';\nexport default G;\n",
+            "src/a.controller.ts": (
+                "import { Controller } from '@nestjs/common';\n"
+                "import HttpGet from './lib';\n"
+                "@Controller('a') class A {\n  @HttpGet('x') x() {}\n}\n"
+            ),
+        },
+    )
+    assert coverage(run_routes(tmp_path), "routes", "api") == "partial"
+
+
+def test_nest_import_clause_chain_beyond_cap_is_a_site(tmp_path):
+    files = {"src/h0.ts": "export { Get as Deep } from '@nestjs/common';\n"}
+    for i in range(1, 8):
+        files[f"src/h{i}.ts"] = (
+            f"import {{ Deep }} from './h{i - 1}';\nexport {{ Deep }};\n"
+        )
+    files["src/a.controller.ts"] = _ctrl("./h7", "Deep")
+    nest_app(tmp_path, "api", files=files)
+    assert coverage(run_routes(tmp_path), "routes", "api") == "partial"
+
+
+def test_nest_import_clause_chain_within_cap_is_a_route(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/h0.ts": "export { Get as Deep } from '@nestjs/common';\n",
+            "src/h1.ts": "import { Deep } from './h0';\nexport { Deep };\n",
+            "src/a.controller.ts": _ctrl("./h1", "Deep"),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x")]
+
+
+def test_nest_tsconfig_paths_baseurl_and_extends_resolve_aliases(tmp_path):
+    write(
+        tmp_path,
+        "tsconfig.base.json",
+        '{ // comment\n "compilerOptions": { "baseUrl": ".", "paths": {"@app/*": ["api/src/*"], "@one": ["api/src/common/http.ts"],},},}\n',
+    )
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "tsconfig.json": '{"extends": "../tsconfig.base.json"}',
+            "src/common/http.ts": "export { Get as HttpGet } from '@nestjs/common';\n",
+            "src/b.controller.ts": _ctrl("@app/common/http", "HttpGet"),
+            "src/c.controller.ts": _ctrl("@one", "HttpGet").replace("'a'", "'c'"),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x"), ("GET", "/c/x")]
+
+
+def test_nest_workspace_package_name_resolves_alias(tmp_path):
+    write(
+        tmp_path,
+        "libs/http/package.json",
+        '{"name": "@org/http", "main": "dist/index.js"}',
+    )
+    write(
+        tmp_path,
+        "libs/http/src/index.ts",
+        "export { Get as HttpGet } from '@nestjs/common';\n",
+    )
+    write(
+        tmp_path,
+        "libs/http/src/sub.ts",
+        "export { Post as HttpPost } from '@nestjs/common';\n",
+    )
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/a.controller.ts": _ctrl("@org/http", "HttpGet"),
+            "src/b.controller.ts": _ctrl("@org/http/sub", "HttpPost").replace(
+                "'a'", "'b'"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x"), ("POST", "/b/x")]
+
+
+def test_nest_unresolvable_non_relative_import_is_not_a_site(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={"src/a.controller.ts": _ctrl("some-package", "Public")},
+    )
+    assert coverage(run_routes(tmp_path), "routes", "api") == "complete"
+
+
 def test_nuxt_skips_only_nitro_default_ignored_suffixes(tmp_path):
     package(tmp_path, ".", "nuxt")
     write(tmp_path, "server/api/a.test.ts", "export default 1\n")

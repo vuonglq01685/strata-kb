@@ -75,7 +75,7 @@ ROUTE_FRAMEWORKS: tuple[str, ...] = (
     "Vapor",
 )
 
-Adapter = Callable[[Path, Scope, list[str]], AdapterResult]
+Adapter = Callable[[Path, Scope, list[str], list[str]], AdapterResult]
 ADAPTERS: dict[str, Adapter] = {**_routes_js.ADAPTERS}
 
 # `reader(root, repo files, type name, route file) -> [(name, type, required)]`
@@ -203,7 +203,7 @@ class RoutesExtractor:
                 )
                 continue
             try:
-                result = adapter(root, sc, by_scope.get(sc.path, []))
+                result = adapter(root, sc, by_scope.get(sc.path, []), files)
             except Exception as exc:  # noqa: BLE001 -- degrade, never crash: one bad adapter must not abort the run
                 manifest = sc.manifest if sc.path == "." else f"{sc.path}/{sc.manifest}"
                 warnings.append(f"routes: {fw} adapter failed in {sc.path}: {exc!r}")
