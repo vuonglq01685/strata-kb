@@ -523,3 +523,87 @@ func main() {
     result = run_routes(tmp_path)
     assert pairs(result) == [("GET", "/typed"), ("GET", "/untyped")]
     assert verdict(result) == ("complete", "")
+
+
+# --- fix round 4 -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("write", ["", "func bump() { a = 3 }\n"])
+def test_gin_package_level_multi_name_single_call_spec_does_not_crash(tmp_path, write):
+    gin_app(
+        tmp_path,
+        f"""package main
+
+import "github.com/gin-gonic/gin"
+
+func pair() (int, int) {{ return 1, 2 }}
+
+var a, b = pair()
+
+{write}
+func main() {{
+	r := gin.Default()
+	r.GET("/a", list)
+}}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/a")]
+    assert verdict(result) == ("complete", "")
+
+
+def test_gin_untyped_var_from_interface_typed_var_never_keeps_the_root(tmp_path):
+    src = """package main
+
+import "github.com/gin-gonic/gin"
+
+var base gin.IRouter = gin.Default()
+var api = base
+
+func setup() {
+	r := gin.Default()
+	api = r.Group("/v1")
+}
+
+func routes() { api.GET("/users", list) }
+"""
+    gin_app(tmp_path, src)
+    result = run_routes(tmp_path)
+    assert ("GET", "/users") not in pairs(result)
+    assert pairs(result) in ([], [("GET", "/v1/users")])
+    if not pairs(result):
+        status, detail = verdict(result)
+        assert status == "partial"
+        assert f"{MAIN}:{at(src, 'api.GET')}" in detail.split("; ")
+
+
+@pytest.mark.parametrize(
+    "init",
+    [
+        "gin.Default()",
+        "gin.New()",
+        "newEngine()",
+    ],
+)
+def test_gin_untyped_var_from_engine_call_keeps_the_root(tmp_path, init):
+    gin_app(
+        tmp_path,
+        f"""package main
+
+import "github.com/gin-gonic/gin"
+
+func newEngine() *gin.Engine {{ return gin.New() }}
+
+var r = {init}
+
+func reset() {{
+	x := gin.New()
+	r = x
+}}
+
+func main() {{ r.GET("/users", list) }}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/users")]
+    assert verdict(result) == ("complete", "")

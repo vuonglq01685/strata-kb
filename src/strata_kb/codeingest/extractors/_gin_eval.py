@@ -23,6 +23,7 @@ from strata_kb.codeingest.extractors._gin_env import (
     unroll,
 )
 from strata_kb.codeingest.extractors._go_ast import (
+    GIN,
     UNKNOWN,
     Func,
     GoFile,
@@ -217,12 +218,41 @@ class Evaluator:
                 else:
                     value = spec.child_by_field_name("value")
                     exprs = value.named_children if value is not None else []
-                    paired = len(exprs) == len(names)
-                    engine = [
-                        paired and self.value_of(frame, e) == Router("") for e in exprs
-                    ] or [False] * len(names)
+                    # an unpaired spec (`var a, b = f()`) types its names
+                    # from a multi-value call: never an engine
+                    engine = (
+                        [self.engine_init(frame, e) for e in exprs]
+                        if len(exprs) == len(names)
+                        else [False] * len(names)
+                    )
                 out |= {n for n, e in zip(names, engine, strict=True) if e}
         return out
+
+    def engine_init(self, frame: Frame, expr: Node) -> bool:
+        """An initializer whose static type is `*gin.Engine`: a literal
+        `gin.Default()` / `gin.New()` call or a call of an in-repo function
+        declared to return one. Another variable, even one holding an
+        engine, may be typed as an interface."""
+        if expr.type != "call_expression":
+            return False
+        fn = expr.child_by_field_name("function")
+        if fn is None or self.value_of(frame, expr) != Router(""):
+            return False
+        if fn.type == "identifier":
+            func = self.idx.func(frame.file.dir, _text(fn))
+        elif fn.type == "selector_expression":
+            operand = fn.child_by_field_name("operand")
+            field = fn.child_by_field_name("field")
+            path = frame.file.imports.get(_text(operand)) if operand else None
+            if path is None or field is None:
+                return False
+            if path == GIN:
+                return _text(field) in ("Default", "New")
+            target = self.idx.import_dir(path)
+            func = self.idx.func(target, _text(field)) if target else None
+        else:
+            return False
+        return func is not None and self.result_value(func) == Router("")
 
     def initialized(self, decl: Node) -> list[str]:
         out: list[str] = []
