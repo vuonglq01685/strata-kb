@@ -105,32 +105,19 @@ _SKIP_FILE = re.compile(
     r"(?:^|/)(?:Tests|\.build|Pods|Carthage)/|(?:^|/)Package(?:@[^/]*)?\.swift$"
 )
 _MAX_DEPTH = 8
+_APP_MAKER = re.compile(rb"\bApplication\s*(?:\(|\.(?:make|init|new)\b)")
 
 
 class Vapor(Evaluator):
     def run(self) -> None:
         idx = self.idx
-        owners = {
-            owner
-            for (owner, _n), declared in idx.props.items()
-            if any(idx.resolve_alias(t) == "Application" for t in declared)
-        }
-
-        def concrete(owner: str, node: Node) -> bool:
-            # only `Application` makes a router with a known prefix
-            return (
-                owner in owners
-                or self.router_self(owner) == Router("")
-                or b"Application" in (node.text or b"")
-            )
-
         for rel in sorted(idx.top_level):
             self.run_top(rel)
-        roots = [f for f in idx.all_fns if concrete(f.owner, f.node)]
+        roots = [f for f in idx.all_fns if self.is_root(f)]
         for fn in roots:
             self.budget = BUDGET
             self.run_fn(fn, {}, 0, frozenset({fn.key}), fn.owner)
-        owned = [m for m in idx.members if concrete(m[1], m[2])]
+        owned = [m for m in idx.members if self.concrete(m[1], m[2])]
         for rel, owner, node in owned:
             self.run_member(rel, owner, node)
         reached = frozenset(self.reached) | {f.key for f in roots}
@@ -142,6 +129,42 @@ class Vapor(Evaluator):
             if (rel, owner, node) not in owned:
                 self.run_member(rel, owner, node)
         self.unregistered()
+
+    def app_owners(self) -> set[str]:
+        idx = self.idx
+        return {
+            owner
+            for (owner, _n), declared in idx.props.items()
+            if any(idx.resolve_alias(t) == "Application" for t in declared)
+        }
+
+    def makes_application(self, node: Node) -> bool:
+        return bool(_APP_MAKER.search(node.text or b""))
+
+    def concrete(self, owner: str, node: Node) -> bool:
+        """Can this code hold an `Application` without being handed one?"""
+        return (
+            owner in self.app_owners()
+            or self.router_self(owner) == Router("")
+            or self.makes_application(node)
+        )
+
+    def is_root(self, fn: Fn) -> bool:
+        """A function that starts from an `Application` (a parameter, `self`
+        of an extension, a stored property, one it makes). A function handed a
+        `RoutesBuilder` is reached through its callers instead, so running it
+        alone would only add sites."""
+        bounds = fn.bounds()
+        kinds = [
+            self.idx.resolve_alias(bounds.get(k, k))
+            for p in fn.params()
+            for k in [type_name(p.type_node)]
+        ]
+        if "Application" in kinds and not self.idx.has_type("Application"):
+            return True
+        if any(k in ROUTER_TYPES for k in kinds):
+            return False
+        return self.concrete(fn.owner, fn.node)
 
     def unregistered(self) -> None:
         covered = set(self.registered)
@@ -217,7 +240,7 @@ class Vapor(Evaluator):
                 picked = self.pick(inits, call, vals)
                 if picked is not None:
                     self.enter(frame, picked[0], picked[1], node, name)
-            return Plain(name)
+            return self.of_type(name, None)
         return Plain(name) if name in PLAIN_TYPES else None
 
     def method_call(self, frame: Frame, recv: Value, step: Step, call: Call) -> Value:
@@ -354,7 +377,7 @@ class Vapor(Evaluator):
         for arg in call.args:
             if arg.label == "configure":
                 continue
-            kind, segs = path_or_middleware(frame, arg)
+            kind, segs = path_or_middleware(self.idx, frame, arg)
             if kind == "path" and prefix is not None:
                 prefix = join_path(prefix, *segs)
             elif kind == "unknown":
@@ -492,6 +515,7 @@ def _adapter(
     idx = Index(root)
     for rel in files:
         idx.add_file(rel)
+    idx.finish()
     play = Vapor(idx)
     play.run()
     sites = (

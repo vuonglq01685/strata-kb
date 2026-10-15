@@ -129,6 +129,8 @@ func routes(_ app: Application) throws {
             "ok"
         ) { req in req }
 }
+struct AdminOnly: AsyncMiddleware {}
+struct RateLimit: Middleware {}
 """,
     )
     result = run_routes(tmp_path)
@@ -658,6 +660,8 @@ struct AccountController: RouteCollection {
         tmp_path,
         "Sources/App/Middleware/UserAuthenticator.swift",
         """import Vapor
+
+struct JWTMiddleware: AsyncMiddleware {}
 
 struct UserAuthenticator: AsyncBearerAuthenticator {
     func authenticate(bearer: BearerAuthorization, for request: Request) async throws {

@@ -91,20 +91,50 @@ def _query(lang: str, query: str) -> Any:
 # tree-sitter-swift reads the `{` after `if let x = try await f(..)` as a
 # trailing closure and loses the rest of the function. Parenthesising the
 # awaited expression (same line, so line numbers survive) parses cleanly.
-_SWIFT_AWAIT_CONDITION = re.compile(
-    rb"^([ \t]*(?:\}[ \t]*else[ \t]+)?(?:if|while|switch)\b[^\n]*?)"
-    rb"(\btry[?!]?[ \t]+await\b[^\n]*?)([ \t]*\{[^\n]*)$",
-    re.M,
-)
+_SWIFT_CONDITION = re.compile(rb"^[ \t]*(?:\}[ \t]*else[ \t]+)?(?:if|while|switch)\b")
+_SWIFT_AWAIT = re.compile(rb"\btry[?!]?[ \t]+await\b")
+_SWIFT_LINE_LIMIT = 4096  # longer lines are never rewritten: keeps the scan linear
+
+
+def _swift_parenthesised(source: bytes) -> bytes:
+    lines = source.split(b"\n")
+    for i, line in enumerate(lines):
+        if len(line) > _SWIFT_LINE_LIMIT or b"await" not in line:
+            continue
+        if not _SWIFT_CONDITION.match(line):
+            continue
+        found = _SWIFT_AWAIT.search(line)
+        brace = line.find(b"{", found.end()) if found else -1
+        if found is None or brace < 0:
+            continue
+        end = len(line[:brace].rstrip(b" \t"))
+        lines[i] = (
+            line[: found.start()] + b"(" + line[found.start() : end] + b")" + line[end:]
+        )
+    return b"\n".join(lines)
+
+
+def _first_error_row(tree: Tree) -> int:
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        if node.type == "ERROR" or node.is_missing:
+            return node.start_point[0]
+        stack.extend(reversed(node.children))
+    return 0
 
 
 def parse(lang: str, source: bytes) -> Tree:
     tree = _parser(lang).parse(source)
     if lang == "swift" and tree.root_node.has_error:
-        fixed = _SWIFT_AWAIT_CONDITION.sub(rb"\1(\2)\3", source)
+        fixed = _swift_parenthesised(source)
         if fixed != source:
             retry = _parser(lang).parse(fixed)
-            if not retry.root_node.has_error:
+            # a clean retry, or one whose first error lies beyond the mis-parse
+            # it repaired (a real error elsewhere, the line a site must name)
+            if not retry.root_node.has_error or _first_error_row(
+                retry
+            ) > _first_error_row(tree):
                 return retry
     return tree
 

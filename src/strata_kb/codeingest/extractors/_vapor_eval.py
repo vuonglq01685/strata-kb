@@ -19,10 +19,16 @@ from strata_kb.codeingest.extractors._swift_ast import (
     type_name,
 )
 from strata_kb.codeingest.extractors._vapor_index import Fn, Index
-from strata_kb.codeingest.extractors._vapor_shape import pattern_names_of
+from strata_kb.codeingest.extractors._vapor_shape import (
+    is_middleware,
+    pattern_names_of,
+)
 from strata_kb.codeingest.extractors._vapor_values import (
+    KNOWN_SUPERTYPES,
     LITERALS,
     MADE,
+    MIDDLEWARE_PROTOCOLS,
+    MW,
     PLAIN_TYPES,
     ROUTER_TYPES,
     SELF,
@@ -48,6 +54,7 @@ if TYPE_CHECKING:
 
 __all__ = ["BUDGET", "Evaluator"]
 
+KNOWN = KNOWN_SUPERTYPES | MIDDLEWARE_PROTOCOLS
 BUDGET = 5000  # follow steps one entry point may spend
 
 
@@ -125,7 +132,12 @@ class Evaluator:
         if not name:
             return None
         if self.idx.has_type(name):
-            return None if self.idx.conforms(name, "RoutesBuilder") else Plain(name)
+            # a supertype outside the repo may be a router builder: unknown
+            if self.idx.conforms(name, "RoutesBuilder") or self.idx.has_unknown_super(
+                name, KNOWN
+            ):
+                return None
+            return Plain(name)
         if name in ROUTER_TYPES:
             if router is not None:
                 return router
@@ -232,7 +244,7 @@ class Evaluator:
                 "call_expression",
                 "navigation_expression",
             ):
-                value = MADE
+                value = MW if is_middleware(self.idx, frame, values[0]) else MADE
             binder = next(
                 (c for c in kids(node) if c.type == "value_binding_pattern"), None
             )

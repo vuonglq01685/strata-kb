@@ -13,8 +13,11 @@ from strata_kb.codeingest.extractors._vapor_index import Index
 from strata_kb.codeingest.extractors._vapor_values import (
     HANDLER,
     LITERALS,
-    MADE,
     METHOD,
+    MIDDLEWARE_FACTORIES,
+    MIDDLEWARE_PROTOCOLS,
+    MIDDLEWARE_TYPES,
+    MW,
     STRINGS,
     VERBS,
     Frame,
@@ -110,28 +113,56 @@ def path_constructor(node: Node) -> list[str] | None:
     return [":" + text] if _CONSTRUCTORS[word] else [text]
 
 
-def path_or_middleware(frame: Frame, arg: Arg) -> tuple[str, list[str]]:
+def _is_middleware_call(idx: Index, node: Node) -> bool:
+    """`User.authenticator()`, `FileMiddleware(..)`, `AuthMiddleware()` of an
+    in-repo middleware type: calls that provably build middleware."""
+    base, steps = unroll(node)
+    if not steps or steps[-1].kind != "c" or base.type == "prefix_expression":
+        return False
+    if len(steps) == 1:  # `Type(..)`
+        name = _text(base)
+        return name in MIDDLEWARE_TYPES or idx.conforms_any(name, MIDDLEWARE_PROTOCOLS)
+    last = steps[-2]
+    if last.kind != "m":
+        return False
+    if last.name in MIDDLEWARE_FACTORIES or last.name in MIDDLEWARE_TYPES:
+        return True  # `User.authenticator()`, `Vapor.FileMiddleware(..)`
+    return (
+        len(steps) == 2 and _text(base) in MIDDLEWARE_TYPES
+    )  # `ErrorMiddleware.default()`
+
+
+def is_middleware(idx: Index, frame: Frame, node: Node) -> bool:
+    """True only for a value that is provably middleware."""
+    if node.type == "call_expression":
+        return _is_middleware_call(idx, node)
+    if node.type == "array_literal":
+        parts = kids(node)
+        return bool(parts) and all(is_middleware(idx, frame, p) for p in parts)
+    if node.type == "simple_identifier":
+        name = _text(node)
+        found, value = frame.env.lookup(name)
+        if not found or name in frame.unsafe:
+            return False
+        return value is MW or (
+            isinstance(value, Plain)
+            and idx.conforms_any(value.type, MIDDLEWARE_PROTOCOLS)
+        )
+    return False
+
+
+def path_or_middleware(idx: Index, frame: Frame, arg: Arg) -> tuple[str, list[str]]:
+    """`path` with its segments, `mw` for provable middleware, else `unknown`
+    (a value we cannot read is never assumed to add no path)."""
     node = arg.value
+    if arg.label == "middleware":
+        return "mw", []
     if arg.label is not None:
         return "unknown", []
     segs = segments(frame, node)
     if segs is not None:
         return "path", segs
-    if node.type == "call_expression":
-        return "mw", []
-    if node.type == "array_literal":
-        parts = kids(node)
-        if all(p.type == "call_expression" for p in parts):
-            return "mw", []
-    if node.type == "simple_identifier":
-        found, value = frame.env.lookup(_text(node))
-        if (
-            found
-            and _text(node) not in frame.unsafe
-            and (value is MADE or isinstance(value, Plain))
-        ):
-            return "mw", []
-    return "unknown", []
+    return ("mw", []) if is_middleware(idx, frame, node) else ("unknown", [])
 
 
 def segments(frame: Frame, node: Node) -> list[str] | None:

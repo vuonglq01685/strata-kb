@@ -45,6 +45,7 @@ from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_jsresolve import ModuleResolver
 from strata_kb.codeingest.extractors._routes_jsutil import (
     _EXTS,
+    _JS_LANGS,
     _read,
 )
 from strata_kb.codeingest.extractors._scopes import Scope, find_scopes, scope_of
@@ -324,8 +325,11 @@ class _Reader:
         known = {n for n, k, _d in names if k != _UNKNOWN}
         # a name only an import cycle vouches for is declared nowhere: a site
         orphans = {n for n, k, _d in names if k == _UNKNOWN and n not in known}
+        # only a JS/TS `export default` carries the sentinel; a Swift `default`
+        # or a Python `def default()` is an ordinary name
+        js = _ts.language_for(rel) in _JS_LANGS
         found = [
-            Symbol(stem if n == DEFAULT_NAME else n, k, rel)
+            Symbol(stem if js and n == DEFAULT_NAME else n, k, rel)
             for n, k, _d in names
             if k != _UNKNOWN
         ]

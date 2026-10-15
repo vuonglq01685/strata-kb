@@ -105,6 +105,7 @@ class _Marker:
 
 SELF = _Marker("self")
 MADE = _Marker("made")  # the result of a call we do not model
+MW = _Marker("middleware")  # a value that is provably middleware
 
 Value = Router | Plain | Coll | TypeRef | Items | Text | _Marker | None
 
@@ -239,3 +240,47 @@ def unsafe_names(root: Node) -> set[str]:
             )
         stack.extend(node.children)
     return names
+
+
+# Middleware is dropped from a `grouped(..)` argument list only when provable:
+# an in-repo type conforming to one of these protocols, a Vapor-provided
+# middleware type, or a call of a known factory (`User.authenticator()`).
+MIDDLEWARE_PROTOCOLS = frozenset(
+    {
+        "Middleware", "AsyncMiddleware", "Authenticator", "AsyncAuthenticator",
+        "BearerAuthenticator", "AsyncBearerAuthenticator", "BasicAuthenticator",
+        "AsyncBasicAuthenticator", "CredentialsAuthenticator",
+        "AsyncCredentialsAuthenticator", "SessionAuthenticator",
+        "AsyncSessionAuthenticator", "RequestAuthenticator",
+        "AsyncRequestAuthenticator", "ClientMiddleware",
+    }
+)  # fmt: skip
+MIDDLEWARE_TYPES = frozenset(
+    {
+        "FileMiddleware", "CORSMiddleware", "ErrorMiddleware", "SessionsMiddleware",
+        "RouteLoggingMiddleware", "DefaultHeadersMiddleware", "RateLimitMiddleware",
+    }
+)  # fmt: skip
+MIDDLEWARE_FACTORIES = frozenset(
+    {
+        "authenticator", "credentialsAuthenticator", "sessionAuthenticator",
+        "guardMiddleware", "redirectMiddleware", "asyncRedirectMiddleware",
+        "middleware", "asyncMiddleware",
+    }
+)  # fmt: skip
+# Supertypes that say nothing about routing; any other supertype that is not
+# declared in the repo makes a type unknown (it may be a router builder).
+KNOWN_SUPERTYPES = frozenset(
+    {
+        "Content", "Codable", "Decodable", "Encodable", "Model", "Fields", "Sendable",
+        "Error", "AbortError", "DebuggableError", "Equatable", "Hashable", "Comparable",
+        "Identifiable", "CustomStringConvertible", "CaseIterable", "RawRepresentable",
+        "Migration", "AsyncMigration", "Command", "AsyncCommand", "LifecycleHandler",
+        "AsyncLifecycleHandler", "StorageKey", "AnyObject", "Authenticatable",
+        "ModelAuthenticatable", "ModelTokenAuthenticatable", "ModelSessionAuthenticatable",
+        "ModelCredentialsAuthenticatable", "JWTPayload", "Validatable", "Job", "AsyncJob",
+        "RouteCollection", "ResponseEncodable", "AsyncResponseEncodable",
+        "RequestDecodable", "AsyncRequestDecodable", "String", "Int", "UInt8",
+        "NSObject", "Reflectable", "Parameter", "Authorizable",
+    }
+)  # fmt: skip

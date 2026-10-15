@@ -163,6 +163,9 @@ class Index:
         if line is not None:
             self.errors[rel] = line
         self._scan(rel, tree)
+
+    def finish(self) -> None:
+        """Call once after the last `add_file`."""
         self.all_fns.sort(key=lambda f: (f.file, f.node.start_byte))
 
     def _scan(self, rel: str, tree: Tree) -> None:
@@ -258,6 +261,15 @@ class Index:
                         seen.append(sup)
                         todo.append(sup)
         return seen
+
+    def has_unknown_super(self, name: str, known: frozenset[str]) -> bool:
+        """A supertype that is neither declared in the repo nor in `known`."""
+        return any(
+            s not in self.types and s not in known for s in self.supertypes(name)
+        )
+
+    def conforms_any(self, name: str, protocols: frozenset[str]) -> bool:
+        return name in protocols or any(s in protocols for s in self.supertypes(name))
 
     def conforms(self, name: str, protocol: str) -> bool:
         return name == protocol or protocol in self.supertypes(name)
