@@ -2014,3 +2014,61 @@ def test_backslash_continued_decorator_receiver_is_seen(tmp_path):
     result = run_routes(tmp_path)
     assert ("GET", "/y") in all_routes(result)
     assert sites_of(result) == ["other.py:9"]
+
+
+# --- review round 4 ---------------------------------------------------------
+
+_NEUTRAL_HEAD = (
+    "from django.conf import settings\nfrom rest_framework import viewsets\n"
+    "from lib import get_thing, ThirdParty\nPREFIX = 'x'\napi = get_thing()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "views, call",
+    [
+        (
+            "class Base(viewsets.ModelViewSet):\n    pass\n\nclass Tags(Base):\n    pass\n",
+            "api.register(PREFIX, Tags)",
+        ),
+        (
+            "class A(viewsets.GenericViewSet):\n    pass\n\nclass B(A):\n    pass\n\n"
+            "class C(B):\n    pass\n",
+            "api.register(PREFIX, C)",
+        ),
+        ("", "api.register(PREFIX, ThirdParty)"),
+        ("", "api.register(PREFIX, UndefinedView)"),
+        ("", "api.register(PREFIX, viewset=UndefinedView)"),
+        (
+            "class PostViewSet(viewsets.ModelViewSet):\n    pass\n",
+            "api.register(settings.POSTS, PostViewSet)",
+        ),
+        (
+            "class PostViewSet(viewsets.ModelViewSet):\n    pass\n",
+            "api.register(settings.POSTS, viewsets.PostViewSet)",
+        ),
+        ("", "api.register(settings.POSTS, lib.PostViewSet)"),
+    ],
+)
+def test_drf_register_on_neutral_receiver_with_a_view_is_a_site(tmp_path, views, call):
+    _drf_scope(tmp_path, f"{_NEUTRAL_HEAD}{views}\n{call}\n")
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert any(s.startswith("api.py:") for s in sites_of(result))
+
+
+def test_non_drf_register_calls_do_not_make_a_site(tmp_path):
+    _drf_scope(
+        tmp_path,
+        "from functools import singledispatch\nfrom django.core import checks\n"
+        "from wagtail import hooks\n\n"
+        "def chk(app_configs, **kwargs):\n    return []\n\n"
+        "checks.register(chk, checks.Tags.security)\n"
+        "checks.register(chk, 'security', deploy=True)\n\n"
+        "@singledispatch\ndef f(x):\n    return x\n\n"
+        "def f_int(x):\n    return x\n\n"
+        "f.register(int, f_int)\n\n"
+        "@hooks.register('construct_main_menu')\ndef menu(request, items):\n    return items\n",
+    )
+    result = run_routes(tmp_path)
+    assert (row(result).status, row(result).detail) == ("complete", "")

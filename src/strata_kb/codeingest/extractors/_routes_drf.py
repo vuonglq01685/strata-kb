@@ -92,6 +92,19 @@ class _ViewSet:
         return self.lookup_kwarg or self.lookup_field or "pk"
 
 
+_STRINGS = ("string", "concatenated_string")
+_NOT_A_VIEW = (
+    *_STRINGS,
+    "integer",
+    "float",
+    "true",
+    "false",
+    "none",
+    "list",
+    "tuple",
+    "dictionary",
+    "lambda",
+)
 _VIEW_MARKS = ("ViewSet", "Viewset", "APIView", "GenericAPIView", "Mixin")
 
 
@@ -192,31 +205,47 @@ class Routers:
     def _looks_like_registration(
         self, rel: str, receiver: Node | None, args: ast.Args
     ) -> bool:
-        """An unresolved `x.register(...)` that may be a router's. Not one:
-        a model registration (`admin.site.register(Model, ModelAdmin)`: the
-        first argument is a class) or a call with no view argument. Anything
-        else is, unless the view is an in-repo class with no DRF view base."""
+        """An unresolved `x.register(...)` that may be a router's. A router
+        site needs a view argument (second positional or `viewset=`) that is
+        a DRF view, or class-styled and unreadable. Not one: `@hooks.register
+        ('x')`, `checks.register(fn, Tags.security)`, `f.register(int, f_int)`
+        and a model registration (`admin.site.register(Model, ModelAdmin)`)."""
         if receiver is None or receiver.type in ("call", "subscript"):
             return True
         if "router" in ast.text(receiver).lower():
             return True
         first = args.pos[0] if args.pos else args.kw.get("prefix")
         second = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
-        if (first is not None and first.type in ("string", "concatenated_string")) or (
-            {"basename", "prefix", "viewset"} & args.kw.keys()
-        ):
-            return True
+        if second is None:
+            return False
+        if self._drf_view_arg(rel, second):
+            return True  # beats a class or external first argument
         if first is not None and (
             first.type == "list"
             or self.proj.chain(rel, first).kind in ("class", "external")
         ):
             return False  # registering a model
-        if second is None:
-            return False
+        parts = ast.dotted(second)
+        if parts is None:
+            return second.type not in _NOT_A_VIEW
+        if not parts[-1][:1].isupper():
+            return False  # a function, a constant: `f_int`, `Tags.security`
+        if (first is not None and first.type in _STRINGS) or (
+            {"basename", "prefix", "viewset"} & args.kw.keys()
+        ):
+            return True
         ref = self.proj.chain(rel, second)
-        if ref.kind != "class" or ref.node is None:
-            return True  # a view this reader cannot read
-        return _drf_view(self.proj, ref.file, ref.node, 0)
+        return ref.kind != "class" or ref.node is None  # a view not readable here
+
+    def _drf_view_arg(self, rel: str, view: Node) -> bool:
+        if any(mark in ast.text(view) for mark in _VIEW_MARKS):
+            return True
+        ref = self.proj.chain(rel, view)
+        return (
+            ref.kind == "class"
+            and ref.node is not None
+            and _drf_view(self.proj, ref.file, ref.node, 0)
+        )
 
     def unexpanded(self) -> list[Router]:
         return [r for r in self.routers.values() if r.regs and not r.expanded]
