@@ -1375,11 +1375,18 @@ _NEUTRAL_SITE_RE = re.compile(
     r"|ALTER\b.*\b(?:RENAME|SET\s+SCHEMA)\b",
     re.I | re.S,
 )
-# Inside a neutral span, DDL starting a line is a second statement whose
-# separator is missing. GRANT/REVOKE lists legitimately wrap onto a line
-# that starts `CREATE ON SCHEMA`.
+# Inside a neutral span, DDL starting a line, or table/index DDL after the
+# head on its line, is a second statement whose separator is missing.
 _NEUTRAL_NEW_STATEMENT_RE = re.compile(
-    r"^[ \t]*(?:CREATE|ALTER|DROP|RENAME)\s", re.I | re.M
+    r"^[ \t]*(?:CREATE|ALTER|DROP|RENAME)\s"
+    r"|\b(?:ALTER\s+TABLE|CREATE\s+(?:\w+\s+)*?(?:TABLE|INDEX)|DROP\s+(?:TABLE|INDEX))\b",
+    re.I | re.M,
+)
+# GRANT/REVOKE privilege lists wrap onto lines like `CREATE ON SCHEMA x` or
+# `ALTER, DROP ON t`: only a DDL word not followed by ON or `,` starts a
+# statement there, and the mid-line form never applies.
+_PRIVILEGE_NEW_STATEMENT_RE = re.compile(
+    r"^[ \t]*(?:CREATE|ALTER|DROP|RENAME)\s+(?!ON\b|[,)])", re.I | re.M
 )
 _PRIVILEGE_HEAD_RE = re.compile(
     r"(?:GRANT|REVOKE|ALTER\s+DEFAULT\s+PRIVILEGES)\b", re.I
@@ -1419,9 +1426,12 @@ def _neutral_problem(head: str, head_end: int) -> str:
         head, head_end
     ):
         return "CREATE SCHEMA (with embedded elements)"
-    if not _PRIVILEGE_HEAD_RE.match(head) and _NEUTRAL_NEW_STATEMENT_RE.search(
-        head, head_end
-    ):
+    new_statement = (
+        _PRIVILEGE_NEW_STATEMENT_RE
+        if _PRIVILEGE_HEAD_RE.match(head)
+        else _NEUTRAL_NEW_STATEMENT_RE
+    )
+    if new_statement.search(head, head_end):
         return "statement (a `;` or GO is missing before the next one)"
     return ""
 
@@ -1750,7 +1760,8 @@ def _upgrade_only(text: str) -> str:
     keep = set(roots)
     todo = list(roots)
     while todo:
-        for callee in re.findall(r"\b(\w+)\s*\(", bodies[todo.pop()]):
+        # any mention, not only a call: `_run(_idx)`, `for f in (_idx,)`
+        for callee in re.findall(r"\b(\w+)\b", bodies[todo.pop()]):
             if callee in bodies and callee not in keep:
                 keep.add(callee)
                 todo.append(callee)

@@ -5452,6 +5452,53 @@ migrationBuilder.CreateIndex(
             "alembic/versions/0001.py:3",
         )
 
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "GRANT SELECT ON t TO r\nALTER TABLE t ADD b INT\nGO\n",
+            "REVOKE SELECT ON t FROM r\nCREATE INDEX ix ON t (a)\nGO\n",
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r\n"
+            "ALTER TABLE t ADD b INT;\n",
+            "GRANT SELECT ON t TO r\nDROP TABLE t\nGO\n",
+            "SET NOCOUNT ON ALTER TABLE t ADD b INT\nGO\n",
+        ],
+    )
+    def test_ddl_after_a_privilege_or_same_line_head_is_a_site(self, tmp_path, ddl):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(tmp_path, "migrations/002.sql", ddl)
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_wrapped_privilege_lists_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nGRANT\n  CREATE ON SCHEMA public TO r;\n"
+            "GRANT SELECT,\n  ALTER, DROP ON t TO r;\n"
+            "REVOKE\n  CREATE,\n  ALTER ON SCHEMA public FROM r;\n"
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public\n  GRANT SELECT ON TABLES TO r;\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "def upgrade():\n    _run(_idx)\n\n\ndef _run(fn):\n    fn()\n\n\n"
+            "def _idx():\n    op.create_index('ix_cb', 't', ['a'])\n",
+            "def upgrade():\n    for f in (_idx,):\n        f()\n\n\n"
+            "def _idx():\n    op.create_index('ix_cb', 't', ['a'])\n",
+        ],
+    )
+    def test_alembic_helper_referenced_not_called_is_read(self, tmp_path, body):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            body.replace(
+                "def upgrade():\n",
+                "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n",
+            ),
+        )
+        assert "ix_cb" in _by_id(self._run(tmp_path))["db.t"].l2_md
+
 
 class TestIntegrationsExtractor:
     def test_detects_env_example_or_openapi_servers(self, repo, tmp_path):
