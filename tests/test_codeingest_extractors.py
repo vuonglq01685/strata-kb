@@ -3573,8 +3573,10 @@ class TestSchemaExtractor:
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "1 column," in s.summary
-        assert "CONSTRAINT" not in s.l2_md
-        assert any("002.sql" in w for w in result.warnings)
+        # recorded as an index, never a column; no longer a warning
+        assert "| CONSTRAINT" not in s.l2_md
+        assert "- uq_t (id) unique" in s.l2_md
+        assert not [w for w in result.warnings if "002.sql" in w]
 
     def test_re_create_table_if_not_exists_keeps_accumulated_alter_columns_and_warns(
         self, tmp_path
@@ -4463,6 +4465,296 @@ class TestSchemaExtractor:
         # as "created at the repo root" by the _dirname guards in
         # _apply_sql_file. Cheap to keep, pinned directly against _dirname.
         assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
+
+
+class TestSchemaStructure:
+    """Partition, primary key, indexes and Prisma table name (+ coverage)."""
+
+    @staticmethod
+    def _write(root: Path, rel: str, text: str) -> None:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _run(self, root: Path, **kw):
+        return schema_ext.SchemaExtractor().extract(root, _opts(root, **kw))
+
+    def test_prisma_and_sql_migration_merge_partition_and_index(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            """model PlaybackEvent {
+  id BigInt @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  @@id([id, createdAt])
+  @@index([createdAt])
+  @@map("playback_events")
+}""",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260101_init/migration.sql",
+            'CREATE TABLE "playback_events" ("id" BIGINT, "created_at" TIMESTAMPTZ, '
+            'PRIMARY KEY ("id","created_at")) PARTITION BY RANGE ("created_at");',
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.PlaybackEvent"]
+        assert "Table: playback_events" in sec.l2_md
+        assert 'Partition: RANGE ("created_at")' in sec.l2_md
+        assert "(unnamed) (createdAt)" in sec.l2_md
+        assert "Primary key: id, createdAt" in sec.l2_md
+        assert "[sql]" not in sec.l2_md  # same key under @map: no disagreement
+        assert "db.playback_events" not in _by_id(result)
+
+    def test_prisma_keys_and_indexes(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            """model User {
+  id Int @id
+  email String @unique
+  org String
+  slug String
+  @@unique([org, slug], name: "org_slug")
+  @@index([org], name: "user_org_idx")
+  @@map("users")
+}
+model Bare {
+  a Int
+  b Int
+  @@id([a, b])
+}""",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        user = by_id["db.User"].l2_md
+        assert "Table: users" in user
+        assert "Primary key: id" in user
+        assert "- (unnamed) (email) unique" in user
+        assert "- org_slug (org, slug) unique" in user
+        assert "- user_org_idx (org)" in user
+        assert "Partition: none" in user
+        bare = by_id["db.Bare"].l2_md
+        assert "Table: Bare" in bare
+        assert "Primary key: a, b" in bare
+        assert "Indexes: none" in bare
+
+    def test_sql_create_index_recorded_not_a_column(self, tmp_path):
+        self._write(
+            tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT, a INT, b INT);\n"
+        )
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_t_ab ON t USING btree (a, b DESC);\n"
+            'CREATE INDEX "idx_t_a" ON "t" ("a");\n',
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "3 columns" in sec.summary
+        assert "- idx_t_ab (a, b) unique" in sec.l2_md
+        assert "- idx_t_a (a)" in sec.l2_md
+        assert not [w for w in result.warnings if "002.sql" in w]
+
+    def test_sql_create_index_on_unknown_table_warns(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE INDEX i ON ghost (a);\n")
+        result = self._run(tmp_path)
+        assert any("ghost" in w and "001.sql" in w for w in result.warnings)
+
+    def test_sql_drop_index_removes_it(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT);\nCREATE INDEX i ON t (a);\n"
+            "DROP INDEX IF EXISTS i;\nCREATE INDEX j ON t (id);\n",
+        )
+        sec = _by_id(self._run(tmp_path))["db.t"]
+        assert "- i (a)" not in sec.l2_md
+        assert "- j (id)" in sec.l2_md
+
+    def test_sql_add_constraint_primary_key_and_unique(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT, a INT);\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "ALTER TABLE t ADD CONSTRAINT t_pk PRIMARY KEY (id);\n"
+            "ALTER TABLE t ADD CONSTRAINT t_a_key UNIQUE (a);\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "Primary key: id" in sec.l2_md
+        assert "- t_a_key (a) unique" in sec.l2_md
+        assert "2 columns" in sec.summary
+        assert not [w for w in result.warnings if "002.sql" in w]
+
+    def test_sql_partition_by_and_partition_of(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT, at TIMESTAMPTZ) PARTITION BY RANGE (at);\n"
+            "CREATE TABLE ev_2026 PARTITION OF ev FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"
+            "CREATE TABLE ev_2027 PARTITION OF ev FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.ev"]
+        assert "Partition: RANGE (at)" in sec.l2_md
+        assert "Partitions: ev_2026, ev_2027" in sec.l2_md
+        assert "db.ev_2026" not in _by_id(result)
+        assert not [w for w in result.warnings if "recognised only" in w]
+
+    def test_per_migration_directories_share_one_table(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260101_init/migration.sql",
+            'CREATE TABLE "t" ("id" INT);\n',
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260102_idx/migration.sql",
+            'CREATE INDEX "t_id_idx" ON "t"("id");\n',
+        )
+        result = self._run(tmp_path)
+        assert "- t_id_idx (id)" in _by_id(result)["db.t"].l2_md
+        assert not [w for w in result.warnings if "different migration directory" in w]
+
+    def test_alter_rename_marks_schema_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE a (id INT);\n\n\nALTER TABLE a RENAME TO b;\n",
+        )
+        self._write(tmp_path, "migrations/002.sql", "CREATE TABLE c (id INT);\n")
+        result = self._run(tmp_path)
+        rows = {
+            (r.scope, r.framework): r for r in result.coverage if r.area == "schema"
+        }
+        row = rows[(".", "sql")]
+        assert row.status == "partial"
+        assert row.detail == "migrations/001.sql:4"
+
+    def test_complete_coverage_row_per_scope_and_reader(self, tmp_path):
+        self._write(tmp_path, "apps/api/package.json", "{}")
+        self._write(
+            tmp_path, "apps/api/migrations/001.sql", "CREATE TABLE a (id INT);\n"
+        )
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE b (id INT);\n")
+        self._write(tmp_path, "prisma/schema.prisma", "model M {\n  id Int @id\n}\n")
+        result = self._run(tmp_path)
+        rows = sorted(
+            (r.scope, r.framework, r.status, r.detail)
+            for r in result.coverage
+            if r.area == "schema"
+        )
+        assert rows == [
+            (".", "prisma", "complete", ""),
+            (".", "sql", "complete", ""),
+            ("apps/api", "sql", "complete", ""),
+        ]
+
+    def test_sql_and_prisma_disagreement_is_shown_with_sources(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model T {\n  a Int\n  b Int\n  @@id([a])\n}\n",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/1_init/migration.sql",
+            'CREATE TABLE "T" ("a" INT, "b" INT, PRIMARY KEY ("b"));\n',
+        )
+        sec = _by_id(self._run(tmp_path))["db.T"]
+        assert "Primary key: a [prisma] / b [sql]" in sec.l2_md
+
+    def test_prisma_multiline_index_and_unparsed_attribute(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model M {\n  id Int @id\n  x Int\n  @@index([x,\n    id])\n"
+            "  @@unique(fields: x)\n}\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.M"]
+        assert "- (unnamed) (x, id)" in sec.l2_md
+        assert "2 columns" in sec.summary
+        row = next(r for r in result.coverage if r.framework == "prisma")
+        assert (row.status, row.detail) == ("partial", "prisma/schema.prisma:6")
+
+    def test_alembic_create_index(self, tmp_path):
+        # The index lives in an earlier-sorting file than the create_table:
+        # alembic revision ids are not ordered, so ops apply after all tables.
+        self._write(
+            tmp_path,
+            "alembic/versions/0001_idx.py",
+            "def upgrade():\n"
+            "    op.create_index('ix_users_email', 'users', ['email'], unique=True)\n"
+            "    op.create_index(op.f('ix_users_org'), 'users', ['org', 'slug'])\n",
+        )
+        self._write(
+            tmp_path,
+            "alembic/versions/0002_users.py",
+            "def upgrade():\n"
+            "    op.create_table('users',\n"
+            "        sa.Column('id', sa.Integer(), nullable=False),\n"
+            "        sa.Column('email', sa.String()),\n"
+            "        sa.PrimaryKeyConstraint('id'),\n"
+            "    )\n"
+            "    op.create_table('links', sa.Column('a', sa.Integer()))\n"
+            "    op.create_primary_key('links_pk', 'links', ['a'])\n",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        users = by_id["db.users"].l2_md
+        assert "- ix_users_email (email) unique" in users
+        assert "- ix_users_org (org, slug)" in users
+        assert "Primary key: id" in users
+        assert "Primary key: a" in by_id["db.links"].l2_md
+
+    def test_ef_has_index_unique(self, tmp_path):
+        self._write(
+            tmp_path,
+            "Data/Migrations/20260101_Init.cs",
+            """migrationBuilder.CreateTable(
+    name: "Users",
+    columns: table => new { Id = table.Column<int>() },
+    constraints: table =>
+    {
+        table.PrimaryKey("PK_Users", x => x.Id);
+    });
+migrationBuilder.CreateIndex(
+    name: "IX_Users_Org",
+    table: "Users",
+    columns: new[] { "Org", "Slug" });
+""",
+        )
+        self._write(
+            tmp_path,
+            "Data/Migrations/AppDbContextModelSnapshot.cs",
+            """modelBuilder.Entity("App.User", b =>
+{
+    b.HasKey("Id");
+    b.HasIndex("Email").IsUnique();
+    b.HasIndex("Org", "Slug");
+    b.ToTable("Users");
+});
+""",
+        )
+        sec = _by_id(self._run(tmp_path))["db.Users"]
+        assert "Primary key: Id" in sec.l2_md
+        assert "- IX_Users_Org (Org, Slug)" in sec.l2_md
+        assert "- (unnamed) (Email) unique" in sec.l2_md
+        assert "- (unnamed) (Org, Slug)" in sec.l2_md
+
+    def test_sqlite_pragma_indexes(self, tmp_path):
+        db = tmp_path / "app.db"
+        con = sqlite3.connect(db)
+        con.executescript(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT);"
+            "CREATE INDEX idx_t_a ON t(a);"
+            "CREATE UNIQUE INDEX idx_t_ab ON t(a, b);"
+        )
+        con.close()
+        sec = _by_id(self._run(tmp_path, db_paths=(db,)))["db.t"]
+        assert "- idx_t_a (a)" in sec.l2_md
+        assert "- idx_t_ab (a, b) unique" in sec.l2_md
+        assert "Primary key: id" in sec.l2_md
 
 
 class TestIntegrationsExtractor:
