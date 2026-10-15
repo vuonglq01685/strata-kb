@@ -770,7 +770,7 @@ def test_computed_verb_only_file_is_scanned(tmp_path):
     ]
 
 
-def test_nest_reexported_and_const_aliased_verbs_are_sites(tmp_path):
+def test_nest_reexported_and_const_aliased_verbs_resolve_to_routes(tmp_path):
     nest_app(
         tmp_path,
         "api",
@@ -790,12 +790,166 @@ def test_nest_reexported_and_const_aliased_verbs_are_sites(tmp_path):
         },
     )
     result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [
+        ("GET", "/a"),
+        ("GET", "/a/ok"),
+        ("GET", "/a/x"),
+        ("GET", "/a/y"),
+    ]
+
+
+def test_nest_custom_metadata_decorators_do_not_make_a_scope_partial(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        main="app.setGlobalPrefix('api');",
+        files={
+            "src/auth/public.decorator.ts": (
+                "import { SetMetadata } from '@nestjs/common';\n"
+                "export const Public = () => SetMetadata('isPublic', true);\n"
+            ),
+            "src/auth/roles.decorator.ts": (
+                "import { SetMetadata } from '@nestjs/common';\n"
+                "export const Roles = (...r: string[]) => SetMetadata('roles', r);\n"
+            ),
+            "src/auth/index.ts": (
+                "export * from './public.decorator';\n"
+                "export { Roles } from './roles.decorator';\n"
+            ),
+            "src/movies.controller.ts": (
+                "import { Controller, Get, Post, HttpCode } from '@nestjs/common';\n"
+                "import { Public, Roles } from './auth';\n"
+                "@Controller('movies')\n"
+                "export class MoviesController {\n"
+                "  @Public() @Get() list() {}\n"
+                "  @Roles('admin') @Post() create() {}\n"
+                "  @Roles(Role.Admin) @HttpCode(204) @Post('x') x() {}\n"
+                "  @ResponseMessage('ok') @Get('y') y() {}\n"
+                "  @Auth() @Permissions('x') @Transactional() @Get('z') z() {}\n"
+                "  @MessagePattern('m') @GrpcMethod('S', 'M') @Get('w') w() {}\n"
+                "}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert len(all_routes(result)) == 6
+
+
+def test_nest_alias_with_identifier_argument_is_a_site(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": "export { Get as HttpGet } from '@nestjs/common';\n",
+            "src/paths.ts": "export const P = 'x';\n",
+            "src/a.controller.ts": (
+                "import { HttpGet } from './lib';\n"
+                "import { P } from './paths';\n"
+                "import { Controller, Get } from '@nestjs/common';\n"
+                "const G = Get;\n"
+                "@Controller('a') class A {\n"
+                "  @HttpGet(P) x() {}\n"
+                "  @G(R.y) y() {}\n"
+                "  @Get('ok') ok() {}\n"
+                "}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
     assert detail(result, "api").split("; ") == [
-        "api/src/a.controller.ts:5",
         "api/src/a.controller.ts:6",
         "api/src/a.controller.ts:7",
     ]
     assert all_routes(result) == [("GET", "/a/ok")]
+
+
+def test_nest_alias_resolves_through_barrel_hops_namespace_and_default(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": "export { Get as HttpGet, Post as HttpPost } from '@nestjs/common';\n",
+            "src/mid.ts": "export * from './lib';\n",
+            "src/top/index.ts": "export { HttpGet as Fetch } from '../mid';\n",
+            "src/dflt.ts": "import { Delete } from '@nestjs/common';\nexport default Delete;\n",
+            "src/a.controller.ts": (
+                "import { Controller } from '@nestjs/common';\n"
+                "import { Fetch } from './top';\n"
+                "import { HttpPost } from './mid';\n"
+                "import Remove from './dflt';\n"
+                "import * as dec from './mid';\n"
+                "@Controller('a') class A {\n"
+                "  @Fetch('f') f() {}\n"
+                "  @HttpPost('p') p() {}\n"
+                "  @Remove('d') d() {}\n"
+                "  @dec.HttpGet('n') n() {}\n"
+                "}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [
+        ("DELETE", "/a/d"),
+        ("GET", "/a/f"),
+        ("GET", "/a/n"),
+        ("POST", "/a/p"),
+    ]
+
+
+def test_nest_unresolvable_name_from_reexporting_file_is_a_site(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": (
+                "export * from '@nestjs/common';\nexport * from '../../elsewhere';\n"
+            ),
+            "src/a.controller.ts": (
+                "import { Controller } from '@nestjs/common';\n"
+                "import { Mystery } from './lib';\n"
+                "@Controller('a') class A {\n  @Mystery('x') x() {}\n}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "partial"
+    assert detail(result, "api") == "api/src/a.controller.ts:4"
+
+
+def test_nest_alias_chain_longer_than_cap_is_a_site(tmp_path):
+    files = {"src/h0.ts": "export { Get as Deep } from '@nestjs/common';\n"}
+    for i in range(1, 8):
+        files[f"src/h{i}.ts"] = f"export * from './h{i - 1}';\n"
+    files["src/a.controller.ts"] = (
+        "import { Controller } from '@nestjs/common';\n"
+        "import { Deep } from './h7';\n"
+        "@Controller('a') class A {\n  @Deep('x') x() {}\n}\n"
+    )
+    nest_app(tmp_path, "api", files=files)
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "partial"
+
+
+def test_nest_alias_only_file_without_nest_mentions_is_still_scanned(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": (
+                "export { Get as HttpGet, Controller as Ctl } from '@nestjs/common';\n"
+            ),
+            "src/a.controller.ts": (
+                "import { Ctl, HttpGet } from './lib';\n"
+                "@Ctl('a') class A {\n  @HttpGet('x') x() {}\n}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x")]
 
 
 def test_nuxt_skips_only_nitro_default_ignored_suffixes(tmp_path):

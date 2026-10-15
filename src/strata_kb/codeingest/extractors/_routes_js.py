@@ -51,6 +51,10 @@ from strata_kb.codeingest.extractors._routes_model import (
     Route,
     join_path,
 )
+from strata_kb.codeingest.extractors._routes_nest_alias import (
+    NEST_VERBS,
+    AliasResolver,
+)
 from strata_kb.codeingest.extractors._scopes import Scope
 
 if TYPE_CHECKING:
@@ -60,17 +64,7 @@ __all__ = ["ADAPTERS", "declared_fields"]
 
 # --- NestJS -----------------------------------------------------------------
 
-_NEST_VERBS = {
-    "Get": "GET",
-    "Post": "POST",
-    "Put": "PUT",
-    "Patch": "PATCH",
-    "Delete": "DELETE",
-    "Options": "OPTIONS",
-    "Head": "HEAD",
-    "All": "ANY",
-    "Sse": "GET",
-}
+_NEST_VERBS = NEST_VERBS
 _NEST_HINT = re.compile(
     rb"@(?:Controller|Version|"
     + "|".join(_NEST_VERBS).encode()
@@ -83,45 +77,21 @@ def _decorator(
 ) -> tuple[str, Node | None]:
     """(name, call node or None for a bare `@Name`). `aliases` maps a local
     name imported from `@nestjs/common` (`Get as HttpGet`) to its real one."""
+    callee, call = _callee(dec)
+    name = _last_name(callee)
+    known = aliases or {}
+    if callee is not None and callee.type == "member_expression":
+        # `ns.Name` of a relative namespace import is keyed by its full text
+        return known.get(_text(callee), name), call
+    return known.get(name, name), call
+
+
+def _callee(dec: Node) -> tuple[Node | None, Node | None]:
+    """(callee node, call node or None for a bare `@Name`)."""
     inner = dec.named_children[0] if dec.named_children else None
     if inner is not None and inner.type == "call_expression":
-        name, call = _last_name(inner.child_by_field_name("function")), inner
-    else:
-        name, call = _last_name(inner), None
-    return (aliases or {}).get(name, name), call
-
-
-# Decorators that never declare a route. Anything else called with a path-like
-# (or no) argument inside a controller may be a verb decorator under another
-# name (`const G = Get`, a re-export alias) and is a site.
-_NON_ROUTE = frozenset(
-    {
-        "HttpCode", "Header", "Redirect", "Render", "SetMetadata", "UseGuards",
-        "UseInterceptors", "UsePipes", "UseFilters", "Throttle", "SkipThrottle",
-        "CacheKey", "CacheTTL", "Version",
-    }
-)  # fmt: skip
-
-
-def _unknown_route_like(name: str, call: Node | None) -> bool:
-    if call is None or name in _NON_ROUTE or name.startswith("Api"):
-        return False
-    args = _args(call)
-    return not args or args[0].type in ("string", "template_string", "array")
-
-
-def _nest_aliases(tree: Tree) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for node in _walk(tree.root_node):
-        if (
-            node.type == "import_statement"
-            and _lit(node.child_by_field_name("source")) == "@nestjs/common"
-        ):
-            for spec in (n for n in _walk(node) if n.type == "import_specifier"):
-                alias = _text(spec.child_by_field_name("alias"))
-                if alias:
-                    out[alias] = _text(spec.child_by_field_name("name"))
-    return out
+        return inner.child_by_field_name("function"), inner
+    return inner, None
 
 
 def _class_decorators(cls: Node) -> list[Node]:
@@ -241,11 +211,28 @@ def _global_prefix(loaded: list[tuple[str, Tree]], sites: list[str]) -> str | No
 def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     result = AdapterResult()
     loaded = _scan(root, files, _NEST_HINT, result)
+    trees = dict(loaded)
+    resolver = AliasResolver(root, files, trees)
+    # a controller file may hold no `@nestjs/common` text at all and use only
+    # aliases a lib exports: scan files that use one of those names too
+    seeds = {a for rel, _t in loaded for a in resolver.exported_aliases(rel)}
+    if seeds:
+        pattern = re.compile(
+            rb"@(?:"
+            + b"|".join(map(re.escape, map(str.encode, sorted(seeds))))
+            + rb")\b"
+        )
+        rest = [f for f in files if f not in trees]
+        loaded += [
+            (r, t) for r, t in _scan(root, rest, pattern, result) if r not in trees
+        ]
+        trees.update(loaded)
     prefix = _global_prefix(loaded, result.dynamic_sites)
     consumed: set[tuple[str, int]] = set()
     found: list[Route] = []
     for rel, tree in loaded:
-        aliases = _nest_aliases(tree)
+        names = resolver.names(rel, tree)
+        aliases = names.aliases
         for cls in (n for n in _walk(tree.root_node) if n.type in _CLASS_TYPES):
             ctrl = next(
                 (
@@ -269,8 +256,6 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
                 for dec in decs:
                     verb, call = _decorator(dec, aliases)
                     if verb not in _NEST_VERBS:
-                        if _unknown_route_like(verb, call):
-                            result.dynamic_sites.append(_site(rel, dec))
                         continue
                     consumed.add((rel, dec.start_byte))
                     path = _verb_path(call)
@@ -291,8 +276,11 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
             if node.type != "decorator":
                 continue
             name, _call = _decorator(node, aliases)
-            if name == "Version" or (
-                name in _NEST_VERBS and (rel, node.start_byte) not in consumed
+            callee, _c = _callee(node)
+            if (
+                name == "Version"
+                or (name in _NEST_VERBS and (rel, node.start_byte) not in consumed)
+                or names.suspect(_text(callee))
             ):
                 result.dynamic_sites.append(_site(rel, node))
         # `applyDecorators(Get('x'), ...)` and friends: a verb decorator
