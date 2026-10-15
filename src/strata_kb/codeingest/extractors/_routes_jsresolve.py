@@ -123,25 +123,9 @@ class ModuleResolver:
             if config is not None:
                 base, patterns = config
                 for pattern, targets in patterns.items():
-                    star = pattern.find("*")
-                    head, tail = (
-                        (pattern[:star], pattern[star + 1 :])
-                        if star >= 0
-                        else (pattern, "")
-                    )
-                    if star >= 0:
-                        ok = (
-                            spec.startswith(head)
-                            and spec.endswith(tail)
-                            and len(spec) >= len(head) + len(tail)
-                        )
-                    else:
-                        ok = spec == pattern
-                    if not ok:
+                    middle = _pattern_middle(pattern, spec)
+                    if middle is None:
                         continue
-                    middle = (
-                        spec[len(head) : len(spec) - len(tail)] if star >= 0 else ""
-                    )
                     for target in targets:
                         found = self._file(
                             posixpath.join(base, target.replace("*", middle))
@@ -155,7 +139,7 @@ class ModuleResolver:
 
     # -- workspace packages --------------------------------------------------
 
-    def _package(self, spec: str) -> str | None:
+    def _workspace(self) -> dict[str, str]:
         if self._packages is None:
             self._packages = {}
             for name in sorted(
@@ -164,14 +148,36 @@ class ModuleResolver:
                 pkg = _jsonc(_read(self._root, name)).get("name")
                 if isinstance(pkg, str):
                     self._packages.setdefault(pkg, posixpath.dirname(name))
+        return self._packages
+
+    def is_external(self, rel: str, spec: str) -> bool:
+        """True for a bare specifier no repo mapping claims (no relative
+        form, tsconfig alias or workspace package name): a registry package,
+        so a failed `resolve` means "not in the repo", not "broken"."""
+        if spec.startswith((".", "/", "#", "~", "@/")):
+            return False
+        directory = posixpath.dirname(rel)
+        while True:
+            config = self._config(directory)
+            if config is not None:
+                if any(_pattern_middle(p, spec) is not None for p in config[1]):
+                    return False
+                break
+            if directory in ("", "."):
+                break
+            directory = posixpath.dirname(directory)
+        return not any(spec == p or spec.startswith(p + "/") for p in self._workspace())
+
+    def _package(self, spec: str) -> str | None:
+        packages = self._workspace()
         pkg = max(
-            (p for p in self._packages if spec == p or spec.startswith(p + "/")),
+            (p for p in packages if spec == p or spec.startswith(p + "/")),
             key=len,
             default=None,
         )
         if pkg is None:
             return None
-        directory = self._packages[pkg]
+        directory = packages[pkg]
         sub = spec[len(pkg) + 1 :]
         if sub:
             return self._file(posixpath.join(directory, sub)) or self._file(
@@ -196,6 +202,22 @@ class ModuleResolver:
                 if found:
                     return found
         return None
+
+
+def _pattern_middle(pattern: str, spec: str) -> str | None:
+    """What a tsconfig `paths` pattern's `*` captured in `spec` (empty for an
+    exact pattern), or None when the pattern does not match."""
+    star = pattern.find("*")
+    if star < 0:
+        return "" if spec == pattern else None
+    head, tail = pattern[:star], pattern[star + 1 :]
+    if (
+        spec.startswith(head)
+        and spec.endswith(tail)
+        and len(spec) >= len(head) + len(tail)
+    ):
+        return spec[len(head) : len(spec) - len(tail)]
+    return None
 
 
 def _clean_paths(paths: dict) -> dict[str, list[str]]:

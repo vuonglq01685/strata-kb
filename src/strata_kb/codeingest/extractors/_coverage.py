@@ -36,6 +36,8 @@ _PROSE_PREFIXES = (
     JOBS_DETAIL,
     NOT_INSTALLED,
     "no adapter for",
+    "no exporter for",
+    "skipped ",
     "unsupported router:",
     "not a git repository",
     "no tracked files",

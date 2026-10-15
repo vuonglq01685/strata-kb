@@ -688,7 +688,7 @@ def test_codeingest_imports_in_any_order(first):
         f"import {first}\n"
         "from strata_kb.codeingest.core import ALL_EXTRACTORS, CodeSection\n"
         "from strata_kb.codeingest.types import CodeSection as T\n"
-        "assert CodeSection is T and len(ALL_EXTRACTORS) == 10\n"
+        "assert CodeSection is T and len(ALL_EXTRACTORS) == 11\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code],
