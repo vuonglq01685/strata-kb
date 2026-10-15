@@ -1714,13 +1714,13 @@ def test_drf_register_on_unresolved_router_is_a_site(tmp_path):
     write(
         tmp_path,
         "api.py",
-        "from rest_framework import viewsets\nfrom lib import router\n"
+        "from rest_framework import viewsets\nfrom lib import router\nfrom django.contrib.admin import ModelAdmin\nfrom django.db.models import Model\n"
         "class V(viewsets.ModelViewSet):\n    pass\n\n"
         "router.register('v', V)\n"
         "admin.site.register(Model, ModelAdmin)\n",
     )
     result = run_routes(tmp_path)
-    assert sites_of(result) == ["api.py:6"]
+    assert sites_of(result) == ["api.py:8"]
 
 
 def test_decorator_on_computed_receiver_is_a_site(tmp_path):
@@ -1887,7 +1887,7 @@ def test_drf_unresolved_router_variable_or_concatenated_prefix_is_a_site(tmp_pat
     write(
         tmp_path,
         "api.py",
-        "from rest_framework import viewsets\nfrom lib import router\nPREFIX = 'x'\n"
+        "from rest_framework import viewsets\nfrom lib import router\nfrom django.contrib.admin import ModelAdmin\nfrom django.db.models import Model\nPREFIX = 'x'\n"
         "class V(viewsets.ModelViewSet):\n    pass\n\n"
         "router.register(PREFIX, V)\n"
         "router.register('a' 'b', V)\n"
@@ -1895,7 +1895,7 @@ def test_drf_unresolved_router_variable_or_concatenated_prefix_is_a_site(tmp_pat
         "admin.site.register(Model, ModelAdmin)\n",
     )
     result = run_routes(tmp_path)
-    assert sorted(sites_of(result)) == ["api.py:7", "api.py:8", "api.py:9"]
+    assert sorted(sites_of(result)) == ["api.py:10", "api.py:11", "api.py:9"]
 
 
 def test_nested_annotated_and_string_never_leak_into_field_types(tmp_path):
@@ -1916,3 +1916,101 @@ def test_nested_annotated_and_string_never_leak_into_field_types(tmp_path):
     assert "ghp_" not in blob and "sk_live" not in blob
     assert "| a | Optional[str] | no |" in section(result, "main.py").l3_md
     assert "Literal" in blob
+
+
+# --- review round 3 ---------------------------------------------------------
+
+
+def _drf_scope(root: Path, api: str) -> None:
+    django(root)
+    write(
+        root,
+        "urls.py",
+        "from django.urls import path\nurlpatterns = [path('a/', lambda r: 1)]\n",
+    )
+    write(root, "api.py", api)
+
+
+@pytest.mark.parametrize(
+    "views, call",
+    [
+        (
+            "class Base(viewsets.ModelViewSet):\n    pass\n\nclass Tags(Base):\n    pass\n",
+            "router.register(PREFIX, Tags)",
+        ),
+        ("from lib import ThirdParty\n", "router.register(PREFIX, ThirdParty)"),
+        ("", "router.register(PREFIX, undefined_view)"),
+        (
+            "class V(viewsets.ModelViewSet):\n    pass\n",
+            "get_router().register(PREFIX, V)",
+        ),
+        (
+            "class V(viewsets.ModelViewSet):\n    pass\n",
+            "regs['x'].register(PREFIX, V)",
+        ),
+        ("class V(Mixin):\n    pass\n", "r.register(PREFIX, V)"),
+    ],
+)
+def test_drf_unresolved_register_indirect_or_unknown_views_are_sites(
+    tmp_path, views, call
+):
+    _drf_scope(
+        tmp_path,
+        "from rest_framework import viewsets\nfrom lib import router, r, regs, get_router, Mixin\n"
+        f"PREFIX = 'x'\n{views}\n{call}\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert any(s.startswith("api.py:") for s in sites_of(result))
+
+
+def test_admin_register_of_an_in_repo_model_is_not_a_site(tmp_path):
+    _drf_scope(
+        tmp_path,
+        "from django.contrib import admin\nfrom django.db import models\n"
+        "from django.contrib.auth.models import User\n\n"
+        "class Model(models.Model):\n    pass\n\n"
+        "class ModelAdmin(admin.ModelAdmin):\n    pass\n\n"
+        "admin.site.register(Model, ModelAdmin)\n"
+        "admin.site.register(User, admin.ModelAdmin)\n"
+        "admin.site.register([Model])\n",
+    )
+    result = run_routes(tmp_path)
+    assert (row(result).status, row(result).detail) == ("complete", "")
+
+
+def test_param_helper_imported_under_an_alias_is_not_bound(tmp_path):
+    flask(tmp_path)
+    write(
+        tmp_path,
+        "helpers.py",
+        "def reg(t):\n    @t.route('/cb')\n    def cb():\n        return ''\n",
+    )
+    write(
+        tmp_path,
+        "app.py",
+        "from flask import Flask\nfrom helpers import reg\napp = Flask(__name__)\nreg(app)\n",
+    )
+    write(
+        tmp_path,
+        "other.py",
+        "from flask import Blueprint\nfrom helpers import reg as r2\nfrom app import app\n"
+        "bp = Blueprint('b', __name__, url_prefix='/b')\nr2(bp)\napp.register_blueprint(bp)\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert "helpers.py:2" in sites_of(result)
+
+
+def test_backslash_continued_decorator_receiver_is_seen(tmp_path):
+    fastapi(tmp_path)
+    write(tmp_path, "main.py", "from fastapi import FastAPI\napp = FastAPI()\n")
+    write(
+        tmp_path,
+        "other.py",
+        "from main import app\nfrom lib import mk\n\n@app \\\n    .get('/y')\ndef y():\n    return 1\n\n"
+        "@mk() \\\n    .post('/z')\ndef z():\n    return 1\n",
+    )
+    result = run_routes(tmp_path)
+    assert ("GET", "/y") in all_routes(result)
+    assert sites_of(result) == ["other.py:9"]

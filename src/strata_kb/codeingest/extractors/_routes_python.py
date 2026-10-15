@@ -74,7 +74,7 @@ _HINT = re.compile(
     rb"FastAPI|APIRouter|Flask|Blueprint|MethodView|root_path"
     # any receiver, on one line or wrapped: `@get_router().get(..)`,
     # `@ROUTERS['v1'].post(..)`, `@reg.router_for(\n..\n).get(..)`
-    rb"|[)\]][ \t\r\n]*\.[ \t\r\n]*(?:get|post|put|patch|delete|head|options|trace|route|api_route"
+    rb"|(?:[)\]]|\\\r?\n)[ \t\r\n]*\.[ \t\r\n]*(?:get|post|put|patch|delete|head|options|trace|route|api_route"
     rb"|websocket\w*)\s*\("
     rb"|^[ \t]*@[^\n]*\.[ \t]*(?:get|post|put|patch|delete|head|options|trace|route|api_route"
     rb"|websocket\w*)\s*\("
@@ -680,6 +680,13 @@ def _uses(tree: Tree, name: str) -> list[Node] | None:
         parent = node.parent
         if parent is None:
             continue
+        grand = parent.parent
+        if (
+            parent.type == "dotted_name"
+            and grand is not None
+            and grand.type == "aliased_import"
+        ):
+            return None  # `from m import reg as r2`: calls under another name
         if parent.type in _NAME_HOMES or (
             parent.type == "function_definition"
             and parent.child_by_field_name("name") == node

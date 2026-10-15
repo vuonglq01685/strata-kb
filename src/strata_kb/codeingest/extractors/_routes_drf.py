@@ -92,6 +92,26 @@ class _ViewSet:
         return self.lookup_kwarg or self.lookup_field or "pk"
 
 
+_VIEW_MARKS = ("ViewSet", "Viewset", "APIView", "GenericAPIView", "Mixin")
+
+
+def _drf_view(proj: ast.Project, file: str, cls: Node, depth: int) -> bool:
+    """Does an in-repo class derive, at any depth, from a DRF view base?"""
+    bases = cls.child_by_field_name("superclasses")
+    for base in bases.named_children if bases is not None else []:
+        if any(mark in ast.text(base) for mark in _VIEW_MARKS):
+            return True
+        ref = proj.chain(file, base)
+        if (
+            ref.kind == "class"
+            and ref.node is not None
+            and depth < 12
+            and _drf_view(proj, ref.file, ref.node, depth + 1)
+        ):
+            return True
+    return False
+
+
 def _line(node: Node) -> int:
     return node.start_point[0] + 1
 
@@ -157,7 +177,9 @@ class Routers:
         if router is None:
             # `admin.site.register(Model, Admin)`, `atexit.register(fn)`: not a
             # path first. A string first argument is a router prefix.
-            if self._looks_like_registration(rel, args):
+            if self._looks_like_registration(
+                rel, fn.child_by_field_name("object"), args
+            ):
                 self.site(rel, call)
             return
         prefix = args.pos[0] if args.pos else args.kw.get("prefix")
@@ -167,28 +189,34 @@ class Routers:
             return
         router.regs.append((prefix, view, rel, _line(call)))
 
-    def _looks_like_registration(self, rel: str, args: ast.Args) -> bool:
-        """An unresolved `x.register(...)` that reads as a router's: a string
-        prefix, `basename=`, or a ViewSet second argument. (`admin.site.register
-        (Model, ModelAdmin)` is none of those.)"""
+    def _looks_like_registration(
+        self, rel: str, receiver: Node | None, args: ast.Args
+    ) -> bool:
+        """An unresolved `x.register(...)` that may be a router's. Not one:
+        a model registration (`admin.site.register(Model, ModelAdmin)`: the
+        first argument is a class) or a call with no view argument. Anything
+        else is, unless the view is an in-repo class with no DRF view base."""
+        if receiver is None or receiver.type in ("call", "subscript"):
+            return True
+        if "router" in ast.text(receiver).lower():
+            return True
         first = args.pos[0] if args.pos else args.kw.get("prefix")
         second = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
         if (first is not None and first.type in ("string", "concatenated_string")) or (
-            "basename" in args.kw or "prefix" in args.kw or "viewset" in args.kw
+            {"basename", "prefix", "viewset"} & args.kw.keys()
         ):
             return True
+        if first is not None and (
+            first.type == "list"
+            or self.proj.chain(rel, first).kind in ("class", "external")
+        ):
+            return False  # registering a model
         if second is None:
             return False
-        if "ViewSet" in ast.text(second) or "Viewset" in ast.text(second):
-            return True
         ref = self.proj.chain(rel, second)
         if ref.kind != "class" or ref.node is None:
-            return False
-        bases = ref.node.child_by_field_name("superclasses")
-        return any(
-            "ViewSet" in ast.text(b) or "APIView" in ast.text(b)
-            for b in (bases.named_children if bases is not None else [])
-        )
+            return True  # a view this reader cannot read
+        return _drf_view(self.proj, ref.file, ref.node, 0)
 
     def unexpanded(self) -> list[Router]:
         return [r for r in self.routers.values() if r.regs and not r.expanded]
