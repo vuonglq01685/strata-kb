@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.27.2 — 2026-10-15
+
+Release fix; no code change.
+
+- **Release smoke test.** The release image smoke test failed for 1.27.0 and 1.27.1, so neither reached PyPI or GHCR. Since 1.26.0 the hub writes its account store and session key to `<hub>/.kb-auth/` at start, and the smoke test's `/data` was not writable by the container user `app`. The smoke test now makes its `/data` writable and prints the container log when the hub does not answer. 1.27.2 ships everything from 1.27.0 and 1.27.1.
+- **Upgrade note.** The hub's `/data` mount (the hub checkout) must be writable by the container user `app` (uid 1000), as it already is when the checkout belongs to uid 1000.
+- **Docs.** The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+
 ## 1.27.1 — 2026-10-15
 
 First-run admin setup page.

@@ -4132,7 +4132,7 @@ wheels = [
 
 [[package]]
 name = "strata-kb"
-version = "1.27.1"
+version = "1.27.2"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
