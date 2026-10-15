@@ -2078,3 +2078,131 @@ def test_csharp_symbols_test_projects_skipped_and_syntax_error_site(tmp_path):
     assert rows["."].status == "partial" and "Bad.cs:" in rows["."].detail
     assert rows["src/Foo.Tests"].detail == "skipped 1 test"
     assert ("FooTests", "class") not in names_of(result)
+
+
+# --- fix round 4 -------------------------------------------------------------
+
+DEEP = 5000
+API_PROGRAM = 'var app = WebApplication.CreateBuilder(args).Build();\napp.MapGet("/real", () => 1);\n'
+
+
+def _deep(tag: str = "ItemGroup") -> str:
+    return "<Project>" + f"<{tag}>" * DEEP + f"</{tag}>" * DEEP + "</Project>"
+
+
+@pytest.mark.parametrize("where", ["Directory.Build.props", "src/Api/Api.csproj"])
+def test_deeply_nested_msbuild_file_degrades_instead_of_aborting(tmp_path, where):
+    web(tmp_path, "src/Api")
+    write(tmp_path, "src/Api/Program.cs", API_PROGRAM + "public class Plan { }\n")
+    write(tmp_path, where, _deep())
+    if where.endswith(".csproj"):
+        write(tmp_path, "src/Api/Api.csproj", _deep())
+    assert paths(run_routes(tmp_path)) is not None
+    assert ("Plan", "class") in names_of(run_symbols(tmp_path))
+
+
+def test_unwalkable_msbuild_file_is_not_a_test_project_and_warns(tmp_path, monkeypatch):
+    web(tmp_path, "src/Api")
+    write(tmp_path, "src/Api/Program.cs", "public class Plan { }\n")
+
+    def boom(*_a, **_k):
+        raise RecursionError
+
+    monkeypatch.setattr(
+        "strata_kb.codeingest.extractors._cs_testproj._marks_test", boom
+    )
+    result = run_symbols(tmp_path)
+    assert ("Plan", "class") in names_of(result)
+    assert any("Api.csproj" in w for w in result.warnings)
+
+
+def test_symbols_survive_test_project_detection_failing(tmp_path, monkeypatch):
+    web(tmp_path)
+    write(tmp_path, "Program.cs", "public class Plan { }\n")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("detector")
+
+    monkeypatch.setattr(
+        "strata_kb.codeingest.extractors._cs_ast.test_project_dirs", boom
+    )
+    result = run_symbols(tmp_path)
+    assert ("Plan", "class") in names_of(result)
+    assert any("test project" in w for w in result.warnings)
+
+
+def test_import_escaping_the_repo_does_not_resolve_to_a_repo_file(tmp_path):
+    write(
+        tmp_path,
+        "Directory.Build.props",
+        f"<Project><ItemGroup>{XUNIT}</ItemGroup></Project>",
+    )
+    write(
+        tmp_path,
+        "src/Directory.Build.props",
+        '<Project><Import Project="$(MSBuildThisFileDirectory)../../Directory.Build.props" /></Project>',
+    )
+    write(tmp_path, "src/Api/Api.csproj", WEB)
+    write(tmp_path, PRODUCT_API[0], PRODUCT_API[1])
+    assert paths(run_routes(tmp_path)) == [("GET", "/api/u")]
+
+
+def test_import_into_a_dot_directory_is_not_confused_with_a_plain_one(tmp_path):
+    write(
+        tmp_path,
+        "eng/Directory.Build.props",
+        f"<Project><ItemGroup>{XUNIT}</ItemGroup></Project>",
+    )
+    write(
+        tmp_path,
+        "src/Directory.Build.props",
+        '<Project><Import Project="$(MSBuildThisFileDirectory)../.eng/Directory.Build.props" /></Project>',
+    )
+    write(tmp_path, "src/Api/Api.csproj", WEB)
+    write(tmp_path, PRODUCT_API[0], PRODUCT_API[1])
+    assert paths(run_routes(tmp_path)) == [("GET", "/api/u")]
+
+
+@pytest.mark.parametrize(
+    ("when", "expected"),
+    [
+        # unevaluable When: Otherwise is unknown too, so nothing is a test project
+        ("$(Configuration) == 'Debug'", [("GET", "/api/u"), ("GET", "/fake")]),
+        # true for Api.Tests (no reference); false for Api, so Otherwise marks it
+        ("$(MSBuildProjectName.EndsWith('.Tests'))", [("GET", "/fake")]),
+        # false for both: Otherwise marks both as test projects
+        ("$(MSBuildProjectName.EndsWith('.Nope'))", []),
+    ],
+)
+def test_choose_otherwise_follows_its_when_conditions(tmp_path, when, expected):
+    two_projects(
+        tmp_path,
+        f'<Project><Choose><When Condition="{when}"><ItemGroup /></When>'
+        f"<Otherwise><ItemGroup>{XUNIT}</ItemGroup></Otherwise></Choose></Project>",
+    )
+    assert paths(run_routes(tmp_path)) == expected
+
+
+def test_get_path_of_file_above_honours_the_file_it_names(tmp_path):
+    write(
+        tmp_path,
+        "Directory.Build.props",
+        f"<Project><ItemGroup>{XUNIT}</ItemGroup></Project>",
+    )
+    write(tmp_path, "Directory.Packages.props", "<Project></Project>")
+    write(
+        tmp_path,
+        "src/Directory.Build.props",
+        "<Project><Import Project=\"$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))\" /></Project>",
+    )
+    write(tmp_path, "src/Api/Api.csproj", WEB)
+    write(tmp_path, PRODUCT_API[0], PRODUCT_API[1])
+    assert paths(run_routes(tmp_path)) == [("GET", "/api/u")]
+
+
+def test_tests_directory_of_a_non_test_project_is_product_symbols(tmp_path):
+    write(tmp_path, "tests/Api.Tests/Api.Tests.csproj", WEB)
+    write(tmp_path, "tests/Api.Tests/Plan.cs", "public class Plan { }\n")
+    result = run_symbols(tmp_path)
+    assert ("Plan", "class") in names_of(result)
+    assert all("skipped" not in r.detail for r in result.coverage)

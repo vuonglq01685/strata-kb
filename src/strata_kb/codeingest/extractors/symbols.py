@@ -137,7 +137,16 @@ class _Surface:
 
 
 def _skip_rule(rel: str) -> str | None:
-    return next((label for label, pat in _SKIP_RULES if pat.search(rel)), None)
+    # C# test code is told by its project file only (`tests/` is not a signal)
+    cs = rel.endswith(".cs")
+    return next(
+        (
+            label
+            for label, pat in _SKIP_RULES
+            if not (cs and label == "test") and pat.search(rel)
+        ),
+        None,
+    )
 
 
 def _bucket(scopes: list[Scope], rel: str) -> str:
@@ -306,6 +315,15 @@ class _Reader:
         return found, sites | ({f"{rel}:1"} if orphans else set())
 
 
+def _test_projects(root: Path, files: list[str], warnings: list[str]) -> frozenset[str]:
+    """C# test project dirs; if detection itself fails, none (and a warning)."""
+    try:
+        return _cs_ast.test_project_dirs(root, files, warnings)
+    except Exception as exc:  # noqa: BLE001 -- degrade, never abort the ingest
+        warnings.append(f"symbols: C# test project detection failed: {exc!r}")
+        return frozenset()
+
+
 def _row_detail(skipped: Counter[str], sites: set[str]) -> str:
     # "; " separates sites in the coverage detail, so a file name containing
     # it must not leak through (lossy by one space); same rule as routes.py.
@@ -407,7 +425,7 @@ class SymbolsExtractor:
         warnings: list[str] = []
         reader = _Reader(root, files, warnings)
         # C# test projects are told by their project file, not by a name
-        test_projects = _cs_ast.test_project_dirs(root, files)
+        test_projects = _test_projects(root, files, warnings)
         coverage: list[CoverageRow] = []
         found: dict[str, set[Symbol]] = {}
         for key in sorted(buckets):

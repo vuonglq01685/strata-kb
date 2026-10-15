@@ -49,15 +49,22 @@ _ATTRIBUTE_ALTERNATIVES = frozenset(
 _GENERIC_ARGS = re.compile(r"<.*>", re.DOTALL)
 
 
-def test_project_dirs(root: Path, files: list[str]) -> frozenset[str]:
+def test_project_dirs(
+    root: Path, files: list[str], warnings: list[str] | None = None
+) -> frozenset[str]:
     """Directories ("" is the repo root) of the test projects; every file
-    under one is test code (`_cs_testproj` says how a project is told)."""
+    under one is test code (`_cs_testproj` says how a project is told). Files
+    it cannot evaluate add a warning to `warnings` (first call of a run only)."""
 
     def text(rel: str) -> str:
         data = source(root, rel)
         return data.decode("utf-8", "replace") if data is not None else ""
 
-    return run_cached(("cs-test-dirs", root), lambda: _cs_testproj.find(files, text))
+    def scan() -> frozenset[str]:
+        sink = warnings if warnings is not None else []
+        return _cs_testproj.find(files, text, sink.append)
+
+    return run_cached(("cs-test-dirs", root), scan)
 
 
 def is_test(rel: str, test_dirs: frozenset[str]) -> bool:

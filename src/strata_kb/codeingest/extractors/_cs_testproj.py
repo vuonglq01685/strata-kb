@@ -36,6 +36,7 @@ _NAME_METHOD = re.compile(
 )
 _NAME_EQUALS = re.compile(r"^'\$\(MSBuildProjectName\)'\s*(==|!=)\s*'([^']*)'$")
 _IS_TEST = re.compile(r"^'\$\(IsTestProject\)'\s*==\s*'true'$", re.IGNORECASE)
+_ABOVE = re.compile(r"GetPathOfFileAbove\(\s*'([^']+)'")
 PROPS = ("Directory.Build.props", "Directory.Packages.props")
 
 
@@ -43,7 +44,8 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _condition(text: str | None, name: str, is_test: bool) -> bool:
+def _condition(text: str | None, name: str, is_test: bool) -> bool | None:
+    """True/False when evaluable, None when the form is not one we evaluate."""
     if text is None or not text.strip():
         return True
     text = text.strip()
@@ -62,7 +64,7 @@ def _condition(text: str | None, name: str, is_test: bool) -> bool:
         return same if found.group(1) == "==" else not same
     if _IS_TEST.match(text):
         return is_test
-    return False
+    return None
 
 
 def _sets_test_property(root: Element) -> bool:
@@ -72,25 +74,45 @@ def _sets_test_property(root: Element) -> bool:
     )
 
 
-def _marks_test(el: Element, name: str, is_test: bool, evaluate: bool) -> bool:
-    for child in el:
-        if evaluate and not _condition(child.get("Condition"), name, is_test):
-            continue
-        tag = _local(child.tag)
-        if tag in ("PackageReference", "GlobalPackageReference") and _FRAMEWORK.match(
-            child.get("Include") or ""
-        ):
-            return True
-        if tag == "IsTestProject" and (child.text or "").strip().lower() == "true":
-            return True
-        if _marks_test(child, name, is_test, evaluate):
-            return True
+def _live_children(el: Element, name: str, is_test: bool, evaluate: bool):
+    """The children of `el` that apply to the project. In a `<Choose>` the
+    first true `<When>` wins; `<Otherwise>` applies only when every `<When>`
+    was evaluated false (one we cannot evaluate leaves it unknown)."""
+    if not evaluate:
+        return list(el)
+    if _local(el.tag) == "Choose":
+        unknown = False
+        for branch in el:
+            if _local(branch.tag) == "Otherwise":
+                return [] if unknown else [branch]
+            verdict = _condition(branch.get("Condition"), name, is_test)
+            if verdict:
+                return [branch]
+            unknown = unknown or verdict is None
+        return []
+    return [c for c in el if _condition(c.get("Condition"), name, is_test)]
+
+
+def _marks_test(root: Element, name: str, is_test: bool, evaluate: bool) -> bool:
+    # explicit stack: a hostile file nested thousands deep must not recurse
+    stack = [root]
+    while stack:
+        for child in _live_children(stack.pop(), name, is_test, evaluate):
+            tag = _local(child.tag)
+            if tag in (
+                "PackageReference",
+                "GlobalPackageReference",
+            ) and _FRAMEWORK.match(child.get("Include") or ""):
+                return True
+            if tag == "IsTestProject" and (child.text or "").strip().lower() == "true":
+                return True
+            stack.append(child)
     return False
 
 
 def _parse(text: str) -> Element | None:
     try:
-        return ET.fromstring(text.lstrip("﻿"))  # noqa: S314 -- see import
+        return ET.fromstring(text.lstrip("﻿"))  # noqa: S314 -- local file, entities are not fetched
     except ET.ParseError:
         return None
 
@@ -106,7 +128,7 @@ def _nearest(here: str, by_dir: dict[str, str]) -> str | None:
 
 
 def _parent_hop(
-    props: str, root: Element | None, name: str, index: dict[str, dict[str, str]]
+    props: str, root: Element | None, index: dict[str, dict[str, str]]
 ) -> str | None:
     """The props file `props` imports from above (one hop), if it does."""
     if root is None:
@@ -117,20 +139,30 @@ def _parent_hop(
             continue
         target = el.get("Project") or ""
         if "GetPathOfFileAbove" in target:
-            if not base:
-                return None
-            return _nearest(base.rpartition("/")[0], index[name])
+            named = _ABOVE.search(target)
+            if not base or named is None or named.group(1) not in index:
+                continue
+            return _nearest(base.rpartition("/")[0], index[named.group(1)])
         if "$(" in target.replace("$(MSBuildThisFileDirectory)", ""):
             continue
         cleaned = target.replace("$(MSBuildThisFileDirectory)", "").replace("\\", "/")
-        resolved = posixpath.normpath(posixpath.join(base, cleaned)).lstrip("./")
-        if resolved in index[name].values():
+        resolved = posixpath.normpath(posixpath.join(base, cleaned))
+        if resolved == ".." or resolved.startswith("../"):
+            continue  # points outside the repo
+        if any(resolved in by_dir.values() for by_dir in index.values()):
             return resolved
     return None
 
 
-def find(files: list[str], text: Callable[[str], str]) -> frozenset[str]:
-    """Directories ("" is the repo root) of the test projects among `files`."""
+def find(
+    files: list[str],
+    text: Callable[[str], str],
+    warn: Callable[[str], None] = lambda _msg: None,
+) -> frozenset[str]:
+    """Directories ("" is the repo root) of the test projects among `files`.
+
+    A project whose files cannot be evaluated is not a test project; `warn`
+    says so (degrade, never abort the ingest)."""
     index: dict[str, dict[str, str]] = {n: {} for n in PROPS}
     for rel in files:
         name = rel.rpartition("/")[2]
@@ -143,29 +175,34 @@ def find(files: list[str], text: Callable[[str], str]) -> frozenset[str]:
             parsed[rel] = _parse(text(rel))
         return parsed[rel]
 
-    found = set()
-    for rel in files:
-        if not rel.endswith(".csproj"):
-            continue
-        here = rel.rpartition("/")[0]
+    def is_test_project(rel: str) -> bool:
         name = rel.rpartition("/")[2].removesuffix(".csproj")
         own_text = text(rel)
         own = _parse(own_text)
         if own is None:
-            if _TEXT_FALLBACK.search(own_text):
-                found.add(here)
-            continue
+            return bool(_TEXT_FALLBACK.search(own_text))
         if _marks_test(own, name, True, evaluate=False):
-            found.add(here)
-            continue
+            return True
         is_test = _sets_test_property(own)
+        here = rel.rpartition("/")[0]
         for kind in PROPS:
             props = _nearest(here, index[kind])
             for rel_props in (
                 props,
-                _parent_hop(props, props_root(props), kind, index) if props else None,
+                _parent_hop(props, props_root(props), index) if props else None,
             ):
                 root = props_root(rel_props) if rel_props else None
                 if root is not None and _marks_test(root, name, is_test, evaluate=True):
-                    found.add(here)
+                    return True
+        return False
+
+    found = set()
+    for rel in files:
+        if not rel.endswith(".csproj"):
+            continue
+        try:
+            if is_test_project(rel):
+                found.add(rel.rpartition("/")[0])
+        except Exception as exc:  # noqa: BLE001 -- one hostile file must not abort the run
+            warn(f"symbols: {rel} could not be evaluated as a test project: {exc!r}")
     return frozenset(found)
