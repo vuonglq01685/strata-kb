@@ -75,7 +75,8 @@ _ATTRIBUTE_CLASS = re.compile(rb"\bclass\s+(\w+)\s*(?:<[^>]*>)?\s*:\s*([^{;]*)")
 _UNFOLLOWED = re.compile(
     rb"\bUsePathBase\b|\bPathBase\s*=|\.Conventions\.Add\s*\(|\bI(?:Application|Controller|Action)ModelConvention\b"
     rb"|\bUseMvc\w*|\bAddApplicationPart\b|\bApplicationPartManager\b|\bControllerFeatureProvider\b"
-    rb"|\bMapODataRoute\b|\bUseFastEndpoints\b|\bI?CarterModule\b|:\s*Endpoint(?:WithoutRequest)?\s*<"
+    rb"|\bMapODataRoute\b|\bUseFastEndpoints\b|\bI?CarterModule\b"
+    rb"|:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
     rb"|\[\s*RoutePrefix\b"
 )
 _COMMENT = re.compile(rb"^\s*(?://|/\*|\*)")
@@ -163,7 +164,7 @@ def _composed_names(root: Path, repo_files: list[str]) -> frozenset[str]:
 
     def scan() -> frozenset[str]:
         declared: dict[str, set[str]] = {}
-        for rel in ast.cs_files(repo_files):
+        for rel in ast.cs_files(root, repo_files, repo_files):
             data = ast.source(root, rel)
             for name, bases in _ATTRIBUTE_CLASS.findall(data or b""):
                 declared.setdefault(name.decode(), set()).update(
@@ -189,7 +190,7 @@ def _base_classes(root: Path, repo_files: list[str]) -> frozenset[str]:
 
     def scan() -> frozenset[str]:
         found: set[str] = set()
-        for rel in ast.cs_files(repo_files):
+        for rel in ast.cs_files(root, repo_files, repo_files):
             data = ast.source(root, rel)
             found.update(
                 ast.simple_name(m.decode()) for m in _FIRST_BASE.findall(data or b"")
@@ -210,14 +211,15 @@ def _has_pages(root: Path, scope: Scope, repo_files: list[str]) -> bool:
     return False
 
 
-def _hint(composed: frozenset[str]) -> re.Pattern[bytes]:
-    """Cheap prefilter: a file with none of these is never parsed."""
+def _hint(composed: frozenset[str], helpers: frozenset[str]) -> re.Pattern[bytes]:
+    """Cheap prefilter: a file with none of these is never parsed. A helper's
+    name counts: the file that calls `ConfigurePipeline()` has no route word."""
     names = sorted(
         {
             *_ROUTING,
             "HttpMethod",
             "Map[A-Z]\\w*",
-            *map(re.escape, composed),
+            *map(re.escape, composed | helpers),
         }
     )
     # `Controller` anywhere: `HomeController : BaseController` has no other word
@@ -322,22 +324,35 @@ class _Index:
         return [v for v in _views(trees) if v.name == name]
 
 
+def _class_base(bases: list[str], index: _Index) -> tuple[str | None, list[_View]]:
+    """The base class among a type's bases and the repo types of that name.
+    An `I...` name is an interface unless the repo declares a class by it."""
+    for name in bases:
+        if name in _FRAMEWORK_BASES:
+            return name, []
+        found = index.lookup(name)
+        if found:
+            if all(v.kind == "interface_declaration" for v in found):
+                continue
+            return name, found
+        if not _INTERFACE.fullmatch(name):
+            return name, []  # a class declared outside the repo
+    return None, []
+
+
 def _ancestors(view: _View, index: _Index, sites: list[str]) -> list[_View]:
     """Repo base classes of `view`, nearest first. A base the repo does not
     declare (a package, another solution) is a site: it may carry routes."""
     chain: list[_View] = []
     seen = {view.name}
-    bases = view.bases
-    current = bases[0] if bases and not _INTERFACE.fullmatch(bases[0]) else None
+    current, found = _class_base(view.bases, index)
     while current and current not in _FRAMEWORK_BASES and current not in seen:
         seen.add(current)
-        found = index.lookup(current)
         if len(found) != 1:  # undeclared here, or two types of one name
             sites.append(_site(view.rel, view.line))
             break
         chain.append(found[0])
-        nxt = [b for b in found[0].bases if not _INTERFACE.fullmatch(b)]
-        current = nxt[0] if nxt else None
+        current, found = _class_base(found[0].bases, index)
     return chain
 
 
@@ -426,7 +441,7 @@ def _scan_controller(
     if templates is None:
         return []
     out: list[Route] = []
-    controller = re.sub(r"(?i)controller$", "", view.name)
+    controller = view.name.removesuffix("Controller")
     for rel, method in view.methods:
         if not _is_action(method):
             continue
@@ -567,14 +582,14 @@ def adapter(
     result = AdapterResult()
     sites = result.dynamic_sites
     sources: dict[str, bytes] = {}
-    for rel in ast.cs_files(files):
+    for rel in ast.cs_files(root, files, repo_files):
         data = ast.source(root, rel)
         if data is None:
             sites.append(_site(rel, 1))
         else:
             sources[rel] = data
     composed = _composed_names(root, repo_files)
-    hint = _hint(composed)
+    hint = _hint(composed, minimal.helper_names(root, repo_files))
     trees: dict[str, Node] = {}
     for rel in sorted(sources):
         if not hint.search(sources[rel]):
@@ -599,11 +614,11 @@ def adapter(
         else:
             _stray_handlers(view, composed, sites)
             sites += [_site(rel, a.line) for rel, a in view.attrs if a.name in composed]
-    found = minimal.scan(root, trees, repo_files, result)
+    found, delegated = minimal.scan(root, trees, repo_files, result)
     routes += found
     result.routes = routes
     builds = _build_files(root, repo_files)
-    if not routes and not sites and not _has_pages(root, scope, repo_files):
+    if not (routes or sites or delegated or _has_pages(root, scope, repo_files)):
         # a web module that yields no route at all (pages are not routes)
         net = _web_site(scope, builds, sources)
         if net is not None:

@@ -34,11 +34,13 @@ TYPE_NODES = frozenset(
         "enum_declaration",
     }
 )
-# a directory or file that only holds tests (`tests/`, `Api.Tests/`,
-# `ApiIntegrationTests/`, `FooTests.cs`); case-sensitive on purpose, so
-# `Contest.cs` or `Latest/` stay product code
-_TEST_PATH = re.compile(
-    r"(?:^|/)(?:tests?|Tests?|[^/]*\.Tests?|[^/]*Tests)/|(?:Tests?)\.cs$"
+# A test project is told by its project file, never by a folder or file name:
+# `Features/LabTests/` and `LabTest.cs` are product code. A plain `tests/` /
+# `test/` directory is still a test directory.
+_TEST_DIR = re.compile(r"(?:^|/)tests?/", re.IGNORECASE)
+_TEST_PROJECT = re.compile(
+    r"Microsoft\.NET\.Test\.Sdk|\bxunit|\bNUnit|\bMSTest|<IsTestProject>\s*true",
+    re.IGNORECASE,
 )
 _TYPE_DECL = re.compile(
     rb"\b(?:class|interface|struct|enum|record(?:\s+(?:class|struct))?)\s+(\w+)"
@@ -55,13 +57,34 @@ _ATTRIBUTE_ALTERNATIVES = frozenset(
 _GENERIC_ARGS = re.compile(r"<.*>", re.DOTALL)
 
 
-def is_test(rel: str) -> bool:
-    return bool(_TEST_PATH.search(rel))
+def test_project_dirs(root: Path, files: list[str]) -> frozenset[str]:
+    """Directories ("" is the repo root) of the projects whose `.csproj` pulls
+    in a test framework; every file under one is test code."""
+
+    def find() -> frozenset[str]:
+        found = set()
+        for rel in files:
+            if rel.endswith(".csproj"):
+                data = source(root, rel)
+                if data is not None and _TEST_PROJECT.search(
+                    data.decode("utf-8", "replace")
+                ):
+                    found.add(rel.rpartition("/")[0])
+        return frozenset(found)
+
+    return run_cached(("cs-test-dirs", root), find)
 
 
-def cs_files(files: list[str]) -> list[str]:
-    """C# product sources of a scope (test projects skipped)."""
-    return [f for f in files if _ts.language_for(f) == LANG and not is_test(f)]
+def is_test(rel: str, test_dirs: frozenset[str]) -> bool:
+    return bool(_TEST_DIR.search(rel)) or any(
+        not d or rel.startswith(d + "/") for d in test_dirs
+    )
+
+
+def cs_files(root: Path, files: list[str], repo_files: list[str]) -> list[str]:
+    """C# product sources among `files` (test projects and `tests/` skipped)."""
+    tests = test_project_dirs(root, repo_files)
+    return [f for f in files if _ts.language_for(f) == LANG and not is_test(f, tests)]
 
 
 def source(root: Path, rel: str) -> bytes | None:
@@ -78,7 +101,7 @@ def declared_names(root: Path, repo_files: list[str]) -> dict[str, list[str]]:
 
     def scan() -> dict[str, list[str]]:
         found: dict[str, list[str]] = {}
-        for rel in cs_files(repo_files):
+        for rel in cs_files(root, repo_files, repo_files):
             data = source(root, rel)
             if data is None:
                 continue

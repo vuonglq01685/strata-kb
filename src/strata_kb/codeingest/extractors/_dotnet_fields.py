@@ -98,6 +98,8 @@ def _plain_fields(decl: Node) -> list[Field] | None:
     positional = next((c for c in decl.children if c.type == "parameter_list"), None)
     if decl.type == "record_declaration" and positional is not None:
         for param in ast.params(decl):
+            if any(a.name == "JsonIgnore" for a in param.attrs):
+                continue
             explicit = any(a.name == "Required" for a in param.attrs)
             out.append(
                 (

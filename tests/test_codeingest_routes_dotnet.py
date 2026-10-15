@@ -688,7 +688,12 @@ def test_test_projects_are_not_product_routes(tmp_path):
     )
     write(
         tmp_path,
-        "FooTests.cs",
+        "src/Api.Tests/Api.Tests.csproj",
+        '<Project Sdk="Microsoft.NET.Sdk">\n<ItemGroup><PackageReference Include="xunit" Version="2.6.0" /></ItemGroup>\n</Project>\n',
+    )
+    write(
+        tmp_path,
+        "src/Api.Tests/FooTests.cs",
         'public class FooTests { void T(WebApplication app) { app.MapGet("/t", () => 1); } }\n',
     )
     write(
@@ -997,7 +1002,7 @@ def test_uncalled_endpoint_helper_is_a_site(tmp_path):
     )
     result = run_routes(tmp_path)
     assert paths(result) == []
-    assert row(result).detail == "Ext.cs:3"
+    assert row(result).detail == "Ext.cs:5"
 
 
 def test_helper_value_used_as_group_is_a_site(tmp_path):
@@ -1202,7 +1207,9 @@ app.MapGet("/ok", () => 1);
     )
     result = run_routes(tmp_path)
     assert paths(result) == [("GET", "/ok")]
-    assert row(result).detail == "Program.cs:2; Program.cs:4; UserModule.cs:5"
+    assert row(result).detail == (
+        "Program.cs:2; Program.cs:4; UserModule.cs:4; UserModule.cs:5"
+    )
 
 
 def test_lambda_builder_from_unfollowed_code_is_a_site(tmp_path):
@@ -1473,6 +1480,290 @@ def test_library_that_uses_mvc_types_but_declares_no_route_is_a_site(tmp_path):
     assert row(run_routes(tmp_path), "Lib").detail == "Lib/Handlers.cs:1"
 
 
+# --- fix round 1 ------------------------------------------------------------
+
+
+def test_helper_reached_only_from_a_file_with_no_route_words_is_followed(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Program.cs",
+        """using Api;
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.ConfigureServices().ConfigurePipeline();
+app.Run();
+""",
+    )
+    write(
+        tmp_path,
+        "HostingExtensions.cs",
+        """namespace Api;
+internal static class HostingExtensions
+{
+    public static WebApplication ConfigureServices(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddControllers();
+        return builder.Build();
+    }
+    public static WebApplication ConfigurePipeline(this WebApplication app)
+    {
+        app.UseAuthorization();
+        app.MapControllers();
+        app.MapGet("/status", () => "ok");
+        app.RegisterTodoEndpoints();
+        return app;
+    }
+}
+""",
+    )
+    write(
+        tmp_path,
+        "Endpoints/Todo.cs",
+        """namespace Api.Endpoints;
+public static class TodoEndpoints
+{
+    public static void RegisterTodoEndpoints(this IEndpointRouteBuilder routes)
+    {
+        var g = routes.MapGroup("/todos");
+        g.MapGet("/", () => "x");
+    }
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "complete", row(result).detail
+    assert paths(result) == [("GET", "/status"), ("GET", "/todos")]
+
+
+def test_uncalled_helper_makes_its_map_calls_sites(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Program.cs",
+        "var app = WebApplication.CreateBuilder(args).Build();\n",
+    )
+    write(
+        tmp_path,
+        "Ext.cs",
+        """public static class Ext
+{
+    public static void MapOrphans(this IEndpointRouteBuilder app)
+    {
+        app.MapGet("/o", () => 1);
+        app.MapPost("/p", () => 1);
+    }
+    public static void MapQuiet(this IEndpointRouteBuilder app) { }
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == []
+    assert row(result).detail == "Ext.cs:5; Ext.cs:6"
+
+
+def test_helper_called_from_another_scope_is_not_a_site_in_its_own(tmp_path):
+    write(tmp_path, "Shared/Shared.csproj", WEB)
+    write(
+        tmp_path,
+        "Shared/Ext.cs",
+        'public static class Ext { public static void MapShared(this IEndpointRouteBuilder a) { a.MapGet("/s", () => 1); } }\n',
+    )
+    write(tmp_path, "Host/Host.csproj", WEB)
+    write(
+        tmp_path,
+        "Host/Program.cs",
+        "var app = WebApplication.CreateBuilder(args).Build();\napp.MapShared();\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result, "Shared").status == "complete"
+    assert row(result, "Host").status == "complete"
+    assert paths(result) == [("GET", "/s")]
+
+
+def test_product_folders_and_files_named_tests_are_kept(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Features/LabTests/LabTestsController.cs",
+        '[Route("labtests")] public class LabTestsController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
+    )
+    write(
+        tmp_path,
+        "Domain/LabTest.cs",
+        "public class LabTest { public const int Max = 3; }\n",
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/labtests")]
+    assert ("LabTest", "class") in names_of(run_symbols(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        '<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.0.0" />',
+        '<PackageReference Include="xunit" Version="2.6.0" />',
+        '<PackageReference Include="NUnit" Version="4.0.0" />',
+        '<PackageReference Include="MSTest.TestFramework" Version="3.0.0" />',
+        "<IsTestProject>true</IsTestProject>",
+    ],
+)
+def test_files_in_a_test_project_are_skipped_by_routes_and_symbols(tmp_path, marker):
+    web(tmp_path, "src/Api")
+    write(
+        tmp_path,
+        "src/Api/Program.cs",
+        'var app = WebApplication.CreateBuilder(args).Build();\napp.MapGet("/real", () => 1);\n',
+    )
+    write(
+        tmp_path,
+        "src/Api.Specs/Api.Specs.csproj",
+        f'<Project Sdk="Microsoft.NET.Sdk.Web">\n<ItemGroup>{marker}</ItemGroup>\n</Project>\n',
+    )
+    write(
+        tmp_path,
+        "src/Api.Specs/Fake.cs",
+        'public class FakeController : ControllerBase { [HttpGet("fake")] public IActionResult G() => Ok(); }\npublic class Fixture { }\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/real")]
+    got = names_of(run_symbols(tmp_path))
+    assert ("Fixture", "class") not in got and ("FakeController", "class") not in got
+
+
+def test_symbols_test_rule_does_not_leak_to_other_languages(tmp_path):
+    write(tmp_path, "web/package.json", '{"name":"w"}')
+    write(tmp_path, "web/src/ABTests/flags.ts", "export const FLAG = 1;\n")
+    result = run_symbols(tmp_path)
+    assert ("FLAG", "const") in names_of(result)
+
+
+def test_builder_parameters_of_ordinary_methods_are_not_the_app(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Program.cs",
+        """var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+app.MapGet("/health-x", () => "ok");
+app.MapGroup("/api/v1").AddUsers();
+app.MapGroup("/api/v2").AddMaybe();
+Local(app.MapGroup("/api/v3"));
+app.Run();
+void Local(RouteGroupBuilder g) { g.MapGet("/local", () => 1); }
+""",
+    )
+    write(
+        tmp_path,
+        "Users.cs",
+        """public static class UsersEndpoints
+{
+    public static TBuilder AddUsers<TBuilder>(this TBuilder builder) where TBuilder : IEndpointRouteBuilder
+    {
+        builder.MapGet("/users", () => "u");
+        return builder;
+    }
+    public static void AddMaybe(this IEndpointRouteBuilder? builder)
+    {
+        builder!.MapGet("/maybe", () => "u");
+    }
+    public static void Inner(IEndpointRouteBuilder b)
+    {
+        void Reg(RouteGroupBuilder g) { g.MapGet("/inner", () => 1); }
+        Reg(b.MapGroup("/x"));
+    }
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == sorted(
+        [
+            ("GET", "/health-x"),
+            ("GET", "/api/v1/users"),
+            ("GET", "/api/v2/maybe"),
+            ("GET", "/api/v3/local"),
+        ]
+    )
+    assert row(result).detail == "Users.cs:14"  # the nested local function
+
+
+def test_method_parameter_builders_are_not_assumed_to_be_the_app(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "X.cs",
+        """public class X
+{
+    public void Register(Foo registry) { registry.MapGet("/r", () => 1); }
+    public void Real(WebApplication app) { app.MapGet("/real", () => 1); }
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == []
+    assert row(result).detail == "X.cs:3; X.cs:4"  # `Real` is a helper nothing calls
+
+
+def test_record_parameter_with_property_json_ignore_is_skipped(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "RController.cs",
+        """[Route("r")]
+public class RController : ControllerBase
+{
+    [HttpPost] public IActionResult A([FromBody] Req d) => Ok();
+}
+public record Req(string Name, [property: JsonIgnore] string Secret);
+""",
+    )
+    l3 = section(run_routes(tmp_path), "RController.cs").l3_md
+    assert "| Name | string | yes |" in l3 and "Secret" not in l3
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "EndpointWithoutRequest",
+        "Endpoint<Req>",
+        "Ep.Req<Dto>.Res<Out>",
+        "Ep.NoReq.Res<Out>",
+    ],
+)
+def test_fast_endpoints_base_classes_are_sites(tmp_path, base):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Ep.cs",
+        f'public class Hello : {base}\n{{\n    public override void Configure() {{ Get("/hello"); }}\n}}\n',
+    )
+    assert row(run_routes(tmp_path)).detail == "Ep.cs:1"
+
+
+def test_base_named_like_an_interface_is_a_class_when_the_repo_says_so(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "IAMController.cs",
+        '[Route("iam")] public abstract class IAMController : ControllerBase { [HttpGet("base")] public IActionResult B() => Ok(); }\n',
+    )
+    write(
+        tmp_path,
+        "UsersController.cs",
+        'public class UsersController : IAMController, IDisposable { [HttpGet("u")] public IActionResult G() => Ok(); public void Dispose() {} }\n',
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert "IAMController.cs:1" in row(result).detail
+
+
+def test_controller_token_strips_only_the_exact_suffix(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "XCONTROLLER.cs",
+        '[Route("[controller]")] public class UsersCONTROLLER : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/userscontroller")]
+
+
 # --- symbols ----------------------------------------------------------------
 
 
@@ -1571,10 +1862,15 @@ def test_csharp_partial_class_is_listed_once_per_file(tmp_path):
 
 def test_csharp_symbols_test_projects_skipped_and_syntax_error_site(tmp_path):
     web(tmp_path)
+    write(
+        tmp_path,
+        "src/Foo.Tests/Foo.Tests.csproj",
+        '<Project Sdk="Microsoft.NET.Sdk">\n<ItemGroup><PackageReference Include="xunit" Version="2.6.0" /></ItemGroup>\n</Project>\n',
+    )
     write(tmp_path, "src/Foo.Tests/FooTests.cs", "public class FooTests { }\n")
     write(tmp_path, "Bad.cs", "public class Bad { public const int X = ; \n")
     result = run_symbols(tmp_path)
-    (cov,) = [r for r in result.coverage if r.framework == "csharp"]
-    assert cov.status == "partial" and "Bad.cs:" in cov.detail
-    assert "skipped 1 test" in cov.detail
+    rows = {r.scope: r for r in result.coverage if r.framework == "csharp"}
+    assert rows["."].status == "partial" and "Bad.cs:" in rows["."].detail
+    assert rows["src/Foo.Tests"].detail == "skipped 1 test"
     assert ("FooTests", "class") not in names_of(result)

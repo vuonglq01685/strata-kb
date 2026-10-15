@@ -33,7 +33,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from strata_kb.codeingest.extractors import _kotlin_parse, _symbols_lang, _ts
+from strata_kb.codeingest.extractors import _cs_ast, _kotlin_parse, _symbols_lang, _ts
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_jsresolve import ModuleResolver
@@ -94,14 +94,7 @@ _TOOLS = [
 _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
     ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/")),
-    (
-        "test",
-        re.compile(
-            r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/"
-            # C#: `Api.Tests/`, `ApiIntegrationTests/`, `FooTests.cs`
-            r"|(?:^|/)[^/]*(?:\.Tests?|Tests)/|Tests?\.cs$"
-        ),
-    ),
+    ("test", re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/")),
     # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code
     (
         "config",
@@ -413,6 +406,8 @@ class SymbolsExtractor:
             )
         warnings: list[str] = []
         reader = _Reader(root, files, warnings)
+        # C# test projects are told by their project file, not by a name
+        test_projects = _cs_ast.test_project_dirs(root, files)
         coverage: list[CoverageRow] = []
         found: dict[str, set[Symbol]] = {}
         for key in sorted(buckets):
@@ -433,6 +428,8 @@ class SymbolsExtractor:
                 sites: set[str] = set()
                 for rel in buckets[key][lang]:
                     rule = _skip_rule(rel)
+                    if rule is None and lang == _cs_ast.LANG:
+                        rule = "test" if _cs_ast.is_test(rel, test_projects) else None
                     if rule is not None:
                         skipped[rule] += 1
                         continue

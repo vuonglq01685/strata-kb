@@ -82,6 +82,7 @@ _APP_INIT = re.compile(
 _UNITS = frozenset(
     {"method_declaration", "constructor_declaration", "operator_declaration"}
 )
+_WRAPPERS = ("parenthesized_expression", "await_expression", "postfix_unary_expression")
 _Key = tuple[str, int]  # (file, start byte): one syntax node
 
 
@@ -94,6 +95,7 @@ class _Helper:
     param: str
     index: int  # position of the builder among the parameters
     extension: bool
+    returns: str = ""  # simple name of the return type
 
     @property
     def key(self) -> _Key:
@@ -117,6 +119,8 @@ class _Run:
     summaries: dict[_Key, _Acc] = field(default_factory=dict)
     active: set[_Key] = field(default_factory=set)
     members: dict[str, dict[str, str | None]] = field(default_factory=dict)
+    # helpers a walk of that file expanded (callers outside the scope's files)
+    expanded_by: dict[str, set[_Key]] = field(default_factory=dict)
 
     def fields(self, rel: str, top: Node | None = None) -> dict[str, str | None]:
         """Fields and properties of a file typed as a builder: the app
@@ -206,19 +210,62 @@ def _walk_unit(node: Node, skip: frozenset[int]) -> Iterator[Node]:
         stack.extend(c for c in reversed(current.children) if c.start_byte not in skip)
 
 
+_CONSTRAINT = re.compile(r"where\s+(\w+)\s*:\s*(.*)", re.DOTALL)
+
+
+def _is_builder(type_name: str, constraints: dict[str, str]) -> bool:
+    """A builder type, or a type parameter constrained to one."""
+    name = ast.simple_name(type_name).rstrip("?").strip()
+    bound = constraints.get(name, "")
+    return name in _BUILDERS or any(
+        ast.simple_name(b).rstrip("?") in _BUILDERS for b in bound.split(",")
+    )
+
+
 def _helper_of(rel: str, node: Node, cls: str) -> _Helper | None:
+    constraints = {}
+    for clause in node.children:
+        found = (
+            _CONSTRAINT.match(_text(clause)) if "constraint" in clause.type else None
+        )
+        if found:
+            constraints[found.group(1)] = found.group(2)
     for index, param in enumerate(ast.params(node)):
-        if ast.simple_name(param.type) in _BUILDERS:
+        if _is_builder(param.type, constraints):
+            kind = node.child_by_field_name("returns") or node.child_by_field_name(
+                "type"
+            )
             return _Helper(
-                rel, node, ast.decl_name(node), cls, param.name, index, param.this
+                rel,
+                node,
+                ast.decl_name(node),
+                cls,
+                param.name,
+                index,
+                param.this,
+                ast.simple_name(kind).rstrip("?"),
             )
     return None
+
+
+def helper_names(root: Path, repo_files: list[str]) -> frozenset[str]:
+    """Names of the repo's endpoint helpers: a file that calls one is read."""
+    return frozenset(_helper_index(root, repo_files))
+
+
+def _seed(node: Node) -> dict[str, str | None]:
+    """Parameters of a method that is not a helper: not the app, so a route
+    mapped on one is a site. A `WebApplication` is the app itself."""
+    return {
+        p.name: "" if ast.simple_name(p.type).rstrip("?") == "WebApplication" else None
+        for p in ast.params(node)
+    }
 
 
 def _helper_index(root: Path, repo_files: list[str]) -> dict[str, list[_Helper]]:
     def scan() -> dict[str, list[_Helper]]:
         found: dict[str, list[_Helper]] = {}
-        for rel in ast.cs_files(repo_files):
+        for rel in ast.cs_files(root, repo_files, repo_files):
             data = ast.source(root, rel)
             if data is None or not _BUILDER_USE.search(data):
                 continue
@@ -241,21 +288,41 @@ def _helper_index(root: Path, repo_files: list[str]) -> dict[str, list[_Helper]]
     return run_cached(("cs-helpers", root), scan)
 
 
-def _calls(root: Path, repo_files: list[str], helper: _Helper) -> int:
-    """Calls of the helper's name anywhere in the repo's product code."""
+def _walk_file(run: _Run, rel: str, top: Node, acc: _Acc) -> None:
+    """Walk one file: its top-level statements, its methods, and the bodies
+    of the helpers it defines."""
+    skip = _helper_starts(run, rel)
+    scan_file = _Scan(run, rel, acc, skip)
+    env: dict[str, str | None] = {}
+    for statement in ast.members_of(top):
+        if statement.type == "global_statement":
+            scan_file.walk(statement, env)
+    for node in _walk_unit(top, frozenset()):
+        if node.type in _UNITS and node.start_byte not in skip:
+            scan_file.walk(node, _seed(node))
+
+
+def _called_elsewhere(run: _Run, repo_files: list[str], helper: _Helper) -> bool:
+    """Whether a walk of any file that names the helper expands it (callers
+    in other scopes, or in files this scope's hint never parsed)."""
     pattern = re.compile(
         rb"\b" + re.escape(helper.name.encode()) + rb"\s*(?:<[^>()]*>)?\s*\("
     )
-
-    def count() -> int:
-        total = 0
-        for rel in ast.cs_files(repo_files):
-            data = ast.source(root, rel)
-            total += len(pattern.findall(data)) if data is not None else 0
-        return total
-
-    same = len(_helper_index(root, repo_files).get(helper.name, []))
-    return run_cached(("cs-calls", root, helper.name), count) - same
+    for rel in ast.cs_files(run.root, repo_files, repo_files):
+        data = ast.source(run.root, rel)
+        if data is None or not pattern.search(data):
+            continue
+        if rel not in run.expanded_by:
+            acc = _Acc()
+            _walk_file(run, rel, ast.tree(run.root, rel, data).root_node, acc)
+            for other in run.helpers.values():
+                for h in other:
+                    if h.rel == rel and (summary := summarize(run, h)):
+                        acc.expanded |= summary.expanded
+            run.expanded_by[rel] = acc.expanded
+        if helper.key in run.expanded_by[rel]:
+            return True
+    return False
 
 
 class _Scan:
@@ -291,7 +358,7 @@ class _Scan:
                     return False
                 expr = recv
                 continue
-            if expr.type in ("parenthesized_expression", "await_expression"):
+            if expr.type in _WRAPPERS:
                 if not expr.named_children:
                     return False
                 expr = expr.named_children[-1]
@@ -302,7 +369,7 @@ class _Scan:
         """Prefix of the builder `expr` evaluates to; None when unreadable."""
         if expr is None:
             return ""
-        if expr.type in ("parenthesized_expression", "await_expression"):
+        if expr.type in _WRAPPERS:
             return (
                 self.prefix(expr.named_children[-1], env) if expr.named_children else ""
             )
@@ -324,6 +391,9 @@ class _Scan:
             self.acc.nodes.add((self.rel, expr.start_byte))
             return join_path(base, text)
         if name in self.run.helpers and name not in _BUILT_IN:
+            found = self.run.helpers[name]
+            if len(found) == 1 and found[0].returns == "WebApplication":
+                return ""  # the app itself, handed back
             self.site(name_node)  # a group handed back by a helper
             return None
         return self.prefix(recv, env)
@@ -343,6 +413,9 @@ class _Scan:
             if kind in ("lambda_expression", "anonymous_method_expression"):
                 inner = dict(scope)
                 self.bind_lambda(current, inner)
+            elif kind == "local_function_statement":
+                inner = dict(scope)
+                inner.update(_seed(current))  # a builder handed in: not the app
             elif kind == "variable_declarator":
                 self.declare(current, scope)
             elif kind == "assignment_expression":
@@ -528,7 +601,9 @@ def summarize(run: _Run, helper: _Helper) -> _Acc | None:
     acc = _Acc()
     body = helper.node.child_by_field_name("body")
     if body is not None:
-        _Scan(run, helper.rel, acc, frozenset()).walk(body, {helper.param: ""})
+        _Scan(run, helper.rel, acc, frozenset()).walk(
+            body, {**_seed(helper.node), helper.param: ""}
+        )
     run.active.discard(helper.key)
     run.summaries[helper.key] = acc
     return acc
@@ -542,35 +617,33 @@ def _helper_starts(run: _Run, rel: str) -> frozenset[int]:
 
 def scan(
     root: Path, trees: dict[str, Node], repo_files: list[str], result: AdapterResult
-) -> list[Route]:
-    """Minimal-API routes of a scope's parsed files; sites go to `result`."""
+) -> tuple[list[Route], bool]:
+    """Minimal-API routes of a scope's parsed files; sites go to `result`.
+    The flag says a helper defined here maps routes that a caller (maybe in
+    another scope) lists: this scope serves them, so it is not empty."""
+    delegated = False
     run = run_cached(
         ("cs-minimal", root), lambda: _Run(root, _helper_index(root, repo_files))
     )
     acc = _Acc()
     for rel in sorted(trees):
-        top = trees[rel]
-        skip = _helper_starts(run, rel)
-        scan_file = _Scan(run, rel, acc, skip)
-        env: dict[str, str | None] = {}
-        for statement in ast.members_of(top):
-            if statement.type == "global_statement":
-                scan_file.walk(statement, env)
-        for node in _walk_unit(top, frozenset()):
-            if node.type in _UNITS and node.start_byte not in skip:
-                scan_file.walk(node, {})
+        _walk_file(run, rel, trees[rel], acc)
     # helpers defined here: their bodies are scanned even when nothing calls
-    # them, and a helper nothing calls serves nothing this scan can list
+    # them. One no walk expands serves nothing this scan can list, so each
+    # route it maps is a site.
     for hs in run.helpers.values():
         for helper in hs:
             if helper.rel not in trees:
                 continue
             summary = summarize(run, helper)
-            if summary is not None:
-                acc.nodes |= summary.nodes
-                acc.sites += summary.sites
-            if _calls(root, repo_files, helper) <= 0:
-                acc.sites.append(f"{helper.rel}:{ast.name_line(helper.node)}")
+            if summary is None:
+                continue
+            acc.nodes |= summary.nodes
+            acc.sites += summary.sites
+            if helper.key in acc.expanded or _called_elsewhere(run, repo_files, helper):
+                delegated = delegated or bool(summary.routes)
+            else:
+                acc.sites += [f"{r.file}:{r.line}" for r in summary.routes]
     # a `Map...` call nothing above consumed (a field initializer, a property)
     for rel in sorted(trees):
         for node in _walk_unit(trees[rel], frozenset()):
@@ -582,4 +655,4 @@ def scan(
             ):
                 acc.sites.append(f"{rel}:{(name_node or node).start_point[0] + 1}")
     result.dynamic_sites += acc.sites
-    return acc.routes
+    return acc.routes, delegated
