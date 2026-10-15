@@ -22,10 +22,22 @@ class CodeSection:
     l3_md: str  # body under the same heading in the L3 file; fenced blocks only
 
 
+@dataclass(frozen=True)
+class CoverageRow:
+    """One line of the `struct.coverage` table: how much of `area` was read."""
+
+    area: str  # routes | pages | jobs | symbols | files | schema
+    scope: str  # package/top-level directory the row covers, "." for the root
+    framework: str  # framework or language the row covers
+    status: str  # complete | partial | not scanned
+    detail: str = ""  # e.g. "apps/api/src/x.ts:12"; empty when complete
+
+
 @dataclass
 class ExtractResult:
     sections: list[CodeSection] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    coverage: list[CoverageRow] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

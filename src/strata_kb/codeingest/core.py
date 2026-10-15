@@ -21,11 +21,13 @@ from pydantic import ValidationError
 
 from strata_kb import models
 from strata_kb.codeingest.extractors import ALL_EXTRACTORS
+from strata_kb.codeingest.extractors._coverage import merge_rows, render_section
 from strata_kb.codeingest.extractors.tree import relposix, walk_tree
 from strata_kb.codeingest.localgit import run as _git
 from strata_kb.codeingest.types import (  # noqa: F401 -- re-exported: core.CodeSection etc. stay valid
     CodeIngestOptions,
     CodeSection,
+    CoverageRow,
     Extractor,
     ExtractResult,
 )
@@ -296,6 +298,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     report.dirty_tree = _is_dirty(opts.repo_root)
 
     owned: list[tuple[str, CodeSection]] = []
+    coverage_rows: list[CoverageRow] = []
     for extractor in ALL_EXTRACTORS:
         detected = extractor.detect(opts.repo_root)
         if extractor.name == "schema" and opts.db_paths:
@@ -318,6 +321,7 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
         report.sections_by_extractor[extractor.name] = len(result.sections)
         owned.extend((extractor.name, sec) for sec in result.sections)
         report.warnings.extend(result.warnings)
+        coverage_rows.extend(result.coverage)
 
     # Gate on what extract() actually *produced*, not on what detect()
     # said. Every extractor's detect() is
@@ -330,14 +334,21 @@ def run(opts: CodeIngestOptions) -> CodeIngestReport:
     if not any(
         count > 0
         for name, count in report.sections_by_extractor.items()
-        if name != "tree"
+        if name not in _NO_EVIDENCE_EXTRACTORS
     ):
-        kinds = [e.name for e in ALL_EXTRACTORS if e.name != "tree"]
+        kinds = [
+            e.name for e in ALL_EXTRACTORS if e.name not in _NO_EVIDENCE_EXTRACTORS
+        ]
         raise CodeIngestError(
             f"no code artifacts detected under {opts.repo_root} — "
             f"looked for: {', '.join(kinds)}",
             report=report,
         )
+
+    # Appended after the gate above: coverage rows describe what was read,
+    # they are never evidence that code exists.
+    if coverage_rows:
+        owned.append(("coverage", render_section(merge_rows(coverage_rows))))
 
     owned.sort(key=lambda pair: (pair[1].group, pair[1].id))
 
@@ -489,6 +500,17 @@ _GENERATED_PREFIXES: tuple[str, ...] = (
     "svc.",
     "int.",
     "api.",
+    "route.",
+    "page.",
+    "job.",
+    "sym.",
+)
+
+# Extractors whose sections never count as evidence of code for the
+# zero-detection rule in `run()`: `tree` always fires, and the structural
+# extractors can emit sections from any directory listing.
+_NO_EVIDENCE_EXTRACTORS: frozenset[str] = frozenset(
+    {"tree", "routes", "pages", "jobs", "symbols"}
 )
 
 
