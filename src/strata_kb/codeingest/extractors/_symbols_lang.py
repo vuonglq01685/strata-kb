@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 from strata_kb.codeingest.extractors import (
     _symbols_csharp,
     _symbols_jvm,
+    _symbols_php,
     _symbols_python,
     _ts,
 )
@@ -772,6 +773,7 @@ EXPORTERS: dict[str, Exporter] = {
     "scss": _css_reader(True),
     **_symbols_jvm.EXPORTERS,
     **_symbols_csharp.EXPORTERS,
+    **_symbols_php.EXPORTERS,
     **_symbols_python.EXPORTERS,
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
@@ -786,5 +788,8 @@ HINTS: dict[str, re.Pattern[bytes]] = {
     "scss": re.compile(rb"--"),
     "java": re.compile(rb"\bpublic\b"),  # nothing else is exported
     "csharp": re.compile(rb"\bpublic\b"),
+    "php": re.compile(
+        rb"\b(?:class|interface|trait|enum)\b", re.IGNORECASE
+    ),  # nothing else is exported
 }
 LENIENT: frozenset[str] = frozenset({"css", "scss"})

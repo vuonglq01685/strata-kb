@@ -34,6 +34,7 @@ from strata_kb.codeingest.extractors import (
     _routes_dotnet,
     _routes_js,
     _routes_jvm,
+    _routes_php,
     _routes_python,
     _ts,
 )
@@ -93,6 +94,7 @@ ADAPTERS: dict[str, Adapter] = {
     **_routes_dotnet.ADAPTERS,
     **_routes_python.ADAPTERS,
     **_routes_django.ADAPTERS,
+    **_routes_php.ADAPTERS,
 }
 
 # `reader(root, repo files, type name, route file) -> [(name, type, required)]`
