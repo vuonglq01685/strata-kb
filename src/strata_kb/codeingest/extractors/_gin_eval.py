@@ -188,13 +188,41 @@ class Evaluator:
             for n in self.initialized(decl)
         }
         writes = self.package_writes(pkg, env, initialized)
+        engines = self.engine_vars(pkg, env)
         for name, values in writes.items():
             same = len(set(values)) == 1 and not isinstance(values[0], Unknown)
             if same:
                 env.vars[name] = values[0]
-            elif env.vars.get(name) != Router(""):
-                # an engine-typed var keeps the root prefix whatever is written
+            elif name not in engines:
                 env.vars[name] = UNKNOWN
+            # else: a var whose static type is *gin.Engine keeps the root
+            # prefix whatever is written (Go typing forbids a group there)
+
+    def engine_vars(self, pkg: PkgInfo, env: Env) -> set[str]:
+        """Package vars whose static type is `*gin.Engine`: declared so, or
+        untyped and initialised from `gin.Default()` / `gin.New()`. An
+        interface-typed var (`gin.IRouter`) is not one, whatever it holds."""
+        out: set[str] = set()
+        for gofile, decl in pkg.decls:
+            if decl.type != "var_declaration":
+                continue
+            frame = Frame(gofile, env, 0, frozenset())
+            for spec in self.specs(decl):
+                names = [_text(n) for n in spec.children_by_field_name("name")]
+                type_node = spec.child_by_field_name("type")
+                if type_node is not None:
+                    engine = [self.idx.classify(gofile, type_node) == Router("")] * len(
+                        names
+                    )
+                else:
+                    value = spec.child_by_field_name("value")
+                    exprs = value.named_children if value is not None else []
+                    paired = len(exprs) == len(names)
+                    engine = [
+                        paired and self.value_of(frame, e) == Router("") for e in exprs
+                    ] or [False] * len(names)
+                out |= {n for n, e in zip(names, engine, strict=True) if e}
+        return out
 
     def initialized(self, decl: Node) -> list[str]:
         out: list[str] = []

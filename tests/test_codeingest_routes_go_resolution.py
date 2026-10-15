@@ -446,3 +446,80 @@ func main() {{
     )
     result = run_routes(tmp_path)
     assert verdict(result) == ("complete", "")
+
+
+# --- fix round 3 -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("decl", "write", "wanted"),
+    [
+        (
+            "var api gin.IRouter = gin.Default()",
+            'r := gin.Default()\n\tapi = r.Group("/v1")',
+            "/v1/users",
+        ),
+        (
+            "var api gin.IRouter = gin.New()",
+            'api = api.Group("/v1")',
+            "/v1/users",
+        ),
+        (
+            "var api gin.IRoutes = gin.Default()",
+            'e := gin.Default()\n\tapi = e.Group("/v2")',
+            "/v2/users",
+        ),
+    ],
+)
+def test_gin_interface_typed_var_rebound_to_a_group_never_keeps_the_root(
+    tmp_path, decl, write, wanted
+):
+    src = f"""package main
+
+import "github.com/gin-gonic/gin"
+
+{decl}
+
+func setup() {{
+	{write}
+}}
+
+func routes() {{ api.GET("/users", list) }}
+"""
+    gin_app(tmp_path, src)
+    result = run_routes(tmp_path)
+    # the group's prefix, or a site: never the engine's "/users"
+    assert ("GET", "/users") not in pairs(result)
+    assert pairs(result) in ([], [("GET", wanted)])
+    if not pairs(result):
+        status, detail = verdict(result)
+        assert status == "partial"
+        assert f"{MAIN}:{at(src, 'api.GET')}" in detail.split("; ")
+
+
+def test_gin_engine_typed_and_untyped_engine_vars_stay_complete(tmp_path):
+    gin_app(
+        tmp_path,
+        """package main
+
+import "github.com/gin-gonic/gin"
+
+var Typed *gin.Engine
+var Untyped = gin.Default()
+
+func init() {
+	r := gin.New()
+	Typed = r
+	other := gin.New()
+	Untyped = other
+}
+
+func main() {
+	Typed.GET("/typed", list)
+	Untyped.GET("/untyped", list)
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/typed"), ("GET", "/untyped")]
+    assert verdict(result) == ("complete", "")
