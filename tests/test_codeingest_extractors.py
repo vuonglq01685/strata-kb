@@ -4740,7 +4740,9 @@ migrationBuilder.CreateIndex(
         assert "Primary key: Id" in sec.l2_md
         assert "- IX_Users_Org (Org, Slug)" in sec.l2_md
         assert "- (unnamed) (Email) unique" in sec.l2_md
-        assert "- (unnamed) (Org, Slug)" in sec.l2_md
+        # the snapshot's unnamed HasIndex duplicates the named CreateIndex
+        assert "- (unnamed) (Org, Slug)" not in sec.l2_md
+        assert sec.l2_md.count("(Org, Slug)") == 1
 
     def test_sqlite_pragma_indexes(self, tmp_path):
         db = tmp_path / "app.db"
@@ -4755,6 +4757,213 @@ migrationBuilder.CreateIndex(
         assert "- idx_t_a (a)" in sec.l2_md
         assert "- idx_t_ab (a, b) unique" in sec.l2_md
         assert "Primary key: id" in sec.l2_md
+
+    # ---- fix round 1: no false `complete`, duplicates, migration sets ----
+
+    def _schema_rows(self, result):
+        return {
+            (r.scope, r.framework): (r.status, r.detail)
+            for r in result.coverage
+            if r.area == "schema"
+        }
+
+    def test_unrecognised_create_index_and_create_table_mark_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            'CREATE TABLE t (id INT, a INT);\nCREATE INDEX i ON "public"."t" (a);\n'
+            'CREATE TABLE "my-t" (id INT);\n',
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_unparsed_named_constraint_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT);\n"
+            "ALTER TABLE t ADD CONSTRAINT t_pk PRIMARY KEY USING INDEX t_idx;\n"
+            "ALTER TABLE t ADD CONSTRAINT u UNIQUE NULLS NOT DISTINCT (a);\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_multi_action_alter_records_every_constraint(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT, b INT);\n"
+            "ALTER TABLE t ADD CONSTRAINT u1 UNIQUE (a), ADD CONSTRAINT u2 UNIQUE (b);\n"
+            "ALTER TABLE t ADD COLUMN c INT, ADD COLUMN d INT;\n"
+            "ALTER TABLE t ADD CONSTRAINT u3 UNIQUE (c), ADD CONSTRAINT u4 UNIQUE USING INDEX x;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "- u1 (a) unique" in sec.l2_md and "- u2 (b) unique" in sec.l2_md
+        assert "- u3 (c) unique" in sec.l2_md
+        assert "5 columns" in sec.summary  # id a b c d
+        assert self._schema_rows(result)[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:4",
+        )
+
+    def test_alter_index_rename_and_partition_attach_detach(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE p (id INT, a INT) PARTITION BY RANGE (id);\n"
+            "CREATE INDEX i ON p (a);\n"
+            "ALTER INDEX i RENAME TO j;\n"
+            "ALTER TABLE p ATTACH PARTITION c1 FOR VALUES FROM (1) TO (2);\n"
+            "ALTER TABLE p ATTACH PARTITION c2 FOR VALUES FROM (2) TO (3);\n"
+            "ALTER TABLE p DETACH PARTITION c1;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.p"]
+        assert "- j (a)" in sec.l2_md and "- i (a)" not in sec.l2_md
+        assert "Partitions: c2" in sec.l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_unknown_index_rename_and_partition_detach_mark_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE p (id INT);\n"
+            "ALTER INDEX ghost RENAME TO other;\n"
+            "ALTER TABLE p DETACH PARTITION nope;\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_create_table_body_records_unique_and_key_indexes(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (\n"
+            "  id INT,\n  email TEXT UNIQUE,\n  a INT,\n  b INT,\n  c INT,\n"
+            "  key VARCHAR(10),\n"
+            "  CONSTRAINT uq_ab UNIQUE (a, b),\n"
+            "  UNIQUE (c),\n"
+            "  KEY idx_a (a),\n"
+            "  UNIQUE KEY uk_b (b)\n);\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "- (unnamed) (email) unique" in sec.l2_md
+        assert "- uq_ab (a, b) unique" in sec.l2_md
+        assert "- (unnamed) (c) unique" in sec.l2_md
+        assert "- idx_a (a)" in sec.l2_md
+        assert "- uk_b (b) unique" in sec.l2_md
+        assert "| key | VARCHAR(10)" in sec.l2_md  # a column named key stays a column
+        assert "6 columns" in sec.summary
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_unparsed_body_constraint_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (\n  a INT,\n  UNIQUE NULLS NOT DISTINCT (a)\n);\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:1",
+        )
+
+    def test_alembic_unique_constraints_and_batch_ops(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('users',\n"
+            "        sa.Column('id', sa.Integer(), primary_key=True),\n"
+            "        sa.Column('email', sa.String(), unique=True),\n"
+            "        sa.Column('a', sa.String()),\n"
+            "        sa.Column('b', sa.String()),\n"
+            "        sa.UniqueConstraint('a', 'b', name='uq_users_ab'),\n"
+            "    )\n"
+            "    op.create_unique_constraint('uq_users_b', 'users', ['b'])\n"
+            "    with op.batch_alter_table('users') as batch_op:\n"
+            "        batch_op.create_index('ix_users_a', ['a'], unique=False)\n"
+            "        batch_op.create_unique_constraint('uq_users_ea', ['email', 'a'])\n",
+        )
+        result = self._run(tmp_path)
+        users = _by_id(result)["db.users"].l2_md
+        assert "- (unnamed) (email) unique" in users
+        assert "- uq_users_ab (a, b) unique" in users
+        assert "- uq_users_b (b) unique" in users
+        assert "- ix_users_a (a)" in users
+        assert "- uq_users_ea (email, a) unique" in users
+        assert not [w for w in result.warnings if "unknown table" in w]
+        assert self._schema_rows(result)[(".", "alembic")][0] == "complete"
+
+    def test_alembic_unresolvable_batch_table_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('users', sa.Column('id', sa.Integer()))\n"
+            "    with op.batch_alter_table(TABLE) as b:\n"
+            "        b.create_index('ix', ['id'])\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "alembic")]
+        assert status == "partial"
+        assert detail == "alembic/versions/0001.py:4"
+
+    def test_unparseable_file_marks_reader_partial_beside_good_tables(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT);\n")
+        bad = tmp_path / "migrations" / "002.sql"
+        bad.write_bytes(b"CREATE TABLE u (id INT);\xff\xfe\n")
+        result = self._run(tmp_path)
+        rows = self._schema_rows(result)
+        assert rows[(".", "sql")] == ("partial", "migrations/002.sql")
+        assert any("could not parse migrations/002.sql" in w for w in result.warnings)
+
+    def test_comment_strip_desync_marks_reader_partial(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT);\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "/* never closed\nCREATE TABLE u (id INT);\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/002.sql" in detail
+
+    def test_named_index_replaces_unnamed_duplicate_across_prisma_and_sql(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model User {\n  id Int @id\n  email String @unique\n}\n",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/1_init/migration.sql",
+            'CREATE TABLE "User" ("id" INT, "email" TEXT);\n'
+            'CREATE UNIQUE INDEX "User_email_key" ON "User"("email");\n',
+        )
+        sec = _by_id(self._run(tmp_path))["db.User"]
+        rows = [ln for ln in sec.l2_md.splitlines() if ln.startswith("- ")]
+        assert rows == ["- User_email_key (email) unique"]
+
+    def test_per_migration_directory_later_add_column_applies(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/2024-01-01_a/up.sql",
+            "CREATE TABLE users (id INT);\n",
+        )
+        self._write(
+            tmp_path,
+            "migrations/2024-02-01_b/up.sql",
+            "ALTER TABLE users ADD COLUMN email TEXT;\n",
+        )
+        result = self._run(tmp_path)
+        assert "2 columns" in _by_id(result)["db.users"].summary
+        assert not [w for w in result.warnings if "different migration directory" in w]
 
 
 class TestIntegrationsExtractor:

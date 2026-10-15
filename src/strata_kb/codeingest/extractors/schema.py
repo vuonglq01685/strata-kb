@@ -78,6 +78,15 @@ protocol's `detect()` is never passed `opts`, so this is the one walk in
 this module that calls the glob helper without a `kb_dir` to prune. Every
 walk inside `extract()` does thread `opts.kb_dir` through.
 
+**Coverage is never falsely `complete`.** Every warning a reader emits that
+names a file (an unparsed file, a comment-strip desync, an unrecognised
+`CREATE TABLE`/`CREATE INDEX`, a statement on an unknown table, a duplicate
+definition) goes through `_warn`, which also records that file's site on the
+reader's `_Warnings.sites`; `_coverage_rows` turns those into `partial` for
+the (scope, reader) holding the file. A skipped statement that names a kept
+table lands on that table's `schema_partial` instead. Only FOREIGN KEY /
+CHECK constraint warnings stay warning-only: no displayed fact moves.
+
 **Prisma + SQL.** Prisma keeps no partitions, and its migrations
 (`prisma/migrations/*/migration.sql`) hold the DDL it generated. A SQL record
 whose name equals a Prisma model's physical table name (`@@map`, else the
@@ -184,12 +193,18 @@ def _line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def _add_index(record: TableRecord, name: str, cols: str, unique: bool) -> None:
-    """Record an index once per `(name, cols, unique)` — a replayed
-    migration set can state the same index twice."""
+def _add_index_to(
+    indexes: list[tuple[str, str, bool]], name: str, cols: str, unique: bool
+) -> None:
+    """Add an index once per `(name, cols, unique)` — a replayed migration
+    set can state the same index twice."""
     entry = (name or UNNAMED_INDEX, cols, unique)
-    if entry not in record.indexes:
-        record.indexes.append(entry)
+    if entry not in indexes:
+        indexes.append(entry)
+
+
+def _add_index(record: TableRecord, name: str, cols: str, unique: bool) -> None:
+    _add_index_to(record.indexes, name, cols, unique)
 
 
 def _clean_name(raw: str) -> str:
@@ -206,12 +221,40 @@ def _clean_type(raw: str) -> str:
     return " ".join(raw.split())
 
 
+class _Warnings(list[str]):
+    """The warnings list a reader fills, plus `sites`: the `(file, site)`
+    pair behind every warning that names a file. Each such file makes its
+    (scope, reader) coverage row `partial` — a warning is a statement or
+    file the reader did not take in."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sites: list[tuple[str, str]] = []
+
+
+def _warn(warnings: list[str], rel: str, message: str, line: int | None = None) -> None:
+    """Append `message`; when `warnings` is a reader's `_Warnings`, also
+    record `rel` (+ `line`) as a skipped site."""
+    warnings.append(message)
+    if isinstance(warnings, _Warnings):
+        warnings.sites.append((rel, _site(rel, line)))
+
+
+def _unmatched_line(text: str, keyword_re: re.Pattern[str], matched: set[int]) -> int:
+    """Line of the first `keyword_re` occurrence whose start is not in
+    `matched` — the statement a count-mismatch warning is about."""
+    for m in keyword_re.finditer(text):
+        if m.start() not in matched:
+            return _line_of(text, m.start())
+    return 1
+
+
 def _warn_duplicate(kind: str, name: str, rel: str, warnings: list[str]) -> None:
     """Shared wording for "this reader saw the same table/model name
     twice" — sql's own re-`CREATE TABLE`, and each of prisma/alembic/ef's
     repeated definitions all route through this one helper rather than
     four differently-worded warnings."""
-    warnings.append(f"duplicate {kind} {name!r} in {rel}; keeping first")
+    _warn(warnings, rel, f"duplicate {kind} {name!r} in {rel}; keeping first")
 
 
 def _join_source(existing: str, new_rel: str) -> str:
@@ -607,17 +650,19 @@ def _strip_sql_comments(text: str, rel: str, warnings: list[str]) -> str:
     that risk to a reader relying on this document as ground truth."""
     resolution = _resolve_scan(text)
     if resolution.segments is None:
-        warnings.append(
+        _warn(
+            warnings,
+            rel,
             f"could not reliably track quoting/comments in {rel} under either "
             "backslash-escaping reading (an unterminated string literal, quoted "
             "identifier, or block comment) — leaving this file's comments "
             "unstripped; a table or column below may be FABRICATED from "
             "commented-out DDL that was never stripped, or a real one may be "
-            "missing"
+            "missing",
         )
         return text
     if resolution.ambiguous:
-        warnings.append(f"{rel}: {_AMBIGUOUS_DIALECT_NOTE}")
+        _warn(warnings, rel, f"{rel}: {_AMBIGUOUS_DIALECT_NOTE}")
     # A block comment keeps its newlines so `file:line` sites stay true.
     return "".join(
         "\n" * seg.count("\n") if kind == "block_comment" else seg
@@ -693,15 +738,17 @@ def _split_top_level(body: str, rel: str, warnings: list[str]) -> list[str]:
     name or type may look odd) but never silently deletes a column."""
     resolution = _resolve_scan(body)
     if resolution.segments is None:
-        warnings.append(
+        _warn(
+            warnings,
+            rel,
             f"could not reliably parse quoted text in {rel} under either "
             "backslash-escaping reading (an unterminated string literal or "
             "quoted identifier) — falling back to a quote-blind column split "
-            "for this table; a column's name or type may be wrong"
+            "for this table; a column's name or type may be wrong",
         )
         return _split_top_level_quote_blind(body)
     if resolution.ambiguous:
-        warnings.append(f"{rel}: {_AMBIGUOUS_DIALECT_NOTE}")
+        _warn(warnings, rel, f"{rel}: {_AMBIGUOUS_DIALECT_NOTE}")
 
     parts: list[str] = []
     current: list[str] = []
@@ -726,24 +773,56 @@ def _split_top_level(body: str, rel: str, warnings: list[str]) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+_INLINE_UNIQUE_RE = re.compile(r"\bUNIQUE\b", re.I)
+_INLINE_UNIQUE_NAME_RE = re.compile(
+    r"\bCONSTRAINT\s+(?P<name>\"[^\"]*\"|`[^`]*`|\[[^\]]*\]|[\w.]+)\s+UNIQUE\b", re.I
+)
+# A constraint entry naming a key family that `_parse_key` could not take in.
+_KEY_FAMILY_RE = re.compile(
+    r"^(?:CONSTRAINT\s+(?:\"[^\"]*\"|`[^`]*`|\[[^\]]*\]|\S+)\s+)?"
+    r"(?:PRIMARY|UNIQUE|INDEX|KEY)\b",
+    re.I,
+)
+
+
 def _split_sql_columns(
     body: str, rel: str, warnings: list[str]
-) -> tuple[list[tuple[str, str]], str]:
-    """Column list plus PK, from one `CREATE TABLE` body. A top-level
-    entry is only a table constraint (dropped from the column list) when
-    it starts with a constraint keyword at a `\\b` word boundary
-    (`_TABLE_CONSTRAINT_RE`) — never a bare `startswith`, which would
-    also discard a real column named e.g. `unique_code` or
-    `constraint_name`. `PRIMARY KEY
-    (...)` is captured into `pk` verbatim. An inline `PRIMARY KEY` on a
-    column (no separate table constraint) is also detected, recording
-    that column's bare name."""
+) -> tuple[list[tuple[str, str]], str, list[tuple[str, str, bool]], bool]:
+    """Column list, PK, indexes and an `unparsed` flag, from one `CREATE
+    TABLE` body. A top-level entry is only a table constraint (dropped
+    from the column list) when it starts with a constraint keyword at a
+    `\\b` word boundary (`_TABLE_CONSTRAINT_RE`) — never a bare
+    `startswith`, which would also discard a real column named e.g.
+    `unique_code` or `constraint_name`. `PRIMARY KEY (...)` is captured
+    into `pk` verbatim. An inline `PRIMARY KEY` on a column (no separate
+    table constraint) is also detected, recording that column's bare name.
+    `UNIQUE (...)`, `CONSTRAINT n UNIQUE (...)`, MySQL `[UNIQUE] KEY|INDEX
+    n (...)` and an inline column `UNIQUE` are recorded as indexes
+    (`(unnamed)` where nameless). `unparsed` is True when a key/unique
+    entry was dropped without being understood."""
     columns: list[tuple[str, str]] = []
+    indexes: list[tuple[str, str, bool]] = []
     pk = ""
+    unparsed = False
     for entry in _split_top_level(body, rel, warnings):
+        key = _parse_key(entry)
+        if key:
+            kind, kname, cols = key
+            if kind == "PRIMARY KEY":
+                if not pk:
+                    pk = (
+                        entry
+                        if _PRIMARY_KEY_CONSTRAINT_RE.match(entry)
+                        else f"PRIMARY KEY ({cols})"
+                    )
+            else:
+                _add_index_to(indexes, kname, cols, kind.startswith("UNIQUE"))
+            continue
         if _TABLE_CONSTRAINT_RE.match(entry):
             if not pk and _PRIMARY_KEY_CONSTRAINT_RE.match(entry):
                 pk = entry
+            elif _KEY_FAMILY_RE.match(entry):
+                unparsed = True
             continue
         tokens = entry.split(None, 1)
         if not tokens:
@@ -753,7 +832,12 @@ def _split_sql_columns(
         columns.append((cname, rest))
         if not pk and "PRIMARY KEY" in rest.upper():
             pk = cname
-    return columns, pk
+        if _INLINE_UNIQUE_RE.search(_mask_quoted_spans(rest)):
+            named = _INLINE_UNIQUE_NAME_RE.search(rest)
+            _add_index_to(
+                indexes, _clean_name(named.group("name")) if named else "", cname, True
+            )
+    return columns, pk, indexes, unparsed
 
 
 _IDENT = r"[\"`\[]?(?P<{}>[A-Za-z_][\w.]*)[\"`\]]?"
@@ -778,17 +862,45 @@ _PARTITION_BY_RE = re.compile(r"PARTITION\s+BY\s+(?P<kind>RANGE|LIST|HASH)\s*\("
 _ALTER_NAME_RE = re.compile(
     rf"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{_IDENT.format('name')}", re.I
 )
-# `ADD [CONSTRAINT n] PRIMARY KEY|UNIQUE (cols)` plus MySQL's
-# `ADD [UNIQUE] INDEX|KEY n (cols)`.
-_ADD_KEY_RE = re.compile(
+# `[CONSTRAINT n] PRIMARY KEY|UNIQUE (cols)` plus MySQL's
+# `[UNIQUE] INDEX|KEY n (cols)`, up to the opening paren. The column list
+# must start like a column, not like a length: `key VARCHAR(10)` is a column.
+_KEY_HEAD_RE = re.compile(
     rf"^(?:CONSTRAINT\s+{_IDENT.format('cname')}\s+)?"
-    r"(?P<kind>PRIMARY\s+KEY|UNIQUE(?:\s+(?:INDEX|KEY))?|INDEX|KEY)\s*"
-    rf"(?:{_IDENT.format('iname')})?\s*\((?P<cols>[^)]*)\)",
+    r"(?P<kind>PRIMARY\s+KEY|UNIQUE(?:\s+(?:INDEX|KEY))?|INDEX|KEY)\b\s*"
+    rf"(?:{_IDENT.format('iname')}\s*)?\((?=\s*[A-Za-z_`\"\[(])",
+    re.I,
+)
+_ALTER_INDEX_RE = re.compile(
+    rf"ALTER\s+INDEX\s+(?:IF\s+EXISTS\s+)?{_IDENT.format('old')}\s+RENAME\s+TO\s+"
+    rf"{_IDENT.format('new')}\s*;",
+    re.I,
+)
+_ALTER_PARTITION_RE = re.compile(
+    rf"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?{_IDENT.format('parent')}\s+"
+    rf"(?P<op>ATTACH|DETACH)\s+PARTITION\s+{_IDENT.format('child')}",
     re.I,
 )
 _SIMPLE_INDEX_COL_RE = re.compile(
     r"^(?P<col>\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[\w.]+)(?:\s+(?:ASC|DESC)\b.*)?$", re.I
 )
+
+
+def _parse_key(text: str) -> tuple[str, str, str] | None:
+    """`(kind, name, cols)` of a key/index definition (`kind` is
+    `PRIMARY KEY`, `UNIQUE`, `UNIQUE KEY`, `INDEX`, ... upper-cased, one
+    space), or `None` when `text` is not one this reader understands —
+    `UNIQUE USING INDEX x`, `UNIQUE NULLS NOT DISTINCT (a)`, a column."""
+    m = _KEY_HEAD_RE.match(text)
+    if not m:
+        return None
+    open_idx = m.end() - 1
+    close_idx = _matching_close_paren(text, open_idx)
+    if text[close_idx : close_idx + 1] != ")":
+        return None
+    kind = " ".join(m.group("kind").upper().split())
+    name = _clean_name(m.group("cname") or m.group("iname") or "")
+    return kind, name, _index_columns(text[open_idx + 1 : close_idx])
 
 
 def _index_columns(body: str) -> str:
@@ -803,7 +915,12 @@ def _index_columns(body: str) -> str:
 
 
 def _table_for(
-    tables: dict[str, TableRecord], name: str, rel: str, what: str, warnings: list[str]
+    tables: dict[str, TableRecord],
+    name: str,
+    rel: str,
+    what: str,
+    warnings: list[str],
+    line: int | None = None,
 ) -> TableRecord | None:
     """The record `what` (an index, constraint or partition statement in
     `rel`) applies to, or `None` plus a warning when there is none — the
@@ -811,27 +928,37 @@ def _table_for(
     same guard as `ADD COLUMN`: two such tables are not the same table)."""
     record = tables.get(name)
     if record is None:
-        warnings.append(f"{what} on unknown table {name!r} in {rel}")
+        _warn(warnings, rel, f"{what} on unknown table {name!r} in {rel}", line)
         return None
     if _dirname(record.created_in) != _dirname(rel):
-        warnings.append(
+        _warn(
+            warnings,
+            rel,
             f"{what} on {name!r} in {rel} not applied — the table kept for "
             f"{name!r} was created in {record.created_in}, a different "
-            "migration directory"
+            "migration directory",
+            line,
         )
         return None
     return record
 
 
 def _mark_alter_partial(
-    tables: dict[str, TableRecord], stmt: str, rel: str, line: int
+    tables: dict[str, TableRecord],
+    stmt: str,
+    rel: str,
+    line: int,
+    warnings: list[str],
 ) -> None:
-    """An ALTER this reader skipped may have changed what the table shows:
-    record the site on the table it names (if it is the one kept)."""
+    """A statement this reader skipped may have changed what a table
+    shows: record the site on the table it names (if it is the one kept),
+    else on the reader's (scope, reader) row."""
     m = _ALTER_NAME_RE.match(stmt)
     record = tables.get(m.group("name")) if m else None
     if record is not None and _dirname(record.created_in) == _dirname(rel):
         record.schema_partial.append(_site(rel, line))
+    elif isinstance(warnings, _Warnings):
+        warnings.sites.append((rel, _site(rel, line)))
 
 
 def _apply_create_index(
@@ -844,7 +971,14 @@ def _apply_create_index(
 ) -> None:
     open_idx = m.end() - 1
     close_idx = _matching_close_paren(masked, open_idx)
-    record = _table_for(tables, m.group("table"), rel, "CREATE INDEX", warnings)
+    record = _table_for(
+        tables,
+        m.group("table"),
+        rel,
+        "CREATE INDEX",
+        warnings,
+        _line_of(text, m.start()),
+    )
     if record is None:
         return
     name = _clean_name(m.group("name") or "")
@@ -866,15 +1000,122 @@ def _apply_drop_index(
             record.indexes = [ix for ix in record.indexes if ix[0] not in dropped]
 
 
-def _apply_add_key(record: TableRecord, add: re.Match[str]) -> None:
-    kind = " ".join(add.group("kind").upper().split())
-    cols = _index_columns(add.group("cols"))
+def _apply_add_key(record: TableRecord, key: tuple[str, str, str]) -> None:
+    kind, name, cols = key
     if kind == "PRIMARY KEY":
         if not record.pk:
             record.pk = f"PRIMARY KEY ({cols})"
         return
-    name = _clean_name(add.group("cname") or add.group("iname") or "")
     _add_index(record, name, cols, kind.startswith("UNIQUE"))
+
+
+def _apply_add_action(
+    action: str,
+    name: str,
+    stmt: str,
+    rel: str,
+    line: int,
+    tables: dict[str, TableRecord],
+    warnings: list[str],
+) -> TableRecord | None:
+    """One `ADD ...` action of an `ALTER TABLE`. Returns the record a
+    column was added to, if any."""
+    key = _parse_key(action)
+    if key:
+        record = _table_for(
+            tables, name, rel, "ALTER TABLE ADD CONSTRAINT", warnings, line
+        )
+        if record is not None:
+            _apply_add_key(record, key)
+        return None
+    if _ADD_NON_COLUMN_RE.match(action):
+        # "ALTER TABLE ... ADD CONSTRAINT/INDEX ..." matches
+        # ADD_COL_RE's optional "(?:COLUMN\s+)?" just as well as a
+        # real "ADD COLUMN" does — it must never become a column named
+        # "CONSTRAINT". A key this reader cannot parse marks the table
+        # partial; FOREIGN KEY / CHECK only warn (no displayed fact moves).
+        warnings.append(
+            f"ALTER TABLE ADD CONSTRAINT/INDEX (not a column) skipped in {rel}: {stmt.strip()}"
+        )
+        if _KEY_FAMILY_RE.match(action):
+            _mark_alter_partial(tables, stmt, rel, line, warnings)
+        return None
+    tokens = action.split(None, 1)
+    if not tokens:
+        return None
+    cname = _clean_name(tokens[0])
+    rest = _clean_type(tokens[1]) if len(tokens) > 1 else ""
+    record = tables.get(name)
+    if record is None:
+        _warn(
+            warnings,
+            rel,
+            f"ALTER TABLE ADD COLUMN on unknown table {name!r} in {rel}",
+            line,
+        )
+        return None
+    if _dirname(record.created_in) != _dirname(rel):
+        _warn(
+            warnings,
+            rel,
+            f"ALTER TABLE {name!r} ADD COLUMN in {rel} not applied — the "
+            f"table kept for {name!r} was created in {record.created_in}, "
+            "a different migration directory",
+            line,
+        )
+        return None
+    record.columns.append((cname, rest))
+    record.source = _join_source(record.source, rel)
+    if not record.pk and "PRIMARY KEY" in rest.upper():
+        record.pk = cname
+    return record
+
+
+def _apply_partition_move(
+    pm: re.Match[str],
+    stmt: str,
+    rel: str,
+    line: int,
+    tables: dict[str, TableRecord],
+    warnings: list[str],
+) -> None:
+    """`ALTER TABLE p ATTACH|DETACH PARTITION c`: keep `Partitions:` true."""
+    parent, child = pm.group("parent"), pm.group("child")
+    if pm.group("op").upper() == "ATTACH":
+        record = _table_for(tables, parent, rel, "ATTACH PARTITION", warnings, line)
+        if record is not None and child not in record.partitions:
+            record.partitions.append(child)
+        return
+    record = tables.get(parent)
+    if (
+        record is not None
+        and _dirname(record.created_in) == _dirname(rel)
+        and child in record.partitions
+    ):
+        record.partitions.remove(child)
+    else:
+        _mark_alter_partial(tables, stmt, rel, line, warnings)
+
+
+def _apply_alter_index(
+    m: re.Match[str],
+    text: str,
+    rel: str,
+    tables: dict[str, TableRecord],
+    warnings: list[str],
+) -> None:
+    """`ALTER INDEX old RENAME TO new` (Prisma emits it on renames)."""
+    old, new = m.group("old"), m.group("new")
+    found = False
+    for record in tables.values():
+        if _dirname(record.created_in) != _dirname(rel):
+            continue
+        for i, (name, cols, unique) in enumerate(record.indexes):
+            if name == old:
+                record.indexes[i] = (new, cols, unique)
+                found = True
+    if not found and isinstance(warnings, _Warnings):
+        warnings.sites.append((rel, _site(rel, _line_of(text, m.start()))))
 
 
 def _apply_alter(
@@ -888,54 +1129,31 @@ def _apply_alter(
     line = _line_of(text, m.start())
     if UNSUPPORTED_RE.search(stmt):
         warnings.append(f"unsupported DDL in {rel}: {stmt.strip()}")
-        _mark_alter_partial(tables, stmt, rel, line)
+        _mark_alter_partial(tables, stmt, rel, line, warnings)
+        return
+    pm = _ALTER_PARTITION_RE.match(stmt)
+    if pm:
+        _apply_partition_move(pm, stmt, rel, line, tables, warnings)
         return
     add_m = ADD_COL_RE.match(stmt)
     if not add_m:
         return  # an ALTER variant outside this reader's recognised scope
-    col_text = add_m.group("col").strip()
-    name = add_m.group("name")
-    if _ADD_NON_COLUMN_RE.match(col_text):
-        # "ALTER TABLE ... ADD CONSTRAINT/INDEX ..." matches
-        # ADD_COL_RE's optional "(?:COLUMN\s+)?" just as well as a
-        # real "ADD COLUMN" does — it must never become a column named
-        # "CONSTRAINT". A primary key / unique constraint / index is
-        # recorded as such; anything else (FOREIGN KEY, CHECK, ...) warns.
-        key_m = _ADD_KEY_RE.match(col_text)
-        if key_m:
-            record = _table_for(
-                tables, name, rel, "ALTER TABLE ADD CONSTRAINT", warnings
-            )
-            if record is not None:
-                _apply_add_key(record, key_m)
-            return
-        warnings.append(
-            f"ALTER TABLE ADD CONSTRAINT/INDEX (not a column) skipped in {rel}: {stmt.strip()}"
+    # One statement can carry several comma-separated actions
+    # (`ADD CONSTRAINT u1 UNIQUE (a), ADD CONSTRAINT u2 UNIQUE (b)`); the
+    # first is what `ADD_COL_RE` already stripped `ADD` from.
+    actions = _split_top_level(add_m.group("col").strip(), rel, [])
+    touched: TableRecord | None = None
+    for i, action in enumerate(actions):
+        if i:
+            if not re.match(r"ADD\b", action, re.I):
+                continue  # ALTER COLUMN, OWNER TO, ...: out of scope
+            action = re.sub(r"^ADD\s+(?:COLUMN\s+)?", "", action, flags=re.I)
+        added = _apply_add_action(
+            action, add_m.group("name"), stmt, rel, line, tables, warnings
         )
-        if re.match(r"(?:PRIMARY|UNIQUE|INDEX|KEY)\b", col_text, re.I):
-            _mark_alter_partial(tables, stmt, rel, line)
-        return
-    tokens = col_text.split(None, 1)
-    if not tokens:
-        return
-    cname = _clean_name(tokens[0])
-    rest = _clean_type(tokens[1]) if len(tokens) > 1 else ""
-    record = tables.get(name)
-    if record is None:
-        warnings.append(f"ALTER TABLE ADD COLUMN on unknown table {name!r} in {rel}")
-        return
-    if _dirname(record.created_in) != _dirname(rel):
-        warnings.append(
-            f"ALTER TABLE {name!r} ADD COLUMN in {rel} not applied — the "
-            f"table kept for {name!r} was created in {record.created_in}, "
-            "a different migration directory"
-        )
-        return
-    record.columns.append((cname, rest))
-    record.ddl = record.ddl + "\n\n" + stmt.strip()
-    record.source = _join_source(record.source, rel)
-    if not record.pk and "PRIMARY KEY" in rest.upper():
-        record.pk = cname
+        touched = added or touched
+    if touched is not None:
+        touched.ddl = touched.ddl + "\n\n" + stmt.strip()
 
 
 def _partition_clause(text: str, masked: str, start: int, end: int) -> str:
@@ -953,13 +1171,20 @@ def _partition_clause(text: str, masked: str, start: int, end: int) -> str:
 
 def _apply_partition_of(
     text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
-) -> int:
+) -> set[int]:
     """`CREATE TABLE child PARTITION OF parent ...` lists `child` on the
-    parent. Returns how many statements were recognised."""
-    found = 0
+    parent. Returns the start offsets of the statements recognised."""
+    found: set[int] = set()
     for m in _PARTITION_OF_RE.finditer(text):
-        found += 1
-        record = _table_for(tables, m.group("parent"), rel, "PARTITION OF", warnings)
+        found.add(m.start())
+        record = _table_for(
+            tables,
+            m.group("parent"),
+            rel,
+            "PARTITION OF",
+            warnings,
+            _line_of(text, m.start()),
+        )
         if record is not None and m.group("child") not in record.partitions:
             record.partitions.append(m.group("child"))
     return found
@@ -976,9 +1201,9 @@ def _apply_sql_file(
     # from, so a real literal like `DEFAULT '('` is preserved verbatim.
     masked = _mask_quoted_spans(text)
 
-    matched = 0
+    matched_starts: set[int] = set()
     for m in CREATE_RE.finditer(text):
-        matched += 1
+        matched_starts.add(m.start())
         name = m.group("name")
         open_idx = m.end() - 1  # CREATE_RE's match ends right after the "("
         close_idx = _matching_close_paren(masked, open_idx)
@@ -1002,10 +1227,13 @@ def _apply_sql_file(
                 # them would fabricate a schema that exists nowhere; the
                 # first in sorted-path order is kept whole and
                 # the warning names both files.
-                warnings.append(
+                _warn(
+                    warnings,
+                    rel,
                     f"duplicate CREATE TABLE {name!r} in {rel} — keeping the "
                     f"definition from {existing.created_in} (a different "
-                    "migration directory); the two are not merged"
+                    "migration directory); the two are not merged",
+                    _line_of(text, m.start()),
                 )
             else:
                 # A same-directory re-CREATE (most plausibly `IF NOT
@@ -1014,7 +1242,7 @@ def _apply_sql_file(
                 # the first, warn.
                 _warn_duplicate("CREATE TABLE", name, rel, warnings)
             continue
-        columns, pk = _split_sql_columns(body, rel, warnings)
+        columns, pk, indexes, unparsed = _split_sql_columns(body, rel, warnings)
         tables[name] = TableRecord(
             name=name,
             columns=columns,
@@ -1023,18 +1251,24 @@ def _apply_sql_file(
             source=rel,
             created_in=rel,
             partition=_partition_clause(text, masked, close_idx + 1, stmt_end),
+            indexes=indexes,
+            schema_partial=[_site(rel, _line_of(text, m.start()))] if unparsed else [],
         )
-    matched += _apply_partition_of(text, rel, tables, warnings)
+    matched_starts |= _apply_partition_of(text, rel, tables, warnings)
 
     # A `CREATE TABLE` occurrence CREATE_RE never matched at all (a name
     # shape outside `[A-Za-z_][\w.]*`, for instance) must be reported —
     # ground truth that silently drops a table is exactly what this reader
     # promises never to do.
     total = len(_CREATE_TABLE_KEYWORD_RE.findall(text))
+    matched = len(matched_starts)
     if total > matched:
-        warnings.append(
+        _warn(
+            warnings,
+            rel,
             f"found {total} CREATE TABLE statement(s) in {rel} but recognised "
-            f"only {matched} — the rest were skipped, not guessed at"
+            f"only {matched} — the rest were skipped, not guessed at",
+            _unmatched_line(text, _CREATE_TABLE_KEYWORD_RE, matched_starts),
         )
 
     # Statements replay in file order: a DROP INDEX only removes an index
@@ -1044,10 +1278,12 @@ def _apply_sql_file(
     for m in _ALTER_STMT_RE.finditer(text):
         last_end = m.end()
         statements.append((m.start(), "alter", m))
-    index_matched = 0
+    index_starts: set[int] = set()
     for m in CREATE_INDEX_RE.finditer(text):
-        index_matched += 1
+        index_starts.add(m.start())
         statements.append((m.start(), "index", m))
+    for m in _ALTER_INDEX_RE.finditer(text):
+        statements.append((m.start(), "alter_index", m))
     for m in DROP_INDEX_RE.finditer(text):
         statements.append((m.start(), "drop", m))
     for _offset, kind, m in sorted(statements, key=lambda st: st[0]):
@@ -1055,13 +1291,18 @@ def _apply_sql_file(
             _apply_alter(m, text, rel, tables, warnings)
         elif kind == "index":
             _apply_create_index(m, text, masked, rel, tables, warnings)
+        elif kind == "alter_index":
+            _apply_alter_index(m, text, rel, tables, warnings)
         else:
             _apply_drop_index(m, rel, tables)
     index_total = len(_CREATE_INDEX_KEYWORD_RE.findall(text))
-    if index_total > index_matched:
-        warnings.append(
+    if index_total > len(index_starts):
+        _warn(
+            warnings,
+            rel,
             f"found {index_total} CREATE INDEX statement(s) in {rel} but "
-            f"recognised only {index_matched} — the rest were skipped, not guessed at"
+            f"recognised only {len(index_starts)} — the rest were skipped, not guessed at",
+            _unmatched_line(text, _CREATE_INDEX_KEYWORD_RE, index_starts),
         )
 
     # A trailing ALTER TABLE ... RENAME/DROP with no terminating ';' is
@@ -1082,13 +1323,14 @@ def _apply_sql_file(
             tail_match.group(0),
             rel,
             _line_of(text, last_end + tail_match.start()),
+            warnings,
         )
 
 
 def _read_sql(
     root: Path, opts: CodeIngestOptions
 ) -> tuple[dict[str, TableRecord], list[str]]:
-    warnings: list[str] = []
+    warnings = _Warnings()
     found: set[Path] = set()
     for pattern in MIGRATION_GLOBS:
         found.update(_glob_via_walk(root, opts.kb_dir, pattern))
@@ -1099,7 +1341,7 @@ def _read_sql(
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
             continue
         try:
             _apply_sql_file(text, rel, tables, warnings)
@@ -1108,7 +1350,7 @@ def _read_sql(
             # never unwind past this loop and discard every other file's
             # already-accumulated tables with a warning that names no
             # file — a defect class that is easy to reintroduce.
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     return tables, warnings
 
 
@@ -1232,7 +1474,7 @@ def _read_prisma(
     root: Path, opts: CodeIngestOptions
 ) -> tuple[dict[str, TableRecord], list[str]]:
     tables: dict[str, TableRecord] = {}
-    warnings: list[str] = []
+    warnings = _Warnings()
     paths = sorted(
         _glob_via_walk(root, opts.kb_dir, PRISMA_GLOB), key=lambda p: relposix(root, p)
     )
@@ -1241,12 +1483,12 @@ def _read_prisma(
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
             continue
         try:
             _apply_prisma_file(text, rel, tables, warnings)
         except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     return tables, warnings
 
 
@@ -1282,9 +1524,29 @@ def _matching_close_paren(text: str, open_idx: int) -> int:
 
 
 ALEMBIC_PK_CONSTRAINT_RE = re.compile(r"sa\.PrimaryKeyConstraint\(")
-ALEMBIC_INDEX_RE = re.compile(r"op\.create_index\(")
-ALEMBIC_CREATE_PK_RE = re.compile(r"op\.create_primary_key\(")
-ALEMBIC_DROP_INDEX_RE = re.compile(r"op\.drop_index\(")
+ALEMBIC_UNIQUE_RE = re.compile(r"sa\.UniqueConstraint\(")
+# `op.<fn>(` and `<alias>.<fn>(` inside `with op.batch_alter_table(..) as <alias>`;
+# anchored so `batch_op.create_index(` is not read as `op.create_index(`.
+ALEMBIC_OP_RE = re.compile(
+    r"(?<![\w.])(?P<recv>\w+)\."
+    r"(?P<fn>create_index|create_unique_constraint|create_primary_key|drop_index)\("
+)
+ALEMBIC_BATCH_RE = re.compile(
+    r"with\s+op\.batch_alter_table\((?P<args>[^)]*)\)\s+as\s+(?P<alias>\w+)"
+)
+# positional parameters: (as `op.<fn>`, as `<batch alias>.<fn>`)
+_ALEMBIC_PARAMS = {
+    "create_index": (
+        ("index_name", "table_name", "columns"),
+        ("index_name", "columns"),
+    ),
+    "create_unique_constraint": (
+        ("name", "table_name", "columns"),
+        ("name", "columns"),
+    ),
+    "create_primary_key": (("name", "table_name", "columns"), ("name", "columns")),
+    "drop_index": (("index_name", "table_name"), ("index_name",)),
+}
 _QUOTED_RE = re.compile(r"""['"]([^'"]+)['"]""")
 _KWARG_RE = re.compile(r"^(\w+)\s*=\s*(?!=)(.*)$", re.S)
 
@@ -1300,8 +1562,10 @@ def _alembic_pk(names: list[str]) -> str:
     return f"PRIMARY KEY ({', '.join(names)})"
 
 
-def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
-    """`(columns, pk)` for every `sa.Column('name', <type>, ...)` call in
+def _alembic_columns(
+    scope: str,
+) -> tuple[list[tuple[str, str]], str, list[tuple[str, str, bool]]]:
+    """`(columns, pk, indexes)` for every `sa.Column('name', <type>, ...)` call in
     `scope` (one `op.create_table(...)` call's text). `pk` is a bare
     column name for a single primary key, or a `PRIMARY KEY (a, b)`
     clause for a composite one — the same form `_pk_clause`/
@@ -1309,6 +1573,7 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
     must not be silently reduced to its first column)."""
     columns: list[tuple[str, str]] = []
     pk_names: list[str] = []
+    indexes: list[tuple[str, str, bool]] = []
     for cm in ALEMBIC_COLUMN_RE.finditer(scope):
         call_open = scope.index("(", cm.start())
         call_close = _matching_close_paren(scope, call_open)
@@ -1328,6 +1593,23 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
         columns.append((cname, _clean_type(args[0])))
         if any(a.replace(" ", "") == "primary_key=True" for a in args[1:]):
             pk_names.append(cname)
+        if any(a.replace(" ", "") == "unique=True" for a in args[1:]):
+            _add_index_to(indexes, "", cname, True)
+    for um in ALEMBIC_UNIQUE_RE.finditer(scope):
+        close = _matching_close_paren(scope, um.end() - 1)
+        uargs = _split_top_level_quote_blind(scope[um.end() : close], True)
+        named = {k.group(1): k.group(2) for a in uargs if (k := _KWARG_RE.match(a))}
+        _add_index_to(
+            indexes,
+            (_string_literals(named.get("name", "")) or [""])[0],
+            ", ".join(
+                lit
+                for a in uargs
+                if not _KWARG_RE.match(a)
+                for lit in _string_literals(a)
+            ),
+            True,
+        )
     if not pk_names:  # autogenerate emits `sa.PrimaryKeyConstraint('a', 'b')`
         for pm in ALEMBIC_PK_CONSTRAINT_RE.finditer(scope):
             close = _matching_close_paren(scope, pm.end() - 1)
@@ -1338,7 +1620,7 @@ def _alembic_columns(scope: str) -> tuple[list[tuple[str, str]], str]:
                 for lit in _string_literals(arg)
             ]
             break
-    return columns, _alembic_pk(pk_names)
+    return columns, _alembic_pk(pk_names), indexes
 
 
 def _apply_alembic_file(
@@ -1351,7 +1633,7 @@ def _apply_alembic_file(
             continue
         close_idx = _matching_close_paren(text, open_idx)
         scope = text[open_idx : close_idx + 1]
-        columns, pk = _alembic_columns(scope)
+        columns, pk, indexes = _alembic_columns(scope)
         if name in tables:
             _warn_duplicate("alembic table", name, rel, warnings)
             continue
@@ -1362,6 +1644,7 @@ def _apply_alembic_file(
             ddl=_reconstruct_ddl(name, columns, pk),
             source=rel,
             created_in=rel,
+            indexes=indexes,
         )
 
 
@@ -1386,51 +1669,77 @@ def _alembic_call_args(
 def _apply_alembic_ops(
     text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
 ) -> None:
-    """`op.create_index`, `op.create_primary_key` and `op.drop_index`.
-    Run after every file's `create_table`: revision ids do not sort in
-    migration order, so a file can name a table another one creates. For
-    the same reason a dropped index cannot be replayed, only flagged."""
-    for m in ALEMBIC_INDEX_RE.finditer(text):
-        a = _alembic_call_args(text, m, ("index_name", "table_name", "columns"))
-        table = (_string_literals(a.get("table_name", "")) or [""])[0]
-        record = tables.get(table)
-        if record is None:
-            warnings.append(f"op.create_index on unknown table {table!r} in {rel}")
-            continue
-        names = _string_literals(a.get("index_name", ""))
-        _add_index(
-            record,
-            names[0] if names else "",
-            ", ".join(_string_literals(a.get("columns", ""))),
-            a.get("unique", "").replace(" ", "") == "True",
-        )
-    for m in ALEMBIC_CREATE_PK_RE.finditer(text):
-        a = _alembic_call_args(text, m, ("name", "table_name", "columns"))
-        table = (_string_literals(a.get("table_name", "")) or [""])[0]
-        record = tables.get(table)
-        if record is None:
-            warnings.append(
-                f"op.create_primary_key on unknown table {table!r} in {rel}"
+    """`create_index`, `create_unique_constraint`, `create_primary_key`
+    and `drop_index`, on `op` or on a `with op.batch_alter_table("t") as
+    alias` alias (whose table is `t`). Run after every file's
+    `create_table`: revision ids do not sort in migration order, so a
+    file can name a table another one creates. For the same reason a
+    dropped index cannot be replayed, only flagged."""
+    batches = [
+        (b.start(), b.group("alias"), (_string_literals(b.group("args")) or [""])[0])
+        for b in ALEMBIC_BATCH_RE.finditer(text)
+    ]
+    for m in ALEMBIC_OP_RE.finditer(text):
+        recv, fn = m.group("recv"), m.group("fn")
+        line = _line_of(text, m.start())
+        op_params, batch_params = _ALEMBIC_PARAMS[fn]
+        if recv == "op":
+            a = _alembic_call_args(text, m, op_params)
+            table = (_string_literals(a.get("table_name", "")) or [""])[0]
+        else:
+            ctx = next(
+                (b for b in reversed(batches) if b[0] <= m.start() and b[1] == recv),
+                None,
             )
+            if ctx is None:
+                continue  # some other object's method
+            a = _alembic_call_args(text, m, batch_params)
+            table = ctx[2]
+            if not table:
+                _warn(
+                    warnings,
+                    rel,
+                    f"{recv}.{fn} in {rel}:{line} — its batch_alter_table names no "
+                    "string-literal table",
+                    line,
+                )
+                continue
+        if fn == "drop_index" and not table:  # older form: the index name alone
+            dropped = (_string_literals(a.get("index_name", "")) or [""])[0]
+            for other in tables.values():
+                if any(ix[0] == dropped for ix in other.indexes):
+                    other.schema_partial.append(_site(rel, line))
             continue
-        pk = _alembic_pk(_string_literals(a.get("columns", "")))
-        if not record.pk:
-            record.pk = pk
-        elif _pk_columns(record.pk) != _pk_columns(pk):
-            record.schema_partial.append(_site(rel, _line_of(text, m.start())))
-    for m in ALEMBIC_DROP_INDEX_RE.finditer(text):
-        a = _alembic_call_args(text, m, ("index_name", "table_name"))
-        dropped = (_string_literals(a.get("index_name", "")) or [""])[0]
-        for record in tables.values():
-            if any(ix[0] == dropped for ix in record.indexes):
-                record.schema_partial.append(_site(rel, _line_of(text, m.start())))
+        record = tables.get(table)
+        if record is None:
+            _warn(warnings, rel, f"{fn} on unknown table {table!r} in {rel}", line)
+            continue
+        names = _string_literals(a.get("index_name") or a.get("name", ""))
+        cols = _string_literals(a.get("columns", ""))
+        if fn == "create_index":
+            _add_index(
+                record,
+                names[0] if names else "",
+                ", ".join(cols),
+                a.get("unique", "").replace(" ", "") == "True",
+            )
+        elif fn == "create_unique_constraint":
+            _add_index(record, names[0] if names else "", ", ".join(cols), True)
+        elif fn == "create_primary_key":
+            pk = _alembic_pk(cols)
+            if not record.pk:
+                record.pk = pk
+            elif _pk_columns(record.pk) != _pk_columns(pk):
+                record.schema_partial.append(_site(rel, line))
+        elif any(ix[0] == (names or [""])[0] for ix in record.indexes):
+            record.schema_partial.append(_site(rel, line))
 
 
 def _read_alembic(
     root: Path, opts: CodeIngestOptions
 ) -> tuple[dict[str, TableRecord], list[str]]:
     tables: dict[str, TableRecord] = {}
-    warnings: list[str] = []
+    warnings = _Warnings()
     paths = sorted(
         _glob_via_walk(root, opts.kb_dir, ALEMBIC_GLOB), key=lambda p: relposix(root, p)
     )
@@ -1440,18 +1749,18 @@ def _read_alembic(
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
             continue
         try:
             _apply_alembic_file(text, rel, tables, warnings)
             loaded.append((rel, text))
         except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     for rel, text in loaded:
         try:
             _apply_alembic_ops(text, rel, tables, warnings)
         except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     return tables, warnings
 
 
@@ -1596,7 +1905,7 @@ def _read_ef(
     column list and `columns_known=False`, which the renderer states in
     the document."""
     tables: dict[str, TableRecord] = {}
-    warnings: list[str] = []
+    warnings = _Warnings()
     paths = sorted(
         _glob_via_walk(root, opts.kb_dir, EF_GLOB), key=lambda p: relposix(root, p)
     )
@@ -1606,20 +1915,20 @@ def _read_ef(
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
             continue
         try:
             _apply_ef_file(text, rel, tables, warnings)
             loaded.append((rel, text))
         except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     # Keys and indexes after every file's tables: a snapshot can sort
     # before the migration that creates the table it describes.
     for rel, text in loaded:
         try:
             _apply_ef_model(text, rel, tables, warnings)
         except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors _read_sql
-            warnings.append(f"could not parse {rel}: {exc}")
+            _warn(warnings, rel, f"could not parse {rel}: {exc}")
     return tables, warnings
 
 
@@ -1719,16 +2028,16 @@ def _read_sqlite(
     `mode=ro` URI, so even a live application database handed to `--db`
     cannot be mutated. A missing path warns; it never raises."""
     tables: dict[str, TableRecord] = {}
-    warnings: list[str] = []
+    warnings = _Warnings()
     for db_path in opts.db_paths:
         label = _path_label(root, db_path)
         if not db_path.is_file():
-            warnings.append(f"--db path not found: {label}")
+            _warn(warnings, label, f"--db path not found: {label}")
             continue
         try:
             con = sqlite3.connect(_sqlite_uri(db_path, "ro"), uri=True)
         except (sqlite3.Error, OSError, ValueError) as exc:
-            warnings.append(f"could not open {label}: {exc}")
+            _warn(warnings, label, f"could not open {label}: {exc}")
             continue
         try:
             rows = con.execute(
@@ -1741,14 +2050,18 @@ def _read_sqlite(
                     # other reader's name comes from a `\w+`-shaped regex
                     # capture that can never contain one, but a raw
                     # sqlite_master name is unconstrained.
-                    warnings.append(
-                        f"skipping table with whitespace in its name in {label}: {name!r}"
+                    _warn(
+                        warnings,
+                        label,
+                        f"skipping table with whitespace in its name in {label}: {name!r}",
                     )
                     continue
                 columns, pk = _read_sqlite_columns(con, name)
                 if name in tables:
-                    warnings.append(
-                        f"duplicate table {name!r} across --db paths; keeping first ({label})"
+                    _warn(
+                        warnings,
+                        label,
+                        f"duplicate table {name!r} across --db paths; keeping first ({label})",
                     )
                     continue
                 ddl = (sql_text or "").strip() or _reconstruct_ddl(name, columns, pk)
@@ -1764,7 +2077,7 @@ def _read_sqlite(
         except Exception as exc:  # noqa: BLE001 -- defense in depth, see comment below
             # a failure partway through this db's tables must not also
             # discard tables already collected from an earlier db_path.
-            warnings.append(f"could not read {label}: {exc}")
+            _warn(warnings, label, f"could not read {label}: {exc}")
         finally:
             con.close()
     return tables, warnings
@@ -1788,6 +2101,32 @@ def _prisma_db_columns(record: TableRecord, pk: str) -> list[str]:
         mapped = _PRISMA_MAP_VALUE_RE.search(rest)
         by_field[name.casefold()] = mapped.group(1) if mapped else name
     return [by_field.get(c.casefold(), c).casefold() for c in _pk_list(pk)]
+
+
+def _prune_unnamed(record: TableRecord) -> list[tuple[str, str, bool]]:
+    """Drop an unnamed index that a named one repeats: same database
+    columns (a Prisma field resolved through its `@map`) and uniqueness."""
+    fields = {
+        name.casefold(): (
+            mapped.group(1) if (mapped := _PRISMA_MAP_VALUE_RE.search(rest)) else name
+        )
+        for name, rest in record.columns
+    }
+
+    def resolved(cols: str) -> tuple[str, ...]:
+        names = [c.strip() for c in cols.split(",")]
+        return tuple(fields.get(c.casefold(), c).casefold() for c in names)
+
+    named = {
+        (resolved(cols), unique)
+        for n, cols, unique in record.indexes
+        if n != UNNAMED_INDEX
+    }
+    return [
+        ix
+        for ix in record.indexes
+        if ix[0] != UNNAMED_INDEX or (resolved(ix[1]), ix[2]) not in named
+    ]
 
 
 def _absorb_sql(prisma: TableRecord, sql: TableRecord) -> TableRecord:
@@ -1873,7 +2212,7 @@ def _merge_tables(
                     f"{', '.join(_READER_ORDER)})"
                 )
                 continue
-            merged[name] = record
+            merged[name] = replace(record, indexes=_prune_unnamed(record))
             claimed_by[name] = reader_name
     return merged
 
@@ -1983,28 +2322,38 @@ def _render_section(record: TableRecord) -> CodeSection:
 
 
 def _coverage_rows(
-    per_reader: dict[str, dict[str, TableRecord]], scopes: list[Scope]
+    per_reader: dict[str, dict[str, TableRecord]],
+    per_sites: dict[str, list[tuple[str, str]]],
+    scopes: list[Scope],
 ) -> list[CoverageRow]:
-    """One row per (scope, reader) that produced any table. The scope is
-    the one holding the table's first source file (`.` when no manifest
-    scope does); `partial` names the statements the reader skipped."""
+    """One row per (scope, reader) that produced any table or skipped any
+    file/statement. A table's scope is the one holding its first source
+    file (`.` when no manifest scope does); `partial` names the skipped
+    sites — those recorded on tables, and each reader-level site (a file
+    that did not parse, a statement no table could be named for)."""
+
+    def scope_path(rel: str) -> str:
+        scope = scope_of(scopes, rel)
+        return scope.path if scope else "."
+
     sites: dict[tuple[str, str], list[str]] = {}
     for reader in _READER_ORDER:
         for record in per_reader.get(reader, {}).values():
             first = record.created_in or record.source.split(", ")[0]
-            scope = scope_of(scopes, first)
-            sites.setdefault((scope.path if scope else ".", reader), []).extend(
+            sites.setdefault((scope_path(first), reader), []).extend(
                 record.schema_partial
             )
+        for rel, site in per_sites.get(reader, []):
+            sites.setdefault((scope_path(rel), reader), []).append(site)
     return [
         CoverageRow(
             "schema",
-            scope_path,
+            path,
             reader,
             "partial" if skipped else "complete",
             "; ".join(sorted(set(skipped))),
         )
-        for (scope_path, reader), skipped in sorted(sites.items())
+        for (path, reader), skipped in sorted(sites.items())
     ]
 
 
@@ -2024,6 +2373,7 @@ class SchemaExtractor:
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         warnings: list[str] = []
         per_reader: dict[str, dict[str, TableRecord]] = {}
+        per_sites: dict[str, list[tuple[str, str]]] = {}
 
         def _run(key: str, reader, *args: object) -> None:
             try:
@@ -2031,6 +2381,7 @@ class SchemaExtractor:
             except Exception as exc:  # noqa: BLE001 -- defense in depth, mirrors deps.py/commands.py
                 tables, warns = {}, [f"could not read {key} schema sources: {exc}"]
             per_reader[key] = tables
+            per_sites[key] = list(getattr(warns, "sites", []))
             warnings.extend(warns)
 
         _run("sql", _read_sql, root, opts)
@@ -2049,5 +2400,5 @@ class SchemaExtractor:
         return ExtractResult(
             sections=sections,
             warnings=warnings,
-            coverage=_coverage_rows(per_reader, scopes),
+            coverage=_coverage_rows(per_reader, per_sites, scopes),
         )
