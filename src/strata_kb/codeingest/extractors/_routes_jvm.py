@@ -58,6 +58,11 @@ _QUERY_TEMPLATE = re.compile(r"\{[?&][^}]*\}")
 _GENERATOR = re.compile(r"openapi[-._]?generator|swagger[-._]?codegen", re.IGNORECASE)
 _MANIFESTS = frozenset({"pom.xml", "build.gradle", "build.gradle.kts"})
 _COMMENT = re.compile(r"^\s*(?://|/\*|\*)")
+# a source file that imports server-side HTTP types serves (or delegates) routes
+_WEB_IMPORT = re.compile(
+    r"^\s*import\s+(?:static\s+)?"
+    r"(?:org\.springframework\.(?:http|web)|(?:jakarta|javax)\.ws\.rs|io\.micronaut\.http)\b"
+)
 
 # (verb, relative paths) per handler annotation set; None = not readable
 _Found = list[tuple[str, list[str]]] | None
@@ -82,8 +87,10 @@ class _Fw:
     foreign: frozenset[str] = frozenset()
     # manifest text that turns every repository interface into an endpoint
     data_rest: re.Pattern[str] | None = None
-    # the manifest line of a server artifact: only a module that has one is a
-    # web module, so only there does "no route read" mean something is missed
+    # the manifest line of a server artifact (matched on the line with `.` and
+    # `_` read as `-`, so version-catalog aliases count): a module that has one
+    # in its own or an ancestor build file is a web module, so only there does
+    # "no route read" mean something is missed
     dependency: re.Pattern[str] = re.compile(r"$^")
     # annotation whose interfaces classes elsewhere implement (JAX-RS `@Path`)
     shared: str = ""
@@ -266,7 +273,8 @@ _FRAMEWORKS: dict[str, _Fw] = {
         foreign=frozenset({"Path"}),  # Jersey under Spring Boot
         data_rest=re.compile(r"data-rest"),
         dependency=re.compile(
-            r"spring-boot-starter-(?:web|webflux|jersey)\b|spring-web(?:mvc|flux)?\b"
+            r"(?:spring-boot-)?starter-(?:web(?:flux)?|jersey)(?![\w]|-services)"
+            r"|spring-web(?:mvc|flux)?\b"
         ),
     ),
     "Quarkus": _Fw(
@@ -283,7 +291,8 @@ _FRAMEWORKS: dict[str, _Fw] = {
         app_path=frozenset({"ApplicationPath"}),
         foreign=frozenset({"RestController", "RequestMapping"}),  # quarkus-spring-web
         dependency=re.compile(
-            r"quarkus-(?:rest|resteasy|vertx-http|reactive-routes|spring-web)"
+            r"quarkus-(?:rest|resteasy)(?![\w-]*-client)"
+            r"|quarkus-(?:vertx-http|reactive-routes|spring-web)"
         ),
         shared="Path",
     ),
@@ -296,7 +305,10 @@ _FRAMEWORKS: dict[str, _Fw] = {
         unfollowed=re.compile(r"\bRouteBuilder\b"),
         prefix=_micronaut_prefix,
         routes=_micronaut_routes,
-        dependency=re.compile(r"micronaut-http-server"),
+        dependency=re.compile(
+            r"micronaut-http-server|io-micronaut-application"
+            r"|\bruntime\s*\(?\s*[\"'](?:netty|jetty|tomcat|undertow)[\"']"
+        ),
     ),
 }
 
@@ -422,10 +434,11 @@ def _application_prefix(found: list[tuple[str, ast.Ann]], result: AdapterResult)
 
 
 def _manifests(
-    root: Path, repo_files: list[str], only: str | None = None
+    root: Path, repo_files: list[str], scope: Scope | None = None
 ) -> list[tuple[str, str]]:
-    """(path, text) of the build files in directory `only`, or everywhere
-    (read once per run)."""
+    """(path, text) of the build files, read once per run: all of them, or
+    those a module's build sees (its own directory first, then each parent
+    directory up to the root)."""
 
     def read_all() -> list[tuple[str, str]]:
         out = []
@@ -437,10 +450,15 @@ def _manifests(
         return out
 
     everything = ast.run_cached(("manifests", root), read_all)
-    if only is None:
+    if scope is None:
         return everything
+    parts = [] if scope.path == "." else scope.path.split("/")
+    chain = ["/".join(parts[:n]) or "." for n in range(len(parts), -1, -1)]
     return [
-        (rel, t) for rel, t in everything if (rel.rpartition("/")[0] or ".") == only
+        (rel, t)
+        for directory in chain
+        for rel, t in everything
+        if (rel.rpartition("/")[0] or ".") == directory
     ]
 
 
@@ -459,7 +477,19 @@ def _generator_sites(manifests: list[tuple[str, str]]) -> list[str]:
 def _dependency_site(fw: _Fw, manifests: list[tuple[str, str]]) -> str | None:
     for rel, text in manifests:
         for number, line in enumerate(text.splitlines(), start=1):
-            if fw.dependency.search(line):
+            if fw.dependency.search(line) or fw.dependency.search(
+                re.sub(r"[._]", "-", line)
+            ):
+                return f"{rel}:{number}"
+    return None
+
+
+def _web_import_site(sources: dict[str, bytes]) -> str | None:
+    for rel in sorted(sources):
+        for number, line in enumerate(
+            sources[rel].decode("utf-8", "replace").splitlines(), start=1
+        ):
+            if _WEB_IMPORT.match(line):
                 return f"{rel}:{number}"
     return None
 
@@ -537,7 +567,7 @@ def _adapter(
                 if line is not None:
                     result.dynamic_sites.append(f"{rel}:{line}")
 
-        manifests = _manifests(root, repo_files, scope.path)
+        manifests = _manifests(root, repo_files, scope)
         result.dynamic_sites += _generator_sites(_manifests(root, repo_files))
         data_rest = fw.data_rest is not None and any(
             fw.data_rest.search(text) for _rel, text in manifests
@@ -577,7 +607,7 @@ def _adapter(
             routes = [replace(r, path=join_path(base, r.path)) for r in routes]
         result.routes = routes
         if not routes and not result.dynamic_sites:  # a web module that read nothing
-            net = _dependency_site(fw, manifests)
+            net = _dependency_site(fw, manifests) or _web_import_site(sources)
             if net is not None:
                 result.dynamic_sites.append(net)
         result.dynamic_sites += config_sites(root, scope, repo_files, fw.keys)

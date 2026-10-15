@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
@@ -49,18 +51,31 @@ def _is_test(rel: str) -> bool:
 
 
 # Reads that every scope of one run shares (all build files, `@Path`
-# interfaces); `routes.py` empties it when the run ends.
-_RUN: dict[tuple[object, ...], object] = {}
+# interfaces). A context variable, so two runs (threads, a run started from
+# inside another) never see or clear each other's reads; outside `run_scope`
+# nothing is cached.
+_RUN: ContextVar[dict[tuple[object, ...], object] | None] = ContextVar(
+    "jvm_run_cache", default=None
+)
+
+
+@contextmanager
+def run_scope() -> Iterator[None]:
+    """Open the read cache of one routes run; its end drops it."""
+    token = _RUN.set({})
+    try:
+        yield
+    finally:
+        _RUN.reset(token)
 
 
 def run_cached(key: tuple[object, ...], make: Callable[[], T]) -> T:
-    if key not in _RUN:
-        _RUN[key] = make()
-    return _RUN[key]  # type: ignore[return-value]
-
-
-def clear_run_cache() -> None:
-    _RUN.clear()
+    cache = _RUN.get()
+    if cache is None:
+        return make()
+    if key not in cache:
+        cache[key] = make()
+    return cache[key]  # type: ignore[return-value]
 
 
 def jvm_files(files: list[str]) -> list[str]:

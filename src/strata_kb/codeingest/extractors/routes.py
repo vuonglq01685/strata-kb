@@ -175,10 +175,10 @@ class RoutesExtractor:
 
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         try:
-            return self._extract(root, opts)
+            with _jvm_ast.run_scope():
+                return self._extract(root, opts)
         finally:
             _jvm_fields.clear_cache()  # source bytes read for request types
-            _jvm_ast.clear_run_cache()
 
     def _extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         scopes = find_scopes(root, opts.kb_dir)

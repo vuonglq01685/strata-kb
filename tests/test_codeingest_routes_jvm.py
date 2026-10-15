@@ -1569,3 +1569,185 @@ def test_repo_wide_reads_happen_once_per_run(tmp_path, monkeypatch):
     )
     run_routes(tmp_path)
     assert seen and len(seen) == len(set(seen))
+
+
+# --- fix round 4 ------------------------------------------------------------
+
+DELEGATE = (
+    "package app;\n@Service\npublic class PetApiDelegateImpl implements PetApiDelegate {\n"
+    '  public String get() { return ""; }\n}\n'
+)
+
+
+def test_web_dependency_inherited_from_the_parent_pom_is_a_site(tmp_path):
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project><modules><module>app</module></modules>\n<dependencies>\n"
+        "<dependency><artifactId>spring-boot-starter-web</artifactId></dependency>\n"
+        "</dependencies></project>\n",
+    )
+    write(
+        tmp_path,
+        "app/pom.xml",
+        "<project><parent><artifactId>p</artifactId></parent>\n<dependencies>"
+        "<dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency>"
+        "</dependencies></project>\n",
+    )
+    write(tmp_path, f"app/{JAVA}/D.java", DELEGATE)
+    cov = row(run_routes(tmp_path), "app")
+    assert (cov.status, cov.detail) == ("partial", "pom.xml:3")
+
+
+def test_web_dependency_in_gradle_subprojects_block_is_a_site(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'app'\n")
+    write(
+        tmp_path,
+        "build.gradle",
+        f"subprojects {{\n  dependencies {{\n    implementation '{SPRING}'\n  }}\n}}\n",
+    )
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-actuator", "app")
+    write(tmp_path, f"app/{JAVA}/D.java", DELEGATE)
+    cov = row(run_routes(tmp_path), "app")
+    assert (cov.status, cov.detail) == ("partial", "build.gradle:3")
+
+
+def test_micronaut_application_plugin_marks_a_web_module(tmp_path):
+    write(
+        tmp_path,
+        "build.gradle.kts",
+        'plugins { id("io.micronaut.application") version "4.2.1" }\n'
+        'dependencies {\n  implementation("io.micronaut.serde:micronaut-serde-jackson")\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/D.java",
+        "package app;\n@Singleton\npublic class PetApiImpl implements PetApi {}\n",
+    )
+    cov = row(run_routes(tmp_path))
+    assert (cov.status, cov.detail) == ("partial", "build.gradle.kts:1")
+
+
+def test_micronaut_runtime_netty_marks_a_web_module(tmp_path):
+    write(
+        tmp_path,
+        "build.gradle.kts",
+        'dependencies {\n  implementation("io.micronaut:micronaut-inject")\n}\n'
+        'micronaut {\n  runtime("netty")\n}\n',
+    )
+    write(tmp_path, f"{JAVA}/D.java", "package app;\npublic class PetApiImpl {}\n")
+    cov = row(run_routes(tmp_path))
+    assert (cov.status, cov.detail) == ("partial", "build.gradle.kts:5")
+
+
+def test_version_catalog_alias_for_a_server_starter_is_a_site(tmp_path):
+    write(
+        tmp_path,
+        "build.gradle.kts",
+        "dependencies {\n"
+        '  implementation("org.springframework.boot:spring-boot-starter-actuator")\n'
+        "  implementation(libs.spring.boot.starter.web)\n}\n",
+    )
+    write(tmp_path, f"{JAVA}/D.java", DELEGATE)
+    cov = row(run_routes(tmp_path))
+    assert (cov.status, cov.detail) == ("partial", "build.gradle.kts:3")
+
+
+def test_web_import_without_a_build_signal_is_a_site(tmp_path):
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-actuator")
+    write(
+        tmp_path,
+        f"{JAVA}/D.java",
+        "package app;\nimport org.springframework.http.ResponseEntity;\n"
+        "@Service\npublic class D implements PetApiDelegate {}\n",
+    )
+    cov = row(run_routes(tmp_path))
+    assert (cov.status, cov.detail) == ("partial", f"{JAVA}/D.java:2")
+
+
+def test_data_module_without_web_imports_stays_complete(tmp_path):
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-data-jpa")
+    write(
+        tmp_path,
+        f"{JAVA}/User.java",
+        "package app;\nimport jakarta.persistence.Entity;\nimport jakarta.validation.constraints.NotNull;\n"
+        "@Entity\npublic class User { @NotNull String name; }\n",
+    )
+    cov = row(run_routes(tmp_path))
+    assert (cov.status, cov.detail) == ("complete", "")
+
+
+@pytest.mark.parametrize(
+    ("artifact", "manifest"),
+    [
+        ("quarkus-rest-client-jackson", "pom.xml"),
+        ("quarkus-resteasy-client", "pom.xml"),
+        ("quarkus-resteasy-reactive-client", "pom.xml"),
+        ("spring-boot-starter-web-services", "pom.xml"),
+    ],
+)
+def test_client_and_soap_artifacts_are_not_server_dependencies(
+    tmp_path, artifact, manifest
+):
+    write(
+        tmp_path,
+        manifest,
+        f"<project><dependencies><dependency><artifactId>{artifact}</artifactId>"
+        "</dependency><dependency><artifactId>quarkus-arc</artifactId></dependency>"
+        "<dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency>"
+        "</dependencies></project>\n",
+    )
+    write(tmp_path, f"{JAVA}/U.java", "package app;\npublic class U {}\n")
+    result = run_routes(tmp_path)
+    assert {(r.status, r.detail) for r in result.coverage} == {("complete", "")}
+
+
+def test_inherited_data_rest_marks_repositories(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'app'\n")
+    write(
+        tmp_path,
+        "build.gradle",
+        "subprojects {\n  dependencies {\n"
+        "    implementation 'org.springframework.boot:spring-boot-starter-data-rest'\n  }\n}\n",
+    )
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-actuator", "app")
+    write(
+        tmp_path,
+        f"app/{JAVA}/R.java",
+        "package app;\npublic interface PetRepository extends JpaRepository<Pet, Long> {}\n",
+    )
+    assert row(run_routes(tmp_path), "app").status == "partial"
+
+
+def test_nested_run_does_not_clear_the_outer_runs_reads(tmp_path, monkeypatch):
+    from strata_kb.codeingest.extractors import _routes_jvm
+
+    outer, inner = tmp_path / "outer", tmp_path / "inner"
+    write(outer, "settings.gradle", "include 'one', 'two'\n")
+    for module in ("one", "two"):
+        gradle(outer, QUARKUS, module)
+        write(
+            outer,
+            f"{module}/{JAVA}/R.java",
+            '@Path("/r") class R { @GET String g() { return ""; } }\n',
+        )
+    gradle(inner, QUARKUS)
+    write(
+        inner,
+        f"{JAVA}/R.java",
+        '@Path("/i") class R { @GET String g() {return "";} }\n',
+    )
+    seen: list[str] = []
+    nested = []
+    real = _routes_jvm._read
+
+    def spy(root, rel):
+        if root == outer:
+            seen.append(rel)
+            if rel.endswith("one/build.gradle") and not nested:
+                nested.append(run_routes(inner))  # a second run, mid-way
+        return real(root, rel)
+
+    monkeypatch.setattr(_routes_jvm, "_read", spy)
+    run_routes(outer)
+    assert nested and seen and len(seen) == len(set(seen))
