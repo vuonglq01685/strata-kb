@@ -81,6 +81,7 @@ class RouteList:
     items: list[tuple[Fn, str]]
 
 
+@dataclass
 class Static:
     """`FileServer`: serves files, no handler code."""
 
@@ -115,6 +116,12 @@ class RocketPlay(Interp):
         )
 
     def merge(self, vals: list[Any]) -> Any:
+        rockets = [v for v in vals if isinstance(v, Rkt)]
+        if len(rockets) > 1 and len(rockets) == len(vals):
+            out = self.new_rocket()  # a builder from either branch
+            for rkt in rockets:
+                out.routes.extend(rkt.routes)
+            return out
         items = [i for v in vals if isinstance(v, RouteList) for i in v.items]
         if items and all(isinstance(v, RouteList) for v in vals):
             return RouteList(items)

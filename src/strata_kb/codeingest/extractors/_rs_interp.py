@@ -51,6 +51,14 @@ MAX_NEST = 48
 MAX_CALL_DEPTH = 8
 BUDGET = 300_000
 _MISSING = object()
+
+
+class _Diverge:
+    """The value of code that never produces one: `panic!`, `return`,
+    `break`, `continue`, a `-> !` call."""
+
+
+DIVERGE = _Diverge()
 _COMMENTS = ("line_comment", "block_comment", "attribute_item", "inner_attribute_item")
 _TRANSPARENT = frozenset(
     {
@@ -63,6 +71,7 @@ _TRANSPARENT = frozenset(
 _LOOPS = frozenset({"for_expression", "while_expression", "loop_expression"})
 _STR_PASS = frozenset({"to_string", "to_owned", "into", "as_str"})
 _MACRO_LIMIT = 20_000
+_DIVERGING_MACROS = frozenset({"panic", "unreachable", "todo", "unimplemented"})
 _TYPE_TAIL = re.compile(r"([A-Za-z_]\w*)\s*(?:<[^<>]*(?:<[^<>]*>[^<>]*)*>)?\s*$")
 # macros whose arguments are data, not code that could build a router
 _QUIET_MACROS = frozenset(
@@ -248,7 +257,8 @@ class Interp:
 
     def macro(self, frame: Frame, node: Node) -> Any:
         self.macro_args(frame, node)
-        return None
+        name = (segments(node.child_by_field_name("macro")) or ("",))[-1]
+        return DIVERGE if name in _DIVERGING_MACROS else None
 
     def macro_args(self, frame: Frame, node: Node) -> None:
         """Evaluate the arguments of `join!(serve(a()), serve(b()))`-style
@@ -297,14 +307,9 @@ class Interp:
         return first if same else None
 
     def join_branches(self, vals: list[Any]) -> Any:
-        """`if` / `match` arms. A string path chosen by a branch is only known
-        when every arm gives the same string (an unknown arm spoils it)."""
-        if any(isinstance(v, Str) for v in vals):
-            first = vals[0]
-            return (
-                first if all(isinstance(v, Str) and v == first for v in vals) else None
-            )
-        return self.join([v for v in vals if v is not None])
+        """`if` / `match` arms (see `join`); a string path is known only when
+        every live arm gives the same string."""
+        return self.join(vals)
 
     @staticmethod
     def routing_shaped(node: Node | None) -> bool:
@@ -351,13 +356,19 @@ class Interp:
         except RecursionError:  # also the budget: both end this function's run
             self.sites.add(f"{fn.file}:{fn.line}")
             return None
-        vals = [v for v in [*(sub.rets or []), tail] if v is not None]
-        return self.join(vals)
+        result = self.join([*(sub.rets or []), tail])
+        return None if result is DIVERGE else result
 
     def join(self, vals: list[Any]) -> Any:
-        if not vals:
+        """The value of several arms / returns. Arms that never produce a
+        value (`DIVERGE`) are ignored; an arm whose value is unknown (None)
+        makes the whole unknown -- it is never dropped beside a known one."""
+        live = [v for v in vals if v is not DIVERGE]
+        if not live:
+            return DIVERGE if vals else None
+        if any(v is None for v in live):
             return None
-        return vals[0] if len(vals) == 1 else self.merge(vals)
+        return live[0] if len(live) == 1 else self.merge(live)
 
     def run_closure(self, closure: Closure, args: list[Any]) -> Any:
         node = closure.node
@@ -374,7 +385,8 @@ class Interp:
         body = node.child_by_field_name("body")
         frame.rets = []
         val = self.eval(frame, body) if body is not None else None
-        return self.join([v for v in [*frame.rets, val] if v is not None])
+        result = self.join([*frame.rets, val])
+        return None if result is DIVERGE else result
 
     # -- statements ------------------------------------------------------
 
@@ -391,6 +403,7 @@ class Interp:
                     self.local_fns[key] = fn
                 frame.env.set(fn.name, fn)
         tail: Any = None
+        last_div = False
         for kid in kids:
             if kid.type == "use_declaration":
                 frame.mod = scoped_mod(frame.mod, kid)
@@ -398,10 +411,10 @@ class Interp:
             kind = kid.type
             if kind == "let_declaration":
                 self.let(frame, kid)
+                last_div = False
             elif kind == "expression_statement":
                 inner = next(iter(kid.named_children), None)
-                if inner is not None:
-                    self.eval(frame, inner)
+                last_div = inner is not None and self.eval(frame, inner) is DIVERGE
             elif kind in (
                 "function_item",
                 "empty_statement",
@@ -420,14 +433,14 @@ class Interp:
             elif i == len(kids) - 1:
                 tail = self.eval(frame, kid)
             else:
-                self.eval(frame, kid)
-        return tail
+                last_div = self.eval(frame, kid) is DIVERGE
+        return DIVERGE if tail is None and last_div else tail
 
     def let(self, frame: Frame, node: Node) -> None:
         pat = node.child_by_field_name("pattern")
         value = node.child_by_field_name("value")
         val = self.eval(frame, value) if value is not None else None
-        val = self.on_let(frame, node, val)
+        val = None if val is DIVERGE else self.on_let(frame, node, val)
         mutable = any(c.type == "mutable_specifier" for c in node.children)
         if mutable and isinstance(val, Str):
             val = None  # a `let mut` string may be rewritten: never a path
@@ -511,8 +524,12 @@ class Interp:
             inner = next(iter(node.named_children), None)
             val = self.eval(frame, inner) if inner is not None else None
             if frame.rets is not None:
-                frame.rets.append(val)
-            return None
+                frame.rets.append(None if val is DIVERGE else val)
+            return DIVERGE
+        if kind in ("break_expression", "continue_expression"):
+            for kid in node.named_children:
+                self.eval(frame, kid)
+            return DIVERGE
         if kind == "macro_invocation":
             return self.macro(frame, node)
         if kind == "tuple_expression":
@@ -563,10 +580,11 @@ class Interp:
         if then is not None:
             vals.append(self.eval(sub, then))
         other = node.child_by_field_name("alternative")
-        if other is not None:
-            inner = next(iter(other.named_children), None)
-            if inner is not None:
-                vals.append(self.eval(frame, inner))
+        if other is None:
+            return None  # no `else`: the `if` itself does not diverge
+        inner = next(iter(other.named_children), None)
+        if inner is not None:
+            vals.append(self.eval(frame, inner))
         return self.join_branches(vals)
 
     def match_expr(self, frame: Frame, node: Node) -> Any:
@@ -599,12 +617,17 @@ class Interp:
         body = node.child_by_field_name("body")
         if body is not None:
             self.eval(sub, body)
+        if node.type == "loop_expression" and not any(
+            n.type == "break_expression" for n in walk(node)
+        ):
+            return DIVERGE  # `loop { .. }` without a break never completes
         return None
 
     def assign(self, frame: Frame, node: Node) -> Any:
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
         val = self.eval(frame, right) if right is not None else None
+        val = None if val is DIVERGE else val
         if left is not None and left.type == "identifier":
             # a name written again is no constant: a string stays unknown
             frame.env.assign(text(left), None if isinstance(val, Str) else val)
@@ -627,6 +650,7 @@ class Interp:
         parameters), so a router built inside `HttpServer::new(|| ..)` or
         `spawn(async move { .. })` is found."""
         vals = [self.eval(frame, a) for a in args_of(call)]
+        vals = [None if v is DIVERGE else v for v in vals]
         for val in vals:
             if isinstance(val, Closure) and self.should_run(val):
                 self.run_closure(val, [])

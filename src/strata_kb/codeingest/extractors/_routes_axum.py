@@ -105,6 +105,7 @@ class MRtr:
     methods: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass
 class Static:
     """`ServeDir` / `ServeFile`: serves files, no handler code."""
 

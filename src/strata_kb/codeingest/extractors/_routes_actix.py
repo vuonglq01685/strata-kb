@@ -89,6 +89,7 @@ class Method:
     handler: str = ""
 
 
+@dataclass
 class Static:
     """`actix_files::Files`: serves files, no handler code."""
 
