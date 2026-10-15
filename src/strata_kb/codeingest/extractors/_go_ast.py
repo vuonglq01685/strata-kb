@@ -36,12 +36,15 @@ if TYPE_CHECKING:
 __all__ = [
     "GIN",
     "UNKNOWN",
+    "Unknown",
+    "Value",
     "Func",
     "GoFile",
     "Index",
     "Other",
     "Param",
     "Pkg",
+    "PkgInfo",
     "Router",
     "Str",
     "Typed",
@@ -70,9 +73,29 @@ _ROUTER_PKGS = (
     "github.com/uptrace/bunrouter",
     "github.com/revel/revel",
 )
+# External packages whose values are provably not gin routers (std library
+# and the router packages are covered separately). Any other external type or
+# call result is unknown, never "not gin".
+_NON_GIN_PKGS = (
+    "github.com/go-resty/resty",
+    "github.com/imroc/req",
+    "github.com/gavv/httpexpect",
+    "gorm.io/",
+    "github.com/redis/go-redis",
+    "github.com/go-redis/redis",
+    "github.com/spf13/viper",
+    "golang.org/x/sync",
+    "go.uber.org/zap",
+    "github.com/sirupsen/logrus",
+    "github.com/stretchr/testify",
+    "github.com/jmoiron/sqlx",
+    "github.com/jackc/pgx",
+    "go.mongodb.org/mongo-driver",
+)
 _MODULE = re.compile(r"^\s*module\s+(\S+)", re.MULTILINE)
 _VERSION = re.compile(r"^v\d+$")
 _ENGINE = frozenset({"Engine"})
+_MAX_ALIAS = 5
 _GROUPS = frozenset({"RouterGroup", "IRouter", "IRoutes"})
 
 
@@ -150,6 +173,7 @@ class TypeInfo:
     file: GoFile
     fields: dict[str, Node] = field(default_factory=dict)
     embeds: list[Node] = field(default_factory=list)
+    alias: Node | None = None  # `type A = T`: the aliased type
 
 
 @dataclass
@@ -307,6 +331,8 @@ class Index:
             body.type if body is not None else "", "other"
         )
         info = TypeInfo(kind, gofile)
+        if spec.type == "type_alias":
+            info.alias = body
         if body is not None and kind == "struct":
             for member in (
                 m for lst in body.named_children for m in lst.named_children
@@ -341,7 +367,7 @@ class Index:
                 alias = _text(name) if name is not None else self._default_alias(path)
                 if path == GIN:
                     gofile.gin = True
-                if self.is_router_pkg(path):
+                if path != "net/http" and self.is_router_pkg(path):
                     gofile.other_router = True
                 if alias not in ("_", "."):
                     gofile.imports[alias] = path
@@ -358,6 +384,16 @@ class Index:
     def is_router_pkg(path: str) -> bool:
         return any(path == p or path.startswith(p + "/") for p in _ROUTER_PKGS)
 
+    @staticmethod
+    def non_gin(path: str) -> bool:
+        """A package whose values provably are not gin routers: the standard
+        library, another router, or a well-known client/driver."""
+        return (
+            "." not in path.split("/")[0]
+            or Index.is_router_pkg(path)
+            or path.startswith(_NON_GIN_PKGS)
+        )
+
     def import_dir(self, path: str) -> str | None:
         """The in-repo directory an import path names, via the module path."""
         if not self.module or not (
@@ -370,14 +406,26 @@ class Index:
         target = target or "."
         return target if target in self.pkgs else None
 
-    def classify(self, gofile: GoFile, type_node: Node | None) -> Value | None:
+    def classify(
+        self, gofile: GoFile, type_node: Node | None, _depth: int = 0
+    ) -> Value | None:
         ref = _type_ref(type_node)
         if ref is None:
             return None
         alias, name = ref
+        found: Value | None
         if alias is None:
             pkg = self.pkgs.get(gofile.dir)
-            return Typed(gofile.dir, name) if pkg and name in pkg.types else None
+            found = Typed(gofile.dir, name) if pkg and name in pkg.types else None
+        else:
+            found = self._qualified(gofile, alias, name)
+        if isinstance(found, Typed) and _depth < _MAX_ALIAS:
+            info = self.info(found)
+            if info is not None and info.alias is not None:
+                return self.classify(info.file, info.alias, _depth + 1)
+        return found
+
+    def _qualified(self, gofile: GoFile, alias: str, name: str) -> Value | None:
         path = gofile.imports.get(alias)
         if path is None:
             return None
@@ -386,9 +434,9 @@ class Index:
                 return Router("")
             return Router(None) if name in _GROUPS else Other(GIN)
         target = self.import_dir(path)
-        if target is not None and name in self.pkgs[target].types:
-            return Typed(target, name)
-        return Other(path)
+        if target is not None:
+            return Typed(target, name) if name in self.pkgs[target].types else None
+        return Other(path) if self.non_gin(path) else None
 
     def func(self, directory: str, name: str) -> Func | None:
         found = (

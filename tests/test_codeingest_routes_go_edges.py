@@ -218,7 +218,8 @@ def test_gin_hostile_nesting_does_not_crash(tmp_path):
     gin_app(tmp_path, src)
     result = run_routes(tmp_path)
     assert not [w for w in result.warnings if "adapter failed" in w]
-    assert row(result).status in ("complete", "partial")
+    assert pairs(result) == [("GET", "/deep")]
+    assert verdict(result) == ("complete", "")
 
 
 def test_gin_hostile_chain_and_concatenation_do_not_crash(tmp_path):
@@ -441,3 +442,33 @@ func main() {
     result = run_routes(tmp_path)
     assert pairs(result) == [("GET", "/a/b"), ("GET", "/ok")]
     assert verdict(result) == ("partial", f"{MAIN}:10")
+
+
+def test_gin_net_http_import_alone_does_not_make_x_get_or_x_handle_sites(tmp_path):
+    gin_app(
+        tmp_path,
+        """package main
+
+import (
+	"net/http"
+	"github.com/gin-gonic/gin"
+)
+
+type Cache interface{ Get(string) string }
+
+func run(cache Cache, svc Service) {
+	_ = cache.Get("/k")
+	_ = http.StatusOK
+	svc.Group("x")
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/ok", ok)
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/ok")]
+    # only the route-shaped svc.Group (line 13); cache.Get is not a router call
+    assert verdict(result) == ("partial", f"{MAIN}:13")

@@ -99,10 +99,12 @@ _TOOLS = [
 # (label in the coverage detail, pattern); a file counts under the first match.
 _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
-    ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/")),
+    ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/|\.pb\.go$")),
     (
         "test",
-        re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/|_test\.go$"),
+        re.compile(
+            r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?|testdata)/|_test\.go$"
+        ),
     ),
     # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code
     (

@@ -125,3 +125,14 @@ def test_go_symbols_syntax_error_is_a_site(tmp_path):
     result = run_symbols(tmp_path)
     assert go_row(result).status == "partial"
     assert go_row(result).detail.startswith("bad/bad.go:")
+
+
+def test_go_symbols_skip_testdata_and_generated_protobuf(tmp_path):
+    gomod(tmp_path)
+    write(tmp_path, "pkg/a.go", "package pkg\n\nfunc Real() {}\n")
+    write(tmp_path, "pkg/testdata/fix.go", "package fix\n\nfunc FixtureOnly() {}\n")
+    write(tmp_path, "pkg/api.pb.go", "package pkg\n\ntype GeneratedMsg struct{}\n")
+    result = run_symbols(tmp_path)
+    assert sym_rows(result) == [("Real", "function", "pkg/a.go")]
+    detail = go_row(result).detail
+    assert "generated" in detail and "test" in detail
