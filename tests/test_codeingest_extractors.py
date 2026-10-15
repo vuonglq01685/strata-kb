@@ -4601,6 +4601,25 @@ model Bare {
         assert "db.ev_2026" not in _by_id(result)
         assert not [w for w in result.warnings if "recognised only" in w]
 
+    def test_index_and_partition_expressions_never_carry_a_string_literal(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE users (id INT, email TEXT, region TEXT);\n"
+            "CREATE INDEX users_lower_idx ON users (lower(email || 'SEKRET_IDXEXPR'));\n"
+            "CREATE INDEX t_e ON users (to_tsvector('SEKRET_CFG', region), id);\n"
+            "CREATE TABLE pe (id INT, region TEXT) "
+            "PARTITION BY LIST (coalesce(region, 'SEKRET_PARTEXPR'));\n",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        blob = by_id["db.users"].l2_md + by_id["db.pe"].l2_md
+        assert "SEKRET" not in blob
+        assert "users_lower_idx (lower(email || ?))" in blob
+        assert "t_e (to_tsvector(?, region), id)" in blob
+        assert "Partition: LIST (coalesce(region, ?))" in blob
+
     def test_per_migration_directories_share_one_table(self, tmp_path):
         self._write(
             tmp_path,

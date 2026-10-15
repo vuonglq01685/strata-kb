@@ -926,14 +926,25 @@ def _parse_key(text: str) -> tuple[str, str, str] | None:
     return kind, name, _index_columns(text[open_idx + 1 : close_idx])
 
 
+_SQL_STRING_RE = re.compile(r"'(?:[^']|'')*'|\$(\w*)\$.*?\$\1\$", re.S)
+
+
+def _scrub_literals(expr: str) -> str:
+    """`expr` with every SQL string literal (`'…'`, `$$…$$`) replaced by `?`:
+    an index or partition expression names columns and functions, never values."""
+    return _SQL_STRING_RE.sub("?", expr)
+
+
 def _index_columns(body: str) -> str:
     """Comma-joined column names of an index/constraint column list. A
     plain column loses its quoting and `ASC`/`DESC`; anything else (an
-    expression) is kept as written, whitespace collapsed."""
+    expression) is kept whitespace-collapsed, string literals as `?`."""
     cols = []
     for part in _split_top_level_quote_blind(body):
         m = _SIMPLE_INDEX_COL_RE.match(part)
-        cols.append(_clean_name(m.group("col")) if m else _clean_type(part))
+        cols.append(
+            _clean_name(m.group("col")) if m else _clean_type(_scrub_literals(part))
+        )
     return ", ".join(cols)
 
 
@@ -1267,7 +1278,8 @@ def _partition_clause(text: str, masked: str, start: int, end: int) -> str:
     close_idx = _matching_close_paren(masked, open_idx)
     if masked[close_idx : close_idx + 1] != ")":
         return ""
-    return f"{pm.group('kind').upper()} ({_clean_type(text[open_idx + 1 : close_idx])})"
+    key = _clean_type(_scrub_literals(text[open_idx + 1 : close_idx]))
+    return f"{pm.group('kind').upper()} ({key})"
 
 
 def _apply_partition_of(

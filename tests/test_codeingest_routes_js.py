@@ -201,6 +201,34 @@ export class Derived extends Local { x: string }
     assert [r[4] for r in table_rows(sec.l2_md)[1:]] == ["Derived", "Local", "External"]
 
 
+def test_type_cells_never_carry_a_literal(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/u.controller.ts": """
+@Controller("u") export class U {
+  @Post("x") x(@Body() dto: Record<'SEKRET_KEYTYPE', string>) {}
+  @Post("y") y(@Body() dto: Roles) {}
+}
+export interface Roles {
+  role: 'SEKRET_LITTYPE' | 'b';
+  nested: Array<{ k: 'SEKRET_INNER' }>;
+  tpl: `SEKRET_${string}`;
+  n: 987654321 | string;
+  ok: Array<string>;
+}
+"""
+        },
+    )
+    sec = section(run_routes(tmp_path), "api/src/u.controller.ts")
+    blob = sec.l2_md + sec.l3_md
+    assert "SEKRET" not in blob and "987654321" not in blob
+    assert "| ok | Array<string> | yes |" in sec.l3_md
+    assert "| role | ? \\| ? | yes |" in sec.l3_md
+    assert [r[4] for r in table_rows(sec.l2_md)[1:]] == ["Record<?, string>", "Roles"]
+
+
 # --- Express ----------------------------------------------------------------
 
 
@@ -1119,3 +1147,24 @@ def test_nuxt_skips_only_nitro_default_ignored_suffixes(tmp_path):
         ("ANY", "/api/c.e2e-spec"),
         ("ANY", "/api/d.test"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("raw", "cell"),
+    [
+        ("Dto", "Dto"),
+        ("Array<string>", "Array<string>"),
+        ("Map<String, @Size(max = 5) String>", "Map<String, String>"),
+        ('List<@A(x = ")") @B Foo>', "List<Foo>"),
+        ("Record<'SEKRET', string>", "Record<?, string>"),
+        ("'a' | 'b'", "? | ?"),
+        ("Array<{ k: 'S' }>", "?"),
+        ("string | 123", "string | ?"),
+        ("T[5]", "T[?]"),
+        ("`x${y}`", "?"),
+        ("@Broken(", "?"),
+        ("", ""),
+    ],
+)
+def test_type_cell_sanitiser(raw, cell):
+    assert routes.type_cell(raw) == cell

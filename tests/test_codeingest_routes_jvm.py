@@ -401,6 +401,27 @@ def test_request_type_outside_repo_has_no_fields(tmp_path):
     )
 
 
+def test_type_cells_never_carry_an_annotation_value(tmp_path):
+    gradle(tmp_path, MICRONAUT)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        """
+@Controller("/c") class C {
+  @Post("/m") void m(@Body Map<String, @Size(max = 987654312) String> m) {}
+  @Post("/d") void d(@Body Dto d) {}
+}
+class Dto { java.util.List<@Size(max = 987654329) String> tags; String name; }
+""",
+    )
+    result = run_routes(tmp_path)
+    sec = section(result, f"{JAVA}/C.java")
+    blob = sec.l2_md + sec.l3_md
+    assert "98765431" not in blob and "98765432" not in blob and "@Size" not in blob
+    assert "| tags | java.util.List<String> | no |" in sec.l3_md
+    assert "Map<String, String>" in sec.l2_md
+
+
 def test_request_type_list_unwraps_to_element(tmp_path):
     gradle(tmp_path, SPRING)
     write(

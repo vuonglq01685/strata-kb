@@ -22,6 +22,7 @@ missing). A scope whose manifest names no route framework gets no row.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -115,6 +116,60 @@ FIELD_READERS: list[
 ]
 
 _OUTSIDE = "request type declared outside the repo"
+_QUOTED_RE = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|`(?:[^`\\]|\\.)*`")
+_NUMBER_RE = re.compile(r"(?<![\w.])\d[\w.]*")
+_TYPE_CHARS_RE = re.compile(r"[\w.<>,\[\]?|&: ]*")
+_ANNOTATION_RE = re.compile(r"@[\w.]+")
+
+
+def _skip_annotation_args(text: str, i: int) -> int | None:
+    """Index just past the balanced `( … )` group starting at `text[i]`
+    (quoted strings inside may hold parentheses); None when unbalanced."""
+    depth = 0
+    while i < len(text):
+        quoted = _QUOTED_RE.match(text, i)
+        if quoted is not None:
+            i = quoted.end()
+            continue
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        i += 1
+        if depth == 0:
+            return i
+    return None
+
+
+def _strip_annotations(text: str) -> str | None:
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        m = _ANNOTATION_RE.match(text, i)
+        if m is None:
+            out.append(text[i])
+            i += 1
+            continue
+        i = m.end()
+        rest = text[i:]
+        if rest.lstrip().startswith("("):
+            end = _skip_annotation_args(text, i + len(rest) - len(rest.lstrip()))
+            if end is None:
+                return None
+            i = end
+        out.append(" ")
+    return "".join(out)
+
+
+def type_cell(text: str) -> str:
+    """A request/field type safe to print: `@Ann(…)` groups dropped, quoted and
+    numeric literals become `?`, and a type that still holds anything but
+    type syntax is `?` as a whole -- a literal never reaches a cell."""
+    stripped = _strip_annotations(text)
+    if stripped is None:
+        return "?"
+    out = _NUMBER_RE.sub("?", _QUOTED_RE.sub("?", stripped))
+    out = " ".join(out.split()).replace("< ", "<").replace(" >", ">")
+    return out if _TYPE_CHARS_RE.fullmatch(out) else "?"
+
+
 _HEADER = "| Method | Path | Handler | File | Request type |"
 _RULE = "| --- | --- | --- | --- | --- |"
 
@@ -136,15 +191,15 @@ def _fields_block(root: Path, files: list[str], type_name: str, near: str) -> li
         fields = reader(root, files, type_name, near)
         if fields is not None:
             return [
-                f"{type_name}",
+                type_cell(type_name),
                 "| name | type | required |",
                 "| --- | --- | --- |",
                 *(
-                    f"| {escape_cell(n)} | {escape_cell(t)} | {'yes' if req else 'no'} |"
+                    f"| {escape_cell(n)} | {escape_cell(type_cell(t))} | {'yes' if req else 'no'} |"
                     for n, t, req in fields
                 ),
             ]
-    return [f"{type_name}: {_OUTSIDE}"]
+    return [f"{type_cell(type_name)}: {_OUTSIDE}"]
 
 
 def _section(
@@ -154,7 +209,7 @@ def _section(
     l2 = [_HEADER, _RULE]
     l3 = [f"{r.method} {r.path}  {r.handler}  {r.file}:{r.line}" for r in ordered]
     for r in ordered:
-        cells = (r.method, r.path, r.handler, r.file, r.request_type)
+        cells = (r.method, r.path, r.handler, r.file, type_cell(r.request_type))
         l2.append("| " + " | ".join(escape_cell(c) for c in cells) + " |")
     for type_name in sorted({r.request_type for r in ordered if r.request_type}):
         near = next(r.file for r in ordered if r.request_type == type_name)
