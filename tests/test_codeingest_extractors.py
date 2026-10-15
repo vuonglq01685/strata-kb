@@ -4650,6 +4650,50 @@ model Bare {
         assert row.status == "partial"
         assert row.detail == "migrations/001.sql:4"
 
+    @pytest.mark.parametrize(
+        ("sql", "line"),
+        [
+            ("SELECT create_hypertable('m', 'ts');", 2),
+            ("SELECT partman.create_parent('public.m', 'ts', 'native', 'daily');", 2),
+            ("SELECT create_distributed_table('m', 'id');", 2),
+            ("SELECT add_dimension('m', 'region', 4);", 2),
+            ("SELECT * INTO m_copy FROM m;", 2),
+            ("SET NOCOUNT ON\nEXEC sp_rename 'm.ts', 'at', 'COLUMN'", 2),
+        ],
+    )
+    def test_statements_that_change_a_table_without_ddl_are_sites(
+        self, tmp_path, sql, line
+    ):
+        self._write(
+            tmp_path, "migrations/001.sql", f"CREATE TABLE m (id INT, ts INT);\n{sql}\n"
+        )
+        result = self._run(tmp_path)
+        row = next(r for r in result.coverage if r.area == "schema")
+        assert (row.status, row.detail) == ("partial", f"migrations/001.sql:{line}")
+
+    def test_plain_select_and_trigger_execute_stay_neutral(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE m (id INT);\nSELECT 1;\n"
+            "CREATE TRIGGER t AFTER INSERT ON m FOR EACH ROW\n"
+            "  EXECUTE FUNCTION f();\n",
+        )
+        result = self._run(tmp_path)
+        row = next(r for r in result.coverage if r.area == "schema")
+        assert row.status == "complete"
+
+    def test_prisma_fulltext_is_an_index(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            'model P {\n  id Int @id\n  title String\n  @@fulltext([title], map: "p_ft")\n}\n',
+        )
+        result = self._run(tmp_path)
+        assert "- p_ft (fulltext: title)" in _by_id(result)["db.P"].l2_md
+        row = next(r for r in result.coverage if r.framework == "prisma")
+        assert row.status == "complete"
+
     def test_complete_coverage_row_per_scope_and_reader(self, tmp_path):
         self._write(tmp_path, "apps/api/package.json", "{}")
         self._write(

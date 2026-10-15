@@ -1387,10 +1387,20 @@ _NEUTRAL_SITE_RE = re.compile(
     r"|ALTER\b.*\b(?:RENAME|SET\s+SCHEMA)\b",
     re.I | re.S,
 )
+# A SELECT that calls a partition/distribution helper (TimescaleDB, pg_partman,
+# Citus) or creates a table (`SELECT … INTO`) changes what a table shows.
+_SELECT_SITE_RE = re.compile(
+    r"SELECT\b.*?(?:\b(?:create_hypertable|create_parent|create_distributed_table"
+    r"|add_dimension)\s*\(|\bINTO\b)",
+    re.I | re.S,
+)
 # Inside a neutral span, DDL starting a line, or table/index DDL after the
-# head on its line, is a second statement whose separator is missing.
+# head on its line, is a second statement whose separator is missing. A
+# line-start EXEC/EXECUTE (T-SQL `sp_rename`) is one too; Postgres trigger
+# `EXECUTE FUNCTION|PROCEDURE` is not.
 _NEUTRAL_NEW_STATEMENT_RE = re.compile(
     r"^[ \t]*(?:CREATE|ALTER|DROP|RENAME)\s"
+    r"|^[ \t]*EXEC(?:UTE)?\s+(?!FUNCTION\b|PROCEDURE\b)"
     r"|\b(?:ALTER\s+TABLE|CREATE\s+(?:\w+\s+)*?(?:TABLE|INDEX)|DROP\s+(?:TABLE|INDEX))\b",
     re.I | re.M,
 )
@@ -1434,6 +1444,8 @@ def _neutral_problem(head: str, head_end: int) -> str:
     """Why an allowlisted-head statement is still a site, else `""`."""
     if _NEUTRAL_SITE_RE.match(head):
         return "statement (it can drop or rename what a table shows)"
+    if _SELECT_SITE_RE.match(head):
+        return "SELECT (it can partition or create a table)"
     if re.match(r"CREATE\s+SCHEMA\b", head, re.I) and _CREATE_SCHEMA_ELEMENTS_RE.search(
         head, head_end
     ):
@@ -1548,7 +1560,9 @@ PRISMA_GLOB = "**/schema.prisma"
 PRISMA_MODEL_RE = re.compile(r"^model\s+(\w+)\s*\{(.*?)^\}", re.S | re.M)
 
 
-_PRISMA_BLOCK_ATTR_RE = re.compile(r"^@@(?P<attr>id|unique|index)\((?P<args>.*)\)$")
+_PRISMA_BLOCK_ATTR_RE = re.compile(
+    r"^@@(?P<attr>id|unique|index|fulltext)\((?P<args>.*)\)$"
+)
 _PRISMA_MAP_RE = re.compile(r'^@@map\(\s*(?:name:\s*)?"(?P<table>[^"]+)"')
 _PRISMA_FIELDS_RE = re.compile(r"^\s*(?:fields:\s*)?\[(?P<fields>[^\]]*)\]")
 _PRISMA_DB_NAME_RE = re.compile(r'\b(?P<key>map|name):\s*"(?P<value>[^"]*)"')
@@ -1582,7 +1596,7 @@ def _apply_prisma_block_attr(
         return
     m = _PRISMA_BLOCK_ATTR_RE.match(stripped)
     if not m:
-        if re.match(r"@@(?:id|unique|index)\b", stripped):
+        if re.match(r"@@(?:id|unique|index|fulltext)\b", stripped):
             record.schema_partial.append(_site(rel, line))
         return
     fields_m = _PRISMA_FIELDS_RE.match(m.group("args"))
@@ -1592,10 +1606,11 @@ def _apply_prisma_block_attr(
     elif m.group("attr") == "id":
         record.pk = record.pk or f"PRIMARY KEY ({fields})"
     else:
+        fulltext = m.group("attr") == "fulltext"
         _add_index(
             record,
             _prisma_index_name(m.group("args")),
-            fields,
+            f"fulltext: {fields}" if fulltext else fields,
             m.group("attr") == "unique",
         )
 
