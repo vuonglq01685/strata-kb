@@ -111,13 +111,9 @@ def _line(node: Node) -> int:
 
 
 class _Urls:
-    def __init__(
-        self, root: Path, proj: ast.Project, mine: list[str], repo_files: list[str]
-    ):
-        self.root = root
+    def __init__(self, proj: ast.Project, mine: list[str]):
         self.proj = proj
         self.mine = mine
-        self.repo_files = repo_files
         self.sites: list[str] = []
         self.consumed: set[tuple[str, int]] = set()
         self.included: set[str] = set()
@@ -435,21 +431,21 @@ class _Urls:
                 and fn.type == "attribute"
                 and ast.text(fn.child_by_field_name("attribute")) == "as_view"
             ):
-                return ["ANY"], ast.text(fn.child_by_field_name("object"))
+                return ["ANY"], ast.handler_text(fn.child_by_field_name("object"))
             args = ast.call_args(node).pos
             if not args:
-                return ["ANY"], ast.text(fn)
+                return ["ANY"], ast.handler_text(fn)
             node = ast.unwrap(args[0])
         if node is None:
-            return ["ANY"], ast.text(view)
-        name = "lambda" if node.type == "lambda" else ast.text(node)
+            return ["ANY"], ast.handler_text(view)
+        name = ast.handler_text(node)
         ref = self.proj.chain(rel, node)
         if ref.kind == "func" and ref.node is not None:
             return self._function_methods(ref.node) or ["ANY"], name
         return ["ANY"], name
 
     def _function_methods(self, func: Node) -> list[str] | None:
-        for expr, _ in ast.decorator_calls(func):
+        for expr in ast.decorator_exprs(func):
             call = expr if expr.type == "call" else None
             parts = ast.dotted(ast.callee(call) if call is not None else expr) or []
             name = parts[-1] if parts else ""
@@ -467,18 +463,20 @@ class _Urls:
 
 
 def _root_urlconfs(
-    root: Path, proj: ast.Project, mine: list[str], urls: _Urls
+    proj: ast.Project, mine: list[str], urls: _Urls
 ) -> tuple[list[str], bool]:
     """(URLconf files named by ROOT_URLCONF, whether any was named)."""
     out: list[str] = []
     named = False
     for rel in mine:
+        if b"ROOT_URLCONF" not in (proj.data(rel) or b""):
+            continue
         info = proj.info(rel)
-        if info is None or b"ROOT_URLCONF" not in info.data:
+        if info is None:
             continue
         literal_lines: set[int] = set()
         for stmt in [
-            n for n in ast_walk(info.tree.root_node) if n.type == "assignment"
+            n for n in ast.walk(info.tree.root_node) if n.type == "assignment"
         ]:
             if ast.text(stmt.child_by_field_name("left")) != "ROOT_URLCONF":
                 continue
@@ -498,14 +496,6 @@ def _root_urlconfs(
             ):
                 urls.site(rel, number)
     return sorted(set(out)), named
-
-
-def ast_walk(node: Node):
-    stack = [node]
-    while stack:
-        current = stack.pop()
-        yield current
-        stack.extend(reversed(current.children))
 
 
 def _walk(
@@ -554,7 +544,7 @@ def _adapter(
     pyfiles = ast.product_files(repo_files)
     mine = ast.product_files(scope_files)
     proj = ast.Project(root, pyfiles)
-    urls = _Urls(root, proj, mine, repo_files)
+    urls = _Urls(proj, mine)
     result = AdapterResult()
     try:
         _scan(root, scope, mine, repo_files, proj, urls, result)
@@ -577,14 +567,14 @@ def _scan(
     urls.routers.index()
     candidates = []
     for rel in mine:
-        info = proj.info(rel)
-        if info is None:
+        data = proj.data(rel)
+        if data is None:
             result.dynamic_sites.append(f"{rel}:1")
-        elif rel.rsplit("/", 1)[-1] == "urls.py" or b"urlpatterns" in info.data:
+        elif rel.rsplit("/", 1)[-1] == "urls.py" or b"urlpatterns" in data:
             candidates.append(rel)
     for rel in candidates:
         urls.module_entries(rel)
-    named_roots, named = _root_urlconfs(root, proj, mine, urls)
+    named_roots, named = _root_urlconfs(proj, mine, urls)
     roots = named_roots if named else [c for c in candidates if c not in urls.included]
     routes: list[Route] = []
     visited: set[str] = set(roots)
@@ -609,8 +599,10 @@ def _scan(
 def _strays(proj: ast.Project, urls: _Urls, mine: list[str]) -> None:
     """A `path()` / `include()` call no URLconf evaluated."""
     for rel in mine:
+        if not _HINT.search(proj.data(rel) or b""):
+            continue
         info = proj.info(rel)
-        if info is None or not _HINT.search(info.data):
+        if info is None:
             continue
         for call in ast.all_calls(info.tree):
             if (rel, call.id) not in urls.consumed and urls._url_kind(rel, call):

@@ -52,7 +52,7 @@ _MAX_BASES = 8
 # (root, rel) -> {class name: node}, parsed on demand for one routes run;
 # `routes.py` clears it when the run ends.
 _CLASSES: dict[tuple[str, str], dict[str, Node]] = {}
-_INDEX: dict[tuple[str, int], dict[str, list[str]]] = {}
+_INDEX: dict[tuple[str, tuple[str, ...]], dict[str, list[str]]] = {}
 
 
 def clear_cache() -> None:
@@ -61,7 +61,7 @@ def clear_cache() -> None:
 
 
 def _index(root: Path, files: list[str]) -> dict[str, list[str]]:
-    key = (str(root), id(files))
+    key = (str(root), tuple(files))
     if key not in _INDEX:
         found: dict[str, list[str]] = {}
         for rel in ast.product_files(files):
@@ -180,6 +180,53 @@ def _field_call(value: Node | None) -> Node | None:
     return None
 
 
+def _type_text(node: Node | None, depth: int = 0) -> str:
+    """An annotation rebuilt from names only: no string, number or call
+    argument ever reaches the type column (`Literal[...]` keeps its name)."""
+    node = ast.unwrap(node)
+    if node is None or depth > 8:
+        return "?"
+    generic = _generic(node)
+    if generic is not None:
+        head = ast.dotted(
+            node.named_children[0]
+            if node.type == "generic_type"
+            else node.child_by_field_name("value")
+        ) or [generic[0]]
+        if generic[0] == "Literal":
+            return ".".join(head)
+        args = ", ".join(_type_text(a, depth + 1) for a in generic[1])
+        return f"{'.'.join(head)}[{args}]"
+    parts = ast.dotted(node)
+    if parts:
+        return ".".join(parts)
+    if node.type == "none":
+        return "None"
+    if node.type == "ellipsis":
+        return "..."
+    if node.type == "binary_operator":
+        op = ast.text(node.child_by_field_name("operator"))
+        left = _type_text(node.child_by_field_name("left"), depth + 1)
+        return f"{left} {op} {_type_text(node.child_by_field_name('right'), depth + 1)}"
+    if node.type == "string":
+        inner = (ast.lit(node) or "").strip()
+        return inner if inner.replace(".", "").replace("_", "").isalnum() else "?"
+    if node.type == "list":
+        return (
+            "[" + ", ".join(_type_text(c, depth + 1) for c in node.named_children) + "]"
+        )
+    return "?"
+
+
+def _annotated(ann: Node | None) -> tuple[Node | None, list[Node]]:
+    """(core type, metadata) of `Annotated[core, meta...]`, else (ann, [])."""
+    node = ast.unwrap(ann)
+    generic = _generic(node) if node is not None else None
+    if generic is not None and generic[0] == "Annotated" and generic[1]:
+        return ast.unwrap(generic[1][0]), generic[1][1:]
+    return node, []
+
+
 def _own_fields(cls: Node) -> list[Field]:
     body = cls.child_by_field_name("body")
     out: list[Field] = []
@@ -192,11 +239,11 @@ def _own_fields(cls: Node) -> list[Field]:
         if left is None or left.type != "identifier" or ann is None:
             continue
         name = ast.text(left)
-        kind = ast.text(ann)
+        core, meta = _annotated(ann)
         if (
             name.startswith("_")
             or name == "model_config"
-            or kind.startswith(("ClassVar", "typing.ClassVar"))
+            or ast.text(core).startswith(("ClassVar", "typing.ClassVar"))
         ):
             continue
         if value is not None and value.type == "call":
@@ -204,7 +251,11 @@ def _own_fields(cls: Node) -> list[Field]:
             if callee in ("Relationship", "PrivateAttr"):
                 continue
         required = value is None
-        field_call = _field_call(value)
+        # `x: int = Field(...)` or `x: Annotated[int, Field(...)]`
+        field_call = _field_call(value) or next(
+            (c for c in (_field_call(ast.unwrap(m)) for m in meta) if c is not None),
+            None,
+        )
         if field_call is not None:
             args = ast.call_args(field_call)
             first = args.pos[0] if args.pos else None
@@ -212,11 +263,13 @@ def _own_fields(cls: Node) -> list[Field]:
                 (first is not None and first.type != "ellipsis")
                 or "default" in args.kw
                 or "default_factory" in args.kw
+                or value is not None
+                and _field_call(value) is None
             )
             required = not has_default
             alias = ast.lit(args.kw.get("alias") or args.kw.get("validation_alias"))
             name = alias or name
-        out.append((name, kind, required))
+        out.append((name, _type_text(core), required))
     return out
 
 

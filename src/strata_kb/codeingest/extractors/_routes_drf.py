@@ -111,16 +111,21 @@ class Routers:
         self.routers: dict[tuple[str, int], Router] = {}
 
     def index(self) -> None:
+        # constructors of every file first: a registration may sit in a file
+        # that sorts before the one declaring its router
+        calls: list[tuple[str, list[Node]]] = []
         for rel in self.mine:
-            info = self.proj.info(rel)
-            if info is None or not (
-                b".register(" in info.data or b"Router(" in info.data
-            ):
+            data = self.proj.data(rel) or b""
+            if not (b".register(" in data or b"Router(" in data):
                 continue
-            calls = ast.all_calls(info.tree)
-            for call in calls:
+            info = self.proj.info(rel)
+            if info is not None:
+                calls.append((rel, ast.all_calls(info.tree)))
+        for rel, found in calls:
+            for call in found:
                 self._ctor(rel, call)
-            for call in calls:
+        for rel, found in calls:
+            for call in found:
                 self._register(rel, call)
 
     def _ctor(self, rel: str, call: Node) -> None:
@@ -148,9 +153,17 @@ class Routers:
         if ast.text(fn.child_by_field_name("attribute")) != "register":
             return
         router = self.of(rel, fn.child_by_field_name("object"))
-        if router is None:  # `admin.site.register(Model)` and friends
-            return
         args = ast.call_args(call)
+        if router is None:
+            # `admin.site.register(Model, Admin)`, `atexit.register(fn)`: not a
+            # path first. A string first argument is a router prefix.
+            first = args.pos[0] if args.pos else args.kw.get("prefix")
+            second = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
+            if (first is not None and first.type == "string") or ast.text(
+                second
+            ).endswith(("ViewSet", "Viewset")):
+                self.site(rel, call)
+            return
         prefix = args.pos[0] if args.pos else args.kw.get("prefix")
         view = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
         if prefix is None or view is None or args.splat:
@@ -268,7 +281,7 @@ class Routers:
 def _extra_action(func: Node) -> _Extra | None | bool:
     """The `@action` of a method: the route, None when it has none, False
     when its arguments are not literals."""
-    for expr, _ in ast.decorator_calls(func):
+    for expr in ast.decorator_exprs(func):
         if expr.type != "call":
             continue
         parts = ast.dotted(ast.callee(expr)) or []

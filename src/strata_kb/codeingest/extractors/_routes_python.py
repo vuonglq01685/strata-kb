@@ -45,7 +45,7 @@ from strata_kb.codeingest.extractors._routes_model import (
 from strata_kb.codeingest.extractors._scopes import Scope
 
 if TYPE_CHECKING:
-    from tree_sitter import Node
+    from tree_sitter import Node, Tree
 
 __all__ = ["ADAPTERS"]
 
@@ -71,12 +71,16 @@ _IMPERATIVE = frozenset(
 _UNKNOWN_SITES = _IMPERATIVE - {"mount", "add_route"}
 _VIEW_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
 _HINT = re.compile(
-    rb"FastAPI|APIRouter|Flask|Blueprint|MethodView"
-    rb"|@\s*[\w.]+\.(?:get|post|put|patch|delete|head|options|trace|route|api_route|websocket|websocket_route)\s*\("
+    rb"FastAPI|APIRouter|Flask|Blueprint|MethodView|root_path"
+    # any receiver: `@get_router().get(..)`, `@ROUTERS['v1'].post(..)`
+    rb"|^[ \t]*@[^\n]*\.(?:get|post|put|patch|delete|head|options|trace|route|api_route"
+    rb"|websocket\w*)\s*\("
     rb"|\.(?:include_router|register_blueprint|add_url_rule|add_api_route|add_route|mount"
     rb"|add_resource|add_namespace|add_api|add_websocket_route|add_api_websocket_route)\s*\("
-    rb"|\b(?:Rule|Route|Mount|APIRoute|WebSocketRoute)\s*\("
+    rb"|\b(?:Rule|Route|Mount|APIRoute|WebSocketRoute)\s*\(",
+    re.MULTILINE,
 )
+_SERVER_CALLS = frozenset({"run", "Config", "Starlette", "FastAPI"})
 _ROUTING_CLASSES = {
     "werkzeug.routing": {"Rule"},
     "starlette.routing": {"Route", "Mount", "WebSocketRoute", "Host"},
@@ -89,7 +93,6 @@ _FLASK_LIBS = re.compile(
     re.MULTILINE,
 )
 _APP_ROOT = re.compile(rb"\bAPPLICATION_ROOT\b|\bDispatcherMiddleware\b")
-_ROOT_PATH = re.compile(rb"\b(?:root_path|openapi_prefix)\s*=")
 _URL_PREFIX_SET = re.compile(rb"\.url_prefix\s*=(?!=)")
 _IMPORT = {
     "FastAPI": re.compile(
@@ -198,6 +201,8 @@ class _Engine:
         self.order: list[Holder] = []
         self.analyzed: set[str] = set()
         self.file_sites: dict[str, list[str]] = {}
+        self._binding = False
+        self._call_sites: dict[str, list[tuple[str, Node]]] = {}
 
     # -- bookkeeping
     def _stray(self, rel: str, node: Node) -> None:
@@ -208,11 +213,14 @@ class _Engine:
         if rel in self.analyzed:
             return
         self.analyzed.add(rel)
-        info = self.proj.info(rel)
-        if info is None:
+        data = self.proj.data(rel)
+        if data is None:
             self.file_sites.setdefault(rel, []).append(f"{rel}:1")
             return
-        if not _HINT.search(info.data):
+        if not _HINT.search(data):
+            return
+        info = self.proj.info(rel)
+        if info is None:
             return
         if info.error_line is not None:
             self.file_sites.setdefault(rel, []).append(f"{rel}:{info.error_line}")
@@ -221,6 +229,28 @@ class _Engine:
             self._ctor(rel, call)
         for call in calls:
             self._call(rel, call)
+            if self.fw == "FastAPI":
+                self._root_path_call(rel, call)
+        if self.fw == "FastAPI" and b"root_path" in data:
+            self._root_path_assign(rel, info.tree)
+
+    def _root_path_call(self, rel: str, call: Node) -> None:
+        """`uvicorn.run(app, root_path=...)`, `Starlette(root_path=...)`."""
+        args = ast.call_args(call)
+        if "root_path" in args.kw and self._name(rel, call) in _SERVER_CALLS:
+            self._stray(rel, call)
+
+    def _root_path_assign(self, rel: str, tree: Tree) -> None:
+        for node in ast.walk(tree.root_node):
+            if node.type != "assignment":
+                continue
+            left = node.child_by_field_name("left")
+            if (
+                left is not None
+                and left.type == "attribute"
+                and ast.text(left.child_by_field_name("attribute")) == "root_path"
+            ):
+                self._stray(rel, node)
 
     def _name(self, rel: str, call: Node) -> str:
         fn = ast.callee(call)
@@ -284,10 +314,55 @@ class _Engine:
             if value is not None and value.type in ("identifier", "attribute"):
                 return self.holder_of(ref.file, value, depth + 1)
             return None
+        if ref.kind == "param":
+            return self._param_holder(ref)
         if ref.kind == "attr" and ref.base is not None and ref.name == "router":
             base = self._holder_ref(ref.base, depth + 1)
             return base if base is not None and base.kind == "app" else None
         return None
+
+    def _param_holder(self, ref: ast.Ref) -> Holder | None:
+        """A function parameter is the holder every in-repo call passes it
+        (one level: `register_blueprints(app)`)."""
+        func = ref.node
+        if func is None or self._binding or ast.enclosing_class(func) is not None:
+            return None
+        names = ast.param_names(func.child_by_field_name("parameters"))
+        if ref.name not in names:
+            return None
+        index = names.index(ref.name)
+        self._binding = True
+        try:
+            found: set[Holder | None] = set()
+            for rel, call in self._callers(ast.func_name(func)):
+                args = ast.call_args(call)
+                node = args.kw.get(ref.name)
+                if node is None and index < len(args.pos) and not args.splat:
+                    node = args.pos[index]
+                found.add(self.holder_of(rel, node))
+                if len(found) > 1 or None in found:
+                    return None
+        finally:
+            self._binding = False
+        return next(iter(found)) if len(found) == 1 else None
+
+    def _callers(self, name: str) -> list[tuple[str, Node]]:
+        if name not in self._call_sites:
+            needle = name.encode() + b"("
+            out: list[tuple[str, Node]] = []
+            for rel in sorted(self.proj.files):
+                if needle not in (self.proj.data(rel) or b""):
+                    continue
+                info = self.proj.info(rel)
+                if info is None:
+                    continue
+                for call in ast.all_calls(info.tree):
+                    fn = ast.callee(call)
+                    parts = ast.dotted(fn) if fn is not None else None
+                    if parts and parts[-1] == name:
+                        out.append((rel, call))
+            self._call_sites[name] = out
+        return self._call_sites[name]
 
     # -- calls
     def _call(self, rel: str, call: Node) -> None:
@@ -521,7 +596,7 @@ class _Engine:
 
     def _endpoint(self, rel: str, node: Node | None) -> tuple[str, str]:
         """(handler text, request type) of an endpoint expression."""
-        handler = ast.text(node) or "?"
+        handler = ast.handler_text(node)
         ref = self.proj.chain(rel, node)
         if ref.kind == "func" and ref.node is not None:
             return handler, self._request(ref.file, ref.node)
@@ -577,7 +652,7 @@ class _Engine:
         if ref.kind == "class" and ref.node is not None:
             holder.sites.append(here)  # a class passed as the view, not `as_view()`
             return
-        handler = ast.text(view) or "?"
+        handler = ast.handler_text(view)
         holder.decls += [Decl(m, path, handler, rel, line) for m in explicit or ["GET"]]
 
 
@@ -625,7 +700,7 @@ def _run(
     fw: str, root: Path, scope: Scope, scope_files: list[str], repo_files: list[str]
 ) -> AdapterResult:
     pyfiles = ast.product_files(repo_files)
-    mine = [f for f in ast.product_files(scope_files)]
+    mine = ast.product_files(scope_files)
     proj = ast.Project(root, pyfiles)
     engine = _Engine(root, repo_files, proj, fw)
     result = AdapterResult()
@@ -663,7 +738,7 @@ def _run(
 
 def _framework_sites(fw: str, root: Path, files: list[str]) -> list[str]:
     if fw == "FastAPI":
-        return pattern_sites(root, files, _ROOT_PATH)
+        return []  # root_path is read from the calls and assignments
     return [
         *pattern_sites(root, files, _APP_ROOT),
         *pattern_sites(root, files, _FLASK_LIBS),

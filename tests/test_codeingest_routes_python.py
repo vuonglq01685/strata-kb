@@ -1630,7 +1630,11 @@ def test_python_symbols_syntax_error_is_a_site(tmp_path):
 
 def test_flask_web_module_with_no_routes_is_a_site_at_the_dependency(tmp_path):
     write(tmp_path, "svc/requirements.txt", "# pins\nflask==3.0\n")
-    write(tmp_path, "svc/helpers.py", "from flask import jsonify\n\ndef ok():\n    return jsonify({})\n")
+    write(
+        tmp_path,
+        "svc/helpers.py",
+        "from flask import jsonify\n\ndef ok():\n    return jsonify({})\n",
+    )
     write(tmp_path, "tools/requirements.txt", "flask\n")
     write(tmp_path, "tools/cli.py", "import click\n")
     result = run_routes(tmp_path)
@@ -1670,3 +1674,170 @@ def test_python_routes_are_deterministic(tmp_path):
     dump = lambda r: ([(s.id, s.l2_md, s.l3_md) for s in r.sections], r.coverage)  # noqa: E731
     assert dump(first) == dump(second)
     assert [m for m, p in all_routes(first) if p == "/a"] == ["GET", "POST"]
+
+
+# --- review round 1 ---------------------------------------------------------
+
+
+def test_drf_register_in_file_sorted_before_router_constructor(tmp_path):
+    django(tmp_path)
+    write(tmp_path, "config/settings.py", 'ROOT_URLCONF = "config.routing"\n')
+    write(
+        tmp_path,
+        "config/routing.py",
+        "from django.urls import include, path\n"
+        "from rest_framework.routers import DefaultRouter\n"
+        "router = DefaultRouter()\n"
+        "import blog.api\n"
+        "urlpatterns = [path('api/', include(router.urls))]\n",
+    )
+    write(
+        tmp_path,
+        "blog/api.py",
+        "from rest_framework import viewsets\n"
+        "from config.routing import router\n\n"
+        "class PostViewSet(viewsets.ReadOnlyModelViewSet):\n    pass\n\n"
+        "router.register('posts', PostViewSet)\n",
+    )
+    result = run_routes(tmp_path)
+    assert ("GET", "/api/posts") in all_routes(result)
+    assert row(result).status == "complete"
+
+
+def test_drf_register_on_unresolved_router_is_a_site(tmp_path):
+    django(tmp_path)
+    write(
+        tmp_path,
+        "urls.py",
+        "from django.urls import path\nurlpatterns = [path('a/', lambda r: 1)]\n",
+    )
+    write(
+        tmp_path,
+        "api.py",
+        "from rest_framework import viewsets\nfrom lib import router\n"
+        "class V(viewsets.ModelViewSet):\n    pass\n\n"
+        "router.register('v', V)\n"
+        "admin.site.register(Model, ModelAdmin)\n",
+    )
+    result = run_routes(tmp_path)
+    assert sites_of(result) == ["api.py:6"]
+
+
+def test_decorator_on_computed_receiver_is_a_site(tmp_path):
+    fastapi(tmp_path)
+    write(
+        tmp_path,
+        "hidden.py",
+        "from lib import get_router, ROUTERS\n\n"
+        "@get_router().get('/hidden')\ndef a():\n    return 1\n\n"
+        "@ROUTERS['v1'].post('/hidden2')\ndef b():\n    return 1\n",
+    )
+    result = run_routes(tmp_path)
+    assert sites_of(result) == ["hidden.py:3", "hidden.py:7"]
+
+
+def test_handler_column_never_prints_call_arguments(tmp_path):
+    django(tmp_path)
+    write(
+        tmp_path,
+        "urls.py",
+        "from django.urls import path\nfrom . import views\n"
+        "urlpatterns = [\n"
+        "    path('a/', make_view('sk_live_abc123')),\n"
+        "    path('b/', build(token='ghp_secret')),\n"
+        "    path('c/', Factory('sk_live_xyz').as_view()),\n"
+        "    path('d/', views.ok),\n"
+        "    path('e/', lambda r: 'sk_live_l'),\n"
+        "]\n",
+    )
+    flask(tmp_path, "f")
+    write(
+        tmp_path,
+        "f/app.py",
+        "from flask import Flask\napp = Flask(__name__)\n"
+        "app.add_url_rule('/g', view_func=make('ghp_flask'))\n",
+    )
+    fastapi(tmp_path, "g")
+    write(
+        tmp_path,
+        "g/main.py",
+        "from fastapi import FastAPI\napp = FastAPI()\n"
+        "app.add_api_route('/h', make('sk_live_fast'))\n",
+    )
+    result = run_routes(tmp_path)
+    blob = "\n".join(s.l2_md + s.l3_md for s in result.sections)
+    for secret in ("sk_live", "ghp_"):
+        assert secret not in blob
+    handlers = sorted(r[2] for s in result.sections for r in table_rows(s.l2_md)[1:])
+    assert "views.ok" in handlers and "lambda" in handlers
+    # a call as a Flask view_func is a site, not a route
+    assert handlers.count("(inline)") == 3 and "build" in handlers
+
+
+def test_annotated_field_default_and_no_literal_in_type(tmp_path):
+    fastapi(tmp_path)
+    write(
+        tmp_path,
+        "main.py",
+        "from typing import Annotated, Literal\nfrom fastapi import FastAPI\n"
+        "from pydantic import BaseModel, Field\napp = FastAPI()\n\n"
+        "class M(BaseModel):\n"
+        "    token: Annotated[str, Field(examples=['sk_live_abc'], default='sk_live_def')]\n"
+        "    need: Annotated[int, Field(gt=0, alias='n')]\n"
+        "    kind: Literal['sk_live_x', 'b'] = 'b'\n"
+        "    maybe: Annotated[str | None, Field(default=None)]\n\n"
+        "@app.post('/m')\ndef m(body: M):\n    return 1\n",
+    )
+    result = run_routes(tmp_path)
+    l3 = section(result, "main.py").l3_md
+    assert "sk_live" not in l3
+    assert "| token | str | no |" in l3
+    assert "| n | int | yes |" in l3
+    assert "| kind | Literal | no |" in l3
+    assert "| maybe | str | None | no |" in l3 or "| maybe | str \\| None | no |" in l3
+
+
+def test_flask_register_helper_taking_the_app_is_followed(tmp_path):
+    flask(tmp_path)
+    write(
+        tmp_path,
+        "my_app/app.py",
+        "from flask import Flask\nfrom my_app import user\n\n"
+        "def create_app():\n    app = Flask(__name__)\n    register_blueprints(app)\n    return app\n\n"
+        "def register_blueprints(app):\n    app.register_blueprint(user.blueprint)\n",
+    )
+    write(
+        tmp_path,
+        "my_app/user.py",
+        "from flask import Blueprint\nblueprint = Blueprint('u', __name__, url_prefix='/users')\n"
+        "@blueprint.route('/')\ndef members():\n    return ''\n",
+    )
+    result = run_routes(tmp_path)
+    assert all_routes(result) == [("GET", "/users")]
+    assert row(result).status == "complete"
+    # a second caller passing something else makes it unknowable
+    write(
+        tmp_path,
+        "other.py",
+        "from my_app.app import register_blueprints\nregister_blueprints(make())\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+
+
+def test_root_path_site_only_for_server_settings(tmp_path):
+    fastapi(tmp_path)
+    write(
+        tmp_path,
+        "main.py",
+        "from pathlib import Path\nfrom fastapi import FastAPI\napp = FastAPI()\n"
+        "root_path = Path(__file__).parent\nif root_path == 1:\n    pass\n"
+        "@app.get('/x')\ndef x():\n    return 1\n",
+    )
+    assert row(run_routes(tmp_path)).status == "complete"
+    write(
+        tmp_path, "run.py", "import uvicorn\nuvicorn.run('main:app', root_path='/p')\n"
+    )
+    write(tmp_path, "assign.py", "from main import app\napp.root_path = '/q'\n")
+    result = run_routes(tmp_path)
+    assert sites_of(result) == ["assign.py:2", "run.py:2"]

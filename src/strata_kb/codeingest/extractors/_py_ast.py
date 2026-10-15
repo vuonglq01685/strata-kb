@@ -118,6 +118,16 @@ def callee(call: Node) -> Node | None:
     return call.child_by_field_name("function")
 
 
+def handler_text(node: Node | None) -> str:
+    """A handler as written when it is a name (`views.home`), `lambda`, else
+    `(inline)`: call arguments and literals are never printed."""
+    node = unwrap(node)
+    if node is not None and node.type == "lambda":
+        return "lambda"
+    parts = dotted(node)
+    return ".".join(parts) if parts else "(inline)"
+
+
 def literal_strings(node: Node | None) -> list[str] | None:
     """Items of a list/tuple/set of plain strings, else None."""
     node = unwrap(node)
@@ -162,8 +172,8 @@ def decorated(call: Node) -> Node | None:
     return deco.parent.child_by_field_name("definition")
 
 
-def decorator_calls(defn: Node) -> list[tuple[Node, Node]]:
-    """(decorator expression, its call or itself) of a definition."""
+def decorator_exprs(defn: Node) -> list[Node]:
+    """Decorator expressions (a name, attribute or call) of a definition."""
     wrapper = defn.parent
     if wrapper is None or wrapper.type != "decorated_definition":
         return []
@@ -172,7 +182,7 @@ def decorator_calls(defn: Node) -> list[tuple[Node, Node]]:
         if deco.type == "decorator":
             expr = next((c for c in deco.named_children if c.type != "comment"), None)
             if expr is not None:
-                out.append((expr, expr))
+                out.append(expr)
     return out
 
 
@@ -214,7 +224,7 @@ def targets(node: Node | None) -> list[str]:
     return []
 
 
-def _param_names(params: Node | None) -> list[str]:
+def param_names(params: Node | None) -> list[str]:
     out: list[str] = []
     for child in params.named_children if params is not None else []:
         if child.type == "identifier":
@@ -275,8 +285,8 @@ def scope_bindings(scope: Node) -> tuple[dict[str, Binding], list[Import]]:
         found[name] = Binding("multi", line=binding.line) if name in found else binding
 
     if scope.type == _FUNC:
-        for name in _param_names(scope.child_by_field_name("parameters")):
-            bind(name, Binding("param"))
+        for name in param_names(scope.child_by_field_name("parameters")):
+            bind(name, Binding("param", scope))
         start = [scope.child_by_field_name("body")]
     else:
         start = [scope]
@@ -340,7 +350,7 @@ class Mod:
 class Ref:
     """What a name or dotted expression resolves to."""
 
-    kind: str  # assign|func|class|mod|external|attr|unknown
+    kind: str  # assign|func|class|mod|external|attr|param|unknown
     file: str = ""
     node: Node | None = None
     mod: Mod | None = None
@@ -390,12 +400,19 @@ class Project:
                 self._dirs.add(parent.as_posix())
                 parent = parent.parent
         self._infos: dict[str, FileInfo | None] = {}
+        self._data: dict[str, bytes | None] = {}
         self._keys: dict[str, list[str]] | None = None
 
     # -- files
+    def data(self, rel: str) -> bytes | None:
+        """File bytes, read once; check a cheap pattern here before `info`."""
+        if rel not in self._data:
+            self._data[rel] = _read(self.root, rel)
+        return self._data[rel]
+
     def info(self, rel: str) -> FileInfo | None:
         if rel not in self._infos:
-            data = _read(self.root, rel)
+            data = self.data(rel)
             self._infos[rel] = (
                 None if data is None else FileInfo(rel, data, _ts.parse(LANG, data))
             )
@@ -494,6 +511,8 @@ class Project:
             return Ref("class", rel, binding.node, name=name)
         if kind == "import" and binding.imp is not None:
             return self._import_ref(rel, binding.imp, depth + 1)
+        if kind == "param" and binding.node is not None:
+            return Ref("param", rel, binding.node, name=name)
         return UNKNOWN
 
     def _import_ref(self, rel: str, imp: Import, depth: int) -> Ref:
@@ -572,6 +591,10 @@ class Project:
                 return b.imp.module if b.kind == "import" and b.imp else ""
         b = info.module.get(name)
         return b.imp.module if b is not None and b.kind == "import" and b.imp else ""
+
+
+def walk(node: Node):
+    return _walk(node)
 
 
 def all_calls(tree: Tree) -> list[Node]:
