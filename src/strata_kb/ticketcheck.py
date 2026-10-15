@@ -1467,6 +1467,7 @@ def _check_files(
 # ---------------------------------------------------------------------------
 
 _NEW_AREA = {
+    "Tables": "schema",
     "Routes": "routes",
     "Pages": "pages",
     "Jobs": "jobs",
@@ -1474,6 +1475,7 @@ _NEW_AREA = {
     "Files": "files",
 }
 _NEW_NOUN = {
+    "Tables": "index",
     "Routes": "route",
     "Pages": "page",
     "Jobs": "job",
@@ -1491,11 +1493,14 @@ _PARTIAL = "partial"
 _COMPLETE = "complete"
 _STATUS_RANK = {_COMPLETE: 0, _PARTIAL: 1, _NOT_SCANNED: 2}
 _IN_RE = re.compile(r"\s+in\s+")
+# A `Tables:` [NEW] is gated only when it adds an index, a partition or a
+# primary key; a whole new table or a new column keeps the ungated rule.
+_SCHEMA_NEW_RE = re.compile(r"\b(?:index(?:es)?|partition|primary key)\b", re.I)
 
 
 @dataclass(frozen=True)
 class _NewEntry:
-    field: str  # Routes | Pages | Jobs | Symbols | Files
+    field: str  # Tables | Routes | Pages | Jobs | Symbols | Files
     lineno: int
     text: str  # the field line / sub-bullet as written
     thing: str  # what is new, no code-span backticks: `GET /x`, `/page`, a name, a path
@@ -1530,6 +1535,8 @@ def _new_entries(section: _Section) -> list[_NewEntry]:
                 out.append(_NewEntry(field, lineno, text, path, path, marker))
                 continue
             thing, target = _split_target(clean)
+            if field == "Tables" and not _SCHEMA_NEW_RE.search(ID_RE.sub("", thing)):
+                continue
             thing = (
                 _cited_name(thing) or thing
                 if field in ("Jobs", "Symbols")
@@ -1546,7 +1553,7 @@ def _judge_new_entries(
     issues: list[Issue],
     notes: list[str],
 ) -> None:
-    """Judge the `[NEW: …]` marker of a Routes/Pages/Jobs/Symbols line. `Files`
+    """Judge the `[NEW: …]` marker of a Tables/Routes/Pages/Jobs/Symbols line. `Files`
     lines are judged by `_check_files`; a line carrying an unknown section id is
     judged by `_check_ids`."""
     known = _known_ids(doc)
@@ -1594,24 +1601,31 @@ def _scope_status(
     cov: dict[str, dict[str, list[_CovRow]]], area: str, path: str
 ) -> tuple[str, str, str]:
     """`(scope label, status, deciding framework/language)` for `path`. `files`
-    scopes are top-level directories (`.` for root files), the others package
-    scopes (longest prefix). No row covering the path = `not scanned`, labelled
-    with the top-level directory (`files`) or the path. A scope with several rows for the area is judged by the row
-    whose language matches the file's, else by its worst row; the deciding
-    framework is returned only then."""
+    scopes are top-level directories (`.` for root files). The other areas use
+    package scopes: the deepest scope listed for ANY of them (`jobs` and
+    `symbols` list every package) that prefixes the path -- an adapter reads a
+    file only through its nearest package, so a nested package with no row for
+    `area` was never scanned for it, whatever an ancestor says. No row = `not
+    scanned`, labelled with the scope (the path when only `.` covers it). A
+    scope with several rows for the area is judged by the row whose language
+    matches the file's, else by its worst row; the deciding framework is
+    returned only then."""
     scopes = cov.get(area, {})
     if area == "files":
         top = path.split("/")[0] if "/" in path else "."
         if top not in scopes:
             return top, _NOT_SCANNED, ""
-        covering = [top]
+        best = top
     else:
+        listed = {s for a, rows in cov.items() if a != "files" for s in rows}
         covering = [
-            s for s in scopes if s == "." or path == s or path.startswith(f"{s}/")
+            s for s in listed if s == "." or path == s or path.startswith(f"{s}/")
         ]
-    if not covering:
-        return path, _NOT_SCANNED, ""
-    best = max(covering, key=len)
+        if not covering:
+            return path, _NOT_SCANNED, ""
+        best = max(covering, key=len)
+        if best not in scopes:
+            return (path if best == "." else best), _NOT_SCANNED, ""
     rows = scopes[best]
     language = LANG_BY_SUFFIX.get(posixpath.splitext(path)[1].lower())
     matching = [r for r in rows if language and r.framework.lower() == language]
@@ -1633,9 +1647,12 @@ def _check_new_coverage(
     if not entries:
         return
     cov = _coverage(doc, issues)
+    known = _known_ids(doc)
     for e in entries:
         if cov is None and e.field != "Jobs":
             continue
+        if e.field == "Tables" and _names_unknown_table(e.text, known):
+            continue  # an index of a whole new table: the table's own [NEW] rule
         if e.target is None:
             issues.append(
                 Issue(
@@ -1658,6 +1675,15 @@ def _check_new_coverage(
                     code=DECISION,
                 )
             )
+
+
+def _names_unknown_table(text: str, known: set[str]) -> bool:
+    return any(
+        (sid := m.rstrip(".")).startswith("db.")
+        and sid.count(".") == 1
+        and sid not in known
+        for m in ID_RE.findall(text)
+    )
 
 
 def _listed_in(field: str, thing: str, body: str) -> bool:
@@ -1732,10 +1758,12 @@ def _check_new_exists(
     found: list[Issue] = []
     known = _known_ids(doc)
     for e in entries:
+        if e.field == "Tables":
+            continue  # no listing to compare an index against
         if e.field == "Files":
             sid = _existing_file_section(structure(), e.thing)
-        elif _mixes_new_with_citation(e.text, known):
-            continue  # reported by _check_tables_routes_commands
+        elif _cites_listed(e.text, known):
+            continue  # mixed line: reported by _check_tables_routes_commands (new docs only)
         else:
             sid = _existing_section(e, doc, bodies, unreadable, found)
         if sid is None:

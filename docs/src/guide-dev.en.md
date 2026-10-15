@@ -653,7 +653,11 @@ question for you.
 What it changes for you: for a route, page, symbol, file or a table's
 partition, index or primary key, the SA writes a new thing as new only when that
 scope is `complete`: `<thing> in <path> [NEW: D<n>]` for a route, page or symbol,
-and `<path> [NEW: D<n>]` as its own `Files:` entry for a file. Otherwise it is an
+`<index|partition|primary key> on db.<table> in <path> [NEW: D<n>]` as a
+`Tables:` sub-bullet for a table's index, partition or primary key (`<path>` is
+the migration), and `<path> [NEW: D<n>]` as its own `Files:` entry for a file.
+The scope is the longest one listed in `struct.coverage` that prefixes the path,
+and it needs its own row for the area, else the area is `not scanned` there. Otherwise it is an
 `Open decisions` item, quoting the status. `kb ticket check` enforces it (see the BA guide §3.8). A
 `-code` made by an older release has no `struct.coverage`, so those areas stay
 questions for you until its repo is re-published.

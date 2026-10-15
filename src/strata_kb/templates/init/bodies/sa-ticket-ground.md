@@ -79,10 +79,12 @@ fallback.
    have missed it: put the item under `Open decisions`, quoting the
    coverage row's status. The `struct.coverage` Area values are `routes`,
    `pages`, `jobs`, `symbols`, `files` and `schema` (a table's partition,
-   index or primary key is `schema`). The scope is the longest
-   `struct.coverage` scope that prefixes the path of the file the new
-   thing will live in (for `Files:`, the top-level directory; a file
-   at the repository root has scope `.`). When a scope has several rows
+   index or primary key is `schema`). The scope is the longest scope
+   listed anywhere in `struct.coverage` (for any area) that prefixes the
+   path of the file the new thing will live in (for `Files:`, the
+   top-level directory; a file at the repository root has scope `.`). If
+   that scope has no row for the area, the area is `not scanned` there:
+   never fall back to a parent scope's row. When a scope has several rows
    for one area, the row whose language matches the file extension
    decides; with no language-matching row, the worst row decides.
    Everything else — `svc.*`, `int.*`, volumes, devices, a whole new
@@ -118,7 +120,11 @@ fallback.
      rule applies to the path itself.
    - `Tables:` — `db.<table>.<column>`, the column spelled as the table's
      `Column` cell. `none` when the ticket touches no table the document
-     knows.
+     knows. A new index, partition or primary key of an existing table:
+     `index <name> (<cols>)`, `partition RANGE (<col>)` or
+     `primary key (<cols>)`, then `on db.<table> in <migration path>
+     [NEW: D<n>]`, on its own sub-bullet (area `schema`; the coverage rule
+     applies). A whole new table or column keeps the unchanged rule.
    - `Routes:` — `api.<tag> — <METHOD> <path>` copied from the tag's
      table, or `route.<slug> — <METHOD> <path>` copied from a `route.*`
      section's table (path parameters `:id`, `{id}`, `[id]`, `<int:id>`

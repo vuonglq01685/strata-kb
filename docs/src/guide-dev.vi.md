@@ -652,7 +652,12 @@ liệt kê; job vắng mặt luôn là một câu hỏi dành cho bạn.
 Điều này thay đổi gì với bạn: với route, page, symbol, file hoặc partition,
 index, khoá chính của một bảng, SA chỉ ghi một thứ mới là mới khi phạm vi đó là
 `complete`: `<thing> in <path> [NEW: D<n>]` cho route, page hoặc symbol, và
-`<path> [NEW: D<n>]` làm một mục `Files:` riêng cho file. Ngược lại nó là một mục `Open decisions`, trích trạng
+`<path> [NEW: D<n>]` làm một mục `Files:` riêng cho file; với index, partition
+hoặc khoá chính của bảng, nó là một gạch đầu dòng con của `Tables:`:
+`<index|partition|primary key> on db.<table> in <path> [NEW: D<n>]` (`<path>`
+là file migration). Phạm vi là phạm vi dài nhất trong `struct.coverage` làm tiền
+tố của đường dẫn và phải có dòng riêng cho vùng đó, nếu không vùng ấy là
+`not scanned` ở đó. Ngược lại nó là một mục `Open decisions`, trích trạng
 thái. `kb ticket check` thực thi quy tắc này (xem hướng dẫn BA §3.8). Tài liệu
 `-code` tạo bởi bản cũ không có `struct.coverage`, nên các vùng đó vẫn là câu hỏi
 dành cho bạn cho tới khi repo của nó được publish lại.

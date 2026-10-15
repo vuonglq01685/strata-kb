@@ -281,9 +281,15 @@ Quy tắc chỉ áp dụng cho sáu vùng đó:
 
 - **Vắng trong phạm vi `complete` = chưa xây.** Route, page hoặc symbol mới
   được ghi là `<what> in <path> [NEW: D<n>]` trên dòng `Routes:`, `Pages:` hoặc
-  `Symbols:`, nêu file nó sẽ nằm; phạm vi là phạm vi coverage dài nhất làm tiền
-  tố của đường dẫn đó. Mục mới nằm ở một gạch đầu dòng con riêng, không bao giờ
-  trên dòng đã trích một id có sẵn. File mới thì không viết như vậy: nó là một
+  `Symbols:`, nêu file nó sẽ nằm; phạm vi là phạm vi dài nhất trong
+  `struct.coverage` (của bất kỳ vùng nào) làm tiền tố của đường dẫn đó, và nó
+  phải có dòng riêng cho vùng đang xét: package lồng nhau không có dòng `routes`
+  là `not scanned`, bất kể package cha nói gì. Mục mới nằm ở một gạch đầu dòng
+  con riêng, không bao giờ trên dòng đã trích một id có sẵn. Index, partition
+  hoặc khoá chính mới là một gạch đầu dòng con của `Tables:`, `index <name>
+  (<cols>) | partition RANGE (<col>) | primary key (<cols>) on db.<table> in
+  <path> [NEW: D<n>]`, với `<path>` là file migration hay schema (vùng
+  `schema`); bảng hoặc cột hoàn toàn mới thì không bị chặn. File mới thì không viết như vậy: nó là một
   mục `Files:` riêng, `<path> [NEW: D<n>]` (phạm vi là thư mục cấp cao nhất của
   nó).
 - **Vắng trong phạm vi `partial` hoặc `not scanned` = chưa biết.** SA không thể

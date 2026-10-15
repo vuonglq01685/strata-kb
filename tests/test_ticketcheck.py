@@ -1581,6 +1581,7 @@ _COVERAGE = """\
 | routes | apps/media | NestJS | complete |  |
 | routes | apps/web | Next.js | complete |  |
 | schema | . | prisma | complete |  |
+| schema | apps/api | sql | partial | apps/api/db/m.sql:3 |
 | symbols | apps/api | typescript | complete |  |
 | symbols | apps/web | css | partial | apps/web/a.css:1 |
 | symbols | apps/web | tsx | complete |  |
@@ -1596,7 +1597,7 @@ _STRUCT_RAW = (
 )
 
 
-def _synth_doc(*, coverage: bool = True, revision: str = "abc1234"):
+def _synth_doc(*, coverage: bool | str = True, revision: str = "abc1234"):
     """A `demo-code` LoadedDoc built from hand-written L2 tables in the real
     section shapes -- no tree-sitter, no ingest."""
     blocks = {
@@ -1631,6 +1632,10 @@ def _synth_doc(*, coverage: bool = True, revision: str = "abc1234"):
             "| Name | Kind | File |\n| --- | --- | --- |\n"
             "| --brand | css-variable | apps/web/src/a.css |\n",
         ),
+        "db.Event": (
+            "db",
+            "| Column | Type |\n| --- | --- |\n| id | int |\n",
+        ),
         _SYMS: (
             "symbols",
             "| Name | Kind | File |\n| --- | --- | --- |\n"
@@ -1638,7 +1643,10 @@ def _synth_doc(*, coverage: bool = True, revision: str = "abc1234"):
         ),
     }
     if coverage:
-        blocks["struct.coverage"] = ("structure", _COVERAGE)
+        blocks["struct.coverage"] = (
+            "structure",
+            coverage if isinstance(coverage, str) else _COVERAGE,
+        )
     groups: dict[str, str] = {}
     for sid, (group, body) in blocks.items():
         groups[group] = groups.get(group, "") + f"## {sid} title\n\n{body}\n"
@@ -1802,6 +1810,96 @@ def test_new_on_jobs_always_rejected():
     assert any(
         "cannot claim new: coverage of" in e and "(jobs)" in e for e in errors(bare)
     )
+
+
+_HOISTED_COVERAGE = """\
+| Area | Scope | Framework/language | Status | Detail |
+| --- | --- | --- | --- | --- |
+| files | apps | - | complete |  |
+| jobs | apps/api | - | partial | x |
+| routes | . | Express | complete |  |
+| symbols | apps/api | typescript | complete |  |
+"""
+
+
+def test_new_in_nested_scope_without_a_row_is_not_scanned_not_inherited():
+    # root declares express (hoisted); apps/api is its own scope that no
+    # routes adapter ever read -> must not inherit the root's `complete`
+    doc = _synth_doc(coverage=_HOISTED_COVERAGE)
+    nested = run_synth(
+        ["- Routes: GET /hidden in apps/api/src/app.js [NEW: tbd]"], doc=doc
+    )
+    assert any(
+        "cannot claim new: coverage of apps/api (routes) is not scanned" in e
+        for e in errors(nested)
+    ), errors(nested)
+    # a path no nested scope claims still resolves to the root scope
+    root = run_synth(["- Routes: GET /top in src/app.js [NEW: tbd]"], doc=doc)
+    assert errors(root) == [], root.render("Grounding")
+
+
+_INDEX = "  - index watch_idx (user_id) on db.Event in {path} [NEW: tbd]"
+
+
+def test_new_index_allowed_in_a_complete_schema_scope():
+    report = run_synth(["- Tables:", _INDEX.format(path="db/m.sql")])
+    assert errors(report) == [], report.render("Grounding")
+    assert any("index watch_idx" in n for n in notes(report))
+
+
+@pytest.mark.parametrize(
+    "thing",
+    [
+        "partition RANGE (created_at)",
+        "primary key (id, created_at)",
+        "index watch_idx (user_id)",
+    ],
+)
+def test_new_index_partition_primary_key_rejected_in_a_partial_schema_scope(thing):
+    report = run_synth(
+        ["- Tables:", f"  - {thing} on db.Event in apps/api/db/m.sql [NEW: tbd]"]
+    )
+    assert (
+        "cannot claim new: coverage of apps/api (schema) is partial; "
+        "move it to Open decisions (line 10)"
+    ) in errors(report), errors(report)
+
+
+def test_new_index_needs_its_migration_path():
+    report = run_synth(
+        ["- Tables:", "  - index watch_idx (user_id) on db.Event [NEW: tbd]"]
+    )
+    assert any("[NEW] in Tables must name the file" in e for e in errors(report))
+
+
+def test_new_index_decision_row_is_judged():
+    # an id-less / known-id Tables line used to skip the D-row check entirely
+    report = run_synth(
+        ["- Tables:", _INDEX.format(path="db/m.sql").replace("tbd", "D99")]
+    )
+    assert any("[NEW: D99] needs a parent mission" in e for e in errors(report)), (
+        errors(report)
+    )
+
+
+def test_new_column_or_table_on_a_tables_line_is_not_schema_gated():
+    col = run_synth(["- Tables: db.Event.extra [NEW: tbd]"])
+    assert errors(col) == [], col.render("Grounding")
+    fresh = run_synth(
+        [
+            "- Tables:",
+            "  - index i (a) on db.Fresh in apps/api/db/m.sql [NEW: tbd]",
+        ]
+    )
+    assert not any("cannot claim new" in e for e in errors(fresh)), errors(fresh)
+
+
+def test_pre_release_doc_does_not_gate_a_new_index():
+    report = run_synth(
+        ["- Tables:", _INDEX.format(path="apps/api/db/m.sql")],
+        doc=_synth_doc(coverage=False),
+    )
+    assert not any("cannot claim new" in e for e in errors(report))
 
 
 def test_new_requires_target_file():
@@ -2221,6 +2319,17 @@ def _api_only_doc():
             else None
         ),
     )
+
+
+def test_pre_release_doc_keeps_a_mixed_new_line_passing():
+    # grounded before struct.coverage: base passed a cited route + a [NEW] one
+    report = run_synth(
+        [
+            "- Routes: api.media — GET /media/ping, POST /media/upload [NEW: tbd]",
+        ],
+        doc=_api_only_doc(),
+    )
+    assert errors(report) == [], report.render("Grounding")
 
 
 def test_pre_release_doc_keeps_a_new_on_an_api_line_passing():

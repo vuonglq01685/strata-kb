@@ -287,10 +287,16 @@ The rule for those six areas only:
 - **Absent from a `complete` scope = not built.** A new route, page or symbol
   is written `<what> in <path> [NEW: D<n>]` on a `Routes:`, `Pages:` or
   `Symbols:` line, naming the file it will live in; the scope is the longest
-  coverage scope that prefixes that path. The new item goes on its own
-  sub-bullet, never on a line that also cites an existing id. A new file is not
-  written that way: it is its own `Files:` entry, `<path> [NEW: D<n>]` (the
-  scope is its top-level directory).
+  scope listed in `struct.coverage` (for any area) that prefixes that path, and
+  it needs its own row for the area: a nested package with no `routes` row is
+  `not scanned`, whatever its parent says. The new item goes on its own
+  sub-bullet, never on a line that also cites an existing id. A new index,
+  partition or primary key is a `Tables:` sub-bullet, `index <name> (<cols>) |
+  partition RANGE (<col>) | primary key (<cols>) on db.<table> in <path> [NEW:
+  D<n>]`, where `<path>` is the migration or schema file (area `schema`); a
+  whole new table or column is not gated. A new file is not written that way:
+  it is its own `Files:` entry, `<path> [NEW: D<n>]` (the scope is its
+  top-level directory).
 - **Absent from a `partial` or `not scanned` scope = unknown.** The SA cannot
   tell "not built" from "the scan missed it", so the item goes under `Open
   decisions`, quoting the coverage status, and the Dev answers it. The gate
