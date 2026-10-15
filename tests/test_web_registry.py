@@ -194,6 +194,7 @@ def test_admin_lists_entries_and_history(admin_registry_client):
         assert needle in body
     assert "acme/web/.github/workflows/kb-code.yml@refs/heads/main" in body
     assert 'aria-checked="false"' in body and 'aria-checked="true"' not in body
+    assert '<span class="switch-state">Off</span>' in body  # readable without CSS
     assert "seed registry" in body  # the last commit subject
     assert 'href="/ui/registry"' in body  # nav item
     template = ROOT / "src/strata_kb/templates/web/registry.html"

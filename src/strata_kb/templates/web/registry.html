@@ -49,13 +49,14 @@
           {% if read_only %}
           <span class="muted">{{ 'on' if r.auto_merge else 'off' }}</span>
           {% else %}
-          <form method="post" action="/ui/registry/auto-merge">
+          <form class="reg-toggle" method="post" action="/ui/registry/auto-merge">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="repo" value="{{ r.repo }}">
             <input type="hidden" name="on" value="{{ '0' if r.auto_merge else '1' }}">
             <button type="submit" class="switch {{ 'on' if r.auto_merge else '' }}" role="switch"
                     aria-checked="{{ 'true' if r.auto_merge else 'false' }}"
                     aria-label="Auto-merge for {{ r.repo }}"><span class="knob"></span></button>
+            <span class="switch-state">{{ 'On' if r.auto_merge else 'Off' }}</span>
           </form>
           {% endif %}
         </span>

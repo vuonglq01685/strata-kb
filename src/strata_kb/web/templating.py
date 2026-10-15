@@ -10,12 +10,17 @@ from __future__ import annotations
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+import strata_kb
+
 
 def make_env() -> Environment:
-    return Environment(
+    env = Environment(
         loader=PackageLoader("strata_kb", "templates/web"),
         autoescape=select_autoescape(enabled_extensions=("html",), default=True),
     )
+    # /ui/static/* is cached for a day: versioned URLs make an upgrade fetch fresh files.
+    env.globals["asset_v"] = strata_kb.__version__
+    return env
 
 
 _env = make_env()

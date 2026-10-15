@@ -6,6 +6,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
+import strata_kb
 from strata_kb.mcp import ServerConfig
 from strata_kb.serving.auth import TokenAuthMiddleware
 from strata_kb.web import planui, ui
@@ -275,7 +276,10 @@ def test_mission_page_renders_the_mission_body_with_diagrams(plan_hub):
     text = _client(plan_hub).get(f"/ui/tickets/{MISSION_ID}?repo=ba-one").text
     assert 'class="reader-body md-body"' in text
     assert '<pre class="mermaid">' in text
-    assert '<script src="/ui/static/mermaid.min.js" defer></script>' in text
+    assert (
+        f'<script src="/ui/static/mermaid.min.js?v={strata_kb.__version__}" defer></script>'
+        in text
+    )
     assert "On this page" in text
 
 

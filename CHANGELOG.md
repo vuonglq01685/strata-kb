@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.27.2 — 2026-10-15
+
+Registry page fix after an upgrade.
+
+- **Stale stylesheet.** `/ui/static/*` is served with `Cache-Control: public, max-age=86400` from an unversioned URL, so after a hub upgrade a browser kept the old `style.css` for up to a day. The Registry page (new in 1.26.0) then rendered unstyled: the table collapsed and the auto-merge switch showed as an empty box. `style.css`, `app.js` and `mermaid.min.js` are now linked as `…?v=<version>`, so every upgrade fetches fresh files.
+- **Auto-merge switch.** Each row shows `On` or `Off` next to the switch; click the switch to toggle it.
+- **Docs.** No guide changes. The guide PDFs under `docs/` were not rebuilt for this release.
+- **Upgrade.** Upgrade and restart the hub. No browser cache clearing is needed from this version on.
+
 ## 1.27.1 — 2026-10-15
 
 First-run admin setup page.
