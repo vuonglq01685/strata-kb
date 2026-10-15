@@ -5319,6 +5319,139 @@ migrationBuilder.CreateIndex(
         assert "- i (a)" in sec.l2_md
         assert self._schema_rows(result)[(".", "sql")][0] == "partial"
 
+    def _sql_status(self, root: Path) -> str:
+        return self._schema_rows(self._run(root))[(".", "sql")][0]
+
+    def test_ddl_after_a_neutral_head_without_separator_is_a_site(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "SET XACT_ABORT ON\nBEGIN TRANSACTION\nALTER TABLE t ADD b INT\n"
+            "CREATE INDEX ix ON t (a)\nCOMMIT\nGO\n",
+        )
+        assert self._sql_status(tmp_path) == "partial"
+
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "SET NOCOUNT ON\nALTER TABLE t ADD b INT\nGO\n",
+            "INSERT INTO t VALUES (1)\nALTER TABLE t ADD b INT\nGO\n",
+        ],
+    )
+    def test_ddl_glued_to_a_neutral_statement_is_a_site(self, tmp_path, ddl):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(tmp_path, "migrations/002.sql", ddl)
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_create_word_inside_a_neutral_statement_is_not_a_missing_separator(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nGRANT CREATE ON SCHEMA public TO r;\n"
+            "GRANT\n  CREATE ON SCHEMA public TO r2;\n"
+            "COMMENT ON TABLE t IS 'ALTER TABLE x';\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "DROP EXTENSION citext CASCADE;",
+            "DROP TYPE mood CASCADE;",
+            "DROP SCHEMA app CASCADE;",
+            "DROP SCHEMA app;",
+            "DROP DATABASE app;",
+            "DROP SEQUENCE s CASCADE;",
+            "DROP FUNCTION f(int) CASCADE;",
+            "CREATE SCHEMA app CREATE TABLE u (a INT) CREATE INDEX i ON u (a);",
+            "ALTER SCHEMA x RENAME TO y;",
+            "ALTER TYPE mood RENAME TO feeling;",
+        ],
+    )
+    def test_neutral_kinds_that_change_shown_facts_are_sites(self, tmp_path, ddl):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            f"CREATE TABLE t (a INT);\n{ddl}\n",
+        )
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_plain_neutral_drops_and_creates_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nCREATE SCHEMA app;\n"
+            "CREATE SCHEMA IF NOT EXISTS audit AUTHORIZATION r;\n"
+            "DROP TYPE IF EXISTS mood;\nDROP VIEW v;\nDROP FUNCTION f();\n"
+            "DROP SEQUENCE s;\nDROP EXTENSION citext;\n"
+            "ALTER SCHEMA app OWNER TO r;\nALTER TYPE mood ADD VALUE 'x';\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    def test_drop_index_on_an_unresolved_table_strips_nothing(self, tmp_path):
+        for on in ("audit.t", "u"):
+            root = tmp_path / on.replace(".", "_")
+            self._write(
+                root,
+                "migrations/001.sql",
+                f"CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\nDROP INDEX i ON {on};\n",
+            )
+            result = self._run(root)
+            assert "- i (a)" in _by_id(result)["db.t"].l2_md
+            assert self._schema_rows(result)[(".", "sql")][0] == "partial"
+
+    def test_alembic_helper_used_only_by_downgrade_is_not_read(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n\n\n"
+            "def downgrade():\n    _restore()\n\n\n"
+            "def _restore():\n    op.create_index('ix_old', 't', ['a'])\n",
+        )
+        result = self._run(tmp_path)
+        assert "ix_old" not in _by_id(result)["db.t"].l2_md
+
+    def test_alembic_helper_called_transitively_from_upgrade_is_read(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    _outer()\n\n\n"
+            "def _outer():\n    _inner()\n\n\n"
+            "def _inner():\n    op.create_index('ix_new', 't', ['a'])\n\n\n"
+            "def downgrade():\n    _gone()\n\n\n"
+            "def _gone():\n    op.create_index('ix_old', 't', ['a'])\n",
+        )
+        md = _by_id(self._run(tmp_path))["db.t"].l2_md
+        assert "ix_new" in md and "ix_old" not in md
+
+    def test_drop_table_in_another_schema_keeps_the_public_partition_child(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT) PARTITION BY RANGE (id);\n"
+            "CREATE TABLE ev_1 PARTITION OF ev FOR VALUES FROM (1) TO (2);\n"
+            "DROP TABLE audit.ev_1;\n",
+        )
+        assert "Partitions: ev_1" in _by_id(self._run(tmp_path))["db.ev"].l2_md
+
+    def test_alembic_exec_driver_sql_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.get_bind().exec_driver_sql('ALTER TABLE t ADD COLUMN b INT')\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "alembic")] == (
+            "partial",
+            "alembic/versions/0001.py:3",
+        )
+
 
 class TestIntegrationsExtractor:
     def test_detects_env_example_or_openapi_servers(self, repo, tmp_path):

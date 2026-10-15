@@ -1033,6 +1033,9 @@ def _apply_drop_index(
         _unrecognised(warnings, rel, line, "DROP INDEX")
         return
     only = _find_table(tables, m.group("table")) if m.group("table") else None
+    if m.group("table") and only is None:  # ON a table not kept: strip nothing
+        _unrecognised(warnings, rel, line, "DROP INDEX (table not known)")
+        return
     unknown = False
     for raw in m.group("names").split(","):
         dropped, schema = _bare(raw), _schema_of(_norm_name(raw))
@@ -1063,10 +1066,15 @@ def _apply_drop_table(
         _unrecognised(warnings, rel, line, "DROP TABLE")
         return
     for raw in m.group("names").split(","):
-        child = _bare(raw)
+        child, child_schema = _bare(raw), _schema_of(_norm_name(raw))
         for parent in tables.values():  # a dropped partition leaves its parent
             if _dirname(parent.created_in) == _dirname(rel):
-                parent.partitions = [c for c in parent.partitions if _bare(c) != child]
+                parent.partitions = [
+                    c
+                    for c in parent.partitions
+                    if _bare(c) != child
+                    or not _schema_ok(child_schema, _schema_of(_norm_name(c)))
+                ]
         record = _find_table(tables, raw)
         if record is None:
             continue
@@ -1359,6 +1367,24 @@ _NEUTRAL_HEAD_RE = re.compile(
     r"|PUBLICATION|SUBSCRIPTION))\b",
     re.I,
 )
+# Allowlisted heads that still move a shown fact: dropping with CASCADE (a
+# column's type, default or whole table goes with it), dropping a
+# schema/database, renaming or moving a type/schema/sequence.
+_NEUTRAL_SITE_RE = re.compile(
+    r"DROP\b.*\bCASCADE\b|DROP\s+(?:SCHEMA|DATABASE)\b"
+    r"|ALTER\b.*\b(?:RENAME|SET\s+SCHEMA)\b",
+    re.I | re.S,
+)
+# Inside a neutral span, DDL starting a line is a second statement whose
+# separator is missing. GRANT/REVOKE lists legitimately wrap onto a line
+# that starts `CREATE ON SCHEMA`.
+_NEUTRAL_NEW_STATEMENT_RE = re.compile(
+    r"^[ \t]*(?:CREATE|ALTER|DROP|RENAME)\s", re.I | re.M
+)
+_PRIVILEGE_HEAD_RE = re.compile(
+    r"(?:GRANT|REVOKE|ALTER\s+DEFAULT\s+PRIVILEGES)\b", re.I
+)
+_CREATE_SCHEMA_ELEMENTS_RE = re.compile(r"\bCREATE\s", re.I)
 _RENAME_TABLE_RE = re.compile(rf"RENAME\s+TABLE\s+{_QIDENT.format('name')}", re.I)
 
 
@@ -1383,6 +1409,21 @@ def _mask_dollar_quoted(masked: str) -> str:
     """Blank `$$ ... $$` bodies (function and `DO` bodies): their `;` must
     not split a statement, and DDL inside is not a migration step."""
     return _DOLLAR_QUOTED_RE.sub(lambda m: re.sub(r"[^\n]", "\0", m.group(0)), masked)
+
+
+def _neutral_problem(head: str, head_end: int) -> str:
+    """Why an allowlisted-head statement is still a site, else `""`."""
+    if _NEUTRAL_SITE_RE.match(head):
+        return "statement (it can drop or rename what a table shows)"
+    if re.match(r"CREATE\s+SCHEMA\b", head, re.I) and _CREATE_SCHEMA_ELEMENTS_RE.search(
+        head, head_end
+    ):
+        return "CREATE SCHEMA (with embedded elements)"
+    if not _PRIVILEGE_HEAD_RE.match(head) and _NEUTRAL_NEW_STATEMENT_RE.search(
+        head, head_end
+    ):
+        return "statement (a `;` or GO is missing before the next one)"
+    return ""
 
 
 def _apply_sql_file(
@@ -1429,7 +1470,10 @@ def _apply_sql_file(
             _apply_drop_index(stmt, rel, line, tables, warnings)
         elif hm := _DROP_TABLE_HEAD_RE.match(head):
             _apply_drop_table(stmt, rel, line, tables, warnings)
-        elif _NEUTRAL_HEAD_RE.match(head):
+        elif nm := _NEUTRAL_HEAD_RE.match(head):
+            problem = _neutral_problem(head, nm.end())
+            if problem:
+                _unrecognised(warnings, rel, line, problem)
             continue
         else:
             rename = _RENAME_TABLE_RE.match(head)
@@ -1654,7 +1698,7 @@ ALEMBIC_OP_RE = re.compile(
 )
 ALEMBIC_BATCH_RE = re.compile(r"with\s+op\.batch_alter_table\(")
 # Raw SQL (`op.execute("CREATE INDEX ..")`, `conn.execute(..)`) is not read.
-ALEMBIC_EXECUTE_RE = re.compile(r"\.execute\(")
+ALEMBIC_EXECUTE_RE = re.compile(r"\.(?:execute|exec_driver_sql)\(")
 _ALEMBIC_DEF_RE = re.compile(r"^def\s+(\w+)\s*\(", re.M)
 # positional parameters: (as `op.<fn>`, as `<batch alias>.<fn>`)
 _ALEMBIC_PARAMS = {
@@ -1689,14 +1733,30 @@ def _string_literals(text: str) -> list[str]:
 
 
 def _upgrade_only(text: str) -> str:
-    """`text` with the bodies of `def downgrade*(` blanked (same offsets
-    and line breaks): a downgrade re-creates and drops what the upgrade
-    did, and must not be read as schema. `upgrade()`, multidb
-    `upgrade_<engine>()` and the helpers they call all stay."""
+    """`text` with every top-level `def` that `upgrade*()` does not reach
+    blanked (same offsets and line breaks): a downgrade, and any helper
+    only a downgrade calls, undoes what the upgrade did and must not be
+    read as schema. `upgrade()`, multidb `upgrade_<engine>()` and the
+    helpers they call (transitively) stay. A file with no `upgrade*` def
+    keeps everything but `downgrade*`."""
     defs = list(_ALEMBIC_DEF_RE.finditer(text))
+    bodies = {
+        d.group(1): text[d.start() : defs[i + 1].start() if i + 1 < len(defs) else None]
+        for i, d in enumerate(defs)
+    }
+    roots = [n for n in bodies if n.startswith("upgrade")] or [
+        n for n in bodies if not n.startswith("downgrade")
+    ]
+    keep = set(roots)
+    todo = list(roots)
+    while todo:
+        for callee in re.findall(r"\b(\w+)\s*\(", bodies[todo.pop()]):
+            if callee in bodies and callee not in keep:
+                keep.add(callee)
+                todo.append(callee)
     out, pos = [], 0
     for i, d in enumerate(defs):
-        if not d.group(1).startswith("downgrade"):
+        if d.group(1) in keep:
             continue
         end = defs[i + 1].start() if i + 1 < len(defs) else len(text)
         out.append(text[pos : d.start()])
