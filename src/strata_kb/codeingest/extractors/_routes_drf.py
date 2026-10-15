@@ -128,13 +128,24 @@ def _derives(
     return False
 
 
+_ADMIN_BASES = frozenset(
+    {"StackedInline", "TabularInline", "InlineModelAdmin", "AdminSite"}
+)
+
+
+def _is_admin_base(text: str) -> bool:
+    name = text.split(".")[-1]
+    return name.endswith("ModelAdmin") or name in _ADMIN_BASES
+
+
 def _drf_view(
     proj: ast.Project, file: str, cls: Node, marks: tuple[str, ...] = _VIEW_MARKS
 ) -> bool:
-    """Does an in-repo class derive from a DRF view base? A `ModelAdmin` never."""
-    return not _derives(
-        proj, file, cls, lambda t: t.split(".")[-1].endswith("Admin"), 0
-    ) and _derives(proj, file, cls, lambda t: any(m in t for m in marks), 0)
+    """Does an in-repo class derive from a DRF view base? A `django.contrib.admin`
+    class (`ModelAdmin`, an inline, `AdminSite`) never."""
+    return not _derives(proj, file, cls, _is_admin_base, 0) and _derives(
+        proj, file, cls, lambda t: any(m in t for m in marks), 0
+    )
 
 
 def _line(node: Node) -> int:

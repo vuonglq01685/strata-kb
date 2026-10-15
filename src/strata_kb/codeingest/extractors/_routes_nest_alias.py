@@ -212,6 +212,17 @@ class AliasResolver:
         self._exports_cache[rel] = out
         return out
 
+    def _reexport(
+        self, rel: str, source: str, stack: tuple[str, ...]
+    ) -> _Exports | None:
+        """Exports behind `export … from '<source>'`: resolved relative,
+        tsconfig-path or workspace source -> its exports; an unresolvable
+        relative one -> opaque; an unresolvable registry package -> None."""
+        target = self._modules.resolve(rel, source)
+        if target is not None or source.startswith("."):
+            return self._exports(target, stack)
+        return None
+
     def _export(
         self,
         rel: str,
@@ -234,8 +245,7 @@ class AliasResolver:
                         out.names[alias] = names.aliases.get(name, name)
                 elif source == NEST_PKG:
                     out.names[alias] = name
-                elif source.startswith("."):
-                    sub = self._exports(self._modules.resolve(rel, source), stack)
+                elif (sub := self._reexport(rel, source, stack)) is not None:
                     if name in sub.names:
                         out.names[alias] = sub.names[name]
                     else:
@@ -250,8 +260,7 @@ class AliasResolver:
             if source == NEST_PKG:
                 for real in _TRACKED:
                     out.names.setdefault(real, real)
-            elif source.startswith("."):
-                sub = self._exports(self._modules.resolve(rel, source), stack)
+            elif (sub := self._reexport(rel, source, stack)) is not None:
                 for key, real in sub.names.items():
                     out.names.setdefault(key, real)
                 out.opaque = out.opaque or sub.opaque

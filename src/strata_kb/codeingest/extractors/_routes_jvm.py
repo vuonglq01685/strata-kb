@@ -273,7 +273,7 @@ _FRAMEWORKS: dict[str, _Fw] = {
         foreign=frozenset({"Path"}),  # Jersey under Spring Boot
         data_rest=re.compile(r"data-rest"),
         dependency=re.compile(
-            r"(?:spring-boot-)?starter-(?:web(?:flux)?|jersey)(?![\w]|-services)"
+            r"(?:spring-boot-)?starter-(?:web(?:mvc|flux)?|jersey)(?![\w]|-services)"
             r"|spring-web(?:mvc|flux)?\b"
         ),
     ),

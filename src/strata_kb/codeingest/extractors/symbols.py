@@ -302,7 +302,14 @@ class _Reader:
                 concrete = [
                     k for k in concrete if k not in ("type", "interface")
                 ] or concrete
-            guess = _UNKNOWN if cycle or cuts or _UNKNOWN in kinds else "const"
+            # a name the in-repo source does not declare is unknown (a site),
+            # like a name only an import cycle vouches for
+            undeclared = target is not None and not kinds
+            guess = (
+                _UNKNOWN
+                if cycle or cuts or undeclared or _UNKNOWN in kinds
+                else "const"
+            )
             is_default = exported == DEFAULT_NAME
             if is_default and from_default and target is not None:
                 named = default if default and default != DEFAULT_NAME else None

@@ -1723,6 +1723,26 @@ def test_drf_register_on_unresolved_router_is_a_site(tmp_path):
     assert sites_of(result) == ["api.py:8"]
 
 
+def test_viewset_with_an_admin_named_in_repo_base_is_still_a_view(tmp_path):
+    # only django.contrib.admin classes exclude a registration; a project's own
+    # `BaseAdmin(ModelViewSet)` is an API view, so its registration is a site
+    django(tmp_path)
+    write(
+        tmp_path,
+        "urls.py",
+        "from django.urls import path\nurlpatterns = [path('a/', lambda r: 1)]\n",
+    )
+    write(
+        tmp_path,
+        "api.py",
+        "from rest_framework import viewsets\nfrom lib import cfg, STAFF\n"
+        "class BaseAdmin(viewsets.ModelViewSet):\n    pass\n\n"
+        "class StaffView(BaseAdmin):\n    pass\n\n"
+        "cfg.register(STAFF, StaffView)\n",
+    )
+    assert sites_of(run_routes(tmp_path)) == ["api.py:9"]
+
+
 def test_decorator_on_computed_receiver_is_a_site(tmp_path):
     fastapi(tmp_path)
     write(

@@ -1093,3 +1093,25 @@ def test_reexport_cycle_of_a_name_nobody_declares_is_a_site(tmp_path):
     detail = cover(result, ".", "typescript")
     assert detail.status == "partial"
     assert "src/c1.ts" in detail.detail and "src/c2.ts" in detail.detail
+
+
+@needs_ts
+def test_named_reexport_of_a_name_the_source_does_not_declare_is_a_site(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/s.ts", "export const Real = 1;\n")
+    write(tmp_path, "src/r.ts", "export { Real, Nope } from './s';\n")
+    result = run_symbols(tmp_path)
+    got = {(r[2], r[0]) for r in rows(result, "sym.root")}
+    assert ("src/r.ts", "Real") in got and ("src/r.ts", "Nope") not in got
+    detail = cover(result, ".", "typescript")
+    assert detail.status == "partial" and "src/r.ts:1" in detail.detail
+
+
+@needs_ts
+def test_ts_import_equals_require_does_not_disable_commonjs_reading(tmp_path):
+    result = solo(
+        tmp_path,
+        "import fs = require('fs');\nexports.foo = 1;\n",
+        "lib/x.ts",
+    )
+    assert ["foo", "const", "lib/x.ts"] in rows(result, "sym.root")

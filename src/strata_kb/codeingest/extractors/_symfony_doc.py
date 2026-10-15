@@ -3,8 +3,8 @@
 Reads the arguments the route table needs: the path (first positional
 string, `path=` or `value=`) and `methods=` (a string or `{"GET", "POST"}`).
 Every other argument (`name=`, `requirements=`, ...) is skipped. A
-`@Route` whose path or methods are not plain string literals is returned
-as `None`, which the caller turns into a site.
+`@Route` whose path or methods are not plain string literals, or that has no
+argument list at all, is returned as `None`, which the caller turns into a site.
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from dataclasses import dataclass
 
 __all__ = ["DocRoute", "doc_methods", "doc_routes"]
 
+# group 2 is the opening paren: a bare `@Route` carries no arguments to read
 _OPEN = re.compile(
-    r"@((?:[\w\\]*\\)?(?:Route|Get|Post|Put|Patch|Delete|Head|Options))\s*\("
+    r"@((?:[\w\\]*\\)?(?:Route|Get|Post|Put|Patch|Delete|Head|Options))(?![\w\\])(\s*\()?"
 )
 _METHOD = re.compile(r"@(?:[\w\\]*\\)?Method\s*\(")
 _STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -124,7 +125,7 @@ def doc_routes(comment: str) -> list[tuple[int, str, DocRoute | None]]:
     text = _LEADING_STAR.sub("", comment)
     out: list[tuple[int, str, DocRoute | None]] = []
     for match in _OPEN.finditer(text):
-        body = _balanced(text, match.end())
+        body = _balanced(text, match.end()) if match.group(2) else None
         out.append(
             (
                 text.count("\n", 0, match.start()),

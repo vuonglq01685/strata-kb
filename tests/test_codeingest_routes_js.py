@@ -1154,6 +1154,56 @@ def test_nest_workspace_package_name_resolves_alias(tmp_path):
     assert all_routes(result) == [("GET", "/a/x"), ("POST", "/b/x")]
 
 
+def test_nest_barrel_reexporting_a_workspace_package_resolves_alias(tmp_path):
+    write(
+        tmp_path,
+        "libs/http/package.json",
+        '{"name": "@org/http", "main": "dist/index.js"}',
+    )
+    write(
+        tmp_path,
+        "libs/http/src/index.ts",
+        "export { Get as HttpGet, Post as HttpPost } from '@nestjs/common';\n",
+    )
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/star.ts": "export * from '@org/http';\n",
+            "src/named.ts": "export { HttpPost as Send } from '@org/http';\n",
+            "src/a.controller.ts": (
+                "import { Controller } from '@nestjs/common';\n"
+                "import { HttpGet } from './star';\n"
+                "import { Send } from './named';\n"
+                "@Controller('a') class A {\n"
+                "  @HttpGet('g') g() {}\n"
+                "  @Send('s') s() {}\n}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/g"), ("POST", "/a/s")]
+
+
+def test_nest_barrel_reexporting_a_registry_package_is_quiet(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": "export * from 'lodash';\nexport { pick } from 'lodash';\n",
+            "src/a.controller.ts": (
+                "import { Controller, Get } from '@nestjs/common';\n"
+                "import { pick } from './lib';\n"
+                "@Controller('a') class A {\n  @Get('x') x() { pick(); }\n}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", "api") == "complete"
+    assert all_routes(result) == [("GET", "/a/x")]
+
+
 def test_nest_unresolvable_non_relative_import_is_not_a_site(tmp_path):
     nest_app(
         tmp_path,

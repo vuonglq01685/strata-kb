@@ -1363,6 +1363,40 @@ class LegacyController
     )
 
 
+@pytest.mark.parametrize("bare", ["@Route", "@Rest\\Get", "@Route ", "@Post"])
+def test_symfony_bare_docblock_annotation_is_a_site(tmp_path, bare):
+    text = f"""<?php
+class LegacyController
+{{
+    /**
+     * {bare}
+     */
+    public function list() {{}}
+}}
+"""
+    symfony(tmp_path, "src/Controller/LegacyController.php", text)
+    result = run_routes(tmp_path)
+    assert row(result).detail == (
+        f"src/Controller/LegacyController.php:{at(text, bare.strip())}"
+    )
+
+
+def test_symfony_docblock_words_that_merely_start_like_an_annotation_are_prose(
+    tmp_path,
+):
+    text = """<?php
+class QuietController
+{
+    /**
+     * @Getter @Gets @Routes are not route annotations.
+     */
+    public function list() {}
+}
+"""
+    symfony(tmp_path, "src/Controller/QuietController.php", text)
+    assert row(run_routes(tmp_path)).status == "complete"
+
+
 def test_symfony_inherited_routes_are_sites(tmp_path):
     base = """<?php
 use Symfony\\Component\\Routing\\Attribute\\Route;

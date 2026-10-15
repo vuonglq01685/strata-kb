@@ -1620,6 +1620,26 @@ def test_web_dependency_inherited_from_the_parent_pom_is_a_site(tmp_path):
     assert (cov.status, cov.detail) == ("partial", "pom.xml:3")
 
 
+def test_spring_boot_4_webmvc_starter_is_a_server_dependency(tmp_path):
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project><modules><module>app</module></modules>\n<dependencies>\n"
+        "<dependency><artifactId>spring-boot-starter-webmvc</artifactId></dependency>\n"
+        "</dependencies></project>\n",
+    )
+    write(
+        tmp_path,
+        "app/pom.xml",
+        "<project><parent><artifactId>p</artifactId></parent>\n<dependencies>"
+        "<dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency>"
+        "</dependencies></project>\n",
+    )
+    write(tmp_path, f"app/{JAVA}/D.java", DELEGATE)
+    cov = row(run_routes(tmp_path), "app")
+    assert (cov.status, cov.detail) == ("partial", "pom.xml:3")
+
+
 def test_web_dependency_in_gradle_subprojects_block_is_a_site(tmp_path):
     write(tmp_path, "settings.gradle", "include 'app'\n")
     write(

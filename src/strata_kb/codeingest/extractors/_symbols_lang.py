@@ -652,8 +652,13 @@ def _js_read(tree: Tree, source: bytes) -> _Reader:
             reader.statement(stmt)
     # CommonJS forms only mean something in a file with no ESM syntax: in an
     # ES module `module` / `exports` are ordinary names.
+    # (`import x = require()` is CommonJS written in TypeScript.)
     esm = any(
-        c.type in ("import_statement", "export_statement")
+        c.type == "export_statement"
+        or (
+            c.type == "import_statement"
+            and not any(k.type == "import_require_clause" for k in c.children)
+        )
         for c in tree.root_node.named_children
     )
     if not esm and (b"exports" in source or b"module" in source):
