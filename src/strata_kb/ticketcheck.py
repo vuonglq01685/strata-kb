@@ -871,6 +871,19 @@ def _cited_name(text: str) -> str:
     return words[0].rstrip(".,;:") if words else ""
 
 
+_OUTSIDE_BACKTICKS_COMMA_RE = re.compile(r",(?=(?:[^`]*`[^`]*`)*[^`]*$)")
+
+
+def _cited_names(text: str) -> list[str]:
+    """Every name a `job.*`/`sym.*` segment cites: comma-separated, a backticked
+    name kept whole (it may hold commas)."""
+    return [
+        n
+        for item in _OUTSIDE_BACKTICKS_COMMA_RE.split(text)
+        if (n := _cited_name(item))
+    ]
+
+
 def _check_route_citation(
     sid: str,
     text: str,
@@ -912,7 +925,7 @@ def _check_listed_citation(
     if kind == "page":
         cited = [p.rstrip(".,;:)`") for p in _CITED_PATH_RE.findall(text)]
     else:
-        cited = [n] if (n := _cited_name(text)) else []
+        cited = _cited_names(text)
     if not cited:
         return
     body = _l2_slice(doc, sid, unreadable, issues)
@@ -933,6 +946,17 @@ def _check_listed_citation(
             )
 
 
+_LISTED_PREFIXES = ("api.", "route.", "page.", "job.", "sym.")
+
+
+def _cites_listed(text: str, known: set[str]) -> bool:
+    """True when `text` cites an existing route/page/job/symbol section id."""
+    return any(
+        (sid := m.rstrip(".")) in known and sid.startswith(_LISTED_PREFIXES)
+        for m in ID_RE.findall(text)
+    )
+
+
 def _check_tables_routes_commands(
     section: _Section, doc: LoadedDoc, issues: list[Issue]
 ) -> None:
@@ -940,6 +964,13 @@ def _check_tables_routes_commands(
     unreadable: set[str] = set()
     for lineno, line in _id_lines(section):
         if NEW_RE.search(line):
+            if _cites_listed(line, known):
+                issues.append(
+                    Issue(
+                        "error",
+                        f"a line cannot cite an id and carry [NEW] — put the [NEW] item on its own sub-bullet (line {lineno})",
+                    )
+                )
             continue
         preamble, segments = _id_segments(line)
         if segments:
@@ -1368,6 +1399,14 @@ def _check_files(
     for lineno, text in entries:
         new = NEW_RE.search(text)
         path = NEW_RE.sub("", text).strip().strip("`").rstrip("/")
+        if new is not None and _IN_RE.search(path):
+            issues.append(
+                Issue(
+                    "error",
+                    f"a Files entry is its own path — write `{_IN_RE.split(path)[-1].strip()} [NEW: D<n>]`, not '<thing> in <path>' (line {lineno})",
+                )
+            )
+            continue
         if new is not None:
             _judge_new(path, new, lineno, decisions, issues, notes)
             continue
@@ -1466,6 +1505,8 @@ def _new_entries(section: _Section) -> list[_NewEntry]:
             clean = NEW_RE.sub("", text).strip()
             if field == "Files":
                 path = clean.strip("`").rstrip("/")
+                if _IN_RE.search(path):
+                    continue  # reported by _check_files
                 out.append(_NewEntry(field, lineno, text, path, path, marker))
                 continue
             thing, target = _split_target(clean)
@@ -1494,6 +1535,8 @@ def _judge_new_entries(
             continue
         if any(sid.rstrip(".") not in known for sid in ID_RE.findall(e.text)):
             continue
+        if _cites_listed(e.text, known):
+            continue  # reported once by _check_tables_routes_commands
         _judge_new(e.thing, e.marker, e.lineno, decisions, issues, notes)
 
 

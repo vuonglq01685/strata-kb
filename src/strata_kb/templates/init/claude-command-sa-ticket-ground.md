@@ -26,8 +26,9 @@ human owner), never park "not built yet" under `Open decisions` — except a
 route, page, job, symbol, file or table partition/index/primary key whose
 area `struct.coverage` does not show `complete` for its scope (an absent
 job always goes to `Open decisions`; the gate rejects `[NEW: D<n>]` on a
-`Jobs:` line); a new route, page, job, symbol or file names its file,
-`… in <path> [NEW: D<n>]`; in a
+`Jobs:` line); a new route, page or symbol names its file
+(`… in <path> [NEW: D<n>]`, on its own sub-bullet, never on a line that also
+cites an id); a new file is its own `Files:` entry; a job is never `[NEW]`; in a
 greenfield repo the proposal cites the architecture document in the
 Decision cell so the BA can flip the row once, at mission time; you
 may APPEND rows to that table and never edit, delete or re-status an

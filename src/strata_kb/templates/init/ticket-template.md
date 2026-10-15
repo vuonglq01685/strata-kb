@@ -99,10 +99,11 @@ for a thing that is simply not built yet. Gate:
 starts; a D-row still OPEN is a FAIL a human resolves, not the SA.
 `Volumes:` / `Healthchecks:` / `Devices:` are copied from the svc
 records' own rows; a volume or device the ticket creates carries
-`[NEW: D<n>]`. A new route, page, job, symbol or file names the file it
-will live in — `… in <path> [NEW: D<n>]` — and is allowed only where
-`struct.coverage` shows that area complete for the path's scope;
-otherwise it goes under Open decisions. An absent job always does. -->
+`[NEW: D<n>]`. A new route, page or symbol names the file it will live
+in — `… in <path> [NEW: D<n>]` — on its own sub-bullet, never on a line
+that also cites an id; a new file is its own Files entry; a job is never
+[NEW]. Allowed only where `struct.coverage` shows that area complete for
+the path's scope; otherwise it goes under Open decisions. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 - Service: svc.<name>
 - Files:
@@ -110,6 +111,7 @@ otherwise it goes under Open decisions. An absent job always does. -->
   - <path> [NEW: D<n>]
 - Tables: db.<table>.<column>, … — or `none`
 - Routes: api.<tag> | route.<file> — <METHOD> <path>, … — or `none`
+  - <METHOD> <path> in <path> [NEW: D<n>]
 - Pages: page.<app> — <path>, … — or `none`
 - Jobs: job.<file> — <name>, … — or `none`
 - Symbols: sym.<package> — <Name>, … — or `none`

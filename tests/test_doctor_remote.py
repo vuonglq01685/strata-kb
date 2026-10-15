@@ -372,6 +372,28 @@ def test_fix_pins_rewrites_only_the_version_string(tmp_path):
     assert remote.fix_pins(tmp_path, "1.22.1") == []
 
 
+def test_pins_with_the_code_extra_are_read_reported_and_fixed_with_it(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    line = '      - run: pip install "strata-kb[code]==1.0.0"\n'
+    (wf / "kb-code.yml").write_text(line, encoding="utf-8")
+    (msg,) = [
+        i.message
+        for i in remote.version_issues(tmp_path, "1.22.1")
+        if "pins" in i.message
+    ]
+    assert "pins strata-kb[code]==1.0.0" in msg
+    assert "change the pin to strata-kb[code]==1.22.1" in msg
+    changed = remote.fix_pins(tmp_path, "1.22.1")
+    assert changed == [".github/workflows/kb-code.yml: strata-kb[code]==1.0.0 → 1.22.1"]
+    assert (wf / "kb-code.yml").read_text(encoding="utf-8") == line.replace(
+        "1.0.0", "1.22.1"
+    )
+    assert not [
+        i for i in remote.version_issues(tmp_path, "1.22.1") if "pins" in i.message
+    ]
+
+
 @pytest.mark.parametrize("bad", ["1.0 --index-url http://evil", "../x", "", "1.0;rm"])
 def test_install_version_refuses_a_bad_hub_version(bad, monkeypatch):
     def never(*_a, **_k):

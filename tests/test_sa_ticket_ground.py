@@ -144,12 +144,34 @@ def test_sa_prompt_mentions_struct_coverage_and_jobs_rule():
     assert "depth 4" not in body
 
 
-def test_sa_prompt_is_identical_across_rendered_wrappers():
-    # The body lives once in bodies/; every full wrapper renders it.
-    canon = _sa_body()
-    for name in SA_FULL_WRAPPERS[1:]:
-        assert "struct.coverage" in " ".join(_read_init_template(name).split()), name
-    assert "in <path> [NEW: D<n>]" in canon
+def test_every_full_wrapper_renders_the_coverage_rule():
+    for name in SA_FULL_WRAPPERS:
+        text = " ".join(_read_init_template(name).split())
+        assert "in <path> [NEW: D<n>]" in text, name
+        assert "Jobs coverage is never complete" in text, name
+
+
+def test_sa_prompt_keeps_new_items_off_citation_lines_and_names_area_values():
+    body = _sa_body()
+    for phrase in (
+        "on its own sub-bullet",
+        "`routes`, `pages`, `jobs`, `symbols`, `files` and `schema`",
+        "has scope `.`",
+        "the worst row decides",
+        "has no rows",
+        "The gate does not check this for old documents",
+    ):
+        assert phrase in body, phrase
+    assert "predates this rule" not in body
+    command = " ".join(
+        _read_init_template("claude-command-sa-ticket-ground.md").split()
+    )
+    assert "a job is never `[NEW]`" in command
+    template = " ".join(_read_init_template("ticket-template.md").split())
+    assert "a job is never [NEW]" in template
+    assert "  - <METHOD> <path> in <path> [NEW: D<n>]" in _read_init_template(
+        "ticket-template.md"
+    )
 
 
 def test_ticket_template_has_pages_jobs_symbols_fields():

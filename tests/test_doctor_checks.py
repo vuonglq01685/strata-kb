@@ -668,15 +668,3 @@ def test_doctor_quiet_with_code_extra(monkeypatch):
 
     monkeypatch.setattr(_ts, "available", lambda: True)
     assert check_code_extra() == []
-
-
-def test_fix_pins_keeps_the_code_extra(tmp_path):
-    from strata_kb.doctor import remote
-
-    _workflow(tmp_path, '      - run: pip install "strata-kb[code]==1.0.0"\n')
-    remote.fix_pins(tmp_path, "1.28.0")
-    text = (tmp_path / ".github" / "workflows" / "kb-code.yml").read_text()
-    assert 'pip install "strata-kb[code]==1.28.0"' in text
-    assert remote.version_issues(tmp_path, "1.28.0") == [] or all(
-        "pins" not in i.message for i in remote.version_issues(tmp_path, "1.28.0")
-    )

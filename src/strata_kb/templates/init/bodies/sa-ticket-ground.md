@@ -77,12 +77,16 @@ fallback.
    line is `[NEW: D<n>]`. When the status is `partial` or `not scanned`,
    or `struct.coverage` has no row for that scope and area, the scan may
    have missed it: put the item under `Open decisions`, quoting the
-   coverage row's status. The scope is the longest `struct.coverage`
-   scope that prefixes the path of the file the new thing will live in
-   (for `Files:`, the top-level directory); when a scope has several
-   rows for one area, the row whose language matches the file extension
-   decides. Everything else — `svc.*`, `int.*`, volumes, devices, a
-   whole new `db.*` table — keeps the rule above unchanged: not built →
+   coverage row's status. The `struct.coverage` Area values are `routes`,
+   `pages`, `jobs`, `symbols`, `files` and `schema` (a table's partition,
+   index or primary key is `schema`). The scope is the longest
+   `struct.coverage` scope that prefixes the path of the file the new
+   thing will live in (for `Files:`, the top-level directory; a file
+   at the repository root has scope `.`). When a scope has several rows
+   for one area, the row whose language matches the file extension
+   decides; with no language-matching row, the worst row decides.
+   Everything else — `svc.*`, `int.*`, volumes, devices, a whole new
+   `db.*` table — keeps the rule above unchanged: not built →
    `[NEW: D<n>]`, never `Open decisions`.
 
    Jobs coverage is never complete (jobs outside framework schedulers are
@@ -90,7 +94,11 @@ fallback.
    `[NEW: D<n>]` on a `Jobs:` line is always a gate error. A `[NEW]`
    naming something the document already lists is a gate error too
    ("already exists in <id>; cite it instead") — cite the id. A `-code`
-   without `struct.coverage` predates this rule and the gate skips it.
+   without `struct.coverage` has no rows: every route, page, job, symbol,
+   file or partition/index/primary key absent from it goes under
+   `Open decisions`
+   (status `not scanned`). The gate does not check this for old documents;
+   you must.
 
    On a `## Services & order` row a single `[NEW: D<n>]` exempts every
    unknown `svc.*` on that row, `Depends on` included. Put the marker on
@@ -106,8 +114,8 @@ fallback.
    - `Files:` — one path per sub-bullet, spelled exactly as `struct.tree`
      lists it; use `struct.files.*` for paths deeper than `struct.tree`
      shows (its L3 lists every tracked file). A file the ticket will
-     create: `<path> [NEW: D<n>]`, the coverage rule applying to the
-     path itself.
+     create: `<path> [NEW: D<n>]` — its own entry, no ` in `; the coverage
+     rule applies to the path itself.
    - `Tables:` — `db.<table>.<column>`, the column spelled as the table's
      `Column` cell. `none` when the ticket touches no table the document
      knows.
@@ -117,16 +125,20 @@ fallback.
      are the same parameter). Several ids on one line are fine; each
      citation follows its own id. A route the ticket creates:
      `<METHOD> <path> in <path> [NEW: D<n>]`, naming the file it will
-     live in. `none` when the document has no route for it.
+     live in — on its own sub-bullet, never on a line that also cites an
+     id (the gate rejects a mixed line). `none` when the document has no
+     route for it.
    - `Pages:` — `page.<slug> — <path>` copied from a `page.*` section's
-     `Path` column. A new page: `<path> in <path> [NEW: D<n>]`. `none`
+     `Path` column. A new page: `<path> in <path> [NEW: D<n>]` on its own
+     sub-bullet, never on a line that cites an id. `none`
      when the ticket touches no page.
    - `Jobs:` — `job.<slug> — <Name>` copied from a `job.*` section's
      `Name` column (backticks around a name with spaces). A job the
      document does not list is never `[NEW: D<n>]`: it goes under
      `Open decisions`. `none` when the ticket touches no job.
    - `Symbols:` — `sym.<slug> — <Name>` copied from a `sym.*` section's
-     `Name` column. A new symbol: `<Name> in <path> [NEW: D<n>]`. `none`
+     `Name` column. A new symbol: `<Name> in <path> [NEW: D<n>]` on its own
+     sub-bullet, never on a line that cites an id. `none`
      when the ticket touches no exported symbol.
    - `Externals:` — `int.<name>` ids, or `none`.
    - `Volumes:` — `svc.<name> — <volume>, …` copied from the record's

@@ -50,7 +50,8 @@ _VERSION_RE = re.compile(
 # cannot loop.
 UPGRADED_ENV = "STRATA_KB_DOCTOR_UPGRADED"
 # `pip install strata-kb==X` in a repo's CI workflows (codeingest.sync's pin).
-_PIN_RE = re.compile(r"strata-kb(?:\[[^\]]*\])?==([^\s\"']+)")
+# group 1: the name with its optional `[extra]`; group 2: the version.
+_PIN_RE = re.compile(r"(strata-kb(?:\[[^\]]*\])?)==([^\s\"']+)")
 CONNECT_TIMEOUT = 30  # a human is waiting on `kb doctor`
 READ_TIMEOUT = 300  # hashing a large hub entry, or a TTL pull, takes a while
 
@@ -364,10 +365,10 @@ def version_issues(repo_root: Path | None, hub_version: str | None) -> list[Issu
         issues += [
             Issue(
                 "error",
-                f".github/workflows/{wf.name} pins strata-kb=={pin} but the hub "
-                f"runs {hub_version} — change the pin to strata-kb=={hub_version}",
+                f".github/workflows/{wf.name} pins {name}=={pin} but the hub "
+                f"runs {hub_version} — change the pin to {name}=={hub_version}",
             )
-            for pin in pins
+            for name, pin in pins
             if pin != hub_version
         ]
     return issues
@@ -422,18 +423,17 @@ def fix_pins(repo_root: Path | None, hub_version: str) -> list[str]:
             text = wf.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        old = sorted({p for p in _PIN_RE.findall(text) if p != hub_version})
+        old = sorted({(n, v) for n, v in _PIN_RE.findall(text) if v != hub_version})
         if not old:
             continue
-        # keep the `[extra]` the pin was written with: replace the version only
-        new_text = _PIN_RE.sub(
-            lambda m: m.group(0)[: m.start(1) - m.start(0)] + hub_version, text
-        )
+        # keeps the `[extra]` the pin was written with: only the version changes
+        new_text = _PIN_RE.sub(lambda m: f"{m.group(1)}=={hub_version}", text)
         try:
             wf.write_text(new_text, encoding="utf-8", newline="\n")
         except OSError:
             continue
         changed.append(
-            f".github/workflows/{wf.name}: strata-kb=={', '.join(old)} → {hub_version}"
+            f".github/workflows/{wf.name}: "
+            f"{', '.join(f'{n}=={v}' for n, v in old)} → {hub_version}"
         )
     return changed

@@ -2138,3 +2138,51 @@ def test_moved_revision_changed_page_section_warns_with_diff():
     )
     assert errors(report) == []
     assert any(f"§{_PAGES} changed" in w for w in warnings(report))
+
+
+def test_new_item_mixed_with_a_citation_on_one_line_is_an_error():
+    report = run_synth(
+        [
+            f"- Routes: {_MEDIA} — GET /bogus, POST /media/fresh in "
+            "apps/media/src/f.ts [NEW: tbd]"
+        ]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1, msgs
+    assert "own sub-bullet" in msgs[0]
+
+
+def test_new_item_on_its_own_sub_bullet_beside_a_citation_passes():
+    report = run_synth(
+        [
+            "- Routes:",
+            f"  - {_MEDIA} — GET /media/ping",
+            "  - POST /media/fresh in apps/media/src/f.ts [NEW: tbd]",
+        ]
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+@pytest.mark.parametrize(
+    "line, bad",
+    [
+        (f"- Symbols: {_SYMS} — AdminController, Bogus", "symbol 'Bogus'"),
+        (f"- Jobs: {_JOBS} — createPartition, bogus", "job 'bogus'"),
+    ],
+)
+def test_every_listed_name_of_a_job_or_symbol_id_is_checked(line, bad):
+    msgs = errors(run_synth([line]))
+    assert len(msgs) == 1 and bad in msgs[0], msgs
+
+
+def test_listed_names_with_backticks_and_commas_stay_whole():
+    ok = run_synth([f"- Jobs: {_JOBS} — createPartition, `nightly cleanup`"])
+    assert errors(ok) == [], ok.render("Grounding")
+
+
+def test_files_new_entry_is_its_own_path():
+    report = run_synth(
+        ["- Files:", "  - apps/media/src/x.ts in apps/media/src/x.ts [NEW: tbd]"]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1 and "a Files entry is its own path" in msgs[0], msgs
