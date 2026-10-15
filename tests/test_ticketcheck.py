@@ -1787,6 +1787,19 @@ def test_middleware_matcher_row_is_not_a_page():
     assert any("is not in page.apps-web" in e for e in errors(report))
 
 
+def test_ascii_double_hyphen_separator_on_a_name_cited_line():
+    ok = run_synth(
+        [
+            f"- Jobs: {_JOBS} -- createPartition",
+            f"- Symbols: {_SYMS} --- AdminController",
+        ]
+    )
+    assert errors(ok) == [], ok.render("Grounding")
+    # a CSS custom property keeps its leading `--`
+    css = run_synth(["- Symbols: sym.apps-web — --brand"])
+    assert errors(css) == [], css.render("Grounding")
+
+
 def test_placeholder_job_names_never_match():
     report = run_synth([f"- Jobs: {_JOBS} — (anonymous)"])
     (msg,) = errors(report)

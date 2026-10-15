@@ -781,9 +781,9 @@ _PARAM_RE = re.compile(
 )
 # A path in prose: starts with `/`, not glued to a word (`apps/web` is not one).
 _CITED_PATH_RE = re.compile(r"(?<![\w/.\-])(/[^\s`,;]*)")
-# A dash separator: an em/en dash, or a hyphen followed by a space -- never the
-# leading `--` of a CSS custom property.
-_SEPARATOR_RE = re.compile(r"^\s*(?:[—–]|-(?=\s))+\s*")
+# A dash separator: an em/en dash, or hyphens followed by a space (`-`, `--`) --
+# never the leading `--` of a CSS custom property.
+_SEPARATOR_RE = re.compile(r"^\s*(?:[—–]|-+(?=\s))+\s*")
 _FIELD_PREFIX_RE = re.compile(r"^\s*-\s*(?:[A-Za-z][A-Za-z ]*?:)?")
 
 

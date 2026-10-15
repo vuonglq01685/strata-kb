@@ -751,7 +751,7 @@ should look.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `kb code-ingest` exits 1: nothing detected | Only `tree` and the source readers found anything | Check that your compose file, manifests or CI workflows are where the extractors look; name a `--db` if schema is the point |
-| `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing locally, so routes, pages, jobs and symbols would be `not scanned` | `pip install "strata-kb[code]"` |
+| `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing locally, so routes and symbols (and pages other than the file-system routers) would be `not scanned` and jobs would stay `partial` | `pip install "strata-kb[code]"` |
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb build` fails in CI on a `-svc` section | A `pending` section was committed | Finish the seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | A typo, or the new service's files are not tracked yet | Copy the id from `services.md`; `git add` the new files and retry |

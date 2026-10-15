@@ -660,6 +660,10 @@ def test_doctor_warns_without_code_extra(monkeypatch):
     assert [i.level for i in issues] == ["warning"]
     assert "strata-kb[code] is not installed" in issues[0].message
     assert 'pip install "strata-kb[code]"' in issues[0].message
+    # jobs stay partial and file-system pages are still scanned: not "all not scanned"
+    msg = issues[0].message
+    assert "jobs will stay 'partial'" in msg and "file-system" in msg
+    assert "routes, pages, jobs and symbols" not in msg
 
 
 def test_doctor_quiet_with_code_extra(monkeypatch):

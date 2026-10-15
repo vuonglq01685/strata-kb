@@ -119,6 +119,8 @@ def _fact_terms(kind: str, value: str) -> list[str]:
         return []
     if kind == "route":  # "GET /orders": prose names the path
         return [value, value.partition(" ")[2]]
+    if kind == "job":  # "nightly @ 0 2 * * *": prose names the job
+        return [value, value.partition(" @ ")[0]]
     if kind == "column_type":  # "amount:TEXT": prose names the column
         return [value.partition(":")[0]]
     return [value]

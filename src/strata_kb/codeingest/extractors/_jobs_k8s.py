@@ -53,7 +53,8 @@ def _cronjob(rel: str, doc: yaml.Node) -> tuple[Job, str | None]:
     root = _mapping(doc)
     spec = _mapping(root.get("spec"))
     sched = spec.get("schedule")
-    schedule = schedule_only(_scalar(sched))
+    raw = _scalar(sched)  # whitespace first: a block scalar ends in a newline
+    schedule = schedule_only(None if raw is None else " ".join(raw.split()))
     line = (sched or doc).start_mark.line + 1
     site = f"{rel}:{line}" if schedule is None else None
     name = _name(_mapping(root.get("metadata")).get("name"))

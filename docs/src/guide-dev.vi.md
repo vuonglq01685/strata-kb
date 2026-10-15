@@ -748,7 +748,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Hiện tượng | Nguyên nhân | Cách xử lý |
 |---|---|---|
 | `kb code-ingest` thoát 1: không phát hiện gì | Chỉ có `tree` và các extractor đọc mã nguồn tìm được thứ gì đó | Kiểm tra xem file compose, manifest hay CI workflow có nằm đúng chỗ extractor tìm không; nêu `--db` nếu schema là thứ bạn cần |
-| `kb doctor`: "strata-kb[code] is not installed" | Máy chưa cài extra `code`, nên route, page, job và symbol sẽ là `not scanned` | `pip install "strata-kb[code]"` |
+| `kb doctor`: "strata-kb[code] is not installed" | Máy chưa cài extra `code`, nên route và symbol (cùng page, trừ router theo file hệ thống) sẽ là `not scanned` còn job vẫn là `partial` | `pip install "strata-kb[code]"` |
 | `kb code-ingest` thoát 1: từ chối đích đến | Có một tài liệu do người soạn đang nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb build` fail trên CI ở một section `-svc` | Một section `pending` đã bị commit | Hoàn tất bước seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | Do gõ nhầm, hoặc file của service mới chưa được track | Copy id từ `services.md`; `git add` các file mới rồi thử lại |

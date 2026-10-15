@@ -194,6 +194,17 @@ def test_k8s_works_without_code_extra(tmp_path, monkeypatch):
     assert result.warnings == []
 
 
+def test_k8s_block_scalar_schedule_is_a_schedule(tmp_path):
+    write(
+        tmp_path,
+        "deploy/cron.yaml",
+        "kind: CronJob\nmetadata:\n  name: x\nspec:\n  schedule: |\n    0 2 * * *\n",
+    )
+    result = run_jobs(tmp_path)
+    assert only(result, "deploy/cron.yaml")[1] == "0 2 * * *"
+    assert row(result).detail == _coverage.JOBS_DETAIL
+
+
 def test_k8s_templated_schedule_is_dynamic_with_site(tmp_path):
     write(
         tmp_path,
