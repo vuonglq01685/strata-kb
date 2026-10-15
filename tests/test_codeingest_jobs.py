@@ -1029,3 +1029,213 @@ def test_name_only_backslash_is_a_namespace_separator_not_an_escape():
     assert name_only("App\\Jobs\\Prune") == "App\\Jobs\\Prune"
     for bad in ("b\\tX", "a\\nb", "\\x41", "a\\\\b", "a\\u0041b", "a=b", 'a"b'):
         assert name_only(bad) is None, bad
+
+
+# --- fix round 4 -----------------------------------------------------------------
+
+
+def test_schedule_only_accepts_cron_and_interval_shapes_and_rejects_the_rest():
+    from strata_kb.codeingest.extractors._jobs_model import schedule_only
+
+    for good in ("0 3 * * *", "@every 1h30m", "0 0 12 * * ?", "0 0 ? * MON#2", "5m"):
+        assert schedule_only(good) == good, good
+    for bad in (
+        None,
+        "",
+        "x" * 65,
+        "redis://u:p@h",
+        "pw=X",
+        "a'b",
+        'a"b',
+        "a\nb",
+        "a;b",
+        "${x}",
+        "%env(X)%",
+        "a(b)",
+    ):
+        assert schedule_only(bad) is None, bad
+
+
+# the schedule position of every scanner, fed a secret-shaped value
+SCHEDULE_SECRET_CASES = {
+    "nest": (
+        "s.ts",
+        "import { Cron } from '@nestjs/schedule';\nclass S {\n"
+        "  @Cron('pw=SECRETN1')\n  a() {}\n"
+        "  @Cron('redis://u:SECRETN2@h')\n  b() {}\n}\n",
+    ),
+    "node-cron": (
+        "n.js",
+        "const cron = require('node-cron');\n"
+        "cron.schedule('redis://u:SECRETC1@h', f);\n"
+        "cron.schedule('pw=SECRETC2', g);\n",
+    ),
+    "bullmq": (
+        "q.ts",
+        "import { Queue } from 'bullmq';\n"
+        "q.add('a', {}, { repeat: { pattern: 'pw=SECRETB1' } });\n"
+        "q.add('b', {}, { repeat: { cron: 'redis://u:SECRETB2@h' } });\n",
+    ),
+    "celery": (
+        "c.py",
+        "from celery.schedules import crontab\n"
+        "app.conf.beat_schedule = {\n"
+        " 'a': {'task': 't', 'schedule': crontab(hour='redis://u:SECRETY1@h')},\n"
+        " 'b': {'task': 't', 'schedule': crontab(minute=b'SECRETY2')},\n"
+        " 'c': {'task': 't', 'schedule': crontab(minute='pw=SECRETY3')},\n"
+        " 'd': {'task': 't', 'schedule': crontab(minute=f'SECRETY4')},\n}\n",
+    ),
+    "laravel": (
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->command('a')->cron('pw=SECRETL1');\n"
+        "  $schedule->command('b')->dailyAt('x=SECRETL2');\n"
+        "  $schedule->command('c')->hourly()->between('a=SECRETL3', '17:00');\n"
+        "  $schedule->command('d')->daily()->days('SECRETL4=');\n}}\n",
+    ),
+    "symfony": (
+        "T.php",
+        "<?php\n#[AsCronTask('pw=SECRETS1')]\nclass M {}\n"
+        "#[AsPeriodicTask('pw=SECRETS2')]\nclass N {}\n",
+    ),
+    "spring": (
+        "A.java",
+        "class A {\n"
+        '  @Scheduled(cron = "pw=SECRETJ1")\n  void a() {}\n'
+        '  @Scheduled(every = "pw=SECRETJ2")\n  void b() {}\n'
+        '  @Scheduled(fixedRateString = "pw=SECRETJ3")\n  void c() {}\n}\n',
+    ),
+    "hangfire": (
+        "S.cs",
+        "class S { void M() {\n"
+        '  RecurringJob.AddOrUpdate("a", () => X.Y(), "pw=SECRETH1");\n'
+        '  RecurringJob.AddOrUpdate("b", () => X.Y(), Cron.Daily("pw=SECRETH2"));\n'
+        '  RecurringJob.AddOrUpdate("c", () => X.Y(), "redis://u:SECRETH3@h");\n}}\n',
+    ),
+    "quartz": (
+        "Q.cs",
+        "class Q { void M() {\n"
+        '  var t = TriggerBuilder.Create().WithCronSchedule("pw=SECRETQ1").Build();\n}}\n',
+    ),
+    "go": (
+        "main.go",
+        'package main\nimport "github.com/robfig/cron/v3"\n'
+        'func main() { c.AddFunc("pw=SECRETG1", job) }\n',
+    ),
+    "rust": (
+        "m.rs",
+        'use tokio_cron_scheduler::Job;\nfn main() { Job::new("pw=SECRETR1", run); }\n',
+    ),
+    "k8s": (
+        "k/c.yaml",
+        "kind: CronJob\nmetadata:\n  name: n\nspec:\n  schedule: 'pw=SECRETK1'\n",
+    ),
+}
+
+
+@needs_ts
+@pytest.mark.parametrize("case", sorted(SCHEDULE_SECRET_CASES))
+def test_secret_shaped_schedule_is_dynamic_in_every_scanner(tmp_path, case):
+    rel, text = SCHEDULE_SECRET_CASES[case]
+    write(tmp_path, rel, text)
+    result = run_jobs(tmp_path)
+    assert result.sections, case
+    rows = rows_of(result, rel)
+    assert rows and {r[1] for r in rows} == {"(dynamic)"}, rows
+    everything = " ".join(
+        [blob_of(result)]
+        + [s.title + s.summary for s in result.sections]
+        + [r.detail for r in result.coverage]
+    )
+    assert "SECRET" not in everything, everything
+
+
+@needs_ts
+def test_celery_schedule_is_rebuilt_from_known_fields_never_raw_text(tmp_path):
+    write(
+        tmp_path,
+        "c.py",
+        "from celery.schedules import crontab\n"
+        "app.conf.beat_schedule = {\n"
+        " 'k': {'task': 't', 'schedule': crontab(minute=0,  # pw=LEAKA1\n  hour=3)},\n"
+        " 'k2': {'task': 't', 'schedule': crontab(\n  minute=0  # token LEAKA2\n )},\n"
+        " 'k3': {'task': 't', 'schedule': crontab(minute=0, hour=3,)},\n}\n",
+    )
+    got = {r[0]: r[1] for r in rows_of(run_jobs(tmp_path), "c.py")}
+    assert got == {
+        "k": "crontab(minute=0, hour=3)",
+        "k2": "crontab(minute=0)",
+        "k3": "crontab(minute=0, hour=3)",
+    }
+
+
+@needs_ts
+def test_hangfire_cron_call_is_rebuilt_without_comments(tmp_path):
+    write(
+        tmp_path,
+        "S.cs",
+        "class S { void M() {\n"
+        '  RecurringJob.AddOrUpdate("a", () => X.Y(), Cron.Daily(/* pw=LEAKH */ 1, 30));\n'
+        '  RecurringJob.AddOrUpdate("b", () => X.Y(), Cron . /* pw=LEAKI */ Daily);\n'
+        '  RecurringJob.AddOrUpdate("c", () => X.Y(), Cron.Daily("LEAKJ"));\n}}\n',
+    )
+    got = {r[0]: r[1] for r in rows_of(run_jobs(tmp_path), "S.cs")}
+    assert got == {"a": "Cron.Daily(1, 30)", "b": "Cron.Daily", "c": "(dynamic)"}
+
+
+@needs_ts
+def test_bullmq_shorthand_repeat_is_dynamic_with_a_site(tmp_path):
+    write(
+        tmp_path,
+        "q.ts",
+        "import { Queue } from 'bullmq';\nconst repeat = mk('LEAKF1');\n"
+        "q.add('a', {}, { repeat });\n",
+    )
+    result = run_jobs(tmp_path)
+    assert rows_of(result, "q.ts")[0][:2] == ["a", "(dynamic)"]
+    assert "q.ts:3" in row(result).detail
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    "imports,call",
+    [
+        ("import datetime as dt\n", "dt.timedelta(minutes=5)"),
+        ("import datetime\n", "datetime.timedelta(minutes=5)"),
+        ("import celery\n", "celery.schedules.crontab(minute=0)"),
+        ("import celery.schedules\n", "celery.schedules.crontab(minute=0)"),
+        ("from celery import schedules as s\n", "s.crontab(minute=0)"),
+        ("from celery.schedules import *\n", "crontab(minute=0)"),
+        ("from celery.schedules import *\n", "solar('sunset', 1, 2)"),
+        ("from celery.schedules import *\n", "schedule(run_every=10)"),
+    ],
+)
+def test_celery_module_bindings(tmp_path, imports, call):
+    write(
+        tmp_path,
+        "c.py",
+        imports
+        + f"app.conf.beat_schedule = {{'k': {{'task': 't', 'schedule': {call}}}}}\n",
+    )
+    (found,) = rows_of(run_jobs(tmp_path), "c.py")
+    assert found[1] == call
+
+
+@needs_ts
+def test_celery_unbound_module_alias_stays_dynamic(tmp_path):
+    write(
+        tmp_path,
+        "c.py",
+        "import other as dt\napp.conf.beat_schedule = "
+        "{'k': {'task': 't', 'schedule': dt.timedelta(minutes=5)}}\n",
+    )
+    assert rows_of(run_jobs(tmp_path), "c.py")[0][1] == "(dynamic)"
+
+
+def test_name_only_accepts_php_namespace_segments_that_look_like_hex_escapes():
+    from strata_kb.codeingest.extractors._jobs_model import name_only
+
+    for good in ("App\\UData", "App\\XCase", "App\\Jobs\\Xf", "A\\U0041"):
+        assert name_only(good) == good, good
+    for bad in ("b\\tX", "a\\nb", "\\x41", "a\\\\b", "a\\u0041b", "a\\x41"):
+        assert name_only(bad) is None, bad

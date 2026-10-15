@@ -74,21 +74,34 @@ def _is_cron(node: Node | None) -> bool:
     )
 
 
+def _cron_call(callee: Node, args: list[Node] | None) -> str | None:
+    """`Cron.Daily` / `Cron.Daily(1, 30)` rebuilt from the member name and
+    numeric arguments, never from source text; None when either is unreadable."""
+    member = name_only(_text(callee.child_by_field_name("name")))
+    parts = None if args is None else [num(a) for a in args]
+    if member is None or (parts is not None and None in parts):
+        return None
+    return (
+        f"Cron.{member}"
+        if parts is None
+        else f"Cron.{member}({', '.join(map(str, parts))})"
+    )
+
+
 def _hangfire_cron(ctx: Ctx, node: Node | None, at: Node) -> str:
     if node is None:
         return ctx.dyn(at)
     text = cron_text(node)
     if text:
         return text
+    callee = node.child_by_field_name("function")
     if _is_cron(node):
-        return _text(node)
-    if (
-        node.type == "invocation_expression"
-        and _is_cron(node.child_by_field_name("function"))
-        and all(_lit(a) is not None or num(a) is not None for a in _args(node))
-    ):
-        return " ".join(_text(node).split())
-    return ctx.dyn(at)
+        found = _cron_call(node, None)
+    elif node.type == "invocation_expression" and _is_cron(callee) and callee:
+        found = _cron_call(callee, _args(node))
+    else:
+        found = None
+    return found or ctx.dyn(at)
 
 
 def _hangfire(ctx: Ctx) -> None:

@@ -52,8 +52,11 @@ _PLACEHOLDER_RE = re.compile(r"[${]|%[^%\s]+%")
 # task, a scoped class, an artisan `report:send`, a k8s name). No spaces,
 # quotes, `=`, `@` or brackets: nothing that can carry a credential.
 # A backslash is only a namespace separator before an upper-case segment
-# (`App\\Jobs\\Prune`); `\\t`, `\\n`, `\\x41`, `\\u0041` are escapes, not names.
-_NAME_RE = re.compile(r"[\w$]+(?:(?:::|[.:/-]|\\(?=[A-Z_])(?![UX][0-9a-fA-F]))[\w$]+)*")
+# (`App\\Jobs\\Prune`, `App\\UData`); `\\t`, `\\n`, `\\x41`, `\\u0041` are escapes.
+_NAME_RE = re.compile(r"[\w$]+(?:(?:::|[.:/-]|\\(?=[A-Z_]))[\w$]+)*")
+# What a schedule taken from source may look like: a cron expression, an
+# `@every 1h`, an interval word -- no `=`, quotes, brackets or `://`.
+_SCHEDULE_RE = re.compile(r"[\w*/,?#@.:\- ]{1,64}", re.ASCII)
 
 
 def name_only(text: str | None) -> str | None:
@@ -61,6 +64,15 @@ def name_only(text: str | None) -> str | None:
     goes through this: a string argument is not a name just because a
     scanner took it from the name position."""
     return text if text is not None and _NAME_RE.fullmatch(text) else None
+
+
+def schedule_only(value: str | None) -> str | None:
+    """`value` when it is schedule-shaped, else None. Every schedule literal
+    taken from source goes through this: a string argument is not a schedule
+    just because a scanner took it from the schedule position."""
+    if value is None or "://" in value or not _SCHEDULE_RE.fullmatch(value):
+        return None
+    return value
 
 
 @dataclass(frozen=True)
@@ -114,8 +126,8 @@ def plain(text: str | None) -> str | None:
 
 
 def cron_text(node: Node | None) -> str | None:
-    """A string literal that is not a config placeholder, else None."""
-    return plain(_ts.string_literal(node)) if node is not None else None
+    """A string literal that is schedule-shaped, else None."""
+    return schedule_only(plain(_ts.string_literal(node))) if node is not None else None
 
 
 def enclosing(node: Node, types: frozenset[str]) -> str:

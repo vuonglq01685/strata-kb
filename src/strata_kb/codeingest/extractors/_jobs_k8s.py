@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import yaml
 
-from strata_kb.codeingest.extractors._jobs_model import DYNAMIC, Job, name_only, plain
+from strata_kb.codeingest.extractors._jobs_model import (
+    DYNAMIC,
+    Job,
+    name_only,
+    plain,
+    schedule_only,
+)
 
 
 def _mapping(node: yaml.Node | None) -> dict[str, yaml.Node]:
@@ -47,7 +53,7 @@ def _cronjob(rel: str, doc: yaml.Node) -> tuple[Job, str | None]:
     root = _mapping(doc)
     spec = _mapping(root.get("spec"))
     sched = spec.get("schedule")
-    schedule = _scalar(sched)
+    schedule = schedule_only(_scalar(sched))
     line = (sched or doc).start_mark.line + 1
     site = f"{rel}:{line}" if schedule is None else None
     name = _name(_mapping(root.get("metadata")).get("name"))
