@@ -137,8 +137,12 @@ def test_web_doc_routes_refuse_traversal(leaky_hub):
     from starlette.testclient import TestClient
 
     from strata_kb.mcp import ServerConfig
+    from strata_kb.serving.accounts import Accounts
     from strata_kb.web.app import create_app
 
+    # With no account every /ui page redirects to the setup form; the guard
+    # under test is the doc route itself.
+    Accounts(leaky_hub / ".kb-auth" / "users.db").add("boss", "pw", "admin")
     token = "t" * 48
     config = ServerConfig(kb_dir=leaky_hub / ".kb", hub=str(leaky_hub))
     auth = {"Authorization": f"Bearer {token}"}

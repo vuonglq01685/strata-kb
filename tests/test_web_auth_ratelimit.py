@@ -69,7 +69,7 @@ def test_the_header_path_and_the_login_form_share_one_bucket(web_client):
     assert resp.status_code == 429
 
 
-def test_browser_paths_get_html_and_api_paths_get_json(web_client):
+def test_browser_paths_get_html_and_api_paths_get_json(web_client, admin_user):
     for _ in range(LOGIN_MAX_ATTEMPTS + 1):
         web_client.get("/api/docs", headers={"Authorization": "Bearer wrong"})
     api_resp = web_client.get("/api/docs", headers={"Authorization": "Bearer wrong"})
@@ -149,7 +149,7 @@ def test_expired_own_cookie_does_not_lock_out_the_correct_password(
     assert resp.status_code == 303
 
 
-def test_a_forged_session_cookie_is_still_charged_every_time(web_client):
+def test_a_forged_session_cookie_is_still_charged_every_time(web_client, admin_user):
     """The fix above must not open a retry channel: a cookie this server
     never issued (bad signature -- a guess, not a stale real credential)
     must still spend the limiter on every single request, same as before.

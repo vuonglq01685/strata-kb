@@ -414,8 +414,11 @@ Mọi người đăng nhập `/ui` bằng tên người dùng và mật khẩu. 
 `.gitignore` của hub mới đã liệt kê nó và hub đang chạy cũng tự git-exclude nó. Xoá
 `session.key` sẽ đăng xuất tất cả mọi người.
 
-- **Tạo admin đầu tiên** bằng
-  `docker compose exec hub kb user add <name> --role admin`, hoặc đặt
+- **Tạo admin đầu tiên** bằng cách mở hub trên trình duyệt: khi chưa có tài khoản
+  nào, hub hiện trang `/ui/setup`; nhập mã thiết lập dùng một lần mà hub in ra log
+  (`docker compose logs hub`) cùng tên người dùng và mật khẩu. Tài khoản đó trở
+  thành `admin`; mã chỉ nằm trong bộ nhớ và đổi sau mỗi lần khởi động lại. Hoặc
+  chạy `docker compose exec hub kb user add <name> --role admin`, hoặc đặt
   `STRATA_KB_BOOTSTRAP_ADMIN` và `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`
   (kết quả của `kb user hash`) trong `.env`. Giữ nguyên dấu nháy đơn: Docker
   Compose thay thế `$` trong `.env`, mà hash có nhiều ký tự `$`. Cặp biến này chỉ có tác dụng khi chưa có tài khoản

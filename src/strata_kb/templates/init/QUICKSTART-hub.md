@@ -57,6 +57,11 @@ into it; merging their PRs here is the review gate.
    root. **Never commit `.kb-auth/`** — a new hub's `.gitignore` lists it, and the
    running hub adds it to `.git/info/exclude`. Deleting `.kb-auth/session.key`
    logs everyone out. Pick one way:
+   - **Setup page (default):** open the hub in a browser. While no account
+     exists it shows `/ui/setup`. Read the one-time setup code from the hub log
+     (`docker compose logs hub`; it is printed at start and changes on every
+     restart), enter it with a username and password, and that account becomes
+     the `admin`. The bearer token does not work here.
    - **Command:** `docker compose exec hub kb user add <name> --role admin`
      (prompts for the password twice).
    - **Bootstrap env:** set `STRATA_KB_BOOTSTRAP_ADMIN=<name>` and

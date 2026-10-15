@@ -264,3 +264,48 @@ def test_ensure_git_exclude_takes_another_entry(tmp_path, run_git):
     assert ensure_git_exclude(tmp_path, ".kb-qa/") is False
     lines = (tmp_path / ".git/info/exclude").read_text().splitlines()
     assert lines.count(".kb-qa/") == 1 and ".kb-auth/" not in lines
+
+
+def test_add_first_admin_creates_an_admin_when_empty(tmp_path):
+    accts = Accounts(tmp_path / "u.db")
+    user = accts.add_first_admin("boss", "pw-1")
+    assert user.role == "admin" and check_password("pw-1", user.password_hash)
+    assert accts.count() == 1
+
+
+def test_add_first_admin_refuses_once_any_user_exists(tmp_path):
+    accts = Accounts(tmp_path / "u.db")
+    accts.add("ba1", "pw", "ba")
+    with pytest.raises(AccountError, match="an account already exists"):
+        accts.add_first_admin("boss", "pw-1")
+    assert accts.count() == 1
+
+
+@pytest.mark.parametrize(("name", "pw"), [("", "pw"), (" x", "pw"), ("x", "")])
+def test_add_first_admin_applies_the_add_rules(tmp_path, name, pw):
+    accts = Accounts(tmp_path / "u.db")
+    with pytest.raises(AccountError):
+        accts.add_first_admin(name, pw)
+    assert accts.count() == 0
+
+
+def test_add_first_admin_only_one_of_two_racers_wins(tmp_path):
+    import threading
+
+    accts = Accounts(tmp_path / "u.db")
+    results: list[str] = []
+
+    def go(name):
+        try:
+            accts.add_first_admin(name, "pw")
+            results.append("ok")
+        except AccountError:
+            results.append("lost")
+
+    threads = [threading.Thread(target=go, args=(f"u{i}",)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(results) == ["lost", "lost", "lost", "ok"]
+    assert accts.count() == 1

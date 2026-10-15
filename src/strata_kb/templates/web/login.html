@@ -12,11 +12,6 @@
   <h1>Sign in to CENTER·KB</h1>
   <p class="lede">Sign in with your hub account.</p>
   {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
-  {% if no_accounts %}<div class="error-banner">No account exists yet. Create one with:
-    <code class="inline">docker compose exec hub kb user add &lt;name&gt; --role admin</code>
-    — or set <code class="inline">STRATA_KB_BOOTSTRAP_ADMIN</code> and
-    <code class="inline">STRATA_KB_BOOTSTRAP_PASSWORD_HASH</code> (from
-    <code class="inline">kb user hash</code>) in .env and restart.</div>{% endif %}
   <form method="post" action="/ui/login">
     <label style="display:flex; flex-direction:column; gap:6px">
       <span class="kicker">Username</span>

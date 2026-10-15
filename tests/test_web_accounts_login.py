@@ -39,9 +39,9 @@ def test_token_in_login_form_no_longer_logs_in(web_client, admin_user, token):
     assert web_client.get("/ui", follow_redirects=False).status_code == 302
 
 
-def test_empty_accounts_login_page_explains_bootstrap(web_client):
-    r = web_client.get("/ui/login")
-    assert "kb user add" in r.text and "STRATA_KB_BOOTSTRAP_ADMIN" in r.text
+def test_empty_accounts_login_redirects_to_setup(web_client):
+    r = web_client.get("/ui/login", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/ui/setup"
 
 
 def test_login_page_hides_bootstrap_hint_once_an_account_exists(web_client, admin_user):
@@ -70,9 +70,9 @@ def test_removed_user_session_ends(web_client, hub_dir, admin_user):
     assert web_client.get("/ui", follow_redirects=False).status_code == 302
 
 
-def test_bearer_request_has_no_user(web_client, token):
+def test_bearer_request_has_no_user(web_client, token, admin_user):
     r = web_client.get("/ui", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.url.path == "/ui"
     assert 'href="/ui/registry"' not in r.text
 
 
@@ -87,7 +87,7 @@ def test_non_admin_does_not_see_registry_nav(web_client, hub_dir):
     assert r.status_code == 200 and 'href="/ui/registry"' not in r.text
 
 
-def test_old_format_cookie_rejected(web_client, token):
+def test_old_format_cookie_rejected(web_client, token, admin_user):
     # The pre-1.26 value: `<issued>.<hmac_sha256(token, issued)>`.
     issued = "1700000000"
     sig = hmac.new(token.encode(), issued.encode(), hashlib.sha256).hexdigest()

@@ -212,7 +212,7 @@ def test_unknown_ticket_has_no_questions_page(web_client_logged_in):
     assert "No questions" in resp.text
 
 
-def test_bearer_and_dev_role_can_view(web_client, hub_dir, token):
+def test_bearer_and_dev_role_can_view(web_client, hub_dir, token, admin_user):
     path = "/ui/questions"
     assert web_client.get(path, follow_redirects=False).status_code in (302, 303, 307)
     bearer = web_client.get(path, headers={"Authorization": f"Bearer {token}"})

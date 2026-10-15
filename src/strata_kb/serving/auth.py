@@ -42,6 +42,7 @@ EXEMPT_PATHS = (
     "/api/health",
     "/ui/login",
     "/ui/logout",
+    "/ui/setup",
     "/intake/publish",
     "/intake/manifest",
     "/intake/status",
@@ -280,11 +281,39 @@ class TokenAuthMiddleware:
             return True
         return request.cookies.get(COOKIE_NAME) is not None
 
+    def _no_users(self) -> bool:
+        try:
+            return self.session is not None and self.session.accounts.count() == 0
+        except sqlite3.Error:
+            logger.exception("account count failed")
+            return False
+
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
+        # First run: no account exists, so every /ui page is the setup form.
+        # Before the exempt check, so /ui/login redirects too.
+        if (
+            scope.get("method") in ("GET", "HEAD")
+            and (path == "/ui" or path.startswith("/ui/"))
+            and path != "/ui/setup"
+            and not path.startswith("/ui/static/")
+            and await run_in_threadpool(self._no_users)
+        ):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 303,
+                    "headers": [
+                        (b"location", b"/ui/setup"),
+                        (b"cache-control", b"no-store"),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
+            return
         if path in EXEMPT_PATHS or any(path.startswith(p) for p in EXEMPT_PREFIXES):
             await self.app(scope, receive, send)
             return

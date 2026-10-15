@@ -3,6 +3,17 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.27.1 — 2026-10-15
+
+First-run admin setup page.
+
+- **`/ui/setup`.** While the hub has no account, every `/ui` page redirects (303) to `/ui/setup`, a form with username, password, confirm password and a **setup code**. The first account created becomes the `admin`. Once any account exists, `/ui/setup` returns 404 and `/ui/login` is the normal login. `/api`, `/mcp` and `/intake` are unchanged.
+- **Setup code.** At start, when the accounts store is empty, the hub generates a one-time code (`XXXX-XXXX`, no `0 O 1 I`) and logs `No hub account yet — open /ui/setup and enter setup code: XXXX-XXXX` at WARNING (`docker compose logs hub`; systemd: `journalctl -u <unit>`). The code lives in memory only, changes on every start, and is dropped after the first successful setup. The bearer token is never accepted in its place. No code is printed when accounts exist or when `STRATA_KB_BOOTSTRAP_ADMIN` created the admin.
+- **Abuse limits.** `POST /ui/setup` shares the login body cap, field cap and rate limiter (one bucket), compares the code in constant time, and never logs or echoes the password or code. The admin is inserted in one `BEGIN IMMEDIATE` transaction only while the table is empty (`Accounts.add_first_admin`), so two simultaneous setups cannot both succeed.
+- **Fallbacks.** `kb user add` and `STRATA_KB_BOOTSTRAP_ADMIN` + `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` still work. The empty-accounts hint on the login page is gone (that state now redirects to the setup page).
+- **Docs.** README, `QUICKSTART-hub.md`, the hub guide (EN, VI) and `docs/deploy-remote-mcp.md` describe it. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade and restart the hub. A hub that already has accounts behaves as before.
+
 ## 1.27.0 — 2026-10-14
 
 Ticket Q&A: a Dev asks the BA a business question about a published ticket from the design and plan phases, the BA answers it, and the hub keeps the thread. A new `dev-sa` agent answers the technical ones.

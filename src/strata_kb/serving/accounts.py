@@ -58,6 +58,10 @@ class AccountError(KbError):
     """Invalid account operation (bad role, duplicate or missing user, last admin)."""
 
 
+class AccountExistsError(AccountError):
+    """`add_first_admin` found a user already in the table (setup race lost)."""
+
+
 @dataclass(frozen=True)
 class User:
     username: str
@@ -188,6 +192,36 @@ class Accounts:
         return self.add_hashed(username, hash_password(password), role)
 
     def add_hashed(self, username: str, password_hash: str, role: str) -> User:
+        self._check_new(username, password_hash, role)
+        now = _now()
+        try:
+            with closing(self._connect()) as conn, conn:
+                self._insert(conn, username, password_hash, role, now)
+        except sqlite3.IntegrityError:
+            raise AccountError(f"user {username!r} already exists") from None
+        return User(username, role, password_hash, now, now)
+
+    def add_first_admin(self, username: str, password: str) -> User:
+        """Insert `username` as admin only if the table is still empty.
+
+        One `BEGIN IMMEDIATE` transaction covers the count and the insert, so
+        of two concurrent first-run setups exactly one wins; the other gets
+        `AccountExistsError`.
+        """
+        if not password:
+            raise AccountError("password must not be empty")
+        password_hash = hash_password(password)  # scrypt stays outside the lock
+        self._check_new(username, password_hash, "admin")
+        now = _now()
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] > 0:
+                raise AccountExistsError("an account already exists")
+            self._insert(conn, username, password_hash, "admin", now)
+        return User(username, "admin", password_hash, now, now)
+
+    @staticmethod
+    def _check_new(username: str, password_hash: str, role: str) -> None:
         # Usernames are stored verbatim everywhere; surrounding whitespace is refused
         # so `add` and `get`/`verify` can never disagree about the key.
         if not username or username != username.strip():
@@ -199,17 +233,20 @@ class Accounts:
             raise AccountError(
                 "password hash is malformed; generate one with `kb user hash`"
             )
-        now = _now()
-        try:
-            with closing(self._connect()) as conn, conn:
-                conn.execute(
-                    "INSERT INTO users (username, password_hash, role, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (username, password_hash, role, now, now),
-                )
-        except sqlite3.IntegrityError:
-            raise AccountError(f"user {username!r} already exists") from None
-        return User(username, role, password_hash, now, now)
+
+    @staticmethod
+    def _insert(
+        conn: sqlite3.Connection,
+        username: str,
+        password_hash: str,
+        role: str,
+        now: str,
+    ) -> None:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (username, password_hash, role, now, now),
+        )
 
     def set_password(self, username: str, password: str) -> None:
         if not password:

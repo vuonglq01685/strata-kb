@@ -141,7 +141,7 @@ def test_logout_clears_the_cookie(web_client, admin_user):
     assert "strata_kb_session=;" in resp.headers["set-cookie"].replace('""', "")
 
 
-def test_a_raw_token_cookie_no_longer_authorises(web_client):
+def test_a_raw_token_cookie_no_longer_authorises(web_client, admin_user):
     web_client.cookies.set("strata_kb_session", TOKEN)
     resp = web_client.get("/ui/docs", follow_redirects=False)
     assert resp.status_code == 302
@@ -209,8 +209,10 @@ def test_login_rejects_an_oversized_body(web_client):
     assert resp.headers["cache-control"] == "no-store"
 
 
-def test_login_pages_are_not_cacheable(web_client):
-    assert web_client.get("/ui/login").headers["cache-control"] == "no-store"
+def test_login_pages_are_not_cacheable(web_client, admin_user):
+    page = web_client.get("/ui/login", follow_redirects=False)
+    assert page.status_code == 200  # the login page itself, not a redirect
+    assert page.headers["cache-control"] == "no-store"
     assert (
         web_client.post(
             "/ui/login",

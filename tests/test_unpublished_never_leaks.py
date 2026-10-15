@@ -90,6 +90,10 @@ async def test_mcp_tools_skip_the_local_kb(leaky_hub):
 
 
 def test_rest_and_ui_skip_the_local_kb(leaky_hub):
+    from strata_kb.serving.accounts import Accounts
+
+    # With no account /ui is only the setup form; the leak check needs the real UI.
+    Accounts(leaky_hub / ".kb-auth" / "users.db").add("boss", "pw", "admin")
     config = ServerConfig(kb_dir=leaky_hub / ".kb", hub=str(leaky_hub))
     headers = {"Authorization": f"Bearer {TOKEN}"}
     with TestClient(create_app(config, TOKEN)) as client:
@@ -103,3 +107,4 @@ def test_rest_and_ui_skip_the_local_kb(leaky_hub):
         ):
             response = client.get(path, params=params, headers=headers)
             assert _leaks(response.text) == [], path
+            assert response.url.path != "/ui/setup", path

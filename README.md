@@ -936,11 +936,18 @@ directory** — a new hub's `.gitignore` lists it and the running hub also adds 
 to `.git/info/exclude`. Deleting `session.key` logs everyone out. Roles are
 `admin`, `ba` and `dev`; only `admin` sees and uses the **Registry** page.
 
+- **First run.** While no account exists, every `/ui` page redirects to
+  `/ui/setup`. The hub prints a one-time setup code to its log at start
+  (`docker compose logs hub`; with systemd, `journalctl -u <unit>`): enter it
+  with a username and password to create the first account, which becomes the
+  `admin`. The code lives only in memory and changes on every restart; the
+  bearer token never opens this page. Once an account exists `/ui/setup`
+  returns 404. The two alternatives below keep working.
 - **Bootstrap.** While no account exists, set `STRATA_KB_BOOTSTRAP_ADMIN` and
   `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` (the output of `kb user hash`) and the hub
   creates that admin on start. In a Compose `.env`, single-quote the hash
   (`STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`): Compose expands `$`. Plaintext is never accepted; once any account
-  exists both variables are ignored. Or run
+  exists both variables are ignored (and no setup code is printed). Or run
   `docker compose exec hub kb user add <name> --role admin`.
 - **Manage.** `kb user add|passwd|role|remove|list|hash` (see the command
   reference). The last admin cannot be removed or demoted.
