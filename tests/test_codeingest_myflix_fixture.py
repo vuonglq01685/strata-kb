@@ -64,7 +64,10 @@ def test_playback_session_route_and_dto_fields(run_result):
         r[:2] == ["POST", "/api/playback/session"] and r[4] == "StartSessionDto"
         for r in rows(l2)
     )
-    l3 = read(doc, "routes", ".raw")
+    l3 = block(
+        read(doc, "routes", ".raw"),
+        "route.apps-api-src-playback-playback-controlle-730abe",
+    )
     assert "| assetId | string | yes |" in l3
     assert "| position | number | no |" in l3
 
@@ -82,8 +85,9 @@ def test_playback_events_partition_pk_and_index(run_result):
 def test_pages_admin_group_and_viewer_watch(run_result):
     doc, _ = run_result
     got = {r[0]: r for r in rows(block(read(doc, "pages"), "page.apps-web"))}
-    assert got["/admin"][2] == "(admin)"
-    assert "/watch/[id]" in got
+    assert got["/admin"][1:] == ["apps/web/src/app/(admin)/admin/page.tsx", "(admin)"]
+    assert got["/watch/[id]"][2] == "(viewer)"
+    assert got["Middleware matcher: /admin/:path*"][1] == "apps/web/src/middleware.ts"
 
 
 def test_partition_job_listed(run_result):
@@ -99,7 +103,7 @@ def test_partition_job_listed(run_result):
 def test_symbols_public_error_code_and_css_token(run_result):
     doc, _ = run_result
     syms = read(doc, "symbols")
-    assert ["Public", "function", f"{API}/public.decorator.ts"] in rows(
+    assert ["Public", "function", f"{API}/common/decorators/index.ts"] in rows(
         block(syms, "sym.apps-api")
     )
     assert [
@@ -134,7 +138,10 @@ def test_coverage_complete_for_clean_scopes(run_result):
     assert cover(doc, "pages", "apps/web")[3] == "complete"
     assert {r[3] for r in cover_all(doc, "symbols", "apps/web")} == {"complete"}
     assert cover(doc, "symbols", "apps/api")[3] == "complete"
-    assert cover(doc, "files", "apps")[3] == "complete"
+    assert cover(doc, "symbols", "packages/shared")[3] == "complete"
+    for scope in ("apps", "packages", "prisma"):
+        assert cover(doc, "files", scope)[3] == "complete"
+    assert {r[3] for r in cover_all(doc, "schema", ".")} == {"complete"}
 
 
 def test_jobs_coverage_always_partial(run_result):
@@ -147,3 +154,14 @@ def test_dynamic_route_marks_api_routes_partial_and_names_site(run_result):
     doc, _ = run_result
     row = cover(doc, "routes", "apps/api")
     assert row[3] == "partial" and f"{API}/legacy.controller.ts" in row[4]
+
+
+BAIT_VALUES = ("E1", "#c00", "isPublic", "v1")
+
+
+def test_no_literal_values_leak_into_any_output(run_result):
+    doc, _ = run_result
+    for path in sorted(doc.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for bait in BAIT_VALUES:
+            assert bait not in text, (path.name, bait)
