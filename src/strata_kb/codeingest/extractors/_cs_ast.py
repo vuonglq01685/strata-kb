@@ -34,14 +34,16 @@ TYPE_NODES = frozenset(
         "enum_declaration",
     }
 )
-# A test project is told by its project file, never by a folder or file name:
-# `Features/LabTests/` and `LabTest.cs` are product code. A plain `tests/` /
-# `test/` directory is still a test directory.
-_TEST_DIR = re.compile(r"(?:^|/)tests?/", re.IGNORECASE)
+# A test project is told by what its project file (or the Directory.Build.props
+# / Directory.Packages.props above it) references, never by a folder or file
+# name: `Features/Tests/`, `Features/LabTests/`, `LabTest.cs` are product code.
+# `InternalsVisibleTo Include="Api.xUnitTests"` is not a reference.
 _TEST_PROJECT = re.compile(
-    r"Microsoft\.NET\.Test\.Sdk|\bxunit|\bNUnit|\bMSTest|<IsTestProject>\s*true",
+    r"<(?:Global)?PackageReference\s[^>]*?Include\s*=\s*\"(?:Microsoft\.NET\.Test\.Sdk"
+    r"|xunit|NUnit|MSTest)[^\"]*\"|<IsTestProject>\s*true",
     re.IGNORECASE,
 )
+_PROPS = ("Directory.Build.props", "Directory.Packages.props")
 _TYPE_DECL = re.compile(
     rb"\b(?:class|interface|struct|enum|record(?:\s+(?:class|struct))?)\s+(\w+)"
 )
@@ -58,31 +60,41 @@ _GENERIC_ARGS = re.compile(r"<.*>", re.DOTALL)
 
 
 def test_project_dirs(root: Path, files: list[str]) -> frozenset[str]:
-    """Directories ("" is the repo root) of the projects whose `.csproj` pulls
-    in a test framework; every file under one is test code."""
+    """Directories ("" is the repo root) of the projects that pull in a test
+    framework, in their `.csproj` or in a Directory.*.props at or above them;
+    every file under one is test code."""
+
+    def text(rel: str) -> str:
+        data = source(root, rel)
+        return data.decode("utf-8", "replace") if data is not None else ""
 
     def find() -> frozenset[str]:
+        props = {rel: text(rel) for rel in files if rel.rpartition("/")[2] in _PROPS}
         found = set()
         for rel in files:
-            if rel.endswith(".csproj"):
-                data = source(root, rel)
-                if data is not None and _TEST_PROJECT.search(
-                    data.decode("utf-8", "replace")
-                ):
-                    found.add(rel.rpartition("/")[0])
+            if not rel.endswith(".csproj"):
+                continue
+            here = rel.rpartition("/")[0]
+            above = [
+                t
+                for p, t in props.items()
+                if not p.rpartition("/")[0]
+                or here == p.rpartition("/")[0]
+                or here.startswith(p.rpartition("/")[0] + "/")
+            ]
+            if _TEST_PROJECT.search("\n".join([text(rel), *above])):
+                found.add(here)
         return frozenset(found)
 
     return run_cached(("cs-test-dirs", root), find)
 
 
 def is_test(rel: str, test_dirs: frozenset[str]) -> bool:
-    return bool(_TEST_DIR.search(rel)) or any(
-        not d or rel.startswith(d + "/") for d in test_dirs
-    )
+    return any(not d or rel.startswith(d + "/") for d in test_dirs)
 
 
 def cs_files(root: Path, files: list[str], repo_files: list[str]) -> list[str]:
-    """C# product sources among `files` (test projects and `tests/` skipped)."""
+    """C# product sources among `files` (test projects skipped)."""
     tests = test_project_dirs(root, repo_files)
     return [f for f in files if _ts.language_for(f) == LANG and not is_test(f, tests)]
 

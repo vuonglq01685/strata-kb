@@ -76,7 +76,8 @@ _UNFOLLOWED = re.compile(
     rb"\bUsePathBase\b|\bPathBase\s*=|\.Conventions\.Add\s*\(|\bI(?:Application|Controller|Action)ModelConvention\b"
     rb"|\bUseMvc\w*|\bAddApplicationPart\b|\bApplicationPartManager\b|\bControllerFeatureProvider\b"
     rb"|\bMapODataRoute\b|\bUseFastEndpoints\b|\bI?CarterModule\b"
-    rb"|:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
+    rb"|\b(?:class|record)\s+\w+[^{;=]*:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
+    rb"|^\s*:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
     rb"|\[\s*RoutePrefix\b"
 )
 _COMMENT = re.compile(rb"^\s*(?://|/\*|\*)")
@@ -227,7 +228,8 @@ def _hint(composed: frozenset[str], helpers: frozenset[str]) -> re.Pattern[bytes
         rb"(?<![\w$])(?:"
         + "|".join(names).encode()
         + rb")|Controller|"
-        + _UNFOLLOWED.pattern
+        + _UNFOLLOWED.pattern,
+        re.MULTILINE,
     )
 
 
@@ -441,7 +443,7 @@ def _scan_controller(
     if templates is None:
         return []
     out: list[Route] = []
-    controller = view.name.removesuffix("Controller")
+    controller = re.sub(r"(?i)controller$", "", view.name)  # MVC: OrdinalIgnoreCase
     for rel, method in view.methods:
         if not _is_action(method):
             continue

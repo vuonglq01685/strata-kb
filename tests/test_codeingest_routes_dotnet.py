@@ -683,6 +683,11 @@ def test_test_projects_are_not_product_routes(tmp_path):
     web(tmp_path)
     write(
         tmp_path,
+        "tests/Api.Tests/Api.Tests.csproj",
+        '<Project Sdk="Microsoft.NET.Sdk">\n<ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.0.0" /></ItemGroup>\n</Project>\n',
+    )
+    write(
+        tmp_path,
         "tests/Api.Tests/FakeController.cs",
         '[Route("fake")] public class FakeController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
     )
@@ -1754,14 +1759,79 @@ def test_base_named_like_an_interface_is_a_class_when_the_repo_says_so(tmp_path)
     assert "IAMController.cs:1" in row(result).detail
 
 
-def test_controller_token_strips_only_the_exact_suffix(tmp_path):
+def test_controller_token_strips_the_suffix_case_insensitively(tmp_path):
     web(tmp_path)
     write(
         tmp_path,
         "XCONTROLLER.cs",
         '[Route("[controller]")] public class UsersCONTROLLER : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
     )
-    assert paths(run_routes(tmp_path)) == [("GET", "/userscontroller")]
+    assert paths(run_routes(tmp_path)) == [("GET", "/users")]
+
+
+def test_a_folder_named_tests_in_a_product_project_is_kept(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Features/Tests/TestsController.cs",
+        '[Route("t")] public class TestsController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
+    )
+    write(tmp_path, "Features/Tests/Plan.cs", "public class Plan { }\n")
+    assert paths(run_routes(tmp_path)) == [("GET", "/t")]
+    assert ("Plan", "class") in names_of(run_symbols(tmp_path))
+
+
+@pytest.mark.parametrize("props", ["Directory.Build.props", "Directory.Packages.props"])
+def test_test_framework_from_directory_props_marks_a_test_project(tmp_path, props):
+    web(tmp_path, "src/Api")
+    write(
+        tmp_path,
+        "src/Api/Program.cs",
+        'var app = WebApplication.CreateBuilder(args).Build();\napp.MapGet("/real", () => 1);\n',
+    )
+    write(
+        tmp_path,
+        "specs/Api.Specs/Api.Specs.csproj",
+        '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
+    )
+    write(
+        tmp_path,
+        f"specs/{props}",
+        '<Project><ItemGroup><PackageReference Include="xunit" Version="2.6.0" /></ItemGroup></Project>\n',
+    )
+    write(
+        tmp_path,
+        "specs/Api.Specs/Fake.cs",
+        'public class FakeController : ControllerBase { [HttpGet("fake")] public IActionResult G() => Ok(); }\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/real")]
+
+
+def test_internals_visible_to_a_test_assembly_does_not_make_a_test_project(tmp_path):
+    write(
+        tmp_path,
+        "Api.csproj",
+        WEB.replace(
+            "</Project>",
+            '  <ItemGroup>\n    <InternalsVisibleTo Include="Api.xUnitTests" />\n  </ItemGroup>\n</Project>',
+        ),
+    )
+    write(
+        tmp_path,
+        "UsersController.cs",
+        '[Route("u")] public class UsersController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/u")]
+
+
+def test_endpoint_in_a_ternary_or_call_is_not_a_fast_endpoints_base(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Program.cs",
+        'var app = WebApplication.CreateBuilder(args).Build();\nvar x = flag ? a : Endpoint.Create();\nF(name: Endpoint.Id);\napp.MapGet("/a", () => 1);\n',
+    )
+    assert row(run_routes(tmp_path)).status == "complete"
 
 
 # --- symbols ----------------------------------------------------------------
