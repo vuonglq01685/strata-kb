@@ -1431,8 +1431,8 @@ symbol is written `<thing> in <path> [NEW: D<n>]`, a new index, partition or
 primary key is a `Tables:` sub-bullet `index <name> (<cols>) | partition RANGE
 (<col>) | primary key (<cols>) on db.<table> in <path> [NEW: D<n>]` (`<path>` is
 the migration), and a new file is its own `Files:` entry, `<path> [NEW: D<n>]`.
-The scope is the longest one listed anywhere in `struct.coverage` that prefixes
-the path, and it needs its own row for the area: a nested package with no row
+The scope is the longest one listed in a `struct.coverage` row other than
+`files` that prefixes the path, and it needs its own row for the area: a nested package with no row
 for it is `not scanned`, whatever its parent says. Absent from a `partial` or
 `not scanned` scope goes to `Open decisions`. Only names are emitted — the literal strings
 that appear are route and page paths, middleware matchers, cron or interval

@@ -287,7 +287,8 @@ The rule for those six areas only:
 - **Absent from a `complete` scope = not built.** A new route, page or symbol
   is written `<what> in <path> [NEW: D<n>]` on a `Routes:`, `Pages:` or
   `Symbols:` line, naming the file it will live in; the scope is the longest
-  scope listed in `struct.coverage` (for any area) that prefixes that path, and
+  scope listed in a `struct.coverage` row other than `files` that prefixes
+  that path, and
   it needs its own row for the area: a nested package with no `routes` row is
   `not scanned`, whatever its parent says. The new item goes on its own
   sub-bullet, never on a line that also cites an existing id. A new index,

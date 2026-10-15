@@ -80,8 +80,8 @@ fallback.
    coverage row's status. The `struct.coverage` Area values are `routes`,
    `pages`, `jobs`, `symbols`, `files` and `schema` (a table's partition,
    index or primary key is `schema`). The scope is the longest scope
-   listed anywhere in `struct.coverage` (for any area) that prefixes the
-   path of the file the new thing will live in (for `Files:`, the
+   listed in a `struct.coverage` row for `routes`, `pages`, `jobs`,
+   `symbols` or `schema` (never a `files` row) that prefixes the path of the file the new thing will live in (for `Files:`, the
    top-level directory; a file at the repository root has scope `.`). If
    that scope has no row for the area, the area is `not scanned` there:
    never fall back to a parent scope's row. When a scope has several rows

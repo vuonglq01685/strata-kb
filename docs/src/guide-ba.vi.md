@@ -282,7 +282,7 @@ Quy tắc chỉ áp dụng cho sáu vùng đó:
 - **Vắng trong phạm vi `complete` = chưa xây.** Route, page hoặc symbol mới
   được ghi là `<what> in <path> [NEW: D<n>]` trên dòng `Routes:`, `Pages:` hoặc
   `Symbols:`, nêu file nó sẽ nằm; phạm vi là phạm vi dài nhất trong
-  `struct.coverage` (của bất kỳ vùng nào) làm tiền tố của đường dẫn đó, và nó
+  một dòng `struct.coverage` không thuộc vùng `files` làm tiền tố của đường dẫn đó, và nó
   phải có dòng riêng cho vùng đang xét: package lồng nhau không có dòng `routes`
   là `not scanned`, bất kể package cha nói gì. Mục mới nằm ở một gạch đầu dòng
   con riêng, không bao giờ trên dòng đã trích một id có sẵn. Index, partition
