@@ -1000,3 +1000,95 @@ def test_css_declarations_scan_is_linear(tmp_path):
     found = _symbols_lang._declarations(_symbols_lang._clean_style(text, False))
     assert len(found) == 4000
     assert time.perf_counter() - start < 2
+
+
+# --- fix round 4 -------------------------------------------------------------
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    "text",
+    [
+        "export const x = 1;\nfor (const module of mods) register(module);\n",
+        "export const y = 1;\nconst module = await import('./x');\ninit(module);\n",
+        "export const z = 1;\nmods.forEach(module => app.use(module));\n",
+        "export function boot() { for (const module of mods) { app.use(module) } }\n",
+        "import module from './m';\nexport const w = 1;\ninit(module);\n",
+        "export const v = 1;\ntry { go() } catch (module) { log(module) }\n",
+        "export const u = 1;\nfunction f({ module }) { run(module) }\n",
+    ],
+)
+def test_esm_file_with_a_local_named_module_stays_complete(tmp_path, text):
+    result = solo(tmp_path, text, "src/a.ts")
+    assert cover(result, ".", "typescript").status == "complete"
+
+
+@needs_ts
+def test_esm_file_does_not_read_commonjs_forms(tmp_path):
+    # `exports` / bare `module` call sites only mean something in a CJS file
+    result = solo(
+        tmp_path,
+        "export const a = 1;\nregister(module);\nexports.b = 1;\n",
+        "src/a.js",
+    )
+    assert names(result) == ["a"]
+    assert cover(result, ".", "javascript").status == "complete"
+
+
+@needs_ts
+def test_commonjs_file_binding_module_still_lists_exports_and_sites_other_calls(
+    tmp_path,
+):
+    result = solo(
+        tmp_path,
+        "for (const module of mods) register(module);\nexports.top = 1;\n"
+        "load(exports);\n",
+        "lib/x.js",
+    )
+    assert names(result) == ["top"]
+    assert cover(result, ".", "javascript").detail == "lib/x.js:3"
+
+
+@needs_ts
+def test_commonjs_bare_module_call_without_a_binding_is_still_a_site(tmp_path):
+    result = solo(tmp_path, "exports.a = 1;\nregister(module);\n", "lib/x.js")
+    assert names(result) == ["a"]
+    assert "lib/x.js:2" in cover(result, ".", "javascript").detail
+
+
+@needs_ts
+def test_reexport_of_type_and_value_with_one_name_lists_both_kinds(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path, "src/s.ts", "export type S = 'a' | 'b';\nexport const S = make();\n"
+    )
+    write(tmp_path, "src/rs.ts", "export { S } from './s';\n")
+    got = sorted(
+        r[1] for r in rows(run_symbols(tmp_path), "sym.root") if r[2] == "src/rs.ts"
+    )
+    assert got == ["const", "type"]
+
+
+@needs_ts
+def test_default_reexport_resolves_a_default_that_is_also_a_named_export(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/y.ts", "export const Baz = { Q: 1 };\nexport default Baz;\n")
+    write(tmp_path, "src/r.ts", "export { default } from './y';\n")
+    got = {
+        r[0]: r[1]
+        for r in rows(run_symbols(tmp_path), "sym.root")
+        if r[2] == "src/r.ts"
+    }
+    assert got == {"Baz": "const", "Baz.Q": "member"}
+
+
+@needs_ts
+def test_reexport_cycle_of_a_name_nobody_declares_is_a_site(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/c1.ts", "export * from './c2';\n")
+    write(tmp_path, "src/c2.ts", "export { Z } from './c1';\n")
+    result = run_symbols(tmp_path)
+    assert not result.sections  # Z is never declared, so nothing is listed
+    detail = cover(result, ".", "typescript")
+    assert detail.status == "partial"
+    assert "src/c1.ts" in detail.detail and "src/c2.ts" in detail.detail

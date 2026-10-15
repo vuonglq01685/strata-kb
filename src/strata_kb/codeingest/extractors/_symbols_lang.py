@@ -17,8 +17,8 @@ Three optional companions keep the exporter signature small:
   to mean anything (SCSS interpolation breaks it); their errors are not
   sites.
 
-shortcut: `module.exports` / `exports.x =` (CommonJS) is not read -- the
-spec's "exported" for JS/TS is `export` syntax; revisit with a CJS repo.
+CommonJS (`module.exports`, `exports.x =`) is read only in files with no
+ESM `import`/`export` statement; in an ES module those are ordinary names.
 """
 
 from __future__ import annotations
@@ -359,17 +359,60 @@ def _bound_names(fn: Node) -> frozenset[str]:
     return frozenset(bound) & {"exports", "module"}
 
 
-def _passes_exports(call: Node, shadow: frozenset[str]) -> bool:
+def _binds_module(root: Node) -> bool:
+    """True when the file declares a `module` of its own anywhere: a
+    declarator, loop binding, parameter, catch parameter, function/class name
+    or import. A bare `module` argument is then not CommonJS's."""
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        found: list[str] = []
+        if node.type == "variable_declarator":
+            found = _pattern_names(node.child_by_field_name("name"))
+        elif node.type == "for_in_statement":
+            found = _pattern_names(node.child_by_field_name("left"))
+        elif node.type == "catch_clause":
+            found = _pattern_names(node.child_by_field_name("parameter"))
+        elif node.type in (
+            "formal_parameters",
+            "required_parameter",
+            "optional_parameter",
+        ):
+            params = node.named_children if node.type == "formal_parameters" else [node]
+            found = [
+                n
+                for p in params
+                for n in _pattern_names(p.child_by_field_name("pattern") or p)
+            ]
+        elif node.type == "arrow_function":
+            found = _pattern_names(node.child_by_field_name("parameter"))
+        elif node.type in ("import_specifier", "namespace_import", "import_clause"):
+            found = [
+                _ts.node_text(c) for c in node.named_children if c.type == "identifier"
+            ]
+        elif node.type in ("function_declaration", "class_declaration"):
+            found = _pattern_names(node.child_by_field_name("name"))
+        if "module" in found:
+            return True
+    return False
+
+
+def _passes_exports(
+    call: Node, shadow: frozenset[str], bare_module: bool = True
+) -> bool:
     """`f(module.exports, ..)`, `f(exports, ..)` or `f(module)` can add names
     this reader cannot list; `Object.defineProperty(exports, '__esModule',
-    ..)` cannot."""
+    ..)` cannot. `bare_module=False`: `module` is a binding of the file."""
     args = call.child_by_field_name("arguments")
     given = args.named_children if args is not None else []
 
     def is_module(a: Node) -> bool:
         bare = a.type == "identifier" and _ts.node_text(a) in ("exports", "module")
         return _is_module_exports(a, shadow) or (
-            bare and _ts.node_text(a) not in shadow
+            bare
+            and _ts.node_text(a) not in shadow
+            and (bare_module or _ts.node_text(a) != "module")
         )
 
     if not any(is_module(a) for a in given):
@@ -469,6 +512,7 @@ class _Reader:
             self.local(local, exported, "type" if typed else "const")
 
     def cjs(self, root: Node) -> None:
+        bare_module = not _binds_module(root)
         stack = [(root, frozenset[str]())]
         while stack:
             node, shadow = stack.pop()
@@ -476,7 +520,7 @@ class _Reader:
                 shadow = shadow | _bound_names(node)
             stack.extend((c, shadow) for c in reversed(node.children))
             if node.type == "call_expression":
-                if _passes_exports(node, shadow):
+                if _passes_exports(node, shadow, bare_module):
                     self.unreadable.append(_ts.line_of(node))
                 continue
             if node.type != "assignment_expression":
@@ -588,7 +632,13 @@ def _js_read(tree: Tree, source: bytes) -> _Reader:
     for stmt in tree.root_node.named_children:
         if stmt.type == "export_statement":
             reader.statement(stmt)
-    if b"exports" in source or b"module" in source:
+    # CommonJS forms only mean something in a file with no ESM syntax: in an
+    # ES module `module` / `exports` are ordinary names.
+    esm = any(
+        c.type in ("import_statement", "export_statement")
+        for c in tree.root_node.named_children
+    )
+    if not esm and (b"exports" in source or b"module" in source):
         reader.cjs(tree.root_node)
     return reader
 

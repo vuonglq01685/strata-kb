@@ -135,6 +135,7 @@ class _Surface:
     reexports: tuple[Reexport, ...]
     sites: list[str]
     defaults: frozenset[str] = frozenset()  # own names only `export default` gave
+    default: str | None = None  # name the file's `export default` is listed under
 
 
 def _skip_rule(rel: str) -> str | None:
@@ -191,7 +192,9 @@ class _Reader:
         # a name also exported another way is a real named export too
         once = default is not None and sum(n == default for n, _k in names) == 1
         defaults = frozenset({default}) if once and default else frozenset()
-        return _Surface(names, found.reexports if found else (), sites, defaults)
+        return _Surface(
+            names, found.reexports if found else (), sites, defaults, default
+        )
 
     def public(self, rel: str) -> tuple[list[_Entry], set[str]]:
         """Names `rel` exports (its own plus followed re-exports) and the
@@ -257,27 +260,28 @@ class _Reader:
             cuts = frozenset({target})
         elif target is not None:
             there, _sites, cuts = self._public(target, seen)
-        default = next((n for n, _k, d in there if d and "." not in n), None)
+        own = self._surface(target).default if target is not None else None
+        default = own or next((n for n, _k, d in there if d and "." not in n), None)
         names: list[_Entry] = []
         for imported, exported in reexport.names:
             from_default = imported == DEFAULT_NAME
             source = (default or DEFAULT_NAME) if from_default else imported
             kinds = [k for n, k, _d in there if n == source]
-            concrete = [k for k in kinds if k != _UNKNOWN]
+            concrete = list(dict.fromkeys(k for k in kinds if k != _UNKNOWN))
             if any(n.startswith(source + ".") for n, _k, _d in there):
                 # declaration merging: the members belong to the value
                 concrete = [
                     k for k in concrete if k not in ("type", "interface")
                 ] or concrete
-            guess = _UNKNOWN if cycle or _UNKNOWN in kinds else "const"
-            kind = concrete[0] if concrete else guess
+            guess = _UNKNOWN if cycle or cuts or _UNKNOWN in kinds else "const"
             is_default = exported == DEFAULT_NAME
             if is_default and from_default and target is not None:
                 named = default if default and default != DEFAULT_NAME else None
                 exported = named or PurePosixPath(target).stem
             elif is_default and not from_default:
                 exported = imported  # `{ Foo as default }`: still called Foo
-            names.append((exported, kind, is_default))
+            # one row per concrete kind, as the declaring file lists them
+            names += [(exported, kind, is_default) for kind in concrete or [guess]]
             prefix = source + "."
             names += [
                 (f"{exported}.{n[len(prefix) :]}", k, is_default)
@@ -290,13 +294,14 @@ class _Reader:
         names, sites = self.public(rel)
         stem = PurePosixPath(rel).stem
         known = {n for n, k, _d in names if k != _UNKNOWN}
-        return [
-            Symbol(
-                stem if n == DEFAULT_NAME else n, "const" if k == _UNKNOWN else k, rel
-            )
+        # a name only an import cycle vouches for is declared nowhere: a site
+        orphans = {n for n, k, _d in names if k == _UNKNOWN and n not in known}
+        found = [
+            Symbol(stem if n == DEFAULT_NAME else n, k, rel)
             for n, k, _d in names
-            if k != _UNKNOWN or n not in known
-        ], sites
+            if k != _UNKNOWN
+        ]
+        return found, sites | ({f"{rel}:1"} if orphans else set())
 
 
 def _row_detail(skipped: Counter[str], sites: set[str]) -> str:
