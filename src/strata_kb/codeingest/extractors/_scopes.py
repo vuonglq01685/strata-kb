@@ -71,4 +71,7 @@ def scope_of(scopes: list[Scope], rel_path: str) -> Scope | None:
     inside = [
         sc for sc in scopes if sc.path == "." or rel_path.startswith(sc.path + "/")
     ]
-    return max(inside, key=lambda sc: len(sc.path), default=None)
+    # root ("." has length 1) must rank below any real dir, even a 1-char one
+    return max(
+        inside, key=lambda sc: -1 if sc.path == "." else len(sc.path), default=None
+    )

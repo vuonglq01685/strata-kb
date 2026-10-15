@@ -138,3 +138,9 @@ def test_manifest_dep_names_degrades_on_garbage(tmp_path):
     assert deps.manifest_dep_names(tmp_path / "package.json") == []
     assert deps.manifest_dep_names(tmp_path / "missing.json") == []
     assert deps.manifest_dep_names(tmp_path / "README.md") == []
+
+
+def test_scope_of_one_char_dir_beats_root():
+    scopes = [_scopes.Scope(".", "package.json", ()), _scopes.Scope("a", "go.mod", ())]
+    assert _scopes.scope_of(scopes, "a/x.ts").path == "a"
+    assert _scopes.scope_of(scopes, "b/x.ts").path == "."
