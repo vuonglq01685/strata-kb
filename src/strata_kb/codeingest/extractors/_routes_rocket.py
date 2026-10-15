@@ -132,7 +132,7 @@ class RocketPlay(Interp):
     def macro(self, frame: Frame, node: Node) -> Any:
         segs = segments(node.child_by_field_name("macro")) or ("",)
         if not segs[-1].endswith("routes"):
-            return None
+            return super().macro(frame, node)
         tree = next((c for c in node.named_children if c.type == "token_tree"), None)
         items: list[tuple[Fn, str]] = []
         for elem in elements(tree):

@@ -54,8 +54,9 @@ _MISSING = object()
 
 
 class _Diverge:
-    """The value of code that never produces one: `panic!`, `return`,
-    `break`, `continue`, a `-> !` call."""
+    """The value of code that never produces one: `panic!` and its std
+    siblings, `return`, `break`, `continue`, `Err(..)?`, a `loop` without a
+    `break`. Calls to a `-> !` fn are not recognised (they stay unknown)."""
 
 
 DIVERGE = _Diverge()
@@ -234,6 +235,7 @@ class Interp:
         self.budget = BUDGET
         self.nesting = 0
         self.local_fns: dict[tuple[str, int], Fn] = {}  # fns declared inside bodies
+        self.labels: list[tuple[str, list[Any]]] = []  # labeled blocks being run
 
     # -- sites -----------------------------------------------------------
 
@@ -257,8 +259,15 @@ class Interp:
 
     def macro(self, frame: Frame, node: Node) -> Any:
         self.macro_args(frame, node)
-        name = (segments(node.child_by_field_name("macro")) or ("",))[-1]
-        return DIVERGE if name in _DIVERGING_MACROS else None
+        segs = segments(node.child_by_field_name("macro")) or ("",)
+        return DIVERGE if self.diverging_macro(segs) else None
+
+    def diverging_macro(self, segs: tuple[str, ...]) -> bool:
+        """`panic!` and kin, written bare or as `std::` / `core::`, and not
+        shadowed by a `macro_rules!` of the package."""
+        if segs[-1] not in _DIVERGING_MACROS or segs[-1] in self.idx.macros:
+            return False
+        return len(segs) == 1 or (len(segs) == 2 and segs[0] in ("std", "core"))
 
     def macro_args(self, frame: Frame, node: Node) -> None:
         """Evaluate the arguments of `join!(serve(a()), serve(b()))`-style
@@ -391,6 +400,20 @@ class Interp:
     # -- statements ------------------------------------------------------
 
     def block(self, frame: Frame, node: Node) -> Any:
+        """A labeled block's value is its tail or any `break 'label <v>`
+        aimed at it: those values are joined, never silently dropped."""
+        label = next((c for c in node.named_children if c.type == "label"), None)
+        if label is None:
+            return self.block_body(frame, node)
+        breaks: list[Any] = []
+        self.labels.append((text(label), breaks))
+        try:
+            tail = self.block_body(frame, node)
+        finally:
+            self.labels.pop()
+        return self.join([*breaks, tail])
+
+    def block_body(self, frame: Frame, node: Node) -> Any:
         frame = frame.child()
         pairs = list(attrs_before(node))
         kids = [item for _attrs, item in pairs]
@@ -428,6 +451,7 @@ class Interp:
                 "mod_item",
                 "type_item",
                 "macro_definition",
+                "label",
             ):
                 continue
             elif i == len(kids) - 1:
@@ -493,6 +517,9 @@ class Interp:
 
     def _eval(self, frame: Frame, node: Node) -> Any:
         kind = node.type
+        if kind == "try_expression" and self.is_no_value(frame, node):
+            self.chain(frame, node)
+            return DIVERGE  # `Err(e)?` always returns
         if kind in (
             "call_expression",
             "field_expression",
@@ -508,7 +535,9 @@ class Interp:
         if kind in _TRANSPARENT:
             inner = next(iter(node.named_children), None)
             return self.eval(frame, inner) if inner is not None else None
-        if kind in ("block", "unsafe_block", "async_block", "const_block"):
+        if kind == "async_block":
+            return self.async_block(frame, node)
+        if kind in ("block", "unsafe_block", "const_block"):
             return self.eval_block(frame, node)
         if kind == "if_expression":
             return self.if_expr(frame, node)
@@ -524,12 +553,13 @@ class Interp:
             inner = next(iter(node.named_children), None)
             val = self.eval(frame, inner) if inner is not None else None
             if frame.rets is not None:
-                frame.rets.append(None if val is DIVERGE else val)
+                no_value = inner is not None and self.is_no_value(frame, inner)
+                frame.rets.append(
+                    DIVERGE if no_value else None if val is DIVERGE else val
+                )
             return DIVERGE
         if kind in ("break_expression", "continue_expression"):
-            for kid in node.named_children:
-                self.eval(frame, kid)
-            return DIVERGE
+            return self.jump(frame, node)
         if kind == "macro_invocation":
             return self.macro(frame, node)
         if kind == "tuple_expression":
@@ -556,6 +586,45 @@ class Interp:
             if kid.type not in _COMMENTS:
                 self.eval(frame, kid)
         return None
+
+    def is_no_value(self, frame: Frame, node: Node) -> bool:
+        """`Err(..)`, `Err(..)?` or `None`, std's own (not shadowed): an error
+        or an absent value, never a router or a path."""
+        if node.type == "try_expression":
+            inner = next(iter(node.named_children), None)
+            return (
+                inner is not None
+                and inner.type == "call_expression"
+                and self.is_no_value(frame, inner)
+            )
+        if node.type == "call_expression":
+            head = node.child_by_field_name("function")
+            expect = "Err"
+        else:
+            head, expect = node, "None"
+        if head is None or head.type != "identifier" or text(head) != expect:
+            return False
+        shadowed = frame.env.get(expect) is not _MISSING
+        return not shadowed and self.idx.resolve(frame.mod, (expect,)) is None
+
+    def async_block(self, frame: Frame, node: Node) -> Any:
+        """Its own `return`s end the future, not the enclosing fn."""
+        sub = frame.child()
+        sub.rets = []
+        val = self.eval_block(sub, node)
+        result = self.join([*sub.rets, val])
+        return None if result is DIVERGE else result
+
+    def jump(self, frame: Frame, node: Node) -> Any:
+        label = next((c for c in node.named_children if c.type == "label"), None)
+        vals = [self.eval(frame, c) for c in node.named_children if c is not label]
+        target = next(
+            (b for name, b in reversed(self.labels) if label and name == text(label)),
+            None,
+        )
+        if target is not None:  # `break 'block <v>`: <v> is the block's value
+            target.append(None if not vals else vals[0])
+        return DIVERGE
 
     def eval_block(self, frame: Frame, node: Node) -> Any:
         if node.type == "block":
