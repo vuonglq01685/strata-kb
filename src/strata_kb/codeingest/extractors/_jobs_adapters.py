@@ -19,12 +19,14 @@ from strata_kb.codeingest.extractors._jobs_jvm import SCANNERS as _JVM
 from strata_kb.codeingest.extractors._jobs_model import (
     ANONYMOUS,
     DYNAMIC,
+    EXEC,
     UNNAMED,
     Ctx,
     Scanner,
     cron_text,
     enclosing,
     first_token,
+    name_only,
     num,
     qualified,
 )
@@ -95,6 +97,12 @@ def _fn_name(node: Node | None) -> str:
     return ANONYMOUS
 
 
+def _last_name(fn: Node) -> str:
+    if fn.type == "member_expression":
+        return _text(fn.child_by_field_name("property"))
+    return _text(fn) if fn.type == "identifier" else ""
+
+
 def _import_names(clause: Node) -> tuple[set[str], set[str]]:
     receivers: set[str] = set()
     funcs: set[str] = set()
@@ -139,11 +147,26 @@ def _node_cron_bindings(root: Node) -> tuple[set[str], set[str]]:
     funcs: set[str] = set()
     for node in _walk(root):
         if node.type == "import_statement":
-            source = _lit(node.child_by_field_name("source"))
             clause = next(
-                (c for c in node.named_children if c.type == "import_clause"), None
+                (
+                    c
+                    for c in node.named_children
+                    if c.type in ("import_clause", "import_require_clause")
+                ),
+                None,
             )
-            if source == "node-cron" and clause is not None:
+            if clause is None:
+                continue
+            source = _lit(node.child_by_field_name("source")) or _lit(
+                clause.child_by_field_name("source")
+            )
+            if source != "node-cron":
+                continue
+            if clause.type == "import_require_clause":
+                receivers |= {
+                    _text(c) for c in clause.named_children if c.type == "identifier"
+                }
+            else:
                 got = _import_names(clause)
                 receivers |= got[0]
                 funcs |= got[1]
@@ -171,6 +194,17 @@ def _node_cron_bindings(root: Node) -> tuple[set[str], set[str]]:
     return receivers, funcs
 
 
+def _is_require_node_cron(node: Node) -> bool:
+    if node.type != "call_expression":
+        return False
+    args = _args(node)
+    return (
+        _text(node.child_by_field_name("function")) == "require"
+        and bool(args)
+        and _lit(args[0]) == "node-cron"
+    )
+
+
 def _node_cron(ctx: Ctx) -> None:
     receivers, funcs = _node_cron_bindings(ctx.root)
     for call in _walk(ctx.root):
@@ -180,10 +214,11 @@ def _node_cron(ctx: Ctx) -> None:
         if fn is None:
             continue
         if fn.type == "member_expression":
-            bound = (
-                _text(fn.child_by_field_name("object")) in receivers
-                and _text(fn.child_by_field_name("property")) == "schedule"
-            )
+            owner = fn.child_by_field_name("object")
+            direct = owner is not None and _is_require_node_cron(owner)
+            bound = (direct or _text(owner) in receivers) and _text(
+                fn.child_by_field_name("property")
+            ) == "schedule"
         else:
             bound = fn.type == "identifier" and _text(fn) in funcs
         args = _args(call)
@@ -201,7 +236,10 @@ def _bull_name(pair: Node) -> str:
     obj = pair.parent
     args = obj.parent if obj is not None else None
     call = args.parent if args is not None and args.type == "arguments" else None
-    first = (_args(call) or [None])[0] if call is not None else None
+    fn = call.child_by_field_name("function") if call is not None else None
+    if fn is None or _last_name(fn) not in ("add", "upsertJobScheduler"):
+        return UNNAMED
+    first = (_args(call) or [None])[0]
     if first is None:
         return UNNAMED
     return _lit(first) or (_text(first) if first.type == "identifier" else UNNAMED)
@@ -212,7 +250,14 @@ def _bullmq(ctx: Ctx) -> None:
         if pair.type != "pair" or _key(pair) != "repeat":
             continue
         value = pair.child_by_field_name("value")
-        if value is None or value.type != "object":
+        if value is None:
+            continue
+        if value.type != "object":
+            if value.type in ("identifier", "member_expression", "call_expression"):
+                ctx.add(_bull_name(pair), ctx.dyn(pair), "-", pair)
+            continue
+        if any(c.type == "spread_element" for c in value.named_children):
+            ctx.add(_bull_name(pair), ctx.dyn(pair), "-", pair)
             continue
         pattern = _object_value(value, "pattern") or _object_value(value, "cron")
         every = _object_value(value, "every")
@@ -230,7 +275,7 @@ def _bullmq(ctx: Ctx) -> None:
 _JS = [
     Scanner(re.compile(rb"@nestjs/schedule"), _nest),
     Scanner(re.compile(rb"node-cron"), _node_cron),
-    Scanner(re.compile(rb"bullmq|['\"]bull['\"]"), _bullmq),
+    Scanner(re.compile(rb"bullmq|@nestjs/bull|['\"]bull['\"]"), _bullmq),
 ]
 
 # --- Python (Celery) --------------------------------------------------------------
@@ -483,6 +528,8 @@ def _frequency(ctx: Ctx, start: Node) -> str:
             freq = part
         else:
             modifiers.append(part)
+    if not freq and any(m.startswith("at ") for m in modifiers):
+        freq = "daily"  # `->at()` is an alias of `->dailyAt()`
     return " ".join([freq, *modifiers]) if freq else ctx.dyn(start)
 
 
@@ -493,7 +540,7 @@ def _laravel(ctx: Ctx) -> None:
             continue
         args = _php_args(node)
         # `exec` takes a shell command line: never a name
-        name = "(exec)" if kind == "exec" else _php_name(args[0]) if args else DYNAMIC
+        name = EXEC if kind == "exec" else _php_name(args[0]) if args else DYNAMIC
         handler = name if kind == "job" else "-"
         ctx.add(name, _frequency(ctx, node), handler, node)
 
@@ -541,8 +588,13 @@ def _symfony(ctx: Ctx) -> None:
             schedule = f"every {text}" if text else ctx.dyn(attr)
         own = _text(target.child_by_field_name("name"))
         if target.type == "class_declaration":
-            entry = _lit(named.get("method")) or "__invoke"
-            ctx.add(own, schedule, f"{own}.{entry}", attr)
+            entry = "__invoke"
+            if "method" in named:
+                literal = _lit(named["method"])
+                if literal is None:
+                    ctx.dyn(attr)
+                entry = literal if literal and name_only(literal) else ""
+            ctx.add(own, schedule, f"{own}.{entry}" if entry else "-", attr)
         else:
             ctx.add(
                 own, schedule, qualified(enclosing(target, _PHP_CLASSES), own), attr

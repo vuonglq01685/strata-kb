@@ -726,3 +726,203 @@ def test_node_cron_only_calls_bound_to_the_import(tmp_path):
     result = run_jobs(tmp_path)
     assert [s.title for s in result.sections] == ["b.js"]
     assert sorted(r[0] for r in rows_of(result, "b.js")) == ["one", "three", "two"]
+
+
+# --- fix round 2 -----------------------------------------------------------------
+
+# One secret-shaped string argument per scanner: nothing from it may reach any
+# emitted cell, title, summary or coverage detail.
+SECRET_CASES = {
+    "nest": (
+        "s.ts",
+        "import { Cron, Interval } from '@nestjs/schedule';\n"
+        "class S {\n"
+        "  @Cron('0 3 * * *', { name: 'x -pSECRET1' })\n  a() {}\n"
+        "  @Interval('a=SECRET2', 5000)\n  b() {}\n}\n",
+    ),
+    "node-cron": (
+        "n.js",
+        "const cron = require('node-cron');\n"
+        "cron.schedule('* * * * *', f, { name: 'job pw=SECRET3' });\n",
+    ),
+    "bullmq": (
+        "q.ts",
+        "import { Queue } from 'bullmq';\n"
+        "fetchRepeat('https://u:SECRET4@host/x', { repeat: { every: 1000 } });\n"
+        "q.add('n pw=SECRET5', {}, { repeat: { every: 1 } });\n",
+    ),
+    "celery": (
+        "c.py",
+        "app.conf.beat_schedule = {\n"
+        "  'k pw=SECRET6': {'task': 't pw=SECRET7', 'schedule': 30.0},\n}\n"
+        "sender.add_periodic_task(10.0, test.s('SECRET8'), name='n SECRET9')\n",
+    ),
+    "laravel": (
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->exec('mysqldump -uroot -pSECRET10 db')->daily();\n"
+        "  $schedule->command('PGPASSWORD=SECRET11 pg_dump')->daily();\n"
+        "  $schedule->command('report:send --tenant=SECRET12')->daily();\n"
+        "  $schedule->job('Jobs\\\\Prune --pw=SECRET13')->daily();\n}}\n",
+    ),
+    "symfony": (
+        "T.php",
+        "<?php\n#[AsCronTask('0 3 * * *', method: 'run --pw=SECRET14')]\nclass M {}\n",
+    ),
+    "spring": (
+        "A.java",
+        "class A {\n"
+        '  @Scheduled(cron = "0 0 * * * *", name = "n pw=SECRET15")\n  void a() {}\n}\n',
+    ),
+    "hangfire": (
+        "S.cs",
+        "class S { void M() {\n"
+        '  RecurringJob.AddOrUpdate("id pw=SECRET16", () => Svc.Run(), Cron.Daily);\n'
+        '  RecurringJob.AddOrUpdate("b", () => new Mailer("smtp://u:SECRET17@h").Send(), Cron.Daily);\n'
+        '  RecurringJob.AddOrUpdate("c", () => Factory.For("Password=SECRET18").Run(), Cron.Daily);\n'
+        "}}\n",
+    ),
+    "quartz": (
+        "Q.cs",
+        "class Q { void M() {\n"
+        '  var t = TriggerBuilder.Create().WithIdentity("t pw=SECRET19")'
+        '.ForJob("j SECRET20").WithCronSchedule("0 0 12 * * ?").Build();\n}}\n',
+    ),
+    "go": (
+        "main.go",
+        'package main\nimport "github.com/robfig/cron/v3"\n'
+        'func main() {\n  c.AddFunc("* * * * *", NewJob("SECRET21"))\n'
+        '  c.AddJob("* * * * *", &Report{Token: "SECRET22"})\n}\n',
+    ),
+    "k8s": (
+        "k/c.yaml",
+        "kind: CronJob\nmetadata:\n  name: 'n SECRET23'\nspec:\n  schedule: '0 1 * * *'\n"
+        "  jobTemplate:\n    spec:\n      template:\n        spec:\n          containers:\n"
+        "          - name: 'c SECRET24'\n            image: i\n            env:\n"
+        "            - {name: P, value: SECRET25}\n",
+    ),
+}
+
+
+@needs_ts
+@pytest.mark.parametrize("case", sorted(SECRET_CASES))
+def test_no_secret_shaped_argument_reaches_any_cell(tmp_path, case):
+    rel, text = SECRET_CASES[case]
+    write(tmp_path, rel, text)
+    result = run_jobs(tmp_path)
+    assert result.sections, case
+    everything = " ".join(
+        [blob_of(result)]
+        + [s.title + s.summary for s in result.sections]
+        + [r.detail for r in result.coverage]
+    )
+    assert "SECRET" not in everything, everything
+
+
+@needs_ts
+def test_unsafe_names_become_dynamic_with_a_site_and_safe_ones_survive(tmp_path):
+    write(tmp_path, *SECRET_CASES["hangfire"])
+    result = run_jobs(tmp_path)
+    got = {(r[0], r[2]) for r in rows_of(result, "S.cs")}
+    assert got == {("(dynamic)", "Svc.Run"), ("b", "Send"), ("c", "Run")}
+    assert "S.cs:2" in row(result).detail
+
+
+@needs_ts
+def test_bullmq_name_only_from_queue_add_calls(tmp_path):
+    write(tmp_path, *SECRET_CASES["bullmq"])
+    names = sorted(r[0] for r in rows_of(run_jobs(tmp_path), "q.ts"))
+    assert names == ["(dynamic)", "(unnamed)"]
+
+
+@needs_ts
+def test_spring_string_keys_apply_time_unit(tmp_path):
+    write(
+        tmp_path,
+        "A.java",
+        "class A {\n"
+        '  @Scheduled(fixedRateString = "5", timeUnit = TimeUnit.SECONDS)\n  void a() {}\n'
+        '  @Scheduled(fixedDelayString = "10", timeUnit = TimeUnit.MINUTES)\n  void b() {}\n'
+        '  @Scheduled(fixedRateString = "7")\n  void c() {}\n}\n',
+    )
+    got = {r[0]: r[1] for r in rows_of(run_jobs(tmp_path), "A.java")}
+    assert got == {"a": "interval 5s", "b": "interval 10m", "c": "interval 7ms"}
+
+
+@needs_ts
+def test_bull_gate_matches_nest_bull_and_unreadable_repeat_is_dynamic(tmp_path):
+    write(
+        tmp_path,
+        "p.ts",
+        "import { InjectQueue } from '@nestjs/bull';\n"
+        "class P { go() {\n"
+        "  this.q.add('rep', {}, { repeat: { cron: '0 1 * * *' } });\n"
+        "  this.q.add('spread', {}, { repeat: { ...opts } });\n"
+        "  this.q.add('ident', {}, { repeat: opts });\n"
+        "  this.q.add('lit', {}, { repeat: true });\n}}\n",
+    )
+    result = run_jobs(tmp_path)
+    got = {r[0]: r[1] for r in rows_of(result, "p.ts")}
+    assert got == {"rep": "0 1 * * *", "spread": "(dynamic)", "ident": "(dynamic)"}
+    assert row(result).detail.endswith("p.ts:4; p.ts:5")
+
+
+@needs_ts
+def test_node_cron_require_forms(tmp_path):
+    write(
+        tmp_path,
+        "a.ts",
+        "import cron = require('node-cron');\ncron.schedule('0 1 * * *', one);\n",
+    )
+    write(tmp_path, "b.js", "require('node-cron').schedule('0 2 * * *', two);\n")
+    result = run_jobs(tmp_path)
+    assert rows_of(result, "a.ts")[0][:2] == ["one", "0 1 * * *"]
+    assert rows_of(result, "b.js")[0][:2] == ["two", "0 2 * * *"]
+
+
+@needs_ts
+def test_laravel_bare_at_is_daily_at(tmp_path):
+    write(
+        tmp_path,
+        "app/Console/Kernel.php",
+        "<?php\nclass K { function schedule($schedule) {\n"
+        "  $schedule->command('a')->at('13:00');\n}}\n",
+    )
+    assert (
+        rows_of(run_jobs(tmp_path), "app/Console/Kernel.php")[0][1] == "daily at 13:00"
+    )
+
+
+@needs_ts
+def test_symfony_non_literal_method_is_a_site(tmp_path):
+    write(
+        tmp_path,
+        "T.php",
+        "<?php\n#[AsCronTask('0 3 * * *', method: self::M)]\nclass M {}\n",
+    )
+    result = run_jobs(tmp_path)
+    assert rows_of(result, "T.php")[0][2] == "-"
+    assert "T.php:2" in row(result).detail
+
+
+def test_k8s_cronjob_list_items_without_kind(tmp_path):
+    write(
+        tmp_path,
+        "k.yaml",
+        "kind: CronJobList\nitems:\n- metadata: {name: a}\n  spec: {schedule: '0 1 * * *'}\n",
+    )
+    assert rows_of(run_jobs(tmp_path), "k.yaml")[0][:2] == ["a", "0 1 * * *"]
+
+
+def test_each_yaml_manifest_is_read_once(tmp_path, monkeypatch):
+    write(tmp_path, "k/c.yaml", K8S)
+    reads: list[str] = []
+    real = jobs._read
+
+    def counting(root, rel):
+        reads.append(rel)
+        return real(root, rel)
+
+    monkeypatch.setattr(jobs, "_read", counting)
+    run_jobs(tmp_path)
+    assert reads.count("k/c.yaml") == 1

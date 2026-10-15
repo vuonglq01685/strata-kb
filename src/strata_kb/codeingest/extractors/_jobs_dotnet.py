@@ -12,6 +12,7 @@ from strata_kb.codeingest.extractors._jobs_model import (
     Ctx,
     Scanner,
     cron_text,
+    name_only,
     num,
 )
 from strata_kb.codeingest.extractors._routes_jsutil import _lit, _text, _walk
@@ -61,7 +62,8 @@ def _lambda_target(lam: Node, types: list[str]) -> str:
     owner = _text(recv)
     if types and _text(lam.child_by_field_name("parameters")).strip("()") == owner:
         owner = types[0]
-    return f"{owner}.{name}"
+    # a receiver such as `new Mailer("smtp://...")` is not a name
+    return f"{owner}.{name}" if name_only(owner) else name
 
 
 def _is_cron(node: Node | None) -> bool:

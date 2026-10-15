@@ -65,6 +65,13 @@ def _kotlin_annotation(node: Node) -> tuple[str, dict[str, Node]]:
     return _text(label), pairs
 
 
+def _interval(ctx: Ctx, amount: str, pairs: dict[str, Node], at: Node) -> str:
+    if "timeUnit" not in pairs:
+        return f"interval {amount}ms"
+    unit = _UNITS.get(_text(pairs["timeUnit"]).rsplit(".", 1)[-1])
+    return f"interval {amount}{unit}" if unit else ctx.dyn(at)
+
+
 def _schedule(ctx: Ctx, pairs: dict[str, Node], at: Node) -> str:
     if "cron" in pairs:
         text = cron_text(pairs["cron"])
@@ -73,17 +80,14 @@ def _schedule(ctx: Ctx, pairs: dict[str, Node], at: Node) -> str:
         if key not in pairs:
             continue
         amount = num(pairs[key])
-        if amount and "timeUnit" in pairs:
-            unit = _UNITS.get(_text(pairs["timeUnit"]).rsplit(".", 1)[-1])
-            return f"interval {amount}{unit}" if unit else ctx.dyn(at)
         if amount:
-            return f"interval {amount}ms"
+            return _interval(ctx, amount, pairs, at)
         text = cron_text(pairs[key])
         return f"every {text}" if text else ctx.dyn(at)
     for key in ("fixedRateString", "fixedDelayString"):
         text = cron_text(pairs[key]) if key in pairs else None
         if text and text.isdigit():
-            return f"interval {text}ms"
+            return _interval(ctx, text, pairs, at)
     return ctx.dyn(at)
 
 

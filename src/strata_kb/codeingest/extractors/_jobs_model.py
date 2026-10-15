@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 DYNAMIC = "(dynamic)"
 ANONYMOUS = "(anonymous)"
 UNNAMED = "(unnamed)"
+EXEC = "(exec)"
+_SENTINELS = frozenset({DYNAMIC, ANONYMOUS, UNNAMED, EXEC, "-"})
 
 _NUMBER_TYPES = frozenset(
     {
@@ -44,6 +46,19 @@ _NUMBER_RE = re.compile(r"(\d[\d_]*(?:\.\d+)?)[lLfFdDuU]*")
 # `${app.cron}`, `{my.cron}`, `{{ x }}`, `%env(X)%`: a config reference, not
 # a schedule
 _PLACEHOLDER_RE = re.compile(r"[${]|%[^%\s]+%")
+
+
+# An identifier, or identifiers joined by `.` `:` `::` `\\` `-` `/` (a dotted
+# task, a scoped class, an artisan `report:send`, a k8s name). No spaces,
+# quotes, `=`, `@` or brackets: nothing that can carry a credential.
+_NAME_RE = re.compile(r"[\w$]+(?:(?:::|[.:\\/-])[\w$]+)*")
+
+
+def name_only(text: str | None) -> str | None:
+    """`text` when it is name-shaped, else None. Every Name and Handler cell
+    goes through this: a string argument is not a name just because a
+    scanner took it from the name position."""
+    return text if text is not None and _NAME_RE.fullmatch(text) else None
 
 
 @dataclass(frozen=True)
@@ -69,14 +84,12 @@ class Ctx:
         return DYNAMIC
 
     def add(self, name: str, schedule: str, handler: str, node: Node) -> None:
+        if name not in _SENTINELS and name_only(name) is None:
+            name = self.dyn(node)  # rejected name: listed as dynamic, sited
+        if handler not in _SENTINELS and name_only(handler) is None:
+            handler = "-"
         self.jobs.append(
-            Job(
-                " ".join(name.split()) or DYNAMIC,
-                " ".join(schedule.split()),
-                " ".join(handler.split()) or "-",
-                self.rel,
-                _ts.line_of(node),
-            )
+            Job(name, " ".join(schedule.split()), handler, self.rel, _ts.line_of(node))
         )
 
 
@@ -126,7 +139,7 @@ def enclosing(node: Node, types: frozenset[str]) -> str:
 def first_token(text: str) -> str:
     """The command name of a command line: arguments (which can carry
     credentials) are never kept."""
-    parts = text.split()
+    parts = [p for p in text.split() if not re.fullmatch(r"\w+=\S*", p)]
     return parts[0] if parts else DYNAMIC
 
 

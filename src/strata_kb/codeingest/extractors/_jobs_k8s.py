@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import yaml
 
-from strata_kb.codeingest.extractors._jobs_model import DYNAMIC, Job, plain
+from strata_kb.codeingest.extractors._jobs_model import DYNAMIC, Job, name_only, plain
 
 
 def _mapping(node: yaml.Node | None) -> dict[str, yaml.Node]:
@@ -24,6 +24,10 @@ def _scalar(node: yaml.Node | None) -> str | None:
     return plain(node.value) if isinstance(node, yaml.ScalarNode) else None
 
 
+def _name(node: yaml.Node | None) -> str | None:
+    return name_only(_scalar(node))
+
+
 def _containers(spec: dict[str, yaml.Node]) -> str:
     pod = _mapping(
         _mapping(
@@ -32,7 +36,7 @@ def _containers(spec: dict[str, yaml.Node]) -> str:
     )
     listed = pod.get("containers")
     names = (
-        [_scalar(_mapping(c).get("name")) for c in listed.value]
+        [_name(_mapping(c).get("name")) for c in listed.value]
         if isinstance(listed, yaml.SequenceNode)
         else []
     )
@@ -46,17 +50,23 @@ def _cronjob(rel: str, doc: yaml.Node) -> tuple[Job, str | None]:
     schedule = _scalar(sched)
     line = (sched or doc).start_mark.line + 1
     site = f"{rel}:{line}" if schedule is None else None
-    name = _scalar(_mapping(root.get("metadata")).get("name")) or DYNAMIC
+    name = _name(_mapping(root.get("metadata")).get("name"))
+    if name is None:
+        name = DYNAMIC
+        site = site or f"{rel}:{doc.start_mark.line + 1}"
     job = Job(
         name, " ".join((schedule or DYNAMIC).split()), _containers(spec), rel, line
     )
     return job, site
 
 
-def _documents(rel: str, doc: yaml.Node | None, sites: list[str]) -> list[yaml.Node]:
-    """The CronJob mappings of one YAML document, unwrapping `kind: List`."""
+def _documents(
+    rel: str, doc: yaml.Node | None, sites: list[str], implicit: bool = False
+) -> list[yaml.Node]:
+    """The CronJob mappings of one YAML document, unwrapping `kind: List`
+    (`implicit`: the items of a `CronJobList` need no kind of their own)."""
     root = _mapping(doc)
-    kind = _scalar(root.get("kind"))
+    kind = _scalar(root.get("kind")) or ("CronJob" if implicit else None)
     if kind == "CronJob" and doc is not None:
         return [doc]
     if kind is not None and kind.endswith("List") and "items" in root:
@@ -64,7 +74,11 @@ def _documents(rel: str, doc: yaml.Node | None, sites: list[str]) -> list[yaml.N
         if not isinstance(items, yaml.SequenceNode):
             sites.append(f"{rel}:{items.start_mark.line + 1}")
             return []
-        return [d for item in items.value for d in _documents(rel, item, sites)]
+        return [
+            d
+            for item in items.value
+            for d in _documents(rel, item, sites, kind == "CronJobList")
+        ]
     return []
 
 
