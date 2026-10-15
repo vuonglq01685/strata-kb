@@ -109,6 +109,8 @@ _APP_MAKER = re.compile(rb"\bApplication\s*(?:\(|\.(?:make|init|new)\b)")
 
 
 class Vapor(Evaluator):
+    _owners: set[str] | None = None  # owners storing an `Application`, built once
+
     def run(self) -> None:
         idx = self.idx
         for rel in sorted(idx.top_level):
@@ -131,6 +133,11 @@ class Vapor(Evaluator):
         self.unregistered()
 
     def app_owners(self) -> set[str]:
+        if self._owners is None:
+            self._owners = self._scan_app_owners()
+        return self._owners
+
+    def _scan_app_owners(self) -> set[str]:
         idx = self.idx
         return {
             owner

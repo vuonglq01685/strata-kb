@@ -84,12 +84,8 @@ def _read(root: Path, rel: str) -> bytes | None:
 
 def _error_line(tree: Tree) -> int | None:
     """Line of the first syntax error, or None for a clean parse."""
-    if not tree.root_node.has_error:
-        return None
-    for node in _walk(tree.root_node):
-        if node.type == "ERROR" or node.is_missing:
-            return _ts.line_of(node)
-    return 1
+    row = _ts.first_error_row(tree)
+    return None if row is None else row + 1
 
 
 def _parse(rel: str, data: bytes) -> Tree:

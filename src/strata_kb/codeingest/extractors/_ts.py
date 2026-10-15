@@ -114,14 +114,22 @@ def _swift_parenthesised(source: bytes) -> bytes:
     return b"\n".join(lines)
 
 
-def _first_error_row(tree: Tree) -> int:
+def first_error_row(tree: Tree) -> int | None:
+    """0-based row of the first ERROR or MISSING node, None for a clean parse.
+    A MISSING token can hide inside a named node (`let = 3`); then the row is
+    the innermost node that holds an error."""
+    if not tree.root_node.has_error:
+        return None
     stack = [tree.root_node]
     while stack:
         node = stack.pop()
         if node.type == "ERROR" or node.is_missing:
             return node.start_point[0]
         stack.extend(reversed(node.children))
-    return 0
+    node = tree.root_node
+    while (inner := next((c for c in node.children if c.has_error), None)) is not None:
+        node = inner
+    return node.start_point[0]
 
 
 def parse(lang: str, source: bytes) -> Tree:
@@ -132,9 +140,8 @@ def parse(lang: str, source: bytes) -> Tree:
             retry = _parser(lang).parse(fixed)
             # a clean retry, or one whose first error lies beyond the mis-parse
             # it repaired (a real error elsewhere, the line a site must name)
-            if not retry.root_node.has_error or _first_error_row(
-                retry
-            ) > _first_error_row(tree):
+            before, after = first_error_row(tree), first_error_row(retry)
+            if after is None or (before is not None and after > before):
                 return retry
     return tree
 

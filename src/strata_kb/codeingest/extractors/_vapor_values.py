@@ -259,11 +259,13 @@ MIDDLEWARE_TYPES = frozenset(
     {
         "FileMiddleware", "CORSMiddleware", "ErrorMiddleware", "SessionsMiddleware",
         "RouteLoggingMiddleware", "DefaultHeadersMiddleware", "RateLimitMiddleware",
+        "ResponseCompressionMiddleware", "TracingMiddleware", "MetricsMiddleware",
     }
 )  # fmt: skip
 MIDDLEWARE_FACTORIES = frozenset(
     {
         "authenticator", "credentialsAuthenticator", "sessionAuthenticator",
+        "asyncSessionAuthenticator", "asyncCredentialsAuthenticator",
         "guardMiddleware", "redirectMiddleware", "asyncRedirectMiddleware",
         "middleware", "asyncMiddleware",
     }

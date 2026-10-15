@@ -139,6 +139,9 @@ def is_middleware(idx: Index, frame: Frame, node: Node) -> bool:
     if node.type == "array_literal":
         parts = kids(node)
         return bool(parts) and all(is_middleware(idx, frame, p) for p in parts)
+    if node.type == "navigation_expression":  # `app.sessions.middleware`
+        spelled = "".join(_text(node).split())
+        return spelled.endswith(".sessions.middleware") and spelled[0].isalpha()
     if node.type == "simple_identifier":
         name = _text(node)
         found, value = frame.env.lookup(name)
