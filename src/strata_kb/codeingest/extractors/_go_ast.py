@@ -80,7 +80,7 @@ _NON_GIN_PKGS = (
     "github.com/go-resty/resty",
     "github.com/imroc/req",
     "github.com/gavv/httpexpect",
-    "gorm.io/",
+    "gorm.io",
     "github.com/redis/go-redis",
     "github.com/go-redis/redis",
     "github.com/spf13/viper",
@@ -91,6 +91,62 @@ _NON_GIN_PKGS = (
     "github.com/jmoiron/sqlx",
     "github.com/jackc/pgx",
     "go.mongodb.org/mongo-driver",
+    "github.com/uptrace/bun",
+    "github.com/go-pg/pg",
+)
+# Top-level names of the Go standard library. A dotless path outside this set
+# is a local module (go.work / replace), whose values are unknown.
+_STD_ROOTS = frozenset(
+    [
+        "archive",
+        "bufio",
+        "bytes",
+        "cmp",
+        "compress",
+        "container",
+        "context",
+        "crypto",
+        "database",
+        "debug",
+        "embed",
+        "encoding",
+        "errors",
+        "expvar",
+        "flag",
+        "fmt",
+        "go",
+        "hash",
+        "html",
+        "image",
+        "index",
+        "io",
+        "iter",
+        "log",
+        "maps",
+        "math",
+        "mime",
+        "net",
+        "os",
+        "path",
+        "plugin",
+        "reflect",
+        "regexp",
+        "runtime",
+        "slices",
+        "sort",
+        "strconv",
+        "strings",
+        "structs",
+        "sync",
+        "syscall",
+        "testing",
+        "text",
+        "time",
+        "unicode",
+        "unique",
+        "unsafe",
+        "weak",
+    ]
 )
 _MODULE = re.compile(r"^\s*module\s+(\S+)", re.MULTILINE)
 _VERSION = re.compile(r"^v\d+$")
@@ -389,9 +445,9 @@ class Index:
         """A package whose values provably are not gin routers: the standard
         library, another router, or a well-known client/driver."""
         return (
-            "." not in path.split("/")[0]
+            path.split("/")[0] in _STD_ROOTS
             or Index.is_router_pkg(path)
-            or path.startswith(_NON_GIN_PKGS)
+            or any(path == p or path.startswith(p + "/") for p in _NON_GIN_PKGS)
         )
 
     def import_dir(self, path: str) -> str | None:

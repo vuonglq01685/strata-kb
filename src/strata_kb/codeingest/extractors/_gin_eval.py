@@ -190,7 +190,11 @@ class Evaluator:
         writes = self.package_writes(pkg, env, initialized)
         for name, values in writes.items():
             same = len(set(values)) == 1 and not isinstance(values[0], Unknown)
-            env.vars[name] = values[0] if same else UNKNOWN
+            if same:
+                env.vars[name] = values[0]
+            elif env.vars.get(name) != Router(""):
+                # an engine-typed var keeps the root prefix whatever is written
+                env.vars[name] = UNKNOWN
 
     def initialized(self, decl: Node) -> list[str]:
         out: list[str] = []
