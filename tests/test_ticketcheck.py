@@ -2186,3 +2186,56 @@ def test_files_new_entry_is_its_own_path():
     )
     msgs = errors(report)
     assert len(msgs) == 1 and "a Files entry is its own path" in msgs[0], msgs
+
+
+def _api_only_doc():
+    body = (
+        "## api.media title\n\n| Method | Path | Summary |\n| --- | --- | --- |\n"
+        "| GET | /media/ping | ping |\n"
+    )
+    manifest = models.Manifest(
+        id="demo-code",
+        title="demo",
+        revision="abc1234",
+        sections=[
+            models.SectionEntry(id="api.media", title="m", file="api"),
+            models.SectionEntry(id="struct.tree", title="t", file="structure"),
+        ],
+    )
+    return ticketcheck.LoadedDoc(
+        manifest=manifest,
+        source="synthetic",
+        read_group={"api": body}.get,
+        read_raw=lambda g: (
+            "## struct.tree Repository tree\n\n```\n- apps/\n  - apps/media/\n```\n"
+            if g == "structure"
+            else None
+        ),
+    )
+
+
+def test_pre_release_doc_keeps_a_new_on_an_api_line_passing():
+    report = run_synth(
+        ["- Routes: api.media — POST /media/upload [NEW: tbd]"], doc=_api_only_doc()
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_mixed_line_yields_only_the_sub_bullet_error():
+    report = run_synth(
+        [
+            f"- Routes: {_MEDIA} — GET /media/ping, GET /media/ping in apps/media/src/f.ts [NEW: tbd]"
+        ]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1 and "own sub-bullet" in msgs[0], msgs
+
+
+def test_prose_after_a_listed_name_is_not_a_name():
+    for tail in (
+        "AdminController, used by the admin page",
+        "AdminController (guards, admin)",
+        "AdminController, `AdminController`",
+    ):
+        report = run_synth([f"- Symbols: {_SYMS} — {tail}"])
+        assert errors(report) == [], (tail, errors(report))

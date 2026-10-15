@@ -871,17 +871,39 @@ def _cited_name(text: str) -> str:
     return words[0].rstrip(".,;:") if words else ""
 
 
-_OUTSIDE_BACKTICKS_COMMA_RE = re.compile(r",(?=(?:[^`]*`[^`]*`)*[^`]*$)")
+def _split_items(text: str) -> list[str]:
+    """Split at commas outside backticks and parentheses."""
+    items: list[str] = []
+    depth, ticks, start = 0, False, 0
+    for i, ch in enumerate(text):
+        if ch == "`":
+            ticks = not ticks
+        elif ticks:
+            continue
+        elif ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    items.append(text[start:])
+    return items
 
 
 def _cited_names(text: str) -> list[str]:
-    """Every name a `job.*`/`sym.*` segment cites: comma-separated, a backticked
-    name kept whole (it may hold commas)."""
-    return [
-        n
-        for item in _OUTSIDE_BACKTICKS_COMMA_RE.split(text)
-        if (n := _cited_name(item))
-    ]
+    """Every name a `job.*`/`sym.*` segment cites: the first item as
+    `_cited_name` reads it, each later comma item only when it is one token or
+    a code span (an item with spaces is prose, never a name)."""
+    names: list[str] = []
+    for n, item in enumerate(_split_items(text)):
+        if n and not CODE_SPAN_RE.search(item):
+            item = _SEPARATOR_RE.sub("", item).strip().rstrip(".,;:")
+            if not item or " " in item:
+                continue
+        if name := _cited_name(item):
+            names.append(name)
+    return names
 
 
 def _check_route_citation(
@@ -957,6 +979,12 @@ def _cites_listed(text: str, known: set[str]) -> bool:
     )
 
 
+def _mixes_new_with_citation(text: str, known: set[str]) -> bool:
+    """A `[NEW]` line that also cites a listed id -- an error only for a
+    document with `struct.coverage`; tickets grounded before it keep passing."""
+    return "struct.coverage" in known and _cites_listed(text, known)
+
+
 def _check_tables_routes_commands(
     section: _Section, doc: LoadedDoc, issues: list[Issue]
 ) -> None:
@@ -964,7 +992,7 @@ def _check_tables_routes_commands(
     unreadable: set[str] = set()
     for lineno, line in _id_lines(section):
         if NEW_RE.search(line):
-            if _cites_listed(line, known):
+            if _mixes_new_with_citation(line, known):
                 issues.append(
                     Issue(
                         "error",
@@ -1535,7 +1563,7 @@ def _judge_new_entries(
             continue
         if any(sid.rstrip(".") not in known for sid in ID_RE.findall(e.text)):
             continue
-        if _cites_listed(e.text, known):
+        if _mixes_new_with_citation(e.text, known):
             continue  # reported once by _check_tables_routes_commands
         _judge_new(e.thing, e.marker, e.lineno, decisions, issues, notes)
 
@@ -1710,9 +1738,12 @@ def _check_new_exists(
     bodies: dict[str, str | None] = {}
     unreadable: set[str] = set()
     found: list[Issue] = []
+    known = _known_ids(doc)
     for e in entries:
         if e.field == "Files":
             sid = _existing_file_section(structure(), e.thing)
+        elif _mixes_new_with_citation(e.text, known):
+            continue  # reported by _check_tables_routes_commands
         else:
             sid = _existing_section(e, doc, bodies, unreadable, found)
         if sid is None:
