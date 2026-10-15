@@ -115,8 +115,8 @@ class ActixPlay(Interp):
 
     def merge(self, vals: list[Any]) -> Any:
         conts = [v for v in vals if isinstance(v, Cont)]
-        if len(conts) < 2:
-            return vals[0]
+        if len(conts) < 2 or len(conts) != len(vals):
+            return super().merge(vals)
         out = Cont(conts[0].kind)
         for c in conts:
             self.absorb(out, c)
@@ -275,7 +275,7 @@ class ActixPlay(Interp):
                 or self.service_fn(frame, args[0]) is not None
             )
         elif step.name == "route" and len(args) == 2:
-            lit = self.string_of(frame, args[0]) is not None
+            lit = self.routing_shaped(args[0])
             shaped = isinstance(self.eval(frame, args[1]), Method) or lit
         elif step.name == "configure" and len(args) == 1:
             shaped = (

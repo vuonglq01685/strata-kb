@@ -118,7 +118,7 @@ class RocketPlay(Interp):
         items = [i for v in vals if isinstance(v, RouteList) for i in v.items]
         if items and all(isinstance(v, RouteList) for v in vals):
             return RouteList(items)
-        return vals[0]
+        return super().merge(vals)
 
     # -- macros and calls ------------------------------------------------
 
@@ -291,10 +291,7 @@ class RocketPlay(Interp):
         args = args_of(step.node)
         vals = [self.eval(frame, a) for a in args]
         if step.name == "mount" and len(args) == 2:
-            if (
-                isinstance(vals[1], RouteList)
-                or self.string_of(frame, args[0]) is not None
-            ):
+            if isinstance(vals[1], RouteList) or self.routing_shaped(args[0]):
                 self.site_at(frame, step.line)
         else:
             self.consume(frame, vals, args, None, step.line)

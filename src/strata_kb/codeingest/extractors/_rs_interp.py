@@ -285,7 +285,37 @@ class Interp:
         return False
 
     def merge(self, vals: list[Any]) -> Any:
-        return vals[0]
+        """Values of several branches: equal ones are one value, different
+        ones are unknown (never just the first)."""
+        first = vals[0]
+        same = all(
+            v is first
+            or v == first
+            or (isinstance(v, Other) and isinstance(first, Other))
+            for v in vals
+        )
+        return first if same else None
+
+    def join_branches(self, vals: list[Any]) -> Any:
+        """`if` / `match` arms. A string path chosen by a branch is only known
+        when every arm gives the same string (an unknown arm spoils it)."""
+        if any(isinstance(v, Str) for v in vals):
+            first = vals[0]
+            return (
+                first if all(isinstance(v, Str) and v == first for v in vals) else None
+            )
+        return self.join([v for v in vals if v is not None])
+
+    @staticmethod
+    def routing_shaped(node: Node | None) -> bool:
+        """A first argument that could be a route path: anything but a number,
+        bool or char literal (a literal, a name, `format!`, a call)."""
+        return node is not None and node.type not in (
+            "integer_literal",
+            "float_literal",
+            "boolean_literal",
+            "char_literal",
+        )
 
     def bind_param(self, fn: Fn, name: str, type_text: str, arg: Any) -> Any:
         return arg
@@ -537,7 +567,7 @@ class Interp:
             inner = next(iter(other.named_children), None)
             if inner is not None:
                 vals.append(self.eval(frame, inner))
-        return self.join([v for v in vals if v is not None])
+        return self.join_branches(vals)
 
     def match_expr(self, frame: Frame, node: Node) -> Any:
         value = node.child_by_field_name("value")
@@ -554,7 +584,7 @@ class Interp:
             expr = arm.child_by_field_name("value")
             if expr is not None:
                 vals.append(self.eval(sub, expr))
-        return self.join([v for v in vals if v is not None])
+        return self.join_branches(vals)
 
     def loop(self, frame: Frame, node: Node) -> Any:
         sub = frame.child()

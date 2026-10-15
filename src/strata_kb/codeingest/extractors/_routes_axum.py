@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 from strata_kb.codeingest.extractors._routes_model import AdapterResult
 from strata_kb.codeingest.extractors._rs_attrs import VERBS
 from strata_kb.codeingest.extractors._rs_frag import Frag, emit, prefixed
-from strata_kb.codeingest.extractors._rs_index import Fn
+from strata_kb.codeingest.extractors._rs_index import Fn, Mod
 from strata_kb.codeingest.extractors._rs_interp import (
     Closure,
     Frame,
@@ -132,32 +132,50 @@ class AxumPlay(Interp):
 
     def merge(self, vals: list[Any]) -> Any:
         routers = [v for v in vals if isinstance(v, Rtr)]
-        if len(routers) < 2:
-            return vals[0]
+        if len(routers) < 2 or len(routers) != len(vals):
+            return super().merge(vals)
         out = self.new_router()
         for r in routers:
             self.absorb(out, r, "")
         return out
 
+    def router_ty(self, mod: Mod, type_text: str, *, param: bool = False) -> bool:
+        """Does the type text name a router, also through an in-repo alias
+        (`type Api = Router<S>;`)? `param`: the type is the whole parameter
+        type (by value), not something mentioning a router."""
+        direct = _ROUTER_PARAM.match(type_text) if param else _ROUTER.search(type_text)
+        if direct:
+            return True
+        names = re.findall(r"[A-Za-z_]\w*", type_text)
+        for name in names[:1] if param else names:
+            res = self.idx.resolve(mod, (name,))
+            if res is not None and res.kind == "ext" and _ROUTER.search(res.segs[-1]):
+                return True
+        return False
+
     def follow(self, fn: Fn, args: list[Any]) -> bool:
-        return bool(_ROUTER.search(fn.ret)) or any(
+        return self.router_ty(fn.mod, fn.ret) or any(
             isinstance(a, Rtr | MRtr) for a in args
         )
 
     def apply_fn(self, frame: Frame, fn: Fn, args: list[Any], at: Node) -> Any:
         val = super().apply_fn(frame, fn, args, at)
-        if val is None and _ROUTER.search(fn.ret):
+        if val is None and self.router_ty(fn.mod, fn.ret):
             self.site(frame, at)  # a router we could not build
         return val
 
     def bind_param(self, fn: Fn, name: str, type_text: str, arg: Any) -> Any:
-        if arg is not None or _ROUTER.search(type_text):
+        if arg is not None or self.router_ty(fn.mod, type_text):
             return arg
         return self.typed_value(fn.mod, None, type_text)
 
     def on_let(self, frame: Frame, node: Node, val: Any) -> Any:
         declared = node.child_by_field_name("type")
-        if val is None and declared is not None and _ROUTER.search(text(declared)):
+        if (
+            val is None
+            and declared is not None
+            and self.router_ty(frame.mod, text(declared))
+        ):
             self.site(frame, node)
         return val
 
@@ -380,9 +398,9 @@ class AxumPlay(Interp):
         is a site only when its arguments are routing-shaped."""
         name, args = step.name, args_of(step.node)
         vals = [self.eval(frame, a) for a in args]
-        # an axum package: `.route("<any literal>", x)` on a value nothing
+        # an axum package: `.route(<any path>, x)` on a value nothing
         # proves is something else is routing, whatever `x` turns out to be
-        literal = bool(args) and self.string_of(frame, args[0]) is not None
+        literal = bool(args) and self.routing_shaped(args[0])
         shaped = False
         if name in ("route", "route_with_tsr") and len(args) == 2:
             shaped = isinstance(vals[1], MRtr) or literal
@@ -411,8 +429,8 @@ def run(idx: Index) -> AdapterResult:
     roots = [
         f
         for f in idx.fns
-        if not _ROUTER.search(f.ret)
-        and not any(_ROUTER_PARAM.match(t) for _n, t in f.params)
+        if not play.router_ty(f.mod, f.ret)
+        and not any(play.router_ty(f.mod, t, param=True) for _n, t in f.params)
     ]
     for fn in roots:
         play.run_fn(fn, [], None)
