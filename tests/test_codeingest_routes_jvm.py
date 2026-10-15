@@ -321,7 +321,7 @@ def test_spring_non_controller_mapping_is_a_site_but_feign_is_not(tmp_path):
         '@FeignClient(name = "users")\ninterface UserClient {\n  @GetMapping("/u/{id}") User get(@PathVariable Long id);\n}\n',
     )
     result = run_routes(tmp_path)
-    assert result.sections == [] and row(result).status == "complete"
+    assert result.sections == [] and row(result).detail == "build.gradle:2"
     write(
         tmp_path,
         f"{JAVA}/Base.java",
@@ -525,7 +525,7 @@ def test_quarkus_rest_client_is_not_a_server_route(tmp_path):
         '@RegisterRestClient(configKey = "x")\n@Path("/remote")\npublic interface Client { @GET String get(); }\n',
     )
     result = run_routes(tmp_path)
-    assert result.sections == [] and row(result).status == "complete"
+    assert result.sections == [] and row(result).detail == "build.gradle:2"
 
 
 def test_quarkus_reactive_routes_are_a_site(tmp_path):
@@ -662,7 +662,7 @@ def test_micronaut_declarative_client_is_not_a_route(tmp_path):
         '@Client("/remote")\npublic interface Api { @Get("/x") String x(); }\n',
     )
     result = run_routes(tmp_path)
-    assert result.sections == [] and row(result).status == "complete"
+    assert result.sections == [] and row(result).detail == "build.gradle:2"
 
 
 def test_syntax_error_in_controller_is_a_site(tmp_path):
@@ -813,7 +813,7 @@ def test_test_source_sets_are_not_product_routes(tmp_path):
         '@RestController class FakeController { @GetMapping("/fake") void f() {} }\n',
     )
     result = run_routes(tmp_path)
-    assert result.sections == [] and row(result).status == "complete"
+    assert result.sections == [] and row(result).detail == "build.gradle:2"
 
 
 def test_spring_computed_method_and_class_verb_filter_are_sites(tmp_path):
@@ -1146,6 +1146,7 @@ def test_spring_data_rest_repositories_are_sites_only_with_the_dependency(tmp_pa
         f"{JAVA}/PersonRepository.java",
         "package app;\npublic interface PersonRepository extends JpaRepository<Person, Long> {}\n",
     )
+    write(plain, f"{JAVA}/C.java", CONTROLLER)
     assert row(run_routes(plain)).status == "complete"
 
 
@@ -1323,3 +1324,138 @@ def test_kotlin_misparse_that_cannot_be_repaired_is_a_site(tmp_path):
         'package app\n\n@RestController\n@RequestMapping("/c")\nclass C {\n    @GetMapping("/ok") fun ok() = (\n}\n\nclass D {\n}\n',
     )
     assert row(run_routes(tmp_path)).status == "partial"
+
+
+# --- fix round 2 ------------------------------------------------------------
+
+CONTROLLER = '@RestController class C { @GetMapping("/x") void x() {} }\n'
+
+
+def test_generator_in_a_sibling_module_marks_every_route_scope(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'api', 'app'\n")
+    write(
+        tmp_path,
+        "api/build.gradle",
+        "plugins { id 'org.openapi.generator' version '7.0.0' }\n",
+    )
+    gradle(tmp_path, SPRING, "app")
+    write(tmp_path, f"app/{JAVA}/C.java", CONTROLLER)
+    result = run_routes(tmp_path)
+    assert row(result, "app").status == "partial"
+    assert row(result, "app").detail == "api/build.gradle:1"
+
+
+def test_generator_in_a_parent_pom_marks_the_module(tmp_path):
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project>\n<build><plugins>\n<plugin>\n<artifactId>openapi-generator-maven-plugin</artifactId>\n</plugin>\n</plugins></build>\n</project>\n",
+    )
+    write(
+        tmp_path,
+        "app/pom.xml",
+        "<project><dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>\n",
+    )
+    write(tmp_path, f"app/{JAVA}/C.java", CONTROLLER)
+    assert row(run_routes(tmp_path), "app").detail == "pom.xml:4"
+
+
+def test_openapi_client_only_dependency_is_not_a_generator(tmp_path):
+    write(
+        tmp_path,
+        "build.gradle",
+        f"dependencies {{\n  implementation '{SPRING}'\n  implementation 'org.openapitools:jackson-databind-nullable:0.2.6'\n}}\n",
+    )
+    write(tmp_path, f"{JAVA}/C.java", CONTROLLER)
+    assert row(run_routes(tmp_path)).status == "complete"
+
+
+def test_framework_scope_with_no_routes_and_no_sites_gets_a_manifest_site(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(tmp_path, f"{JAVA}/S.java", "package app;\n@Service\npublic class S {}\n")
+    result = run_routes(tmp_path)
+    assert result.sections == []
+    assert (row(result).status, row(result).detail) == ("partial", "build.gradle:2")
+
+
+def test_quarkus_class_implementing_an_interface_from_another_module(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'api', 'app'\n")
+    write(
+        tmp_path,
+        f"api/{JAVA}/GreetingApi.java",
+        'package app;\n@Path("/greetings")\npublic interface GreetingApi {\n  @GET @Path("/{name}") String greet(String name);\n}\n',
+    )
+    gradle(tmp_path, QUARKUS, "app")
+    write(
+        tmp_path,
+        f"app/{JAVA}/GreetingResource.java",
+        "package app;\npublic class GreetingResource implements org.acme.api.GreetingApi {\n  public String greet(String name) { return name; }\n}\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result, "app").status == "partial"
+    assert row(result, "app").detail == f"app/{JAVA}/GreetingResource.java:2"
+
+
+def test_quarkus_interface_in_the_same_scope_is_listed_once(tmp_path):
+    gradle(tmp_path, QUARKUS)
+    write(
+        tmp_path,
+        f"{JAVA}/GreetingApi.java",
+        'package app;\n@Path("/g")\npublic interface GreetingApi {\n  @GET String greet();\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/GreetingResource.java",
+        'package app;\npublic class GreetingResource implements GreetingApi {\n  public String greet() { return ""; }\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [("GET", "/g")]
+    assert row(result).status == "complete"
+
+
+def test_kotlin_application_class_followed_by_main_is_read(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/BlogApplication.kt",
+        """package app
+
+import org.springframework.boot.runApplication
+
+@SpringBootApplication
+@EnableConfigurationProperties(BlogProperties::class)
+class BlogApplication
+
+fun main(args: Array<String>) {
+    runApplication<BlogApplication>(*args)
+}
+""",
+    )
+    result = run_symbols(tmp_path)
+    assert {"BlogApplication", "main"} <= {n for n, _k in names_of(result)}
+    (cov,) = [r for r in result.coverage if r.framework == "kotlin"]
+    assert (cov.status, cov.detail) == ("complete", "")
+
+
+def test_type_field_cache_does_not_outlive_the_run(tmp_path):
+    from strata_kb.codeingest.extractors import _jvm_fields
+
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        '@RestController class C { @PostMapping("/a") void a(@RequestBody A a) {} }\nclass A { String a; }\n',
+    )
+    run_routes(tmp_path)
+    assert _jvm_fields._reads is None
+
+
+def test_spring_request_mapping_and_http_exchange_prefix_together_is_a_site(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        'package app;\n@RestController\n@RequestMapping("/a")\n@HttpExchange("/b")\nclass C {\n  @GetMapping("/x") void x() {}\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert result.sections == [] and row(result).status == "partial"

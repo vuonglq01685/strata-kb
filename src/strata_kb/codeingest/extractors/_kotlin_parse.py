@@ -20,6 +20,7 @@ scanners report a site instead of silently dropping what it held.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -201,7 +202,38 @@ def _semicolons(data: bytes) -> bytes:
     return bytes(out)
 
 
-def _read_chunk(line: int, text: bytes) -> tuple[Tree, int | None]:
+_STARTS = re.compile(
+    rb"(?:public|private|internal|protected|abstract|open|sealed|data|enum|annotation"
+    rb"|inline|value|suspend|override|const|lateinit|fun|class|interface|object"
+    rb"|typealias|val|var)\b"
+)
+
+
+def _pieces(line: int, text: bytes) -> list[tuple[int, bytes]]:
+    """A chunk split where a new top-level declaration starts: after a blank
+    line, or at a declaration keyword that no annotation line leads into."""
+    net: dict[int, int] = {}
+    for offset, brace in _code_braces(text):
+        row = text.count(b"\n", 0, offset)
+        net[row] = net.get(row, 0) + (1 if brace == b"{" else -1)
+    lines = text.split(b"\n")
+    cuts, depth, prev = [0], 0, b""
+    for index, raw in enumerate(lines):
+        if index and depth == 0 and raw.strip():
+            starts = _STARTS.match(raw) is not None and not prev.startswith(b"@")
+            if starts or not prev:
+                cuts.append(index)
+        depth += net.get(index, 0)
+        prev = raw.strip() if raw.strip() else b""
+    cuts.append(len(lines))
+    return [
+        (line + a, b"\n".join(lines[a:b]) + b"\n")
+        for a, b in zip(cuts, cuts[1:], strict=False)
+        if b > a
+    ]
+
+
+def _read_piece(line: int, text: bytes) -> tuple[Tree, int | None]:
     padded = b"\n" * line + text
     tree = _parse("x.kt", padded)
     bad = _misparsed(tree.root_node)
@@ -210,6 +242,14 @@ def _read_chunk(line: int, text: bytes) -> tuple[Tree, int | None]:
     fixed = _parse("x.kt", _semicolons(padded))
     again = _misparsed(fixed.root_node)
     return (fixed, None) if again is None else (tree, bad)
+
+
+def _read_chunk(line: int, text: bytes) -> list[tuple[Tree, int | None]]:
+    """The chunk as one tree; failing that, one tree per declaration in it."""
+    whole = _read_piece(line, text)
+    if whole[1] is None:
+        return [whole]
+    return [_read_piece(at, piece) for at, piece in _pieces(line, text)]
 
 
 def parse(rel: str, data: bytes) -> Tree:
@@ -222,11 +262,11 @@ def parse(rel: str, data: bytes) -> Tree:
         return tree
     split = SplitTree(_Root([]))
     for line, text in _chunks(data):
-        piece, bad = _read_chunk(line, text)
-        split.keep.append(piece)
-        split.root_node.children += piece.root_node.children
-        if bad is not None and split.bad_line is None:
-            split.bad_line = bad
+        for piece, bad in _read_chunk(line, text):
+            split.keep.append(piece)
+            split.root_node.children += piece.root_node.children
+            if bad is not None and split.bad_line is None:
+                split.bad_line = bad
     # duck-typed: callers only read `.root_node.children` and the error flags
     return cast("Tree", split)
 

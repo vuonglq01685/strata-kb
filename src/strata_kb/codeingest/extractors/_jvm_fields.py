@@ -140,6 +140,12 @@ def _kotlin_fields(decl: Node) -> list[Field] | None:
 _reads: tuple[list[str], dict[str, bytes | None]] | None = None
 
 
+def clear_cache() -> None:
+    """Drop the run's reads (`routes.py` calls this when a run ends)."""
+    global _reads
+    _reads = None
+
+
 def _run_cache(files: list[str]) -> dict[str, bytes | None]:
     global _reads
     if _reads is None or _reads[0] is not files:

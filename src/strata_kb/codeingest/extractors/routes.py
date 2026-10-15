@@ -168,6 +168,12 @@ class RoutesExtractor:
         return bool(_route_targets(find_scopes(root, root / ".kb")))
 
     def extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
+        try:
+            return self._extract(root, opts)
+        finally:
+            _jvm_fields.clear_cache()  # source bytes read for request types
+
+    def _extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         scopes = find_scopes(root, opts.kb_dir)
         targets = _route_targets(scopes)
         if not targets:

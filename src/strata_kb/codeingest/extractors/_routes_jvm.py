@@ -54,9 +54,8 @@ _HTTP_VERBS = frozenset(
 )
 _META = re.compile(rb"@interface\b|\bannotation\s+class\b")
 _QUERY_TEMPLATE = re.compile(r"\{[?&][^}]*\}")
-_GENERATOR = re.compile(
-    r"openapi[-._]?generator|openapitools|swagger[-._]?codegen", re.IGNORECASE
-)
+# the generator itself, not `org.openapitools:jackson-databind-nullable` (client side)
+_GENERATOR = re.compile(r"openapi[-._]?generator|swagger[-._]?codegen", re.IGNORECASE)
 _MANIFESTS = frozenset({"pom.xml", "build.gradle", "build.gradle.kts"})
 _COMMENT = re.compile(r"^\s*(?://|/\*|\*)")
 
@@ -83,6 +82,10 @@ class _Fw:
     foreign: frozenset[str] = frozenset()
     # manifest text that turns every repository interface into an endpoint
     data_rest: re.Pattern[str] | None = None
+    # the manifest line that names the framework (site of last resort)
+    dependency: re.Pattern[str] = re.compile(r"$^")
+    # annotation whose interfaces classes elsewhere implement (JAX-RS `@Path`)
+    shared: str = ""
 
     @property
     def carriers(self) -> frozenset[str]:
@@ -136,6 +139,8 @@ _EXCHANGE_VERBS = {
 def _spring_prefix(anns: list[ast.Ann]) -> _Prefix:
     exchange = next((a for a in anns if a.name == "HttpExchange"), None)
     mapping = next((a for a in anns if a.name == "RequestMapping"), None)
+    if mapping is not None and exchange is not None:  # which one wins is not ours
+        return None, exchange.line
     if mapping is None and exchange is not None:
         return _paths(exchange.arg("value", "url", "")), exchange.line
     if mapping is None:
@@ -253,6 +258,7 @@ _FRAMEWORKS: dict[str, _Fw] = {
         exchange=frozenset({*_EXCHANGE_VERBS, "HttpExchange"}),
         foreign=frozenset({"Path"}),  # Jersey under Spring Boot
         data_rest=re.compile(r"data-rest"),
+        dependency=re.compile(r"spring-boot"),
     ),
     "Quarkus": _Fw(
         handlers=frozenset({*_JAXRS_VERBS, "Path", "HttpMethod"}),
@@ -267,6 +273,8 @@ _FRAMEWORKS: dict[str, _Fw] = {
         routes=_quarkus_routes,
         app_path=frozenset({"ApplicationPath"}),
         foreign=frozenset({"RestController", "RequestMapping"}),  # quarkus-spring-web
+        dependency=re.compile(r"quarkus"),
+        shared="Path",
     ),
     "Micronaut": _Fw(
         handlers=frozenset({*_MICRONAUT_VERBS, "CustomHttpMethod"}),
@@ -277,6 +285,7 @@ _FRAMEWORKS: dict[str, _Fw] = {
         unfollowed=re.compile(r"\bRouteBuilder\b"),
         prefix=_micronaut_prefix,
         routes=_micronaut_routes,
+        dependency=re.compile(r"micronaut"),
     ),
 }
 
@@ -402,13 +411,13 @@ def _application_prefix(found: list[tuple[str, ast.Ann]], result: AdapterResult)
 
 
 def _manifests(
-    root: Path, scope: Scope, repo_files: list[str]
+    root: Path, repo_files: list[str], only: str | None = None
 ) -> list[tuple[str, str]]:
-    """(path, text) of the build files in the scope's own directory."""
+    """(path, text) of the build files in directory `only`, or everywhere."""
     out = []
     for rel in repo_files:
         folder, _sep, name = rel.rpartition("/")
-        if name in _MANIFESTS and (folder or ".") == scope.path:
+        if name in _MANIFESTS and (only is None or (folder or ".") == only):
             data = _read(root, rel)
             if data is not None:
                 out.append((rel, data.decode("utf-8", "replace")))
@@ -417,13 +426,40 @@ def _manifests(
 
 def _generator_sites(manifests: list[tuple[str, str]]) -> list[str]:
     """Generated server stubs (OpenAPI Generator, swagger-codegen) come from
-    a build step: their interfaces are not in the tree."""
+    a build step, often in a sibling module or the parent build: their
+    interfaces are not in this tree, whichever module runs the generator."""
     return [
         f"{rel}:{number}"
         for rel, text in manifests
         for number, line in enumerate(text.splitlines(), start=1)
         if _GENERATOR.search(line)
     ]
+
+
+def _dependency_site(fw: _Fw, scope: Scope, manifests: list[tuple[str, str]]) -> str:
+    for rel, text in manifests:
+        for number, line in enumerate(text.splitlines(), start=1):
+            if fw.dependency.search(line):
+                return f"{rel}:{number}"
+    return f"{scope.manifest if scope.path == '.' else scope.path + '/' + scope.manifest}:1"
+
+
+def _path_interfaces(root: Path, repo_files: list[str], fw: _Fw) -> dict[str, str]:
+    """name -> file of each repo interface annotated `@<fw.shared>` (any
+    module): a class elsewhere that implements one serves its routes."""
+    if not fw.shared:
+        return {}
+    found: dict[str, str] = {}
+    marker = re.compile(rb"\b" + fw.shared.encode() + rb"\b")
+    for rel in ast.jvm_files(repo_files):
+        data = _read(root, rel)
+        if data is None or not marker.search(data) or b"interface" not in data:
+            continue
+        for cls in ast.classes(_kotlin_parse.parse(rel, data).root_node):
+            names = {a.name for a in ast.annotations_of(cls)}
+            if ast.is_interface(cls) and fw.shared in names and not names & fw.clients:
+                found[ast.class_name(cls)] = rel
+    return found
 
 
 def _repository_sites(rel: str, tree: Tree) -> list[str]:
@@ -435,6 +471,14 @@ def _repository_sites(rel: str, tree: Tree) -> list[str]:
         if ast.is_interface(decl) and re.search(r"\w*Repository\b", supertypes):
             sites.append(f"{rel}:{ast.name_line(decl)}")
     return sites
+
+
+def _implements(cls: Node, names: set[str]) -> bool:
+    """Whether the class header's supertypes name one of `names`."""
+    supertypes = ast.header_text(cls).split(ast.class_name(cls), 1)[-1]
+    return (
+        re.search(r"\b(?:" + "|".join(sorted(names)) + r")\b", supertypes) is not None
+    )
 
 
 def _adapter(
@@ -463,8 +507,8 @@ def _adapter(
                 if line is not None:
                     result.dynamic_sites.append(f"{rel}:{line}")
 
-        manifests = _manifests(root, scope, repo_files)
-        result.dynamic_sites += _generator_sites(manifests)
+        manifests = _manifests(root, repo_files, scope.path)
+        result.dynamic_sites += _generator_sites(_manifests(root, repo_files))
         data_rest = fw.data_rest is not None and any(
             fw.data_rest.search(text) for _rel, text in manifests
         )
@@ -474,7 +518,13 @@ def _adapter(
             if _META.search(sources[rel]):
                 tree_of(rel)
         composed = _composed(trees, fw)
-        hint = fw.hint(composed, data_rest)
+        in_scope = set(sources)
+        external = {
+            name
+            for name, rel in _path_interfaces(root, repo_files, fw).items()
+            if rel not in in_scope
+        }
+        hint = fw.hint(composed | external, data_rest)
         for rel in sorted(sources):
             if hint.search(sources[rel]):
                 tree_of(rel)
@@ -486,6 +536,8 @@ def _adapter(
             if data_rest:
                 result.dynamic_sites += _repository_sites(rel, tree)
             for cls in ast.classes(tree.root_node):
+                if external and _implements(cls, external):
+                    result.dynamic_sites.append(f"{rel}:{ast.name_line(cls)}")
                 app_paths += [
                     (rel, a) for a in ast.annotations_of(cls) if a.name in fw.app_path
                 ]
@@ -494,6 +546,8 @@ def _adapter(
             base = _application_prefix(app_paths, result)
             routes = [replace(r, path=join_path(base, r.path)) for r in routes]
         result.routes = routes
+        if not routes and not result.dynamic_sites:  # framework seen, nothing read
+            result.dynamic_sites.append(_dependency_site(fw, scope, manifests))
         result.dynamic_sites += config_sites(root, scope, repo_files, fw.keys)
         return result
 
