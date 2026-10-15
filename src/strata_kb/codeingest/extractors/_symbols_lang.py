@@ -29,7 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from strata_kb.codeingest.extractors import _symbols_jvm, _ts
+from strata_kb.codeingest.extractors import _symbols_csharp, _symbols_jvm, _ts
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -766,6 +766,7 @@ EXPORTERS: dict[str, Exporter] = {
     "css": _css_reader(False),
     "scss": _css_reader(True),
     **_symbols_jvm.EXPORTERS,
+    **_symbols_csharp.EXPORTERS,
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     **dict.fromkeys(_JS_LANGS, _js_extras),
@@ -777,5 +778,6 @@ HINTS: dict[str, re.Pattern[bytes]] = {
     "css": re.compile(rb"--"),
     "scss": re.compile(rb"--"),
     "java": re.compile(rb"\bpublic\b"),  # nothing else is exported
+    "csharp": re.compile(rb"\bpublic\b"),
 }
 LENIENT: frozenset[str] = frozenset({"css", "scss"})

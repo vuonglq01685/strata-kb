@@ -8,6 +8,7 @@ with the frameworks its manifest declares. Later extractors use
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,15 @@ _MANIFEST_NAMES = frozenset(
 )
 
 
+# A web-SDK project (or a shared-framework reference) lists no PackageReference
+# for ASP.NET Core, yet serves its routes: it counts as an ASP.NET Core scope.
+_ASPNET_IMPLICIT = re.compile(
+    r"""Sdk\s*=\s*"Microsoft\.NET\.Sdk\.Web\b"""
+    r"""|<Sdk\s+Name\s*=\s*"Microsoft\.NET\.Sdk\.Web\b"""
+    r"""|<FrameworkReference\s+Include\s*=\s*"Microsoft\.AspNetCore\.App\b"""
+)
+
+
 @dataclass(frozen=True)
 class Scope:
     path: str  # repo-relative posix dir, or "."
@@ -43,6 +53,16 @@ def _is_manifest(name: str) -> bool:
         or name.endswith(".csproj")
         or fnmatch.fnmatch(name, "requirements*.txt")
     )
+
+
+def _implicit_names(path: Path) -> list[str]:
+    if not path.name.endswith(".csproj"):
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return ["Microsoft.AspNetCore.App"] if _ASPNET_IMPLICIT.search(text) else []
 
 
 def find_scopes(root: Path, kb_dir: Path) -> list[Scope]:
@@ -59,7 +79,14 @@ def find_scopes(root: Path, kb_dir: Path) -> list[Scope]:
     for directory in sorted(by_dir):
         names = sorted(by_dir[directory])
         base = root if directory == "." else root / directory
-        dep_names = [n for name in names for n in deps.manifest_dep_names(base / name)]
+        dep_names = [
+            n
+            for name in names
+            for n in (
+                *deps.manifest_dep_names(base / name),
+                *_implicit_names(base / name),
+            )
+        ]
         scopes.append(
             Scope(directory, names[0], tuple(deps.detect_frameworks(dep_names)))
         )
