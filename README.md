@@ -1143,7 +1143,7 @@ story in `Affected`, `kb mission next` reports the ticket `draft` with reason
 |---|---|---|
 | `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
 | `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required structure; C4 L1 + L2 diagrams present; a well-formed backlog whose ids derive from the mission id; every citation resolving at its pinned commit | `0` PASS, `1` FAIL, `2` stale |
-| `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.* / route.* / page.* / job.* / sym.*` id in `## Technical grounding` exists in the hub's `<repo>-code` first (the copy the SA grounded on), then a local `--kb-dir` copy with a `(local fallback — …)` note, columns / routes / pages / jobs / symbols / commands match its tables, `Files:` are in `struct.tree` or a `struct.files.*` section, every `[NEW: D<n>]` names a `DECIDED` row of the parent mission's `## Technology decisions` (`--missions-dir`, default the sibling `missions/`; a mission missing there is read from the hub's plan), and `Open decisions` is empty. With a `struct.coverage` section it also fails a `[NEW: D<n>]` on a route, page, symbol, file or partition/index/primary key whose scope is `partial` or `not scanned` (`cannot claim new: coverage of <scope> … is <status>; move it to Open decisions`), any `[NEW]` on a `Jobs:` line, and a `[NEW]` for something the document already lists (`already exists in <id>; cite it instead`) A `Grounded on:` revision that moved is not a failure by itself: when every cited fact still holds it is a PASS with a `[note]`, or a `[warn]` plus a unified diff of each changed cited section; when one is gone it is a FAIL (`grounding drifted since @<old> (now @<new>) and no longer holds — re-run /sa-ticket-ground`). `dev-implement-ticket` runs it right after Intake. `--heading "## Services & order"` checks a mission plan's SA section against its own decisions table | `0` PASS, `1` FAIL |
+| `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.* / route.* / page.* / job.* / sym.*` id in `## Technical grounding` exists in the hub's `<repo>-code` first (the copy the SA grounded on), then a local `--kb-dir` copy with a `(local fallback — …)` note, columns / routes / pages / jobs / symbols / commands match its tables, `Files:` are in `struct.tree` or a `struct.files.*` section, every `[NEW: D<n>]` names a `DECIDED` row of the parent mission's `## Technology decisions` (`--missions-dir`, default the sibling `missions/`; a mission missing there is read from the hub's plan), and `Open decisions` is empty. It also always fails any `[NEW]` on a `Jobs:` line and a `[NEW]` for something the document already lists at the revision the ticket was grounded on (`already exists in <id>; cite it instead`). With a `struct.coverage` section it further fails a `[NEW: D<n>]` on a route, page, symbol, file or partition/index/primary key whose scope is `partial` or `not scanned` (`cannot claim new: coverage of <scope> … is <status>; move it to Open decisions`), a `[NEW]` in `Routes:`, `Pages:` or `Symbols:` that does not name the file it will live in (`… in <path> [NEW: D<n>]`), and a line that cites an id and also carries `[NEW]` (put the new item on its own sub-bullet). A `Grounded on:` revision that moved is not a failure by itself: when every cited fact still holds it is a PASS with a `[note]`, or a `[warn]` plus a unified diff of each changed cited section; when one is gone it is a FAIL (`grounding drifted since @<old> (now @<new>) and no longer holds — re-run /sa-ticket-ground`). `dev-implement-ticket` runs it right after Intake. `--heading "## Services & order"` checks a mission plan's SA section against its own decisions table | `0` PASS, `1` FAIL |
 | `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]` | Read-only: every backlog story across `missions/` as `done` (its id is in a `hist.*` row of the hub's `-svc` document), `ready` (a ticket file exists under `tickets/` — flat or `tickets/<mission-id>/` — with every `## Definition of Ready` box ticked), `draft` (a ticket file with an unticked box, reason `DoR n/m ticked`, or no `## Definition of Ready` section, reason `no Definition of Ready section`), `to-draft` (no ticket, every `Depends on` done, every D-row that `Blocks` it `DECIDED`) or `blocked` (reasons named); ends with `Next: <us-id> — <title>` naming the first `to-draft` story. The `-svc` document is derived from the missions' `Grounded on:` line (a comma-separated list is read, the `-code` entry wins; `<x>-code` → `<x>-svc`, `--repo-id` overrides); `--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second; no `Grounded on:` line, an unconfigured or unreachable hub, a `-svc` not on the hub, and a missing tickets dir are each a `note:` line, never a red line | `0` after a report; `1` for a bad directory flag or a malformed `.kb/config.yaml` |
 | `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]` | Move each flat `tickets/*.md` whose `> Parent mission: M-x [@ rev N]` line is valid to `tickets/M-x/<name>`; print `moved:` per file, `conflict:` when the destination exists (nothing is overwritten), `unsorted:` for a file without a parent mission, `note:` for an unreadable file or a FILE under `--into` that is not a flat file directly under tickets/. With `--into`, move the named files into `tickets/<folder>/` instead. Idempotent; no git — commit the renames yourself | `0` after a report; `1` for a bad `--tickets-dir`, a bad `--into` name, FILES without `--into`, or `--into` without files |
 
@@ -1378,9 +1378,14 @@ network at run time, which would break the no-network, same-bytes contract.
 Languages: JS/TS, Java/Kotlin, C#, Python, PHP, Go, Rust, Swift and Dart (plus
 CSS/SCSS for custom properties). `kb-code.yml` installs `strata-kb[code]` in
 both jobs, and `kb doctor` in a Dev repo warns when it is missing locally.
-Without the extra the four extractors emit `not scanned — install
-strata-kb[code]` coverage rows and one warning, and no sections; `struct.files.*`,
-the schema rows and the file-system page routers still work.
+Without the extra, `routes` and `symbols` emit `not scanned — install
+strata-kb[code]` coverage rows and no sections. `pages` rows for Angular, Vue,
+React and Flutter read the same, but the file-system routers (Next.js, Nuxt,
+SvelteKit) still produce `page.*` sections. `jobs` rows stay `partial` (jobs are
+never complete) with the install note added to the detail, and Kubernetes
+`CronJob` manifests still produce `job.*` sections. Each affected extractor
+prints its own warning, so there can be up to four. `struct.files.*` and the
+schema rows do not need the extra.
 
 | Section | Holds |
 |---|---|
@@ -1417,17 +1422,18 @@ never `complete`**: a job can live where no adapter looks (`pg_cron` in a
 migration, a hand-written `setInterval`, a crontab), so the row is always
 `partial` with the detail `jobs outside framework schedulers are not
 detectable`. A job that exists is listed; an absent one is always a Dev
-question. A `-code` document made by an older release has no `struct.coverage`
-and is treated as `not scanned` for every area.
+question. A `-code` document made by an older release has no `struct.coverage`:
+the SA treats every area as `not scanned`, and the gate does not apply the coverage rules to it.
 
 The SA uses it: for a route, page, symbol, file or a table's partition, index
-or primary key, absent from a `complete` scope means new
-(`<thing> in <path> [NEW: D<n>]`); absent from a `partial` or `not scanned`
+or primary key, absent from a `complete` scope means new: a route, page or
+symbol is written `<thing> in <path> [NEW: D<n>]`, and a new file is its own
+`Files:` entry, `<path> [NEW: D<n>]`. Absent from a `partial` or `not scanned`
 scope goes to `Open decisions`. Only names are emitted — the literal strings
 that appear are route and page paths, middleware matchers, cron or interval
 expressions and CSS custom-property names; env values, constant values and enum
 member values never are. The new `Pages:`, `Jobs:` and `Symbols:` lines of
-`## Technical grounding`, and the `QUICKSTART-ba.md` / `QUICKSTART-dev.md`
+`## Technical grounding`, and the `QUICKSTART-BA.md` / `QUICKSTART-DEV.md`
 files `kb init` writes, describe the same fields.
 
 **Never a secret channel — two security properties, not conveniences.**
@@ -1450,7 +1456,7 @@ not implement a SQL dialect. A `CREATE TABLE` of a name already created in a
 *different* migration directory is dropped with a warning naming both files, and
 an `ADD COLUMN` applies only inside the directory of its `CREATE TABLE` — two
 independent schemas sharing a table name are never merged into one that exists
-nowhere. Partition clauses, primary keys, `CREATE INDEX` and `ADD CONSTRAINT … PRIMARY KEY|UNIQUE` are read; a statement it does not apply (`RENAME`, an unknown `ALTER` action, an unparsed index) marks that table's `schema` coverage `partial` and names the `file:line`. A
+nowhere. Partition clauses, primary keys, `CREATE INDEX` and `ADD CONSTRAINT … PRIMARY KEY|UNIQUE` are read. A statement it does not apply (`RENAME`, an unknown `ALTER` action, an unparsed index) is a site: the `schema` coverage row of that scope and reader reads `partial` and names the `file:line`. `FOREIGN KEY` and `CHECK` constraints only warn. A
 dialect-specific trailing clause (`) ENGINE=InnoDB …;`, `) WITHOUT ROWID;`,
 `) PARTITION BY RANGE (id);`, or a final statement with no `;` at all) is handled
 correctly — the closing paren is located by depth, not by scanning for an

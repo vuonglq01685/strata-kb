@@ -279,11 +279,13 @@ bảng). Chi tiết xem hướng dẫn Dev §7.5.
 
 Quy tắc chỉ áp dụng cho sáu vùng đó:
 
-- **Vắng trong phạm vi `complete` = chưa xây.** SA ghi mục đó là
-  `<what> in <path> [NEW: D<n>]`, nêu file nó sẽ nằm; phạm vi là phạm vi
-  coverage dài nhất làm tiền tố của đường dẫn đó. Các dòng `Routes:`,
-  `Pages:`, `Symbols:` và `Files:` có thể mang một mục như vậy. Mục mới nằm ở
-  một gạch đầu dòng con riêng, không bao giờ trên dòng đã trích một id có sẵn.
+- **Vắng trong phạm vi `complete` = chưa xây.** Route, page hoặc symbol mới
+  được ghi là `<what> in <path> [NEW: D<n>]` trên dòng `Routes:`, `Pages:` hoặc
+  `Symbols:`, nêu file nó sẽ nằm; phạm vi là phạm vi coverage dài nhất làm tiền
+  tố của đường dẫn đó. Mục mới nằm ở một gạch đầu dòng con riêng, không bao giờ
+  trên dòng đã trích một id có sẵn. File mới thì không viết như vậy: nó là một
+  mục `Files:` riêng, `<path> [NEW: D<n>]` (phạm vi là thư mục cấp cao nhất của
+  nó).
 - **Vắng trong phạm vi `partial` hoặc `not scanned` = chưa biết.** SA không thể
   phân biệt "chưa xây" với "lần quét bỏ sót", nên mục đó được gác dưới
   `Open decisions`, trích trạng thái coverage, và Dev trả lời. Cổng làm fail

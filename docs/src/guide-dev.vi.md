@@ -30,7 +30,7 @@ CI của bạn publish liên tục trở nên an toàn.
 
 | Tài liệu | Nguồn gốc | Sinh lại | Cần review |
 |---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest` — tất định, không model | khi cần, từ working tree — không bao giờ commit; CI publish ở mỗi lần push lên nhánh mặc định | không |
+| `<repo_id>-code` | `kb code-ingest` — tất định, không model | khi cần, từ working tree — không bao giờ commit; CI publish khi `kb publish` push một tag `kb-publish/*` | không |
 | `<repo_id>-svc` | model soạn từ bằng chứng đó, bạn sửa lại | không bao giờ | luôn luôn |
 
 `-code` là sự thật máy móc: tên service, công nghệ, dependency, lệnh, endpoint,
@@ -51,7 +51,8 @@ kb init --kind dev
 
 Extra `code` (`tree-sitter` cùng `tree-sitter-language-pack`, khoảng 184 MB) là
 thứ cho phép `kb code-ingest` đọc route, page, job và symbol từ mã nguồn (§7.5).
-Thiếu nó, các vùng đó được báo là `not scanned` và SA sẽ hỏi bạn. `kb doctor`
+Thiếu nó, route và symbol (cùng page, trừ router theo file hệ thống) được báo là
+`not scanned`, job vẫn là `partial`, và SA sẽ hỏi bạn. `kb doctor`
 cảnh báo khi thiếu, và `kb-code.yml` cài nó trong CI.
 
 ## 2.1 Cấu hình
@@ -553,16 +554,18 @@ hình sai, không phải tri thức.
 
 Đây là giới hạn, không phải lỗi.
 
-- `schema` nhận diện `CREATE TABLE` và `ALTER TABLE … ADD COLUMN` theo thứ tự tên
-  file đã sắp xếp. Nó không hiện thực một phương ngữ SQL.
+- `schema` chạy lại `CREATE TABLE`, `ALTER TABLE … ADD COLUMN` và các câu lệnh
+  index, khoá nêu dưới đây theo thứ tự tên file đã sắp xếp. Nó không hiện thực
+  một phương ngữ SQL.
 - Một `CREATE TABLE` cho tên đã được tạo ở một thư mục migration *khác* sẽ bị bỏ
   kèm cảnh báo nêu tên cả hai file, và `ADD COLUMN` chỉ áp dụng trong thư mục của
   `CREATE TABLE` tương ứng. Hai schema độc lập trùng tên bảng không bao giờ bị
   gộp thành một thứ không tồn tại ở đâu cả.
 - Mệnh đề partition, khoá chính, `CREATE INDEX` và `ADD CONSTRAINT … PRIMARY
   KEY|UNIQUE` được đọc. Câu lệnh mà `schema` không áp dụng được (`RENAME`, một
-  action `ALTER` lạ) đánh dấu coverage `schema` của bảng đó là `partial` và nêu
-  `file:line`.
+  action `ALTER` lạ) là một site: dòng coverage `schema` của phạm vi và bộ đọc đó
+  hiện `partial` và nêu `file:line`. Ràng buộc `FOREIGN KEY` và `CHECK` chỉ cảnh
+  báo.
 - Tên bảng không khớp dạng định danh nhận diện được sẽ bị bỏ qua **kèm cảnh báo
   nêu tên file**. Bộ đọc đếm số từ khoá `CREATE TABLE` và so với số nó nhận diện
   được, nên việc bỏ qua không bao giờ im lặng.
@@ -624,7 +627,7 @@ Framework được hỗ trợ:
   tokio-cron-scheduler, `CronJob` của Kubernetes.
 
 Section được tách theo file, package hoặc thư mục cấp cao nhất, không bao giờ
-theo kích thước, và không danh sách nào bị cắt. Chỉ tên được phát ra; các chuỗi
+theo kích thước, và không danh sách nào bị cắt. Chỉ phát ra tên; các chuỗi
 literal duy nhất là đường dẫn route và page, matcher của middleware, biểu thức
 cron hoặc interval và tên CSS custom property. Giá trị env, giá trị hằng số và
 giá trị member của enum không bao giờ xuất hiện.
@@ -647,15 +650,16 @@ detail `jobs outside framework schedulers are not detectable`. Job đã có thì
 liệt kê; job vắng mặt luôn là một câu hỏi dành cho bạn.
 
 Điều này thay đổi gì với bạn: với route, page, symbol, file hoặc partition,
-index, khoá chính của một bảng, SA chỉ ghi `<thing> in <path> [NEW: D<n>]` khi
-phạm vi đó là `complete`. Ngược lại nó là một mục `Open decisions`, trích trạng
+index, khoá chính của một bảng, SA chỉ ghi một thứ mới là mới khi phạm vi đó là
+`complete`: `<thing> in <path> [NEW: D<n>]` cho route, page hoặc symbol, và
+`<path> [NEW: D<n>]` làm một mục `Files:` riêng cho file. Ngược lại nó là một mục `Open decisions`, trích trạng
 thái. `kb ticket check` thực thi quy tắc này (xem hướng dẫn BA §3.8). Tài liệu
 `-code` tạo bởi bản cũ không có `struct.coverage`, nên các vùng đó vẫn là câu hỏi
 dành cho bạn cho tới khi repo của nó được publish lại.
 
 **Nâng cấp lên 1.28.0:** chạy `pip install "strata-kb[code]"` ở máy; chạy lại
 `kb init --kind dev` để có `kb-code.yml` mới (nó cài extra trong CI); sau đó
-`kb publish` (hoặc push lên nhánh mặc định) để publish lại `-code`. Chạy lại
+chạy `kb publish` để publish lại `-code` (push lên nhánh mặc định không publish gì). Chạy lại
 `kb init --kind ba` ở repo BA để có SA prompt và ticket template mới.
 
 ---
@@ -677,13 +681,15 @@ So sánh với snapshot đã publish của `kb doctor` bỏ hẳn `-code` ra ngo
 dev không bao giờ khớp hub ở tài liệu này); `kb publish` mới là lệnh thực sự
 làm mới nó và gửi lên hub.
 
-`kb-code.yml` chạy lại `kb code-ingest` → `kb build` → `kb ci-publish` ở mỗi
-lần push lên nhánh mặc định, nên hub phản ánh commit hiện tại ngay khi PR của
-nó được merge.
+`kb-code.yml` chạy lại `kb code-ingest` → `kb build` → `kb ci-publish` khi một
+tag `kb-publish/*` được push, đúng là việc `kb publish` làm. Push lên nhánh mặc
+định không publish gì (intake chỉ nhận publish từ tag đó), nên hãy chạy
+`kb publish` sau mỗi lần merge; hub phản ánh commit đó ngay khi PR của nó được
+merge.
 
 | Kích hoạt | Các bước | Publish |
 |---|---|---|
-| push lên nhánh mặc định, hoặc chạy tay | code-ingest → build → ci-publish | có |
+| tag `kb-publish/*` (do `kb publish` push), hoặc chạy tay trên một tag như vậy | code-ingest → build → ci-publish | có |
 | pull request | build (sinh lại `-code` từ merge ref) | **không bao giờ** |
 
 `-code` chỉ có một nguồn sinh là `kb code-ingest`: `kb summarize` từ chối nó.
@@ -737,6 +743,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 | Hiện tượng | Nguyên nhân | Cách xử lý |
 |---|---|---|
 | `kb code-ingest` thoát 1: không phát hiện gì | Chỉ có `tree` và các extractor đọc mã nguồn tìm được thứ gì đó | Kiểm tra xem file compose, manifest hay CI workflow có nằm đúng chỗ extractor tìm không; nêu `--db` nếu schema là thứ bạn cần |
+| `kb doctor`: "strata-kb[code] is not installed" | Máy chưa cài extra `code`, nên route, page, job và symbol sẽ là `not scanned` | `pip install "strata-kb[code]"` |
 | `kb code-ingest` thoát 1: từ chối đích đến | Có một tài liệu do người soạn đang nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb build` fail trên CI ở một section `-svc` | Một section `pending` đã bị commit | Hoàn tất bước seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | Do gõ nhầm, hoặc file của service mới chưa được track | Copy id từ `services.md`; `git add` các file mới rồi thử lại |

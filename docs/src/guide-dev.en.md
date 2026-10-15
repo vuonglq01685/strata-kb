@@ -30,7 +30,7 @@ what makes it safe for your CI to publish continuously.
 
 | Document | Origin | Regenerated | Needs review |
 |---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | on demand, from the working tree — never committed; CI publishes it on every push to the default branch | no |
+| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | on demand, from the working tree — never committed; CI publishes it when `kb publish` pushes a `kb-publish/*` tag | no |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by you | never | always |
 
 `-code` is machine fact: service names, technologies, dependencies, commands,
@@ -52,8 +52,9 @@ kb init --kind dev
 
 The `code` extra (`tree-sitter` plus `tree-sitter-language-pack`, about 184 MB)
 is what lets `kb code-ingest` read routes, pages, jobs and symbols out of source
-code (§7.5). Without it those areas are reported as `not scanned` and the SA
-asks you about them. `kb doctor` warns when it is missing, and `kb-code.yml`
+code (§7.5). Without it, routes and symbols (and pages other than the
+file-system routers) are reported as `not scanned`, jobs stay `partial`, and the
+SA asks you about them. `kb doctor` warns when it is missing, and `kb-code.yml`
 installs it in CI.
 
 ## 2.1 Configure
@@ -554,16 +555,18 @@ These are design properties, not conveniences.
 
 These are limits, not bugs.
 
-- `schema` recognises `CREATE TABLE` and `ALTER TABLE … ADD COLUMN` in sorted
-  filename order. It does not implement a SQL dialect.
+- `schema` replays `CREATE TABLE`, `ALTER TABLE … ADD COLUMN` and the index and
+  key statements below in sorted filename order. It does not implement a SQL
+  dialect.
 - A `CREATE TABLE` for a name already created in a *different* migration
   directory is dropped with a warning naming both files, and an `ADD COLUMN`
   applies only inside the directory of its `CREATE TABLE`. Two independent
   schemas sharing a table name are never merged into one that exists nowhere.
 - Partition clauses, primary keys, `CREATE INDEX` and `ADD CONSTRAINT … PRIMARY
   KEY|UNIQUE` are read. A statement `schema` does not apply (`RENAME`, an
-  unknown `ALTER` action) marks that table's `schema` coverage `partial` and
-  names the `file:line`.
+  unknown `ALTER` action) is a site: the `schema` coverage row of that scope and
+  reader reads `partial` and names the `file:line`. `FOREIGN KEY` and `CHECK`
+  constraints only warn.
 - A table name outside the recognised identifier shape is skipped **with a
   warning naming the file**. The reader counts `CREATE TABLE` keywords and
   compares against what it recognised, so a skip is never silent.
@@ -648,15 +651,17 @@ are not detectable`. A job that exists is listed; an absent one is always a
 question for you.
 
 What it changes for you: for a route, page, symbol, file or a table's
-partition, index or primary key, the SA writes `<thing> in <path> [NEW: D<n>]`
-only when that scope is `complete`. Otherwise it is an `Open decisions` item,
-quoting the status. `kb ticket check` enforces it (see the BA guide §3.8). A
+partition, index or primary key, the SA writes a new thing as new only when that
+scope is `complete`: `<thing> in <path> [NEW: D<n>]` for a route, page or symbol,
+and `<path> [NEW: D<n>]` as its own `Files:` entry for a file. Otherwise it is an
+`Open decisions` item, quoting the status. `kb ticket check` enforces it (see the BA guide §3.8). A
 `-code` made by an older release has no `struct.coverage`, so those areas stay
 questions for you until its repo is re-published.
 
 **Upgrading to 1.28.0:** `pip install "strata-kb[code]"` locally; re-run
 `kb init --kind dev` for the new `kb-code.yml` (it installs the extra in CI);
-then `kb publish` (or push to the default branch) to re-publish `-code`.
+then run `kb publish` to re-publish `-code` (a push to the default branch
+publishes nothing).
 Re-run `kb init --kind ba` in BA repos for the updated SA prompt and ticket
 template.
 
@@ -679,13 +684,15 @@ copy first — that is what the SA grounded on (§4.1).
 repos never match the hub on it); `kb publish` is what actually refreshes it
 and sends it to the hub.
 
-`kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` on every
-push to the default branch, so the hub reflects the current commit once its
-PR merges.
+`kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` when a
+`kb-publish/*` tag is pushed, which is what `kb publish` does. A push to the
+default branch publishes nothing (the intake accepts a publish only from that
+tag), so run `kb publish` after a merge; the hub then reflects that commit once
+its PR merges.
 
 | Trigger | Steps | Publishes |
 |---|---|---|
-| push to default branch, or manual dispatch | code-ingest → build → ci-publish | yes |
+| a `kb-publish/*` tag (pushed by `kb publish`), or manual dispatch run on such a tag | code-ingest → build → ci-publish | yes |
 | pull request | build (which regenerates `-code` from the merge ref) | **never** |
 
 `-code` has one producer, `kb code-ingest`: `kb summarize` refuses it. A hub
@@ -740,6 +747,7 @@ should look.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `kb code-ingest` exits 1: nothing detected | Only `tree` and the source readers found anything | Check that your compose file, manifests or CI workflows are where the extractors look; name a `--db` if schema is the point |
+| `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing locally, so routes, pages, jobs and symbols would be `not scanned` | `pip install "strata-kb[code]"` |
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb build` fails in CI on a `-svc` section | A `pending` section was committed | Finish the seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | A typo, or the new service's files are not tracked yet | Copy the id from `services.md`; `git add` the new files and retry |

@@ -436,3 +436,42 @@ def test_docs_describe_structural_coverage():
         text = docs[name].read_text(encoding="utf-8")
         for framework in ROUTE_FRAMEWORKS:
             assert framework in text, (name, framework)
+
+
+def test_docs_get_the_publish_flow_and_new_forms_right():
+    """Fix round 1: `-code` is re-published by `kb publish` (the workflow
+    publishes only on a `kb-publish/*` tag), and a new file is its own
+    `Files:` entry, never `<thing> in <path>`."""
+    guides = ("dev", "ba")
+    texts = {
+        "README.md": REPO_ROOT / "README.md",
+        **{
+            f"guide-{g}.{lang}.md": REPO_ROOT / "docs" / "src" / f"guide-{g}.{lang}.md"
+            for g in guides
+            for lang in ("en", "vi")
+        },
+    }
+    changelog = _normalised((REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+    upgrade = changelog.split(" ## ", 2)[1].split("**Upgrade.**")[1]
+    assert "or the next push" not in upgrade
+    assert "with `kb publish`" in upgrade
+    for name, path in texts.items():
+        text = _normalised(path.read_text(encoding="utf-8"))
+        for stale in (
+            "or push to the default branch",
+            "(hoặc push lên nhánh mặc định)",
+            "on every push to the default branch",
+            "ở mỗi lần push lên nhánh mặc định",
+            "<thing> in <path> [NEW: D<n>]); absent",
+        ):
+            assert stale not in text, (name, stale)
+        assert "QUICKSTART-ba.md" not in text, name
+    for name in (
+        "README.md",
+        "guide-dev.en.md",
+        "guide-dev.vi.md",
+        "guide-ba.en.md",
+        "guide-ba.vi.md",
+    ):
+        text = _normalised(texts[name].read_text(encoding="utf-8"))
+        assert "`<path> [NEW: D<n>]`" in text, name
