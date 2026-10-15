@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from strata_kb.codeingest.extractors import _ts
-from strata_kb.codeingest.extractors._pages_model import Page, PageResult
+from strata_kb.codeingest.extractors._pages_model import Page, PageResult, line_at
 from strata_kb.codeingest.extractors._routes_jsutil import (
     _SUFFIX_RE,
     _config_sites,
@@ -55,6 +55,9 @@ _NUXT_LAYER = re.compile(r"^layers/[^/]+/(?:app/)?pages/(?P<inner>.+)$")
 _NUXT_FILE = re.compile(r"^(?P<stem>.+)\.(?:vue|[cm]?[jt]sx?)$")
 _NUXT_CONFIGS = frozenset(f"nuxt.config.{e}" for e in ("js", "mjs", "cjs", "ts"))
 _SVELTE_PAGE = re.compile(r"^\+page(?:@[^.]*)?\.svelte$")
+_SVELTE_HOOKS = tuple(
+    f"src/{name}.{ext}" for name in ("hooks", "hooks/index") for ext in ("ts", "js")
+)
 _SVELTE_CONFIGS = frozenset(f"svelte.config.{e}" for e in ("js", "mjs", "cjs", "ts"))
 
 
@@ -282,7 +285,7 @@ def _nuxt_page(root: Path, rel: str, inner: str, result: PageResult) -> None:
     data = _read(root, rel) or b""
     meta = re.search(rb"definePageMeta\s*\(", data)
     if meta and re.search(rb"\b(?:path|alias)\s*:", data):
-        line = data[: meta.start()].count(b"\n") + 1
+        line = line_at(data, meta.start())
         result.dynamic_sites.append(f"{rel}:{line}")
 
 
@@ -305,10 +308,10 @@ def sveltekit_pages(
     result.dynamic_sites.extend(
         _config_sites(root, scope, files, _SVELTE_CONFIGS, b"files|routes|paths")
     )
-    for hooks in ("src/hooks.ts", "src/hooks.js"):  # `reroute` remaps URLs
+    for hooks in _SVELTE_HOOKS:  # `reroute` remaps URLs
         rel = hooks if scope.path == "." else f"{scope.path}/{hooks}"
-        match = re.search(rb"\breroute\b", _read(root, rel) or b"")
+        data = _read(root, rel) or b""
+        match = re.search(rb"\breroute\b", data)
         if match:
-            line = (_read(root, rel) or b"")[: match.start()].count(b"\n") + 1
-            result.dynamic_sites.append(f"{rel}:{line}")
+            result.dynamic_sites.append(f"{rel}:{line_at(data, match.start())}")
     return result

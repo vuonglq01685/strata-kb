@@ -846,3 +846,122 @@ def test_top_level_declaration_wins_over_nested_shadow(tmp_path):
         "@NgModule({ imports: [RouterModule.forRoot(routes)] })\nexport class M {}\n",
     )
     assert paths_of(run_pages(tmp_path, "w"), "w") == ["/real"]
+
+
+# --- review fix round 2 -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "ctor",
+    ["MaterialPageRoute<void>", "CupertinoPageRoute<int>", "PageRouteBuilder<T>"],
+)
+def test_flutter_typed_imperative_routes_are_sites(tmp_path, ctor):
+    pubspec(tmp_path, ".")
+    write(
+        tmp_path,
+        "lib/main.dart",
+        "void f(c) {\n  Navigator.of(c).push(" + ctor + "(builder: (_) => D()));\n}\n",
+    )
+    r = row(run_pages(tmp_path, "app"), ".", "Flutter")
+    assert r.status == "partial" and r.detail == "lib/main.dart:2"
+
+
+def test_flutter_router_app_and_navigator_pages_are_sites(tmp_path):
+    pubspec(tmp_path, "a")
+    write(
+        tmp_path,
+        "a/lib/main.dart",
+        "void main() => runApp(MaterialApp.router(routerConfig: c));\n"
+        "Widget w() => Navigator(pages: [MaterialPage(child: H())]);\n",
+    )
+    pubspec(tmp_path, "b", "go_router")
+    write(
+        tmp_path,
+        "b/lib/main.dart",
+        "final r = GoRouter(routes: [GoRoute(path: '/', builder: b)]);\n"
+        "void main() => runApp(MaterialApp.router(routerConfig: r));\n",
+    )
+    result = run_pages(tmp_path)
+    assert row(result, "a", "Flutter").detail == "a/lib/main.dart:1; a/lib/main.dart:2"
+    assert row(result, "b", "Flutter").status == "complete"
+
+
+def test_react_aliased_route_without_resolvable_import_is_site(tmp_path):
+    package(tmp_path, ".", "react", "react-router-dom")
+    write(
+        tmp_path,
+        "src/lib/router.ts",
+        "export { Route as R, Routes } from 'react-router-dom'\n",
+    )
+    write(
+        tmp_path,
+        "src/App.tsx",
+        "import { R, Routes } from './lib/router'\n"
+        "export const A = () => (<Routes><R path='/hidden' element={<A />} /></Routes>)\n",
+    )
+    r = row(run_pages(tmp_path, "w"), ".", "React")
+    assert r.status == "partial" and r.detail == "src/App.tsx:2"
+
+
+def test_angular_unreachable_routing_module_is_site_not_a_root(tmp_path):
+    package(tmp_path, ".", "@angular/core")
+    write(
+        tmp_path,
+        "src/app-routing.module.ts",
+        "const routes: Routes = [\n  { path: '', component: Home },\n"
+        "  { path: 'customers', loadChildren: () => import('./customers/customers.module').then(m => m.CustomersModule) },\n"
+        "];\n@NgModule({ imports: [RouterModule.forRoot(routes)] })\nexport class AppRoutingModule {}\n",
+    )
+    write(
+        tmp_path,
+        "src/customers/customers.module.ts",
+        "import { CustomersRoutingModule } from './routing';\n"
+        "@NgModule({ imports: [CustomersRoutingModule] })\nexport class CustomersModule {}\n",
+    )
+    write(
+        tmp_path,
+        "src/customers/routing/index.ts",
+        "export * from './customers-routing.module';\n",
+    )
+    write(
+        tmp_path,
+        "src/customers/routing/customers-routing.module.ts",
+        "const routes: Routes = [{ path: '', component: C }, { path: ':id', component: D }];\n"
+        "@NgModule({ imports: [RouterModule.forChild(routes)] })\nexport class CustomersRoutingModule {}\n",
+    )
+    result = run_pages(tmp_path, "ng")
+    assert [p for p in paths_of(result, "ng") if p in ("/:id",)] == []
+    assert row(result, ".", "Angular").status == "partial"
+    assert (
+        "src/customers/routing/customers-routing.module.ts:1"
+        in row(result, ".", "Angular").detail
+    )
+
+
+def test_angular_eager_feature_routing_module_is_still_a_root(tmp_path):
+    package(tmp_path, ".", "@angular/core")
+    write(
+        tmp_path,
+        "src/auth-routing.module.ts",
+        "const routes: Routes = [{ path: 'login', component: L }];\n"
+        "@NgModule({ imports: [RouterModule.forChild(routes)] })\nexport class AuthRoutingModule {}\n",
+    )
+    result = run_pages(tmp_path, "ng")
+    assert paths_of(result, "ng") == ["/login"]
+    assert row(result, ".", "Angular").status == "complete"
+
+
+def test_duplicate_rows_are_collapsed_and_hooks_index_is_checked(tmp_path):
+    pubspec(tmp_path, ".", "go_router")
+    write(
+        tmp_path,
+        "lib/r.dart",
+        "final r = GoRouter(routes: [GoRoute(path: '/', builder: b)]);\n"
+        "Widget w() => MaterialApp(home: const X(), routes: {'/a': (c) => A()});\n",
+    )
+    assert paths_of(run_pages(tmp_path, "app"), "app") == ["/", "/a"]
+    package(tmp_path, "web", "svelte", "@sveltejs/kit")
+    write(tmp_path, "web/src/routes/+page.svelte")
+    write(tmp_path, "web/src/hooks/index.ts", "export const reroute = (r) => r.url;\n")
+    r = row(run_pages(tmp_path, "w"), "web", "Svelte")
+    assert r.detail == "web/src/hooks/index.ts:1"

@@ -24,3 +24,8 @@ class PageResult:
     matcher: tuple[str, list[str]] | None = None
     # a parse-based step was skipped because tree-sitter is missing
     not_installed: bool = False
+
+
+def line_at(data: bytes, offset: int) -> int:
+    """1-based line of byte `offset`."""
+    return data[:offset].count(b"\n") + 1

@@ -58,7 +58,7 @@ _VUE_TYPE = re.compile(
 _VUE_TYPE_ITEM = re.compile(r"(?:RouteRecordRaw|RouteConfig)")
 _VUE_CTORS = frozenset({"VueRouter", "Router"})
 _REACT_HINT = re.compile(
-    rb"react-router|<[\w.]*Route\b|createBrowserRouter|createHashRouter"
+    rb"react-router|<[\w.]*Routes?\b|createBrowserRouter|createHashRouter"
     rb"|createMemoryRouter|useRoutes|RouteObject"
 )
 _REACT_TYPE = re.compile(r"^(?:Readonly)?(?:RouteObject\[\]|Array<RouteObject>)$")
@@ -71,7 +71,12 @@ _REACT_CALLS = frozenset(
         "useRoutes",
     }
 )
-_CUSTOM_ROUTE = re.compile(r"(?:^|\.)\w*Route$")
+_COMPONENT_TAG = re.compile(r"(?:^|\.)[A-Z]")
+
+
+def _unresolved_route(tag: str) -> bool:
+    """A component (not a DOM tag) given a `path` prop that is not `Route`."""
+    return bool(_COMPONENT_TAG.search(tag))
 
 
 def _declared_type(node: Node) -> str:
@@ -156,8 +161,27 @@ def _run(
     tables: list[tuple[str, Node]] = []
     for rel, tree in loaded:
         collect(rel, tree, src, result, tables)
-    walk_roots(src, flavor, tables, result)
+    walk_roots(src, flavor, tables, result, _for_child_tables(loaded, src))
     return result
+
+
+def _for_child_tables(
+    loaded: list[tuple[str, Tree]], src: Source
+) -> list[tuple[str, Node]]:
+    """Tables given to `RouterModule.forChild` (they hang below some module)."""
+    out: list[tuple[str, Node]] = []
+    for rel, tree in loaded:
+        for node in _walk(tree.root_node):
+            if (
+                node.type == "call_expression"
+                and _text(node.child_by_field_name("function"))
+                == "RouterModule.forChild"
+            ):
+                args = _args(node)
+                found = src.value(rel, args[0]) if args else None
+                if found is not None and found[1].type == "array":
+                    out.append(found)
+    return out
 
 
 # --- Angular ----------------------------------------------------------------
@@ -391,8 +415,9 @@ def react_pages(
             if name in names:
                 if not _inside_route(node, names):
                     _jsx_walk(walker, rel, node, names, "", "")
-            elif name and _CUSTOM_ROUTE.search(name) and "path" in _attrs(node):
-                walker.site(rel, node)  # a Route wrapper (PrivateRoute, ...)
+            elif name and _unresolved_route(name) and "path" in _attrs(node):
+                # a Route wrapper (PrivateRoute, ...) or an alias of Route
+                walker.site(rel, node)
     return result
 
 

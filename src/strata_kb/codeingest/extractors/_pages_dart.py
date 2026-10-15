@@ -6,7 +6,8 @@ Needs tree-sitter (Dart grammar); `pages.py` reports `not scanned` without it.
 
 **Default to a site, never drop.** A non-literal `path:` or map key, a
 `routes:` value or spread it cannot follow in the same file,
-`onGenerateRoute`, imperative `MaterialPageRoute` / `PageRouteBuilder`,
+`onGenerateRoute`, imperative `MaterialPageRoute` / `PageRouteBuilder` / `Navigator(pages:)`,
+`MaterialApp.router` without go_router,
 go_router_builder's `@TypedGoRoute`, a syntax error: each
 is a `file:line` site.
 """
@@ -18,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb.codeingest.extractors._pages_model import Page, PageResult
+from strata_kb.codeingest.extractors._pages_model import Page, PageResult, line_at
 from strata_kb.codeingest.extractors._routes_jsutil import (
     _error_line,
     _lit,
@@ -40,14 +41,21 @@ __all__ = ["flutter_pages"]
 _HINT = re.compile(
     rb"GoRoute|ShellRoute|StatefulShell|MaterialApp|CupertinoApp|onGenerateRoute"
     rb"|TypedGoRoute|TypedShellRoute|TypedStatefulShellRoute"
-    rb"|MaterialPageRoute|CupertinoPageRoute|PageRouteBuilder"
+    rb"|MaterialPageRoute|CupertinoPageRoute|PageRouteBuilder|Navigator\s*\("
 )
 _SKIP = re.compile(r"(?:^|/)(?:test|integration_test)/|\.(?:g|freezed)\.dart$")
 _SHELLS = frozenset({"ShellRoute", "StatefulShellRoute", "StatefulShellBranch"})
 _ROUTE_KINDS = _SHELLS | {"GoRoute"}
 _APPS = frozenset({"MaterialApp", "CupertinoApp"})
-# pages pushed by hand (`Navigator.push(MaterialPageRoute(...))`) have no path
-_IMPERATIVE = frozenset({"MaterialPageRoute", "CupertinoPageRoute", "PageRouteBuilder"})
+# Pages pushed by hand have no path. Matched as text: the grammar reads a
+# typed call (`MaterialPageRoute<void>(...)`) as a comparison, not a call.
+_IMPERATIVE = re.compile(
+    rb"\b(?:MaterialPageRoute|CupertinoPageRoute|PageRouteBuilder)\b"
+    rb"|\bNavigator\s*\([^;]*?\bpages\s*:"
+)
+# `MaterialApp.router` hands routing to a config object: fine under go_router,
+# opaque otherwise
+_ROUTER_APP = re.compile(rb"\b(?:MaterialApp|CupertinoApp)\.router\b")
 _TYPED = re.compile(r"^Typed(?:GoRoute|ShellRoute|StatefulShellRoute)$")
 _DECLARATIONS = frozenset(
     {
@@ -239,8 +247,6 @@ class _FileRoutes:
 
 def _material_apps(rel: str, tree: Tree, result: PageResult) -> None:
     for call in _calls(tree):
-        if call.name in _IMPERATIVE:
-            result.dynamic_sites.append(_site(rel, call.node))
         if call.name not in _APPS:
             continue
         named = _named(call.args)
@@ -264,10 +270,16 @@ def _material_apps(rel: str, tree: Tree, result: PageResult) -> None:
                 result.pages.append(Page(join_path(path), rel, line_of(pair)))
 
 
+def _text_sites(rel: str, data: bytes, pattern: re.Pattern[bytes]) -> list[str]:
+    return [f"{rel}:{line_at(data, m.start())}" for m in pattern.finditer(data)]
+
+
 def flutter_pages(
     root: Path, scope: Scope, files: list[str], repo_files: list[str]
 ) -> PageResult:
     result = PageResult()
+    router_apps: list[str] = []
+    uses_go_router = False
     for rel in sorted(files):
         if language_for(rel) != "dart" or _SKIP.search(rel):
             continue
@@ -277,6 +289,9 @@ def flutter_pages(
             continue
         if not _HINT.search(data):
             continue
+        result.dynamic_sites.extend(_text_sites(rel, data, _IMPERATIVE))
+        router_apps.extend(_text_sites(rel, data, _ROUTER_APP))
+        uses_go_router = uses_go_router or b"GoRouter" in data
         tree = _parse(rel, data)
         line = _error_line(tree)
         if line is not None:
@@ -290,4 +305,6 @@ def flutter_pages(
                 _text(node.child_by_field_name("name"))
             ):
                 result.dynamic_sites.append(_site(rel, node))
+    if not uses_go_router:
+        result.dynamic_sites.extend(router_apps)
     return result

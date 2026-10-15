@@ -193,7 +193,9 @@ def _cells(*cells: str) -> str:
 def _section(
     slug: str, name: str, pages: list[Page], matcher: tuple[str, list[str]] | None
 ) -> CodeSection:
-    ordered = sorted(set(pages), key=lambda p: (p.path, p.file, p.line, p.group))
+    # one row per (path, file, group): `home:` and a `GoRoute('/')` both give "/"
+    first = {(p.path, p.file, p.group): p for p in sorted(pages, key=lambda p: p.line)}
+    ordered = sorted(first.values(), key=lambda p: (p.path, p.file, p.line, p.group))
     l2 = [_HEADER, _RULE, *(_cells(p.path, p.file, p.group) for p in ordered)]
     l3 = [
         f"{p.path}  {p.file}:{p.line}" + (f"  {p.group}" if p.group else "")

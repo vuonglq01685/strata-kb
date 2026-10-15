@@ -232,6 +232,7 @@ class Walker:
         self.flavor = flavor
         self.result = result
         self.seen: set[tuple[str, int]] = set()
+        self.lazy_failed = False  # a `loadChildren` could not be followed
         self._stack: list[tuple[str, int]] = []
 
     def site(self, rel: str, node: Node) -> None:
@@ -344,10 +345,10 @@ class Walker:
     def _lazy(self, rel: str, node: Node, prefix: str, layout: str) -> None:
         specs = [s for s in (_import_spec(n) for n in _walk(node)) if s]
         target = self.src.resolver.resolve(rel, specs[0]) if len(specs) == 1 else None
-        if target is None:
-            self.site(rel, node)
-            return
-        if not self._lazy_target(target, _then_name(node), prefix, layout):
+        if target is None or not self._lazy_target(
+            target, _then_name(node), prefix, layout
+        ):
+            self.lazy_failed = True
             self.site(rel, node)
 
     def _lazy_target(self, rel: str, name: str, prefix: str, layout: str) -> bool:
@@ -437,10 +438,16 @@ def walk_roots(
     flavor: Flavor,
     candidates: list[tuple[str, Node]],
     result: PageResult,
+    mounted: list[tuple[str, Node]] | None = None,
 ) -> None:
     """Walk every candidate table that no other candidate reaches; a cycle
-    (nobody left as a root) falls back to walking the table with a site."""
+    (nobody left as a root) falls back to walking the table with a site.
+
+    `mounted` tables (`RouterModule.forChild`) are children of some module.
+    When a lazy import could not be followed, one that nobody reached may
+    hang below it, so it is a site, not a root with a wrong prefix."""
     unique = {(rel, node.start_byte): (rel, node) for rel, node in candidates}
+    child = {(rel, node.start_byte) for rel, node in mounted or []}
     keys = sorted(unique)
     reached: set[tuple[str, int]] = set()
     for key in keys:  # dry run: which tables does each one reach?
@@ -448,8 +455,16 @@ def walk_roots(
         dry.array(*unique[key], "", "")
         reached |= dry.seen - {key}
     walker = Walker(src, flavor, result)
-    for key in (k for k in keys if k not in reached):
+    roots = [k for k in keys if k not in reached]
+    for key in (k for k in roots if k not in child):
         walker.array(*unique[key], "", "")
-    for key in (k for k in keys if k not in walker.seen):
+    held: set[tuple[str, int]] = set()
+    for key in (k for k in roots if k in child and k not in walker.seen):
+        if walker.lazy_failed:
+            walker.site(*unique[key])
+            held.add(key)
+        else:
+            walker.array(*unique[key], "", "")
+    for key in (k for k in keys if k not in walker.seen | held):
         walker.site(*unique[key])
         walker.array(*unique[key], "", "")
