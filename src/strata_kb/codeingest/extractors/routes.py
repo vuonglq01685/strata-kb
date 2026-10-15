@@ -25,7 +25,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from strata_kb.codeingest.extractors import _jvm_fields, _routes_js, _routes_jvm, _ts
+from strata_kb.codeingest.extractors import (
+    _jvm_ast,
+    _jvm_fields,
+    _routes_js,
+    _routes_jvm,
+    _ts,
+)
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_model import (
@@ -172,6 +178,7 @@ class RoutesExtractor:
             return self._extract(root, opts)
         finally:
             _jvm_fields.clear_cache()  # source bytes read for request types
+            _jvm_ast.clear_run_cache()
 
     def _extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         scopes = find_scopes(root, opts.kb_dir)

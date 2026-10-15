@@ -82,7 +82,8 @@ class _Fw:
     foreign: frozenset[str] = frozenset()
     # manifest text that turns every repository interface into an endpoint
     data_rest: re.Pattern[str] | None = None
-    # the manifest line that names the framework (site of last resort)
+    # the manifest line of a server artifact: only a module that has one is a
+    # web module, so only there does "no route read" mean something is missed
     dependency: re.Pattern[str] = re.compile(r"$^")
     # annotation whose interfaces classes elsewhere implement (JAX-RS `@Path`)
     shared: str = ""
@@ -103,9 +104,15 @@ class _Fw:
             | self.foreign
             | frozenset(extra)
         )
-        pattern = rb"\b(?:" + "|".join(sorted(names)).encode() + rb")\b|"
+        alternatives = "|".join(map(re.escape, sorted(names))).encode()
+        pattern = rb"(?<![\w$])(?:" + alternatives + rb")(?![\w$])|"
         pattern += self.unfollowed.pattern.encode()
         return re.compile(pattern + (rb"|Repository\b" if repositories else b""))
+
+
+def _source(root: Path, rel: str) -> bytes | None:
+    """File bytes, read once per run (scopes and the repo-wide scans share)."""
+    return ast.run_cached(("source", root, rel), lambda: _read(root, rel))
 
 
 def _paths(node: Node | None) -> list[str] | None:
@@ -258,7 +265,9 @@ _FRAMEWORKS: dict[str, _Fw] = {
         exchange=frozenset({*_EXCHANGE_VERBS, "HttpExchange"}),
         foreign=frozenset({"Path"}),  # Jersey under Spring Boot
         data_rest=re.compile(r"data-rest"),
-        dependency=re.compile(r"spring-boot"),
+        dependency=re.compile(
+            r"spring-boot-starter-(?:web|webflux|jersey)\b|spring-web(?:mvc|flux)?\b"
+        ),
     ),
     "Quarkus": _Fw(
         handlers=frozenset({*_JAXRS_VERBS, "Path", "HttpMethod"}),
@@ -273,7 +282,9 @@ _FRAMEWORKS: dict[str, _Fw] = {
         routes=_quarkus_routes,
         app_path=frozenset({"ApplicationPath"}),
         foreign=frozenset({"RestController", "RequestMapping"}),  # quarkus-spring-web
-        dependency=re.compile(r"quarkus"),
+        dependency=re.compile(
+            r"quarkus-(?:rest|resteasy|vertx-http|reactive-routes|spring-web)"
+        ),
         shared="Path",
     ),
     "Micronaut": _Fw(
@@ -285,7 +296,7 @@ _FRAMEWORKS: dict[str, _Fw] = {
         unfollowed=re.compile(r"\bRouteBuilder\b"),
         prefix=_micronaut_prefix,
         routes=_micronaut_routes,
-        dependency=re.compile(r"micronaut"),
+        dependency=re.compile(r"micronaut-http-server"),
     ),
 }
 
@@ -413,15 +424,24 @@ def _application_prefix(found: list[tuple[str, ast.Ann]], result: AdapterResult)
 def _manifests(
     root: Path, repo_files: list[str], only: str | None = None
 ) -> list[tuple[str, str]]:
-    """(path, text) of the build files in directory `only`, or everywhere."""
-    out = []
-    for rel in repo_files:
-        folder, _sep, name = rel.rpartition("/")
-        if name in _MANIFESTS and (only is None or (folder or ".") == only):
-            data = _read(root, rel)
-            if data is not None:
-                out.append((rel, data.decode("utf-8", "replace")))
-    return out
+    """(path, text) of the build files in directory `only`, or everywhere
+    (read once per run)."""
+
+    def read_all() -> list[tuple[str, str]]:
+        out = []
+        for rel in repo_files:
+            if rel.rpartition("/")[2] in _MANIFESTS:
+                data = _read(root, rel)
+                if data is not None:
+                    out.append((rel, data.decode("utf-8", "replace")))
+        return out
+
+    everything = ast.run_cached(("manifests", root), read_all)
+    if only is None:
+        return everything
+    return [
+        (rel, t) for rel, t in everything if (rel.rpartition("/")[0] or ".") == only
+    ]
 
 
 def _generator_sites(manifests: list[tuple[str, str]]) -> list[str]:
@@ -436,30 +456,41 @@ def _generator_sites(manifests: list[tuple[str, str]]) -> list[str]:
     ]
 
 
-def _dependency_site(fw: _Fw, scope: Scope, manifests: list[tuple[str, str]]) -> str:
+def _dependency_site(fw: _Fw, manifests: list[tuple[str, str]]) -> str | None:
     for rel, text in manifests:
         for number, line in enumerate(text.splitlines(), start=1):
             if fw.dependency.search(line):
                 return f"{rel}:{number}"
-    return f"{scope.manifest if scope.path == '.' else scope.path + '/' + scope.manifest}:1"
+    return None
 
 
-def _path_interfaces(root: Path, repo_files: list[str], fw: _Fw) -> dict[str, str]:
-    """name -> file of each repo interface annotated `@<fw.shared>` (any
-    module): a class elsewhere that implements one serves its routes."""
+def _path_interfaces(
+    root: Path, repo_files: list[str], fw: _Fw
+) -> list[tuple[str, str]]:
+    """(name, file) of each repo interface annotated `@<fw.shared>`, in any
+    module: a class elsewhere that implements one serves its routes. A list,
+    so two interfaces with one simple name in different modules both count."""
     if not fw.shared:
-        return {}
-    found: dict[str, str] = {}
-    marker = re.compile(rb"\b" + fw.shared.encode() + rb"\b")
-    for rel in ast.jvm_files(repo_files):
-        data = _read(root, rel)
-        if data is None or not marker.search(data) or b"interface" not in data:
-            continue
-        for cls in ast.classes(_kotlin_parse.parse(rel, data).root_node):
-            names = {a.name for a in ast.annotations_of(cls)}
-            if ast.is_interface(cls) and fw.shared in names and not names & fw.clients:
-                found[ast.class_name(cls)] = rel
-    return found
+        return []
+
+    def scan() -> list[tuple[str, str]]:
+        found = []
+        marker = re.compile(rb"\b" + re.escape(fw.shared.encode()) + rb"\b")
+        for rel in ast.jvm_files(repo_files):
+            data = _source(root, rel)
+            if data is None or not marker.search(data) or b"interface" not in data:
+                continue
+            for cls in ast.classes(_kotlin_parse.parse(rel, data).root_node):
+                names = {a.name for a in ast.annotations_of(cls)}
+                if (
+                    ast.is_interface(cls)
+                    and fw.shared in names
+                    and not names & fw.clients
+                ):
+                    found.append((ast.class_name(cls), rel))
+        return found
+
+    return ast.run_cached(("interfaces", root, fw.shared), scan)
 
 
 def _repository_sites(rel: str, tree: Tree) -> list[str]:
@@ -476,9 +507,8 @@ def _repository_sites(rel: str, tree: Tree) -> list[str]:
 def _implements(cls: Node, names: set[str]) -> bool:
     """Whether the class header's supertypes name one of `names`."""
     supertypes = ast.header_text(cls).split(ast.class_name(cls), 1)[-1]
-    return (
-        re.search(r"\b(?:" + "|".join(sorted(names)) + r")\b", supertypes) is not None
-    )
+    alternatives = "|".join(map(re.escape, sorted(names)))
+    return re.search(rf"(?<![\w$])(?:{alternatives})(?![\w$])", supertypes) is not None
 
 
 def _adapter(
@@ -492,7 +522,7 @@ def _adapter(
         result = AdapterResult()
         sources: dict[str, bytes] = {}
         for rel in ast.jvm_files(files):
-            data = _read(root, rel)
+            data = _source(root, rel)
             if data is None:
                 result.dynamic_sites.append(f"{rel}:1")
             else:
@@ -521,7 +551,7 @@ def _adapter(
         in_scope = set(sources)
         external = {
             name
-            for name, rel in _path_interfaces(root, repo_files, fw).items()
+            for name, rel in _path_interfaces(root, repo_files, fw)
             if rel not in in_scope
         }
         hint = fw.hint(composed | external, data_rest)
@@ -546,8 +576,10 @@ def _adapter(
             base = _application_prefix(app_paths, result)
             routes = [replace(r, path=join_path(base, r.path)) for r in routes]
         result.routes = routes
-        if not routes and not result.dynamic_sites:  # framework seen, nothing read
-            result.dynamic_sites.append(_dependency_site(fw, scope, manifests))
+        if not routes and not result.dynamic_sites:  # a web module that read nothing
+            net = _dependency_site(fw, manifests)
+            if net is not None:
+                result.dynamic_sites.append(net)
         result.dynamic_sites += config_sites(root, scope, repo_files, fw.keys)
         return result
 

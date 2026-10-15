@@ -1459,3 +1459,113 @@ def test_spring_request_mapping_and_http_exchange_prefix_together_is_a_site(tmp_
     )
     result = run_routes(tmp_path)
     assert result.sections == [] and row(result).status == "partial"
+
+
+# --- fix round 3 ------------------------------------------------------------
+
+
+def test_non_web_spring_boot_module_gets_no_framework_net_site(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'common', 'web'\n")
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-data-jpa", "common")
+    write(
+        tmp_path,
+        f"common/{JAVA}/User.java",
+        "package app;\n@Entity\npublic class User {}\n",
+    )
+    write(
+        tmp_path,
+        "pom-module/pom.xml",
+        "<project><dependencies><dependency><artifactId>spring-boot-starter-validation</artifactId></dependency></dependencies></project>\n",
+    )
+    write(tmp_path, f"pom-module/{JAVA}/V.java", "package app;\npublic class V {}\n")
+    gradle(tmp_path, SPRING, "web")
+    result = run_routes(tmp_path)
+    assert (row(result, "common").status, row(result, "common").detail) == (
+        "complete",
+        "",
+    )
+    assert (row(result, "pom-module").status, row(result, "pom-module").detail) == (
+        "complete",
+        "",
+    )
+    assert (row(result, "web").status, row(result, "web").detail) == (
+        "partial",
+        "web/build.gradle:2",
+    )
+
+
+def test_quarkus_net_site_lands_on_the_server_dependency(tmp_path):
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project>\n<properties>\n<quarkus.platform.version>3.0</quarkus.platform.version>\n</properties>\n"
+        "<dependencyManagement><dependencies><dependency><artifactId>quarkus-bom</artifactId></dependency></dependencies></dependencyManagement>\n"
+        "<dependencies>\n<dependency><artifactId>quarkus-rest</artifactId></dependency>\n</dependencies>\n</project>\n",
+    )
+    write(tmp_path, f"{JAVA}/S.java", "package app;\npublic class S {}\n")
+    assert row(run_routes(tmp_path)).detail == "pom.xml:7"
+
+
+def test_kotlin_declaration_keyword_inside_a_comment_is_not_a_symbol(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/BlogApplication.kt",
+        """package app
+
+@SpringBootApplication
+@EnableConfigurationProperties(BlogProperties::class)
+class BlogApplication
+
+/*
+class Ghost
+*/
+fun main(args: Array<String>) {
+    runApplication<BlogApplication>(*args)
+}
+""",
+    )
+    result = run_symbols(tmp_path)
+    assert {n for n, _k in names_of(result)} == {"BlogApplication", "main"}
+
+
+def test_quarkus_interface_name_with_regex_characters(tmp_path):
+    write(tmp_path, "settings.gradle", "include 'api', 'app'\n")
+    write(
+        tmp_path,
+        f"api/{JAVA}/Api.java",
+        'package app;\n@Path("/g")\npublic interface Greeting$Api {\n  @GET String g();\n}\n',
+    )
+    gradle(tmp_path, QUARKUS, "app")
+    write(
+        tmp_path,
+        f"app/{JAVA}/R.java",
+        'package app;\npublic class R implements Greeting$Api {\n  public String g() { return ""; }\n}\n',
+    )
+    assert row(run_routes(tmp_path), "app").detail == f"app/{JAVA}/R.java:2"
+
+
+def test_repo_wide_reads_happen_once_per_run(tmp_path, monkeypatch):
+    from strata_kb.codeingest.extractors import _routes_jvm
+
+    write(tmp_path, "settings.gradle", "include 'api', 'one', 'two'\n")
+    write(tmp_path, "api/build.gradle", "plugins { id 'org.openapi.generator' }\n")
+    write(
+        tmp_path,
+        f"api/{JAVA}/Api.java",
+        'package app;\n@Path("/g")\npublic interface GreetingApi {\n  @GET String g();\n}\n',
+    )
+    for module in ("one", "two"):
+        gradle(tmp_path, QUARKUS, module)
+        write(
+            tmp_path,
+            f"{module}/{JAVA}/R.java",
+            '@Path("/r") class R { @GET String g() { return ""; } }\n',
+        )
+    seen: list[str] = []
+    real = _routes_jvm._read
+    monkeypatch.setattr(
+        _routes_jvm, "_read", lambda root, rel: (seen.append(rel), real(root, rel))[1]
+    )
+    run_routes(tmp_path)
+    assert seen and len(seen) == len(set(seen))

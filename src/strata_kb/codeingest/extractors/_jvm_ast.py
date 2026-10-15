@@ -11,9 +11,9 @@ Internal to the `_routes_jvm` / `_jvm_*` / `_symbols_jvm` modules.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from strata_kb.codeingest.extractors import _ts
 from strata_kb.codeingest.extractors._routes_jsutil import _text, _walk
@@ -21,6 +21,7 @@ from strata_kb.codeingest.extractors._routes_jsutil import _text, _walk
 if TYPE_CHECKING:
     from tree_sitter import Node
 
+T = TypeVar("T")
 JVM_LANGS = frozenset({"java", "kotlin"})
 CLASS_TYPES = frozenset(
     {
@@ -45,6 +46,21 @@ def _is_test(rel: str) -> bool:
     if _TEST_DIR.search(rel):
         return True
     return not _MAIN.search(rel) and bool(_TEST_NAME.search(rel))
+
+
+# Reads that every scope of one run shares (all build files, `@Path`
+# interfaces); `routes.py` empties it when the run ends.
+_RUN: dict[tuple[object, ...], object] = {}
+
+
+def run_cached(key: tuple[object, ...], make: Callable[[], T]) -> T:
+    if key not in _RUN:
+        _RUN[key] = make()
+    return _RUN[key]  # type: ignore[return-value]
+
+
+def clear_run_cache() -> None:
+    _RUN.clear()
 
 
 def jvm_files(files: list[str]) -> list[str]:

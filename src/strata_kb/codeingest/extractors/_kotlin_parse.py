@@ -97,15 +97,21 @@ def _misparsed(root: Node) -> int | None:
     return None
 
 
-def _code_braces(data: bytes) -> list[tuple[int, bytes]]:
+def _code_braces(
+    data: bytes, inert: list[int] | None = None
+) -> list[tuple[int, bytes]]:
     """(offset, b"{" | b"}") of every brace that is code: strings, raw
-    strings, `${...}` templates, char literals and comments are skipped."""
+    strings, `${...}` templates, char literals and comments are skipped.
+    `inert`, when given, collects the offset of each newline inside a block
+    comment or raw string (the line after it is not code)."""
     out: list[tuple[int, bytes]] = []
     modes = ["code"]
     template_depth: list[int] = []
     i, n, comment = 0, len(data), 0
     while i < n:
         mode, c = modes[-1], data[i : i + 1]
+        if inert is not None and c == b"\n" and (comment or mode == "raw"):
+            inert.append(i)
         if comment:
             if data.startswith(b"*/", i):
                 comment -= 1
@@ -213,13 +219,15 @@ def _pieces(line: int, text: bytes) -> list[tuple[int, bytes]]:
     """A chunk split where a new top-level declaration starts: after a blank
     line, or at a declaration keyword that no annotation line leads into."""
     net: dict[int, int] = {}
-    for offset, brace in _code_braces(text):
+    inert: list[int] = []
+    for offset, brace in _code_braces(text, inert):
         row = text.count(b"\n", 0, offset)
         net[row] = net.get(row, 0) + (1 if brace == b"{" else -1)
+    quiet = {text.count(b"\n", 0, offset) + 1 for offset in inert}
     lines = text.split(b"\n")
     cuts, depth, prev = [0], 0, b""
     for index, raw in enumerate(lines):
-        if index and depth == 0 and raw.strip():
+        if index and depth == 0 and raw.strip() and index not in quiet:
             starts = _STARTS.match(raw) is not None and not prev.startswith(b"@")
             if starts or not prev:
                 cuts.append(index)
