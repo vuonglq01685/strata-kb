@@ -13,8 +13,9 @@ pruning, and the section says which of the two applies.
 
 `struct.tree` is capped (depth 4, 600 lines). Beside it, one uncapped
 `struct.files.<dir>` section per top-level directory (and `struct.files.root`
-for root-level files) lists every file of the same walk, so a path the tree
-cut off can still be proven present or absent. The section set depends only
+for root-level files) lists every tracked file -- also those under the
+directories the tree prunes (`bin/`, `build/`, `vendor/` ...), so a path the
+tree cut off or pruned can still be proven present or absent. The section set depends only
 on the top-level directory names, never on how many files there are.
 """
 
@@ -216,20 +217,28 @@ def tracked_files(root: Path) -> list[str] | None:
     return paths or None
 
 
+# What the uncapped `struct.files.*` listing still hides: the KB never
+# describes itself. Every other tracked file is listed, `IGNORED_DIRS` or not.
+_FILES_IGNORED_DIRS = frozenset({".kb"})
+
+
 def _entries_from_tracked(
-    resolved_root: Path, tracked: list[str], resolved_kb_dir: Path | None
+    resolved_root: Path,
+    tracked: list[str],
+    resolved_kb_dir: Path | None,
+    ignored: frozenset[str] = IGNORED_DIRS,
 ) -> list[tuple[int, Path, list[str]]]:
     """The same `(depth, rel_dir, sorted_filenames)` preorder `walk_tree`'s
     os.walk branch produces, rebuilt from a tracked-file list. Git does
     not track empty directories, so none appear; every ancestor of a
     kept file does. A file is dropped when any directory component is
-    in `IGNORED_DIRS` or its directory is (or lies under) `kb_dir` —
+    in `ignored` or its directory is (or lies under) `kb_dir` —
     exactly the two prunes the os.walk branch applies."""
     files_by_dir: dict[tuple[str, ...], list[str]] = {(): []}
     for posix in tracked:
         parts = tuple(posix.split("/"))
         dir_parts, name = parts[:-1], parts[-1]
-        if any(part in IGNORED_DIRS for part in dir_parts):
+        if any(part in ignored for part in dir_parts):
             continue
         if resolved_kb_dir is not None:
             candidate = resolved_root.joinpath(*dir_parts)
@@ -270,6 +279,14 @@ def _os_walk_entries(
     return entries
 
 
+def _resolve_kb_dir(root: Path, kb_dir: Path | None) -> Path | None:
+    """`kb_dir` resolved against `root`, or None when it lies outside `root`."""
+    if kb_dir is None:
+        return None
+    candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
+    return candidate if root.resolve() in candidate.parents else None
+
+
 def _walk_tree_with_git_state(
     root: Path, kb_dir: Path | None = None
 ) -> tuple[list[tuple[int, Path, list[str]]], bool, bool]:
@@ -284,13 +301,7 @@ def _walk_tree_with_git_state(
     other extractor's own `walk_tree()` call below hits it. `walk_tree()`
     itself just discards the extra two values; every other caller is
     unaffected."""
-    resolved_kb_dir: Path | None = None
-    if kb_dir is not None:
-        resolved_root = root.resolve()
-        candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
-        if resolved_root in candidate.parents:
-            resolved_kb_dir = candidate
-
+    resolved_kb_dir = _resolve_kb_dir(root, kb_dir)
     is_repo, tracked_paths = _git_ls_files(root)
     if is_repo and tracked_paths:
         entries = _entries_from_tracked(root.resolve(), tracked_paths, resolved_kb_dir)
@@ -469,6 +480,16 @@ class TreeExtractor:
         # tracked" for the wording further down: information the
         # entries-building call already has.
         entries, is_repo, tracked = _walk_tree_with_git_state(root, opts.kb_dir)
+        file_entries = entries
+        if is_repo and tracked:
+            # complete, uncapped: tracked files under bin/, build/, vendor/ ...
+            # stay out of the tree but are listed here
+            file_entries = _entries_from_tracked(
+                root.resolve(),
+                _git_ls_files(root)[1],
+                _resolve_kb_dir(root, opts.kb_dir),
+                _FILES_IGNORED_DIRS,
+            )
         n_dirs = sum(1 for _depth, rel, _filenames in entries if rel != Path("."))
         n_files = sum(len(filenames) for _depth, _rel, filenames in entries)
         entry_points, console_scripts = _detect_entry_points(root, entries)
@@ -531,7 +552,7 @@ class TreeExtractor:
             l2_md=l2_md,
             l3_md=l3_md,
         )
-        file_sections, coverage = _files_sections(entries, is_repo, tracked)
+        file_sections, coverage = _files_sections(file_entries, is_repo, tracked)
         return ExtractResult(
             sections=[section, *file_sections], warnings=warnings, coverage=coverage
         )

@@ -6128,6 +6128,40 @@ def test_struct_files_lists_deep_paths_uncapped(tmp_path, run_git):
     assert "README.md" in sections["struct.files.root"].l3_md.splitlines()
 
 
+def test_struct_files_lists_tracked_files_under_ignored_dirs(tmp_path, run_git):
+    # `files complete` promises every tracked file; the pruned dirs
+    # (bin/, build/, vendor/ ...) stay out of struct.tree only
+    tracked = [
+        "apps/api/bin/run.sh",
+        "apps/api/build/gen.ts",
+        "apps/api/src/a.ts",
+        "build/top.txt",
+        "vendor/x.go",
+    ]
+    root = _git_repo(tmp_path, run_git, tracked)
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    sections = {
+        k: v for k, v in _by_id(result).items() if k.startswith("struct.files.")
+    }
+    listed = [
+        ln for sec in sections.values() for ln in sec.l3_md.splitlines() if "/" in ln
+    ]
+    assert sorted(listed) == tracked
+    assert {"struct.files.build", "struct.files.vendor"} <= set(sections)
+    tree = _by_id(result)["struct.tree"]
+    assert "bin" not in tree.l3_md and "build" not in tree.l3_md
+
+
+def test_struct_files_still_hides_the_kb_dir(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["apps/a.txt", ".kb/note.md", "kbx/out.md"])
+    opts = core.CodeIngestOptions(
+        repo_root=root, kb_dir=root / "kbx", doc_id="demo-code", repo_id="demo"
+    )
+    result = tree_ext.TreeExtractor().extract(root, opts)
+    ids = {k for k in _by_id(result) if k.startswith("struct.files.")}
+    assert ids == {"struct.files.apps"}
+
+
 def test_struct_files_ids_fixed_per_top_dir(tmp_path, run_git):
     names = [f"apps/web/f{n:04d}.txt" for n in range(700)] + ["README.md"]
     root = _git_repo(tmp_path, run_git, names)

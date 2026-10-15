@@ -1552,6 +1552,33 @@ def test_files_check_accepts_path_beyond_depth_4_when_listed(
     assert not any("cannot verify" in w for w in warnings(report))
 
 
+def test_files_under_ignored_dirs_are_cited_ok_and_not_new(code_doc, tmp_path, run_git):
+    # tracked files under bin/ and build/ are in struct.files, so a citation
+    # passes and a [NEW] claim on them is "already exists", not a false complete
+    kb_dir, _ = code_doc
+    root = tmp_path / "repo"
+    (root / "src/airspace/bin").mkdir(parents=True)
+    (root / "src/airspace/bin/run.sh").write_text("x", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "bin")
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    rev = models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    ).revision
+    ok = run(ticket(grounding(rev, Files=["src/airspace/bin/run.sh"])), kb_dir)
+    assert not any("run.sh" in e for e in errors(ok)), errors(ok)
+    new = run(
+        ticket(grounding(rev, Files=["src/airspace/bin/run.sh [NEW: tbd]"])), kb_dir
+    )
+    assert any(
+        "file 'src/airspace/bin/run.sh' already exists" in e for e in errors(new)
+    ), errors(new)
+
+
 def test_files_check_unknown_deep_path_is_error_when_struct_files_present(code_doc):
     kb_dir, rev = code_doc
     report = run(ticket(grounding(rev, Files=[DEEP])), kb_dir)
