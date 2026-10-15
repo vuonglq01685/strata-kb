@@ -1315,14 +1315,35 @@ class OldController
     assert row(result).status == "complete"
 
 
-def test_symfony_test_directories_are_skipped(tmp_path):
-    symfony(
+def test_singular_test_directory_is_product_code_plural_tests_is_not(tmp_path):
+    composer(tmp_path, LARAVEL)
+    write(
         tmp_path,
-        "src/Test/Controller/XController.php",
-        "<?php\nuse Symfony\\Component\\Routing\\Attribute\\Route;\n"
-        "class XController { #[Route($dyn)] public function a() {} }\n",
+        "Modules/Test/routes/web.php",
+        "<?php\nRoute::get('/module-test', fn () => 1);\n",
     )
-    assert row(run_routes(tmp_path)).status == "complete"
+    write(
+        tmp_path,
+        "tests/Feature/RoutesTest.php",
+        "<?php\nRoute::get($dyn, fn () => 1);\n",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/module-test")]
+    assert row(result).detail == ""
+
+
+def test_laravel_literal_include_never_binds_to_an_unrelated_suffix_match(tmp_path):
+    composer(tmp_path, LARAVEL)
+    text = "<?php\nRoute::prefix('x')->group('api.php');\n"
+    write(tmp_path, WEB, text)
+    write(
+        tmp_path,
+        "vendor_like/elsewhere/api.php",
+        "<?php\nRoute::get('/far', fn () => 1);\n",
+    )
+    result = run_routes(tmp_path)
+    assert ("GET", "/x/far") not in pairs(result)
+    assert f"{WEB}:2" in row(result).detail.split("; ")
 
 
 def test_symfony_docblock_with_unreadable_arguments_is_a_site(tmp_path):

@@ -49,7 +49,7 @@ CALLS = (
 )
 
 
-_TEST_DIR = re.compile(r"(?:^|/)(?:tests?|Tests?|__tests__)/")
+_TEST_DIR = re.compile(r"(?:^|/)(?:tests|Tests|__tests__)/")
 
 
 def source_files(files: list[str]) -> list[str]:

@@ -107,13 +107,10 @@ def resolve_path(
     if kind == "root":
         return exists(posixpath.join(scope_root, fragment.lstrip("/")))
     tail = fragment.strip("/")
-    if kind == "lit":
-        for found in (
-            exists(posixpath.join(scope_root, tail)),
-            exists(posixpath.join(here, tail)),
-        ):
-            if found:
-                return found
+    if kind == "lit":  # the app root, then the including file; no wider guess
+        return exists(posixpath.join(scope_root, tail)) or exists(
+            posixpath.join(here, tail)
+        )
     hits = sorted(f for f in files if f == tail or f.endswith("/" + tail))
     if not hits:
         return []
