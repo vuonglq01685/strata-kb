@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from strata_kb.codeingest.extractors import _routes_js, _ts
+from strata_kb.codeingest.extractors import _jvm_fields, _routes_js, _routes_jvm, _ts
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_model import (
@@ -76,13 +76,13 @@ ROUTE_FRAMEWORKS: tuple[str, ...] = (
 )
 
 Adapter = Callable[[Path, Scope, list[str], list[str]], AdapterResult]
-ADAPTERS: dict[str, Adapter] = {**_routes_js.ADAPTERS}
+ADAPTERS: dict[str, Adapter] = {**_routes_js.ADAPTERS, **_routes_jvm.ADAPTERS}
 
 # `reader(root, repo files, type name, route file) -> [(name, type, required)]`
 # or None when the type is not a plain declaration found in the repo.
 FIELD_READERS: list[
     Callable[[Path, list[str], str, str], list[tuple[str, str, bool]] | None]
-] = [_routes_js.declared_fields]
+] = [_routes_js.declared_fields, _jvm_fields.declared_fields]
 
 _OUTSIDE = "request type declared outside the repo"
 _HEADER = "| Method | Path | Handler | File | Request type |"
