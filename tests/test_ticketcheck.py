@@ -729,8 +729,19 @@ def test_directory_entries_count_as_paths(code_doc):
     assert not any("not in struct.tree" in e for e in errors(report))
 
 
+def _drop_struct_files(kb_dir: Path) -> None:
+    """Make the doc look like a pre-struct.files code-ingest."""
+    path = kb_dir / "demo-code" / "_manifest.yaml"
+    manifest = models.load_yaml_model(path, models.Manifest)
+    manifest.sections = [
+        s for s in manifest.sections if not s.id.startswith("struct.files.")
+    ]
+    models.save_yaml_model(path, manifest)
+
+
 def test_path_beyond_depth_cap_is_a_warning_not_an_error(code_doc):
     kb_dir, rev = code_doc
+    _drop_struct_files(kb_dir)
     report = run(
         ticket(grounding(rev, Files=["src/airspace/deep/deeper/x.py"])), kb_dir
     )
@@ -763,6 +774,7 @@ def test_path_after_the_line_cap_marker_is_a_warning(tmp_path: Path, run_git):
     ).revision
     raw = (kb_dir / "demo-code" / "structure.raw.md").read_text(encoding="utf-8")
     assert "more entries omitted" in raw  # precondition: the cap fired
+    _drop_struct_files(kb_dir)
     report = run(
         ticket(grounding(rev, Files=["wide/f0699.txt", "wide/f0000.txt", "aaa.txt"])),
         kb_dir,
@@ -1501,3 +1513,54 @@ def test_grounded_entries_splits_a_list_and_rejects_a_bad_entry():
     ]
     assert grounded_entries("- Grounded on: a:a-code @ 1234567, junk") == []
     assert grounded_entries("- Files: x.py") == []
+
+
+# --- struct.files.* widen the Files: check beyond struct.tree's cap ---------
+
+DEEP = "src/airspace/deep/deeper/x.py"
+
+
+def _commit_deep_file(tmp_path: Path, run_git, kb_dir: Path):
+    """A fresh ingest of the code_doc repo plus one depth-5 tracked file."""
+    root = tmp_path / "repo"
+    (root / "src/airspace/deep/deeper").mkdir(parents=True)
+    (root / DEEP).write_text("x", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "deep")
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    return models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    ).revision
+
+
+def test_files_check_accepts_path_beyond_depth_4_when_listed(
+    code_doc, tmp_path, run_git
+):
+    kb_dir, _ = code_doc
+    rev = _commit_deep_file(tmp_path, run_git, kb_dir)
+    report = run(
+        ticket(grounding(rev, Files=[DEEP, "src/airspace/deep/deeper"])), kb_dir
+    )
+    assert not any("not in struct.tree" in e for e in errors(report))
+    assert not any("cannot verify" in w for w in warnings(report))
+
+
+def test_files_check_unknown_deep_path_is_error_when_struct_files_present(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=[DEEP])), kb_dir)
+    assert any(f"file '{DEEP}' not in struct.tree" in e for e in errors(report))
+    assert not any("cannot verify" in w for w in warnings(report))
+
+
+def test_files_union_adds_files_sections_and_directory_prefixes(
+    code_doc, tmp_path, run_git
+):
+    kb_dir, _ = code_doc
+    _commit_deep_file(tmp_path, run_git, kb_dir)
+    doc = ticketcheck.load_doc_dir(kb_dir / "demo-code", str(kb_dir / "demo-code"))
+    union = ticketcheck._files_union(doc)
+    assert {DEEP, "src/airspace/deep/deeper", "src/airspace/deep", "src"} <= union

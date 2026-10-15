@@ -41,10 +41,13 @@ def test_self_ingest_is_accurate_about_this_repository(tmp_path):
 
     structure = (doc / "structure.raw.md").read_text(encoding="utf-8")
     assert ".venv" not in structure and ".worktrees" not in structure
-    assert structure.count("\n") <= 610
+    # The tree stays capped; the uncapped listing lives in struct.files.*.
+    assert _section(structure, "struct.tree").count("\n") <= 610
     manifest = models.load_yaml_model(doc / "_manifest.yaml", models.Manifest)
     tree_summary = next(s.summary for s in manifest.sections if s.id == "struct.tree")
     assert "tracked files" in tree_summary
+    ids = {s.id for s in manifest.sections}
+    assert {"struct.files.src", "struct.files.root"} <= ids
 
     services = (doc / "services.md").read_text(encoding="utf-8")
     assert "| Technology | Python |" in _section(services, "svc.hub")

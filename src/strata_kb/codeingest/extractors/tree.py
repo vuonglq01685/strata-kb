@@ -2,14 +2,20 @@
 
 Always detects (it is the reason `core.run()`'s zero-detection rule counts
 extractors *other than* `tree`: a bare directory listing is never, on its
-own, evidence that this is a codebase). Emits exactly one section,
-`struct.tree` in the `structure` group, built by `walk_tree()` below — the
+own, evidence that this is a codebase). Emits `struct.tree` in the
+`structure` group, built by `walk_tree()` below — the
 files `git ls-files` reports under the root (so a git-ignored virtualenv,
 worktree or previous run's output never appears, and two checkouts of the
 same commit list the same tree), with `IGNORED_DIRS` (and the caller's
 `kb_dir`) pruned on top. A root that is not a git repository, or has no
 tracked file, falls back to one deterministic `os.walk` with the same
 pruning, and the section says which of the two applies.
+
+`struct.tree` is capped (depth 4, 600 lines). Beside it, one uncapped
+`struct.files.<dir>` section per top-level directory (and `struct.files.root`
+for root-level files) lists every file of the same walk, so a path the tree
+cut off can still be proven present or absent. The section set depends only
+on the top-level directory names, never on how many files there are.
 """
 
 from __future__ import annotations
@@ -18,8 +24,14 @@ import os
 import tomllib
 from pathlib import Path
 
+from strata_kb.codeingest.extractors._slugs import assign_slugs
 from strata_kb.codeingest.localgit import run as _git
-from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.types import (
+    CodeIngestOptions,
+    CodeSection,
+    CoverageRow,
+    ExtractResult,
+)
 
 # Shared with every other tree-walking extractor (B3-B7): each of them must
 # prune these directories too, or output would depend on whether
@@ -388,6 +400,61 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
     return body
 
 
+_ROOT_SLUG = "root"  # struct.files.root: files directly under the repo root
+
+
+def _files_sections(
+    entries: list[tuple[int, Path, list[str]]], is_repo: bool, tracked: bool
+) -> tuple[list[CodeSection], list[CoverageRow]]:
+    """One uncapped `struct.files.<slug>` section (+ coverage row) per
+    top-level directory that holds files, plus `struct.files.root` for
+    root-level files. Paths are the full repo-relative path, sorted."""
+    files_by_top: dict[str, list[str]] = {}
+    subdirs_by_top: dict[str, list[str]] = {}
+    for depth, rel, filenames in entries:
+        top = "." if depth == 0 else rel.parts[0]
+        if depth == 2:
+            subdirs_by_top.setdefault(top, []).append(rel.as_posix())
+        paths = [(rel / name).as_posix() for name in filenames]
+        files_by_top.setdefault(top, []).extend(paths)
+    tops = sorted(t for t in files_by_top if t != "." and files_by_top[t])
+    # "root" rides along only to reserve its slug: a top-level directory
+    # literally named `root` is then suffixed instead of colliding with it.
+    slugs = dict(zip(tops, assign_slugs([*tops, _ROOT_SLUG]), strict=False))
+    if files_by_top.get("."):
+        slugs["."] = _ROOT_SLUG
+    if is_repo and tracked:
+        status, detail = "complete", ""
+    elif not is_repo:
+        status, detail = "partial", "not a git repository — os.walk listing"
+    else:
+        status, detail = "partial", "no tracked files — os.walk listing"
+    sections: list[CodeSection] = []
+    rows: list[CoverageRow] = []
+    for top in sorted(slugs):
+        paths = sorted(files_by_top[top])
+        label = "root" if top == "." else f"{top}/"
+        subdirs = sorted(subdirs_by_top.get(top, []))
+        l2 = f"{len(paths)} files\n"
+        if subdirs:
+            l2 += (
+                "\nSub-directories:\n\n" + "\n".join(f"- {d}/" for d in subdirs) + "\n"
+            )
+        sub_phrase = f" in {len(subdirs)} sub-directories" if subdirs else ""
+        sections.append(
+            CodeSection(
+                id=f"struct.files.{slugs[top]}",
+                title=f"Files: {label}",
+                summary=f"{label}: {len(paths)} files{sub_phrase}, every path listed.",
+                group="structure",
+                l2_md=l2,
+                l3_md="```\n" + "\n".join(paths) + "\n```\n",
+            )
+        )
+        rows.append(CoverageRow("files", top, "-", status, detail))
+    return sections, rows
+
+
 class TreeExtractor:
     name = "tree"
 
@@ -468,4 +535,7 @@ class TreeExtractor:
             l2_md=l2_md,
             l3_md=l3_md,
         )
-        return ExtractResult(sections=[section], warnings=warnings)
+        file_sections, coverage = _files_sections(entries, is_repo, tracked)
+        return ExtractResult(
+            sections=[section, *file_sections], warnings=warnings, coverage=coverage
+        )

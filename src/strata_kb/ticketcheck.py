@@ -1066,6 +1066,49 @@ def _tree_paths(l3_text: str) -> tuple[set[str], str | None]:
     return paths, first_dropped
 
 
+FILES_HEADING_RE = re.compile(r"^## struct\.files\.\S+")
+
+
+def _files_listed(l3_text: str) -> set[str]:
+    """Every path in the `struct.files.*` fences of one raw group file:
+    one full repo-relative path per line, no cap."""
+    paths: set[str] = set()
+    in_files = in_fence = False
+    for raw in l3_text.splitlines():
+        if raw.startswith("```"):
+            in_fence = not in_fence
+        elif in_fence:
+            if in_files and raw:
+                paths.add(raw)
+        elif raw.startswith("## "):
+            in_files = FILES_HEADING_RE.match(raw) is not None
+    return paths
+
+
+def _files_groups(doc: LoadedDoc) -> list[str]:
+    return sorted(
+        {s.file for s in doc.manifest.sections if s.id.startswith("struct.files.")}
+    )
+
+
+def _files_union(doc: LoadedDoc) -> set[str]:
+    """Every path the document can vouch for: struct.tree's paths, every
+    struct.files.* line, and each directory prefix of those."""
+    tree_group = next(
+        (s.file for s in doc.manifest.sections if s.id == "struct.tree"), None
+    )
+    tree_raw = doc.read_raw(tree_group) if tree_group else None
+    paths = _tree_paths(tree_raw)[0] if tree_raw is not None else set()
+    for group in _files_groups(doc):
+        raw = doc.read_raw(group)
+        if raw is not None:
+            paths |= _files_listed(raw)
+    for path in list(paths):
+        parts = path.split("/")
+        paths.update("/".join(parts[:i]) for i in range(1, len(parts)))
+    return paths
+
+
 def _check_files(
     section: _Section,
     doc: LoadedDoc,
@@ -1092,7 +1135,11 @@ def _check_files(
             )
         )
         return
-    paths, first_dropped = _tree_paths(raw)
+    first_dropped = _tree_paths(raw)[1]
+    paths = _files_union(doc)
+    # struct.files.* lists every file, so a path missing from the union is
+    # provably absent however deep it is or however capped struct.tree is.
+    complete = bool(_files_groups(doc))
     for lineno, text in entries:
         new = NEW_RE.search(text)
         path = NEW_RE.sub("", text).strip().strip("`").rstrip("/")
@@ -1101,7 +1148,7 @@ def _check_files(
             continue
         if path in paths:
             continue
-        if path.count("/") >= TREE_DEPTH:
+        if not complete and path.count("/") >= TREE_DEPTH:
             issues.append(
                 Issue(
                     "warning",
@@ -1109,7 +1156,7 @@ def _check_files(
                     code=UNVERIFIED,
                 )
             )
-        elif first_dropped is not None:
+        elif not complete and first_dropped is not None:
             # ponytail: the cap marker names a bare file name, so "does this
             # path sort after the cut" is not decidable from the document;
             # a capped tree makes every absent path unverifiable, never an

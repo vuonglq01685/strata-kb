@@ -69,9 +69,12 @@ class TestTreeExtractor:
     def test_always_detects(self, repo):
         assert tree_ext.TreeExtractor().detect(repo) is True
 
-    def test_emits_a_single_struct_tree_section(self, repo):
+    def test_emits_struct_tree_plus_one_struct_files_per_top_dir(self, repo):
         sections = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))
-        assert list(sections) == ["struct.tree"]
+        assert [i for i in sections if not i.startswith("struct.files.")] == [
+            "struct.tree"
+        ]
+        assert "struct.files.root" in sections and "struct.files.src" in sections
         assert sections["struct.tree"].group == "structure"
         assert sections["struct.tree"].summary
 
@@ -5055,3 +5058,73 @@ class TestComposeFacts:
             "svc.transcoder"
         ]
         assert (a.l2_md, a.l3_md) == (b.l2_md, b.l3_md)
+
+
+# --- struct.files.<dir>: the complete, uncapped file list -------------------
+
+
+def _git_repo(tmp_path: Path, run_git, files: list[str]) -> Path:
+    root = tmp_path / "gitrepo"
+    root.mkdir()
+    for rel in files:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "init")
+    return root
+
+
+def _files_sections(root: Path) -> dict[str, core.CodeSection]:
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    return {k: v for k, v in _by_id(result).items() if k.startswith("struct.files.")}
+
+
+def test_struct_files_lists_deep_paths_uncapped(tmp_path, run_git):
+    deep = "apps/web/src/app/(admin)/admin/page.tsx"
+    root = _git_repo(tmp_path, run_git, [deep, "apps/web/package.json", "README.md"])
+    sections = _files_sections(root)
+    assert deep in sections["struct.files.apps"].l3_md.splitlines()
+    assert sections["struct.files.apps"].group == "structure"
+    assert sections["struct.files.apps"].title == "Files: apps/"
+    assert "- apps/web/" in sections["struct.files.apps"].l2_md
+    assert "2 files" in sections["struct.files.apps"].l2_md
+    assert "README.md" in sections["struct.files.root"].l3_md.splitlines()
+
+
+def test_struct_files_ids_fixed_per_top_dir(tmp_path, run_git):
+    names = [f"apps/web/f{n:04d}.txt" for n in range(700)] + ["README.md"]
+    root = _git_repo(tmp_path, run_git, names)
+    sections = _files_sections(root)
+    assert set(sections) == {"struct.files.apps", "struct.files.root"}
+    lines = [ln for ln in sections["struct.files.apps"].l3_md.splitlines() if "/" in ln]
+    assert lines == sorted(lines) and len(lines) == 700
+
+
+def test_struct_files_top_dir_named_root_does_not_collide(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["root/a.txt", "top.txt"])
+    ids = set(_files_sections(root))
+    assert "struct.files.root" in ids and len(ids) == 2
+
+
+def test_struct_files_coverage_complete_per_section(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["apps/a.txt", "top.txt"])
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    assert sorted(
+        (r.area, r.scope, r.framework, r.status, r.detail) for r in result.coverage
+    ) == [
+        ("files", ".", "-", "complete", ""),
+        ("files", "apps", "-", "complete", ""),
+    ]
+
+
+def test_struct_files_coverage_partial_outside_git(tmp_path):
+    root = tmp_path / "plain"
+    (root / "apps").mkdir(parents=True)
+    (root / "apps" / "a.txt").write_text("x", encoding="utf-8")
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    assert {r.status for r in result.coverage} == {"partial"}
+    assert {r.detail for r in result.coverage} == {
+        "not a git repository — os.walk listing"
+    }
