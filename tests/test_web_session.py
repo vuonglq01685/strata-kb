@@ -209,8 +209,10 @@ def test_login_rejects_an_oversized_body(web_client):
     assert resp.headers["cache-control"] == "no-store"
 
 
-def test_login_pages_are_not_cacheable(web_client):
-    assert web_client.get("/ui/login").headers["cache-control"] == "no-store"
+def test_login_pages_are_not_cacheable(web_client, admin_user):
+    page = web_client.get("/ui/login", follow_redirects=False)
+    assert page.status_code == 200  # the login page itself, not a redirect
+    assert page.headers["cache-control"] == "no-store"
     assert (
         web_client.post(
             "/ui/login",

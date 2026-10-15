@@ -390,5 +390,5 @@ def test_version_is_1_27_1_everywhere():
     assert [p["version"] for p in own] == ["1.27.1"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.27.1 — 2026-10-14")
+    assert first.startswith("1.27.1 — 2026-10-15")
     assert "guide PDFs" in first and "were not rebuilt" in first

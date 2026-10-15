@@ -70,10 +70,22 @@ def test_health_answers_while_a_slow_page_renders(
 ):
     import importlib
 
+    from strata_kb.serving.accounts import Accounts
+
+    # With no account /ui and /ui/docs redirect at once and never render.
+    Accounts(fed_hub / ".kb-auth" / "users.db").add("boss", "pw", "admin")
     module = importlib.import_module(target) if isinstance(target, str) else target
-    monkeypatch.setattr(module, attr, _slow(getattr(module, attr)))
+    slow = _slow(getattr(module, attr))
+    calls: list[int] = []
+
+    def counted(*a, **k):
+        calls.append(1)
+        return slow(*a, **k)
+
+    monkeypatch.setattr(module, attr, counted)
     app = create_app(ServerConfig(kb_dir=fed_hub / ".kb", hub=str(fed_hub)), TOKEN)
     ms = anyio.run(_health_while, app, path)
+    assert calls, f"{path} never reached the slow {attr}"
     assert ms < 500, f"/api/health took {ms:.0f} ms while {path} rendered"
 
 

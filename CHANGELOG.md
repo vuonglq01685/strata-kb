@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.27.1 — 2026-10-14
+## 1.27.1 — 2026-10-15
 
 First-run admin setup page.
 

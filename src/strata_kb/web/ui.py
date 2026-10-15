@@ -650,8 +650,11 @@ def build_routes(
         return render_setup()
 
     async def setup_post(request: Request) -> Response:
-        if setup is None or session is None or await setup_closed():
+        if setup is None or session is None:
             return HTMLResponse("Not found", status_code=404, headers=NO_STORE)
+        if await setup_closed():
+            # The race loser's usual path: someone else finished setup first.
+            return RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
         # Same guards, in the same order, as login_post (see the comments there).
         if int(request.headers.get("content-length") or 0) > LOGIN_MAX_BODY:
             return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
@@ -664,7 +667,7 @@ def build_routes(
             bodycap.capped_receive(request, LOGIN_MAX_BODY, _LoginBodyTooLarge),
         )
         try:
-            form = await capped.form(max_files=0, max_fields=8)
+            form = await capped.form(max_files=0, max_fields=4)
         except _LoginBodyTooLarge:
             return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
         username = str(form.get("username", ""))

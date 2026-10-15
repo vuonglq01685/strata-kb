@@ -70,9 +70,9 @@ def test_removed_user_session_ends(web_client, hub_dir, admin_user):
     assert web_client.get("/ui", follow_redirects=False).status_code == 302
 
 
-def test_bearer_request_has_no_user(web_client, token):
+def test_bearer_request_has_no_user(web_client, token, admin_user):
     r = web_client.get("/ui", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.url.path == "/ui"
     assert 'href="/ui/registry"' not in r.text
 
 

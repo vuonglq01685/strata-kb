@@ -71,6 +71,11 @@ def test_zero_users_api_and_health_are_unaffected(web_client, token):
     assert ok.status_code == 200
 
 
+def test_head_on_ui_also_redirects_to_setup(web_client):
+    r = web_client.head("/ui", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/ui/setup"
+
+
 def test_zero_users_static_assets_still_load(web_client):
     assert web_client.get("/ui/static/style.css").status_code == 200
 
@@ -84,10 +89,11 @@ def test_setup_form_renders_fields_and_hint(web_client):
     assert _code(web_client) not in r.text
 
 
-def test_once_a_user_exists_login_shows_and_setup_is_404(web_client, admin_user):
+def test_once_a_user_exists_login_shows_and_setup_is_closed(web_client, admin_user):
     assert web_client.get("/ui/login").status_code == 200
     assert web_client.get("/ui/setup").status_code == 404
-    assert web_client.post("/ui/setup", data={}).status_code == 404
+    r = web_client.post("/ui/setup", data={}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/ui/login"
 
 
 def test_setup_is_404_for_a_logged_in_user_too(web_client_logged_in):
@@ -174,6 +180,13 @@ def test_mismatched_passwords_error_no_user_no_echo(web_client, hub_dir):
     assert _users(hub_dir).count() == 0
 
 
+def test_the_bearer_token_is_not_a_setup_code(web_client, hub_dir, token):
+    r = _post(web_client, token)
+    assert r.status_code == 200 and "Wrong setup code" in r.text
+    assert COOKIE_NAME not in r.cookies
+    assert _users(hub_dir).count() == 0
+
+
 def test_empty_password_is_refused(web_client, hub_dir):
     r = _post(web_client, _code(web_client), password="")
     assert r.status_code == 200 and "Password must not be empty" in r.text
@@ -229,7 +242,8 @@ def test_after_success_setup_is_404_and_code_is_dead(web_client, hub_dir):
     assert web_client.app.setup.code is None
     web_client.cookies.clear()
     assert web_client.get("/ui/setup").status_code == 404
-    assert _post(web_client, code, username="second").status_code == 404
+    again = _post(web_client, code, username="second")
+    assert again.status_code == 303 and again.headers["location"] == "/ui/login"
     assert _users(hub_dir).count() == 1
     assert web_client.get("/ui/login").status_code == 200
 
@@ -238,7 +252,9 @@ def test_user_created_after_page_load_closes_setup(web_client, hub_dir):
     code = _code(web_client)
     _users(hub_dir).add("winner", "pw", "admin")  # lands between page load and submit
     r = _post(web_client, code, username="loser")
-    assert r.status_code == 404  # users exist now: setup is closed
+    # users exist now: setup is closed, the loser is sent to the login page
+    assert r.status_code == 303 and r.headers["location"] == "/ui/login"
+    assert _users(hub_dir).get("loser") is None
 
 
 def test_race_inside_the_transaction_redirects_to_login(
@@ -346,8 +362,8 @@ def test_a_chunked_setup_body_is_refused_at_the_cap(hub_dir, token):
     assert pulled <= LOGIN_MAX_BODY // len(chunk) + 2
 
 
-def test_many_small_fields_are_a_client_error(web_client):
-    data = {f"f{i}": "x" for i in range(50)}
+def test_more_than_four_fields_are_a_client_error(web_client):
+    data = {f"f{i}": "x" for i in range(5)}
     resp = web_client.post("/ui/setup", data=data, follow_redirects=False)
     assert resp.status_code in (400, 413)
 

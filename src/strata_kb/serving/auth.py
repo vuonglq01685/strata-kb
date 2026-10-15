@@ -296,7 +296,7 @@ class TokenAuthMiddleware:
         # First run: no account exists, so every /ui page is the setup form.
         # Before the exempt check, so /ui/login redirects too.
         if (
-            scope.get("method") == "GET"
+            scope.get("method") in ("GET", "HEAD")
             and (path == "/ui" or path.startswith("/ui/"))
             and path != "/ui/setup"
             and not path.startswith("/ui/static/")

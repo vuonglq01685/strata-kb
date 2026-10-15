@@ -20,16 +20,23 @@ def test_root_redirects_to_ui(fed_hub):
     assert resp.headers["location"] == "/ui"
 
 
-def test_api_and_ui_reachable_through_one_app(fed_hub):
-    client = TestClient(create_app(_config(fed_hub), TOKEN))
-    assert client.get("/api/docs", headers=AUTH).status_code == 200
-    assert client.get("/ui", headers=AUTH).status_code == 200
-
-
-def test_unauthenticated_api_401_ui_redirect(fed_hub):
+def _add_admin(fed_hub) -> None:
+    # With no account every /ui page redirects to the setup form.
     from strata_kb.serving.accounts import Accounts
 
     Accounts(fed_hub / ".kb-auth" / "users.db").add("boss", "pw", "admin")
+
+
+def test_api_and_ui_reachable_through_one_app(fed_hub):
+    _add_admin(fed_hub)
+    client = TestClient(create_app(_config(fed_hub), TOKEN))
+    assert client.get("/api/docs", headers=AUTH).status_code == 200
+    ui = client.get("/ui", headers=AUTH)
+    assert ui.status_code == 200 and ui.url.path == "/ui"
+
+
+def test_unauthenticated_api_401_ui_redirect(fed_hub):
+    _add_admin(fed_hub)
     client = TestClient(create_app(_config(fed_hub), TOKEN))
     assert client.get("/api/docs").status_code == 401
     resp = client.get("/ui", follow_redirects=False)
@@ -68,6 +75,7 @@ def test_create_app_warns_at_startup_when_the_hub_clone_is_stuck_off_default(
 
 def test_full_http_app_serves_mcp_and_api_together(fed_hub):
     """create_http_app: MCP handshake still works AND /api works on the same app."""
+    _add_admin(fed_hub)
     app = create_http_app(_config(fed_hub), TOKEN)
     payload = {
         "jsonrpc": "2.0",
@@ -89,7 +97,8 @@ def test_full_http_app_serves_mcp_and_api_together(fed_hub):
         assert resp.status_code == 200
         assert "serverInfo" in resp.text
         assert client.get("/api/health").status_code == 200
-        assert client.get("/ui", headers=AUTH).status_code == 200
+        ui = client.get("/ui", headers=AUTH)
+        assert ui.status_code == 200 and ui.url.path == "/ui"
 
 
 def _post_initialize(fed_hub, base_url: str, origin: str | None = None):
