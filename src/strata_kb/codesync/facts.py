@@ -46,8 +46,8 @@ _SEPARATOR_ROW_RE = re.compile(r"^\|[\s:|-]+\|$")
 
 def _rows(l2: str) -> list[list[str]]:
     """Table rows as cell lists, split on unescaped `|` only and with `\\|`
-    unescaped: `lintcore.table_rows` splits on escaped pipes too, which cuts
-    a db Type cell like `TEXT CHECK (a \\|\\| b)` short and shifts PK."""
+    unescaped (`lintcore.table_rows` now does the same; this keeps its own
+    copy, pinned by the db Type cell `TEXT CHECK (a \\|\\| b)`)."""
     rows: list[list[str]] = []
     for raw in l2.splitlines():
         line = raw.strip()

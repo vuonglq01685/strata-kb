@@ -28,6 +28,7 @@ from pathlib import Path
 import yaml
 
 from strata_kb.codeingest.extractors._routes_jsutil import _read
+from strata_kb.codeingest.extractors._symfony_path import compiled
 
 __all__ = ["Config", "Import", "read_config"]
 
@@ -36,6 +37,8 @@ _CONFIG_FILE = re.compile(r"^config/routes(?:\.(?:ya?ml|xml)|/.*\.(?:ya?ml|xml))
 _TOOLING = frozenset(
     {"FrameworkBundle", "WebProfilerBundle", "TwigBundle", "DebugBundle", "MakerBundle"}
 )
+_CONTROLLERS_LOADER = "routing.controllers"
+_LOGOUT_LOADER = "security.route_loader.logout"
 _ATTRIBUTE_TYPES = frozenset({"attribute", "annotation"})
 _FILTERS = ("exclude", "methods")
 _CONFIGURATOR = re.compile(rb"RoutingConfigurator|RouteCollection")
@@ -48,11 +51,13 @@ _MAX_NESTING = 8
 
 @dataclass(frozen=True)
 class Import:
-    kind: str  # dir | file | glob | class
+    kind: str  # dir | file | glob | class | all
     target: str  # repo path, glob, or short class name
     prefix: str
 
     def covers(self, rel: str) -> bool:
+        if self.kind == "all":
+            return True
         if self.kind == "dir":
             return rel == self.target or rel.startswith(self.target + "/")
         if self.kind == "file":
@@ -150,6 +155,15 @@ def _read_yaml(rel: str, text: str, config: Config) -> None:
             continue
         kind = _scalar(fields.get("type"))
         prefix = _scalar(fields["prefix"]) if "prefix" in fields else ""
+        if text_resource == _LOGOUT_LOADER and kind == "service":
+            continue  # the security recipe's logout routes: no app route
+        if text_resource == _CONTROLLERS_LOADER:
+            # the Symfony 7.4+ skeleton: every controller of the app
+            if prefix is None or any(name in fields for name in _FILTERS):
+                config.sites.append(line)
+            else:
+                config.imports.append(Import("all", "", compiled(prefix)))
+            continue
         placed = _resource(rel, fields)
         if (
             kind not in _ATTRIBUTE_TYPES
@@ -159,7 +173,7 @@ def _read_yaml(rel: str, text: str, config: Config) -> None:
         ):
             config.sites.append(line)
             continue
-        config.imports.append(Import(placed[0], placed[1], prefix))
+        config.imports.append(Import(placed[0], placed[1], compiled(prefix)))
 
 
 def configurator_sites(rel: str, data: bytes) -> list[str]:

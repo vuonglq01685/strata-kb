@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 __all__ = [
+    "CALLS",
+    "CLOSURES",
     "Arg",
     "Attr",
     "Link",
@@ -40,7 +42,7 @@ __all__ = [
 
 _NAME_TYPES = ("name", "qualified_name", "namespace_name", "relative_name")
 CLOSURES = ("anonymous_function", "arrow_function")
-_CALLS = (
+CALLS = (
     "member_call_expression",
     "nullsafe_member_call_expression",
     "scoped_call_expression",
@@ -238,7 +240,7 @@ def chain(node: Node) -> tuple[Node, list[Link]]:
     of the first instance call, or the expression that is not a call."""
     links: list[Link] = []
     current = node
-    while current.type in _CALLS:
+    while current.type in CALLS:
         named = current.child_by_field_name("name")
         links.append(
             Link(

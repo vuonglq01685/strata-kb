@@ -1707,6 +1707,15 @@ def test_route_citation_from_code_verified():
     assert "GET /media/ping" in msg and "(line 9)" in msg
 
 
+def test_route_citation_with_an_escaped_pipe_verifies():
+    raw = "| ANY | ^api/(a\\|b)/$ | Re.view | apps/media/src/media.controller.ts |  |\n"
+    keys = ticketcheck._route_keys(
+        "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+        + raw
+    )
+    assert list(keys.values()) == ["ANY ^api/(a|b)/$"]
+
+
 def test_route_param_syntax_normalised():
     report = run_synth([f"- Routes: {_MEDIA} — GET /watch/:id"])
     assert errors(report) == [], report.render("Grounding")

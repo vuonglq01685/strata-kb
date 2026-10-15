@@ -12,9 +12,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-__all__ = ["DocRoute", "doc_routes"]
+__all__ = ["DocRoute", "doc_methods", "doc_routes"]
 
-_OPEN = re.compile(r"@(?:[\w\\]*\\)?Route\s*\(")
+_OPEN = re.compile(
+    r"@((?:[\w\\]*\\)?(?:Route|Get|Post|Put|Patch|Delete|Head|Options))\s*\("
+)
+_METHOD = re.compile(r"@(?:[\w\\]*\\)?Method\s*\(")
 _STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _KEYED = re.compile(r"(\w+)\s*=\s*(.*)", re.DOTALL)
 _LEADING_STAR = re.compile(r"^[ \t]*(?:/\*+|\*+/?)?[ \t]?", re.MULTILINE)
@@ -24,6 +27,7 @@ _LEADING_STAR = re.compile(r"^[ \t]*(?:/\*+|\*+/?)?[ \t]?", re.MULTILINE)
 class DocRoute:
     path: str
     methods: tuple[str, ...]
+    has_path: bool
 
 
 def _balanced(text: str, start: int) -> str | None:
@@ -110,17 +114,36 @@ def _read(body: str) -> DocRoute | None:
             if found is None:
                 return None
             methods = [m.upper() for m in found]
-    return DocRoute(path or "", tuple(methods))
+    return DocRoute(path or "", tuple(methods), path is not None)
 
 
-def doc_routes(comment: str) -> list[tuple[int, DocRoute | None]]:
-    """Every `@Route(...)` of a docblock as (line offset inside the comment,
-    route); the route is None when it could not be read."""
+def doc_routes(comment: str) -> list[tuple[int, str, DocRoute | None]]:
+    """Every `@Route(...)` / `@Get(...)`-style annotation of a docblock as
+    (line offset inside the comment, name as written, route); the route is
+    None when it could not be read."""
     text = _LEADING_STAR.sub("", comment)
-    out: list[tuple[int, DocRoute | None]] = []
+    out: list[tuple[int, str, DocRoute | None]] = []
     for match in _OPEN.finditer(text):
         body = _balanced(text, match.end())
         out.append(
-            (text.count("\n", 0, match.start()), None if body is None else _read(body))
+            (
+                text.count("\n", 0, match.start()),
+                match.group(1),
+                None if body is None else _read(body),
+            )
         )
     return out
+
+
+def doc_methods(comment: str) -> list[str] | None:
+    """Verbs of the docblock's Sensio `@Method(...)` annotations (empty when
+    there is none); None when one cannot be read."""
+    text = _LEADING_STAR.sub("", comment)
+    found: list[str] = []
+    for match in _METHOD.finditer(text):
+        body = _balanced(text, match.end())
+        values = _strings(body) if body is not None else None
+        if values is None:
+            return None
+        found += [v.upper() for v in values]
+    return found

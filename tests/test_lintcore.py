@@ -754,6 +754,11 @@ def test_table_rows_parses_cells_and_drops_separators():
     assert len(rows) == 2
 
 
+def test_table_rows_escaped_pipe_is_not_a_separator():
+    body = "| Method | Path |\n| --- | --- |\n| ANY | ^a/(b\\|c)/$ |\n"
+    assert table_rows(body)[1] == ["ANY", "^a/(b|c)/$"]
+
+
 # --- Review record (maturity review) ---
 
 

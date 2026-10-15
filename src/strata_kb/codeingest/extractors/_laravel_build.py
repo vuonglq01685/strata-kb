@@ -99,11 +99,6 @@ _CODE = frozenset(
         "anonymous_function", "arrow_function",
     }
 )  # fmt: skip
-_CALLS = (
-    "member_call_expression",
-    "nullsafe_member_call_expression",
-    "scoped_call_expression",
-)
 _INCLUDES = (
     "require_expression",
     "require_once_expression",
@@ -217,7 +212,7 @@ class _Builder:
         self.stack.append((self.root, out, True))
         while self.stack:
             node, items, top = self.stack.pop()
-            if node.type in _CALLS:
+            if node.type in php.CALLS:
                 self.call(node, items, top)
             elif node.type in _INCLUDES:
                 self.require(node, items, top)

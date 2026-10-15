@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,20 +49,28 @@ from strata_kb.codeingest.extractors._symfony_config import (
     configurator_sites,
     read_config,
 )
-from strata_kb.codeingest.extractors._symfony_doc import doc_routes
+from strata_kb.codeingest.extractors._symfony_doc import doc_methods, doc_routes
+from strata_kb.codeingest.extractors._symfony_path import compiled
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
 
 __all__ = ["ADAPTERS"]
 
+# `Route` or a verb-named attribute/annotation (`#[Rest\Get(`), whatever its
+# namespace and however the formatter wrapped it
 _HINT = re.compile(
-    rb"\bRoute\b|RoutingConfigurator|RouteCollection|ApiPlatform|AdminDashboard"
+    rb"\b(?:Route|Get|Post|Put|Patch|Delete|Head|Options)\b"
+    rb"|RoutingConfigurator|RouteCollection|ApiPlatform|AdminDashboard",
+    re.IGNORECASE,
 )
-_ACCEPTED = (
-    "Symfony\\Component\\Routing\\",
-    "Sensio\\Bundle\\FrameworkExtraBundle\\Configuration\\",
-)
+# documentation attributes named like verbs (`#[OA\Get(path: ...)]`): no route
+_DOCS = ("OpenApi\\", "Swagger\\", "Zircote\\", "Nelmio\\")
+# FOSRestBundle: a verb attribute is a route for that verb; its class-level
+# builders change every path
+_FOS = "FOS\\RestBundle\\Controller\\Annotations\\"
+_FOS_BUILDERS = frozenset({"prefix", "routeresource", "nameprefix"})
+_VERB_NAMES = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
 # attributes of other bundles that register routes this scan does not expand
 _FOREIGN = (
     "ApiPlatform\\Metadata\\",
@@ -128,14 +136,34 @@ class _Found:
 
 
 def _route_class(fqcn: str) -> bool:
-    return php.short(fqcn) == "Route" and (
-        fqcn == "Route" or fqcn.startswith(_ACCEPTED)
-    )
+    return php.short(fqcn).lower() == "route"
 
 
-def _read_attr(attr: php.Attr) -> _Spec | None:
-    path = ""
-    methods: tuple[str, ...] = ()
+def _classify(fqcn: str, written: str, custom: frozenset[str]) -> tuple[str, str]:
+    """How an attribute or annotation reads: ("route", ""), ("verb", "GET"),
+    ("skip", "") for noise, ("site", "") for a routing construct this scan
+    cannot read. A `Route` or a verb-named attribute of any namespace is read
+    the Symfony way, never dropped: only known documentation namespaces and
+    Symfony's own are noise."""
+    low = php.short(fqcn).lower()
+    if fqcn.startswith(_DOCS):
+        return "skip", ""
+    if fqcn.startswith(_FOREIGN) or php.short(written) in custom:
+        return "site", ""  # built on Route, or another bundle's routes
+    if low == "route":
+        return "route", ""
+    if low in _VERB_NAMES:
+        if fqcn.startswith(_FOS):
+            return "verb", low.upper()
+        return ("skip", "") if fqcn.startswith("Symfony\\") else ("site", "")
+    if fqcn.startswith(_FOS) and low in _FOS_BUILDERS:
+        return "site", ""
+    return "skip", ""
+
+
+def _read_attr(attr: php.Attr, verb: str = "") -> _Spec | None:
+    path: str | None = None
+    methods: tuple[str, ...] = (verb,) if verb else ()
     for a in attr.args:
         if a.name == "path" or (a.name is None and a.index == 0):
             literal = php.literal(a.value)
@@ -144,13 +172,40 @@ def _read_attr(attr: php.Attr) -> _Spec | None:
             path = literal
         elif a.name is None and a.index >= 2:
             return None  # positional requirements, options, defaults, ...
-        elif a.name == "methods":
+        elif a.name == "methods" and not verb:
             given = php.literal_list(a.value)
             upper = tuple(v.upper() for v in given or [])
             if given is None or any(v not in _VERBS for v in upper):
                 return None
             methods = upper
-    return _Spec(path, methods, attr.line)
+    if verb and path is None:
+        return None  # the path comes from the method name: not readable here
+    return _Spec(compiled(path or ""), methods, attr.line)
+
+
+def _docblock(
+    comment: Node, uses: dict[str, str], custom: frozenset[str]
+) -> tuple[list[_Spec], list[int]]:
+    text = _ts.node_text(comment)
+    first = _ts.line_of(comment)
+    specs: list[_Spec] = []
+    bad: list[int] = []
+    for offset, written, found in doc_routes(text):
+        kind, verb = _classify(php.resolve(written, uses), written, custom)
+        if kind == "skip":
+            continue
+        line = first + offset
+        if kind == "site" or found is None or (kind == "verb" and not found.has_path):
+            bad.append(line)
+        else:
+            methods = (verb,) if kind == "verb" else found.methods
+            specs.append(_Spec(compiled(found.path), methods, line))
+    verbs = doc_methods(text) if specs else []
+    if verbs is None:
+        bad.append(first)
+    elif verbs:  # Sensio `@Method`: the verbs of the routes of this docblock
+        specs = [s if s.methods else replace(s, methods=tuple(verbs)) for s in specs]
+    return specs, bad
 
 
 def _routes_of(
@@ -160,24 +215,21 @@ def _routes_of(
     specs: list[_Spec] = []
     bad: list[int] = []
     for attr in php.attributes(node, uses):
-        if _route_class(attr.fqcn):
-            spec = _read_attr(attr)
-            if spec is None:
-                bad.append(attr.line)
-            else:
-                specs.append(spec)
-        elif php.short(attr.name) in custom or attr.fqcn.startswith(_FOREIGN):
-            bad.append(attr.line)  # built on Route, or another bundle's routes
+        kind, verb = _classify(attr.fqcn, attr.name, custom)
+        if kind == "skip":
+            continue
+        spec = _read_attr(attr, verb) if kind in ("route", "verb") else None
+        if spec is None:
+            bad.append(attr.line)
+        else:
+            specs.append(spec)
     # every docblock directly above the declaration, past line comments
     doc = node.prev_named_sibling
     while doc is not None and doc.type == "comment":
         if _text(doc).startswith("/**"):
-            first = _ts.line_of(doc)
-            for offset, found in doc_routes(_ts.node_text(doc)):
-                if found is None:
-                    bad.append(first + offset)
-                else:
-                    specs.append(_Spec(found.path, found.methods, first + offset))
+            more, unreadable = _docblock(doc, uses, custom)
+            specs += more
+            bad += unreadable
         doc = doc.prev_named_sibling
     return specs, bad
 

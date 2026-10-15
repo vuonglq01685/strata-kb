@@ -925,7 +925,7 @@ class BlogController extends AbstractController
     assert rows_of(result, BLOG) == [
         ["GET", "/blog", "BlogController.index", BLOG, ""],
         ["ANY", "/blog/any", "BlogController.any", BLOG, ""],
-        ["POST", "/blog/comment/{id<\\d+>}/new", "BlogController.commentNew", BLOG, ""],
+        ["POST", "/blog/comment/{id}/new", "BlogController.commentNew", BLOG, ""],
         ["ANY", "/blog/multi", "BlogController.multi", BLOG, ""],
         ["ANY", "/blog/multi2", "BlogController.multi", BLOG, ""],
         ["GET", "/blog/posts/{slug}", "BlogController.show", BLOG, ""],
@@ -1088,6 +1088,241 @@ class CController
 """,
     )
     assert pairs(run_routes(tmp_path)) == [("PUT", "/c")]
+
+
+def test_symfony_older_skeleton_imports_are_followed(tmp_path):
+    composer(tmp_path, SYMFONY)
+    write(
+        tmp_path,
+        "config/routes.yaml",
+        """controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\\Controller
+    type: attribute
+
+kernel:
+    resource: App\\Kernel
+    type: attribute
+""",
+    )
+    write(tmp_path, "src/Kernel.php", "<?php\nnamespace App;\nclass Kernel {}\n")
+    write(
+        tmp_path,
+        "src/Controller/HomeController.php",
+        "<?php\nuse Symfony\\Component\\Routing\\Attribute\\Route;\n"
+        "class HomeController { #[Route('/', name: 'home')] public function a() {} }\n",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("ANY", "/")]
+    assert row(result).status == "complete"
+
+
+def test_symfony_routing_controllers_import_keeps_its_prefix(tmp_path):
+    composer(tmp_path, SYMFONY)
+    write(
+        tmp_path,
+        "config/routes.yaml",
+        "controllers:\n    resource: routing.controllers\n    prefix: /{_locale}\n"
+        "    defaults:\n        _locale: '%app.locale%'\n",
+    )
+    write(
+        tmp_path,
+        "src/Controller/BlogController.php",
+        "<?php\nuse Symfony\\Component\\Routing\\Attribute\\Route;\n"
+        "class BlogController { #[Route('/blog/{page<\\d+>?1}')] public function a() {} }\n",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("ANY", "/{_locale}/blog/{page}")]
+    assert row(result).status == "complete"
+
+
+def test_symfony_other_service_route_loaders_are_sites(tmp_path):
+    composer(tmp_path, SYMFONY)
+    yaml = """_security_logout:
+    resource: security.route_loader.logout
+    type: service
+custom:
+    resource: app.route_loader
+    type: service
+"""
+    write(tmp_path, "config/routes/security.yaml", yaml)
+    result = run_routes(tmp_path)
+    assert row(result).detail == f"config/routes/security.yaml:{at(yaml, 'custom:')}"
+
+
+def test_symfony_inline_requirements_and_defaults_are_not_in_the_path(tmp_path):
+    symfony(
+        tmp_path,
+        "src/Controller/LocController.php",
+        r"""<?php
+use Symfony\Component\Routing\Attribute\Route;
+
+#[Route('/{_locale<en|fr>?en}')]
+class LocController
+{
+    #[Route('/page/{page<\d{1,3}>?1}/{slug:post}/{opt?}', methods: ['GET'])]
+    public function a() {}
+
+    #[Route('/{x<a|b>}/{y<[^/]+>}')]
+    public function b() {}
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [
+        ("ANY", "/{_locale}/{x}/{y}"),
+        ("GET", "/{_locale}/page/{page}/{slug:post}/{opt}"),
+    ]
+
+
+def test_symfony_foreign_namespace_route_and_verb_attributes_are_routes(tmp_path):
+    symfony(
+        tmp_path,
+        "src/Controller/UserController.php",
+        """<?php
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+
+class UserController
+{
+    #[Rest\\Get('/users/{id}')]
+    public function a() {}
+
+    #[
+        Rest\\Post(
+            path: '/users', // create
+        )
+    ]
+    public function b() {}
+}
+""",
+    )
+    write(
+        tmp_path,
+        "src/Controller/OrderController.php",
+        """<?php
+use FOS\\RestBundle\\Controller\\Annotations\\Route;
+
+#[Route('/orders')]
+class OrderController
+{
+    #[Route('/{id}', methods: ['GET'])]
+    public function show() {}
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [
+        ("GET", "/orders/{id}"),
+        ("GET", "/users/{id}"),
+        ("POST", "/users"),
+    ]
+    assert row(result).status == "complete"
+
+
+def test_symfony_unreadable_or_unknown_verb_attributes_are_sites(tmp_path):
+    text = """<?php
+use App\\Attr\\Get;
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+
+class XController
+{
+    #[Rest\\Get]
+    public function a() {}
+
+    #[Get('/b')]
+    public function b() {}
+
+    #[Rest\\Delete(self::PATH)]
+    public function c() {}
+
+    #[Rest\\Prefix('/api')]
+    public function d() {}
+}
+"""
+    symfony(tmp_path, "src/Controller/XController.php", text)
+    result = run_routes(tmp_path)
+    assert pairs(result) == []
+    assert row(result).detail == "; ".join(
+        sorted(
+            f"src/Controller/XController.php:{at(text, n)}"
+            for n in ("#[Rest\\Get]", "#[Get(", "self::PATH", "Prefix")
+        )
+    )
+
+
+def test_symfony_documentation_attributes_named_like_verbs_are_not_routes(tmp_path):
+    symfony(
+        tmp_path,
+        "src/Controller/DocController.php",
+        """<?php
+use OpenApi\\Attributes as OA;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class DocController
+{
+    #[Route('/docs/x', methods: ['GET'])]
+    #[OA\\Get(path: '/docs/x', summary: 'Get x')]
+    #[OA\\Response(response: 200, description: 'ok')]
+    public function a() {}
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [("GET", "/docs/x")]
+    assert row(result).status == "complete"
+
+
+def test_symfony_docblock_verb_annotations_and_sensio_method(tmp_path):
+    symfony(
+        tmp_path,
+        "src/Controller/OldController.php",
+        """<?php
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+use OpenApi\\Annotations as OA;
+use Sensio\\Bundle\\FrameworkExtraBundle\\Configuration\\Method;
+use Symfony\\Component\\Routing\\Annotation\\Route;
+
+class OldController
+{
+    /**
+     * @Rest\\Get("/rest/{id}")
+     * @OA\\Get(path="/rest/{id}")
+     */
+    public function a() {}
+
+    /**
+     * @Route("/legacy/{id}", name="show")
+     * @Method({"POST", "PUT"})
+     */
+    public function b() {}
+
+    /**
+     * @Route("/one")
+     * @Method("DELETE")
+     */
+    public function c() {}
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert pairs(result) == [
+        ("DELETE", "/one"),
+        ("GET", "/rest/{id}"),
+        ("POST", "/legacy/{id}"),
+        ("PUT", "/legacy/{id}"),
+    ]
+    assert row(result).status == "complete"
+
+
+def test_symfony_test_directories_are_skipped(tmp_path):
+    symfony(
+        tmp_path,
+        "src/Test/Controller/XController.php",
+        "<?php\nuse Symfony\\Component\\Routing\\Attribute\\Route;\n"
+        "class XController { #[Route($dyn)] public function a() {} }\n",
+    )
+    assert row(run_routes(tmp_path)).status == "complete"
 
 
 def test_symfony_docblock_with_unreadable_arguments_is_a_site(tmp_path):
@@ -1287,16 +1522,12 @@ def test_typical_symfony_app_reaches_complete(tmp_path):
     write(
         tmp_path,
         "config/routes.yaml",
-        """controllers:
-    resource:
-        path: ../src/Controller/
-        namespace: App\\Controller
-    type: attribute
-
-kernel:
-    resource: App\\Kernel
-    type: attribute
-""",
+        "controllers:\n    resource: routing.controllers\n",
+    )
+    write(
+        tmp_path,
+        "config/routes/security.yaml",
+        "_security_logout:\n    resource: security.route_loader.logout\n    type: service\n",
     )
     write(
         tmp_path,
@@ -1419,15 +1650,15 @@ class SecurityController extends AbstractController
     assert row(result).detail == ""
     assert pairs(result) == sorted(
         [
-            ("GET", "/{_locale<en|fr>}/blog"),
-            ("GET", "/{_locale<en|fr>}/blog/page/{page<[1-9]\\d*>}"),
-            ("GET", "/{_locale<en|fr>}/blog/posts/{slug}"),
-            ("POST", "/{_locale<en|fr>}/blog/comment/{postSlug}/new"),
+            ("GET", "/{_locale}/blog"),
+            ("GET", "/{_locale}/blog/page/{page}"),
+            ("GET", "/{_locale}/blog/posts/{slug}"),
+            ("POST", "/{_locale}/blog/comment/{postSlug}/new"),
             ("GET", "/admin/post"),
             ("GET", "/admin/post/new"),
             ("POST", "/admin/post/new"),
-            ("GET", "/admin/post/{id<\\d+>}"),
-            ("POST", "/admin/post/{id<\\d+>}/delete"),
+            ("GET", "/admin/post/{id}"),
+            ("POST", "/admin/post/{id}/delete"),
             ("ANY", "/login"),
             ("GET", "/logout"),
         ]

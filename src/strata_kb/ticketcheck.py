@@ -1087,24 +1087,16 @@ def _field_lines(section: _Section, name: str) -> list[tuple[int, str]]:
     return out
 
 
-# A `|` not preceded by `\` — the escape-aware twin of `lintcore.table_rows`'
-# plain `.split("|")`, needed only here (see `_property`).
+# A `|` not preceded by `\` -- the same split `lintcore.table_rows` uses.
 _ESCAPED_CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 
 
 def _property(body: str, name: str) -> str | None:
     """The `Value` cell of the L2 property row named `name`, pipes unescaped.
 
-    Re-splits each raw `| Property | Value |` line itself, on
-    escape-aware `|` boundaries, instead of taking `lintcore.table_rows()`'
-    output: that helper's `line[1:-1].split("|")` is not escape-aware and
-    also splits on a `escape_cell`-escaped `\\|` *inside* the Value cell
-    (services.py's `escape_cell` backslash-escapes a literal `|` — e.g. a
-    `CMD-SHELL "... | ..."` healthcheck) — silently truncating the cell
-    before this function's own `.replace("\\|", "|")` ever runs on it.
-    `lintcore.table_rows` has 8 other call sites in `src/` (plus 1 in
-    `tests/test_lintcore.py`) and stays as is; this re-split is local to
-    the one caller here that needs escape-awareness.
+    Re-splits each raw `| Property | Value |` line itself on escape-aware
+    `|` boundaries (an `escape_cell`-escaped `\\|` inside the Value cell, e.g.
+    a `CMD-SHELL "... | ..."` healthcheck, stays in the cell).
     """
     for raw_line in body.splitlines():
         line = raw_line.strip()
