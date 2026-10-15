@@ -35,6 +35,7 @@ from strata_kb.codeingest.extractors import (
     _routes_dotnet,
     _routes_gin,
     _routes_js,
+    _routes_jsutil,
     _routes_jvm,
     _routes_php,
     _routes_python,
@@ -259,6 +260,7 @@ class RoutesExtractor:
         finally:
             _jvm_fields.clear_cache()  # source bytes read for request types
             _py_fields.clear_cache()
+            _routes_jsutil.clear_cache()
 
     def _extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         scopes = find_scopes(root, opts.kb_dir)

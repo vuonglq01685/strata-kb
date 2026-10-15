@@ -229,6 +229,32 @@ export interface Roles {
     assert [r[4] for r in table_rows(sec.l2_md)[1:]] == ["Record<?, string>", "Roles"]
 
 
+def test_request_type_lookup_reads_each_file_once_per_run(tmp_path, monkeypatch):
+    from strata_kb.codeingest.extractors import _routes_jsutil
+
+    n_types, n_filler = 25, 25
+    posts = "\n".join(
+        f"  @Post('p{i}') p{i}(@Body() dto: D{i}) {{}}" for i in range(n_types)
+    )
+    files = {
+        "src/u.controller.ts": f'@Controller("u") export class U {{\n{posts}\n}}\n'
+    }
+    for i in range(n_types):
+        files[f"src/dto/d{i}.ts"] = f"export class D{i} {{ a{i}: string }}\n"
+    for i in range(n_filler):
+        files[f"src/util/f{i}.ts"] = f"export const f{i} = {i};\n"
+    nest_app(tmp_path, "api", files=files)
+    reads = []
+    real = _routes_jsutil._read
+    monkeypatch.setattr(
+        _routes_jsutil, "_read", lambda root, rel: reads.append(rel) or real(root, rel)
+    )
+    sec = section(run_routes(tmp_path), "api/src/u.controller.ts")
+    assert "| a24 | string | yes |" in sec.l3_md
+    # one pass over the TS files + the parse of each declaring file: not types x files
+    assert len(reads) <= 3 * (n_types + n_filler + 2), len(reads)
+
+
 # --- Express ----------------------------------------------------------------
 
 

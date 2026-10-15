@@ -254,18 +254,36 @@ def _unwrap_type(name: str) -> tuple[str, bool | None]:
             return name, forced
 
 
+_DECL_RE = re.compile(rb"\b(?:class|interface)\s+([\w$]+)")
+# {type name: TS files declaring it} for the run in progress. `routes.py`
+# passes the same `files` list to every call of a run, so list identity scopes
+# it; one regex pass replaces a scan of every file per request type.
+_declarations: tuple[list[str], dict[bytes, list[str]]] | None = None
+
+
+def clear_cache() -> None:
+    """Drop the run's declaration index (`routes.py` calls this when a run ends)."""
+    global _declarations
+    _declarations = None
+
+
+def _declaring_files(root: Path, files: list[str], type_name: str) -> list[str]:
+    global _declarations
+    if _declarations is None or _declarations[0] is not files:
+        index: dict[bytes, list[str]] = {}
+        for rel in files:
+            if _ts.language_for(rel) in _TS_LANGS:
+                data = _read(root, rel)
+                for name in set(_DECL_RE.findall(data or b"")):
+                    index.setdefault(name, []).append(rel)
+        _declarations = (files, index)
+    return list(_declarations[1].get(type_name.encode(), []))
+
+
 def _declared_fields(
     root: Path, files: list[str], type_name: str, near: str
 ) -> list[Field] | None:
-    pattern = re.compile(
-        rb"\b(?:class|interface)\s+" + re.escape(type_name.encode()) + rb"\b"
-    )
-    candidates = []
-    for rel in files:
-        if _ts.language_for(rel) in _TS_LANGS:
-            data = _read(root, rel)
-            if data is not None and pattern.search(data):
-                candidates.append(rel)
+    candidates = _declaring_files(root, files, type_name)
     candidates.sort(key=lambda rel: (rel != near, -_common_dirs(rel, near), rel))
     for rel in candidates:
         data = _read(root, rel)
