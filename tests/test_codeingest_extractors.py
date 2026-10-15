@@ -5000,7 +5000,7 @@ migrationBuilder.CreateIndex(
             "CREATE TABLE t (a INT);\n"
             "ALTER TABLE t OWNER TO app;\n"
             "ALTER TABLE ONLY t ENABLE ROW LEVEL SECURITY;\n"
-            "ALTER TABLE t ALTER COLUMN a SET DEFAULT 1;\n"
+            "ALTER TABLE t ALTER COLUMN a SET STATISTICS 100;\n"
             "ALTER TABLE t SET (fillfactor = 70);\n"
             "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES o (id);\n",
         )
@@ -5171,6 +5171,153 @@ migrationBuilder.CreateIndex(
         status, detail = self._schema_rows(self._run(tmp_path))[(".", "ef")]
         assert status == "partial"
         assert detail == "Data/Migrations/Snap.cs:1"
+
+    # ---- fix round 3: statements, execute(), order safety, schemas ----
+
+    def test_alembic_execute_calls_are_sites(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            '    op.execute("CREATE INDEX ix ON t (a)")\n'
+            "    conn = op.get_bind()\n"
+            "    conn.execute(sa.text('SELECT 1'))\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "alembic")]
+        assert status == "partial"
+        assert detail == "alembic/versions/0001.py:3; alembic/versions/0001.py:5"
+
+    def test_tsql_go_batches_split_statements(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT)\nGO\nCREATE INDEX i ON t (a)\nGO\n",
+        )
+        result = self._run(tmp_path)
+        assert "- i (a)" in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_ddl_left_inside_a_statement_span_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "CREATE INDEX i ON t (a)\nALTER TABLE t DROP COLUMN a\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/001.sql:2" in detail
+
+    def test_do_block_and_unknown_heads_are_sites(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "DO $$ BEGIN ALTER TABLE t ADD COLUMN b INT; END $$;\n"
+            "RENAME TABLE t TO u;\n"
+            "MERGE INTO t USING s ON 1=1 WHEN MATCHED THEN DELETE;\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/001.sql:2" in detail and "migrations/001.sql:3" in detail
+        assert "migrations/001.sql:4" in detail
+
+    def test_fact_neutral_statements_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "SET search_path = public;\nBEGIN;\nCREATE TABLE t (a INT);\n"
+            "INSERT INTO t VALUES (1);\nUPDATE t SET a = 2;\nGRANT SELECT ON t TO r;\n"
+            "COMMENT ON TABLE t IS 'x';\nCREATE OR REPLACE VIEW v AS SELECT 1;\n"
+            "CREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE SEQUENCE s;\nCOMMIT;\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")][0] == "complete"
+
+    def test_set_default_and_compression_change_a_shown_fact(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT DEFAULT 1);\n"
+            "ALTER TABLE t ALTER COLUMN a SET DEFAULT 2;\n"
+            "ALTER TABLE t ALTER COLUMN a SET COMPRESSION lz4;\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:2; migrations/001.sql:3",
+        )
+
+    def test_alembic_multidb_upgrade_and_helpers_are_read_downgrade_is_not(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade(engine_name):\n"
+            "    globals()['upgrade_%s' % engine_name]()\n\n\n"
+            "def upgrade_engine1():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    _idx()\n\n\n"
+            "def _idx():\n"
+            "    op.create_index('ix_up', 't', ['a'])\n\n\n"
+            "def downgrade_engine1():\n"
+            "    op.create_index('ix_down', 't', ['a'])\n",
+        )
+        md = _by_id(self._run(tmp_path))["db.t"].l2_md
+        assert "- ix_up (a)" in md and "ix_down" not in md
+
+    def test_alembic_drop_constraint_from_another_file_is_a_site_not_a_removal(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.create_unique_constraint('uq_t_a', 't', ['a'])\n",
+        )
+        self._write(
+            tmp_path,
+            "alembic/versions/0002.py",
+            "def upgrade():\n"
+            "    op.drop_constraint('uq_t_a', 't', type_='unique')\n"
+            "    op.drop_constraint('t_pkey', 't', type_='primary')\n",
+        )
+        result = self._run(tmp_path)
+        assert "uq_t_a" in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "alembic")] == (
+            "partial",
+            "alembic/versions/0002.py:2; alembic/versions/0002.py:3",
+        )
+
+    def test_drop_table_of_a_partition_child_removes_it_from_the_parent(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT) PARTITION BY RANGE (id);\n"
+            "CREATE TABLE ev_1 PARTITION OF ev FOR VALUES FROM (1) TO (2);\n"
+            "CREATE TABLE ev_2 PARTITION OF ev FOR VALUES FROM (2) TO (3);\n"
+            "DROP TABLE ev_1;\n",
+        )
+        result = self._run(tmp_path)
+        assert "Partitions: ev_2" in _by_id(result)["db.ev"].l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_schema_qualified_ddl_does_not_hit_another_schemas_table(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\n"
+            "ALTER TABLE audit.t ADD COLUMN x INT;\n"
+            "DROP INDEX audit.i;\n"
+            "DROP TABLE audit.t;\n"
+            "ALTER TABLE public.t ADD COLUMN y INT;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "2 columns" in sec.summary  # a, y — not x
+        assert "- i (a)" in sec.l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "partial"
 
 
 class TestIntegrationsExtractor:

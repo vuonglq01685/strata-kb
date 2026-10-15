@@ -17,70 +17,20 @@ OF` children), `DROP TABLE`, `CREATE [UNIQUE|FULLTEXT|SPATIAL] INDEX`,
 (cols)`, MySQL `ADD [UNIQUE|FULLTEXT|SPATIAL] INDEX|KEY`, and `ATTACH|DETACH
 PARTITION`. Keys and indexes are recorded as such, never as columns.
 
-**Nothing is dropped silently.** The default is inverted: a statement of a
-handled kind (CREATE TABLE, ALTER TABLE|INDEX, CREATE ... INDEX, DROP
-INDEX|TABLE) that no handler fully applies, and any ALTER action that is not
-applied or listed in `_SILENT_ALTER_ACTIONS_RE` (actions that cannot change a
-shown fact: `OWNER TO`, storage parameters, triggers/RLS, `ALTER COLUMN ... SET
-DEFAULT`/`STATISTICS`) is a *site*: `file:line` on the table it names
+**Nothing is dropped silently.** The default is inverted. A file is split into
+statements on `;` and on `GO` lines (`$$ ... $$` bodies stay inside one). A
+statement is applied, fact-neutral (`_NEUTRAL_HEAD_RE`: INSERT, GRANT,
+`CREATE VIEW|FUNCTION|SEQUENCE|...`, ...), or a *site*: an unknown head
+(`DO`, `RENAME TABLE`, `MERGE`, ...), a handled kind no handler fully applies,
+a second statement left in the span for want of a separator, and any ALTER
+action that is not applied or listed in `_SILENT_ALTER_ACTIONS_RE` (actions
+that cannot change a shown fact: `OWNER TO`, storage parameters,
+triggers/RLS, `SET STATISTICS`; `SET DEFAULT` is not among them — the Type
+cell shows defaults). A site lands as `file:line` on the table it names
 (`TableRecord.schema_partial`) or, when no table can be named, on the
-reader's `_Warnings.sites`. The `schema` coverage row for that (scope, reader)
-reads `partial`. `FOREIGN KEY`/`CHECK` constraints only warn. This is a deliberate, narrow slice: the emitted `db.<table>`
-sections are meant to be *ground truth* — every column shown is one this
-code actually saw declared, never one it inferred — so a Dev agent reading
-this document can trust it completely, at the cost of not describing every
-DDL dialect in existence. SQL comments (`-- ...` and possibly-nested
-`/* ... */`) are stripped from migration text before any of this parsing
-runs, and a top-level entry is only ever treated as a table constraint
-(dropped from the column list) when it starts with one of those keywords
-at a real word boundary — a column literally named `unique_code` or
-`constraint_name` is still a column.
-
-**Quoting, and the dual-scan disagreement guard.**
-Comment-stripping and column-splitting both run every quote/backtick/
-bracket span through the shared `_scan_sql` scanner (below). Standard SQL
-(SQLite, Postgres with `standard_conforming_strings=on` — the default
-since 9.1 — MSSQL, Oracle) treats `\\` inside a `'`/`"` literal as an
-ordinary character; MySQL treats it as an escape. No single tracker can
-be correct for both at once, so `_scan_sql` takes a `backslash_escapes`
-flag and `_resolve_scan` runs it *twice* per file/body, once each way,
-and picks a reading by this order: if exactly one reading is clean (does
-not run off the end of the text still inside an open quote/bracket/
-comment — a *desync*), use it, no warning; if both are clean and agree,
-use it, no warning; if both are clean but disagree, the dialect is
-genuinely ambiguous from this text alone — warn, naming the file, and
-take the backslash-as-literal (standard SQL) reading, since that is every
-engine in this set except MySQL; if both desync, warn and fall back to a
-quote-blind split. A guard that only asks "did a span run off the
-end?" cannot distinguish MySQL's `'it\'s'` (needs the escape
-reading) from standard SQL's `'\'` followed by an ordinary English
-contrastive apostrophe in a later comment (needs the literal reading,
-and *looks* clean to the escape reading too — just wrong) — hence the
-disagreement check. Separately, a bracket span additionally aborts as a
-desync if its content ever contains a `)` with no matching `(` inside
-that same span: a real `[...]`-quoted identifier or Postgres array
-suffix never contains an unbalanced paren, so this is reserved for the
-case where a bare `[` in an expression (not a real identifier quote) was
-about to swallow everything up to some unrelated, later `]`. Ground truth
-that occasionally warns instead of answering is still ground truth;
-ground truth that silently drops or fabricates a column is not.
-
-**The `--db` detection gap is closed in `core.run()`, not here.**
-`SchemaExtractor.detect(root)` has no way to see
-`opts.db_paths` (the `Extractor` protocol never passes `opts` to
-`detect()`), so on a repo with *no* migration/prisma/alembic/EF source,
-`detect()` returns `False`, `core.run()` skips calling `extract()`
-entirely, and an explicit `--db` path is silently never read.
-`core.run()` closes this by treating `schema` as detected whenever
-`opts.db_paths` is non-empty. Nothing here works around it — a caller
-that wants `--db`-only ingestion to work must go through `core.run()`,
-not this module.
-
-**`SchemaExtractor.detect(self, root)` cannot see `opts.kb_dir`** — same
-structural exception `deps.py` and `commands.py` document: the `Extractor`
-protocol's `detect()` is never passed `opts`, so this is the one walk in
-this module that calls the glob helper without a `kb_dir` to prune. Every
-walk inside `extract()` does thread `opts.kb_dir` through.
+reader's `_Warnings.sites`. The `schema` coverage row for that (scope,
+reader) reads `partial`. `FOREIGN KEY`/`CHECK` constraints only warn. A
+schema-qualified name never resolves to a table kept under another schema.
 
 **Coverage is never falsely `complete`.** Every warning a reader emits that
 names a file (an unparsed file, a comment-strip desync, an unrecognised
@@ -886,8 +836,10 @@ _PARTITION_MOVE_RE = re.compile(
     rf"(?P<op>ATTACH|DETACH)\s+PARTITION\s+{_QIDENT.format('child')}", re.I
 )
 # ALTER actions that cannot change a fact shown in a `db.*` section (a
-# column, the primary key, an index, the partition clause, a partition
-# child). Everything else this reader does not apply is a coverage site.
+# column and its default, the primary key, an index, the partition clause,
+# a partition child). Everything else this reader does not apply is a
+# coverage site — `SET DEFAULT`/`SET COMPRESSION` included: the Type cell
+# shows defaults.
 _SILENT_ALTER_ACTIONS_RE = re.compile(
     r"(?:OWNER\s+TO"
     r"|(?:SET|RESET)\s*\("
@@ -896,7 +848,7 @@ _SILENT_ALTER_ACTIONS_RE = re.compile(
     r"|(?:FORCE|NO\s+FORCE)\s+ROW\s+LEVEL\s+SECURITY"
     r"|CLUSTER\s+ON"
     r"|REPLICA\s+IDENTITY"
-    rf"|ALTER\s+(?:COLUMN\s+)?{_Q}\s+(?:SET\s+(?:DEFAULT|STATISTICS|STORAGE|COMPRESSION)"
+    rf"|ALTER\s+(?:COLUMN\s+)?{_Q}\s+(?:SET\s+(?:STATISTICS|STORAGE)"
     r"|SET\s*\(|RESET\s*\())\b",
     re.I,
 )
@@ -919,14 +871,41 @@ def _bare(raw: str) -> str:
     return _norm_name(raw).rsplit(".", 1)[-1]
 
 
+_DEFAULT_SCHEMAS = frozenset({"", "public", "dbo", "main"})
+
+
+def _schema_of(name: str) -> str:
+    """The schema qualifier of a normalised name (`audit.t` -> `audit`)."""
+    parts = name.casefold().split(".")
+    return parts[-2] if len(parts) >= 2 else ""
+
+
+def _schema_ok(stmt_schema: str, record_schema: str) -> bool:
+    """May a statement qualified `stmt_schema` apply to a table kept under
+    `record_schema`? An unqualified statement may (the search path is
+    unknown); a qualified one only to the same schema, or between default
+    schemas (`public.t` vs a bare `CREATE TABLE t`)."""
+    stmt_schema, record_schema = stmt_schema.casefold(), record_schema.casefold()
+    return (
+        not stmt_schema
+        or stmt_schema == record_schema
+        or (stmt_schema in _DEFAULT_SCHEMAS and record_schema in _DEFAULT_SCHEMAS)
+    )
+
+
 def _find_table(tables: dict[str, TableRecord], raw: str) -> TableRecord | None:
     """A table by the name as written, else by its bare name when exactly
-    one table has it (`ON t` vs `CREATE TABLE public.t`)."""
+    one table has it in a compatible schema (`ON t` vs `CREATE TABLE
+    public.t`) — `audit.t` never resolves to a `t` kept under `public`."""
     name = _norm_name(raw)
     if name in tables:
         return tables[name]
-    bare = name.rsplit(".", 1)[-1]
-    same = [r for k, r in tables.items() if k.rsplit(".", 1)[-1] == bare]
+    bare, schema = name.rsplit(".", 1)[-1], _schema_of(name)
+    same = [
+        r
+        for k, r in tables.items()
+        if k.rsplit(".", 1)[-1] == bare and _schema_ok(schema, _schema_of(k))
+    ]
     return same[0] if len(same) == 1 else None
 
 
@@ -1056,12 +1035,14 @@ def _apply_drop_index(
     only = _find_table(tables, m.group("table")) if m.group("table") else None
     unknown = False
     for raw in m.group("names").split(","):
-        dropped = _bare(raw)
+        dropped, schema = _bare(raw), _schema_of(_norm_name(raw))
         hit = False
         for record in tables.values():
             if _dirname(record.created_in) != _dirname(rel):
                 continue
             if only is not None and record is not only:
+                continue
+            if not _schema_ok(schema, _schema_of(record.name)):
                 continue
             kept = [ix for ix in record.indexes if ix[0] != dropped]
             hit = hit or len(kept) != len(record.indexes)
@@ -1082,6 +1063,10 @@ def _apply_drop_table(
         _unrecognised(warnings, rel, line, "DROP TABLE")
         return
     for raw in m.group("names").split(","):
+        child = _bare(raw)
+        for parent in tables.values():  # a dropped partition leaves its parent
+            if _dirname(parent.created_in) == _dirname(rel):
+                parent.partitions = [c for c in parent.partitions if _bare(c) != child]
         record = _find_table(tables, raw)
         if record is None:
             continue
@@ -1195,9 +1180,12 @@ def _apply_alter_index(
     m = _ALTER_INDEX_RENAME_RE.match(stmt)
     if m:
         old, new = _bare(m.group("old")), _bare(m.group("new"))
+        schema = _schema_of(_norm_name(m.group("old")))
         found = False
         for record in tables.values():
             if _dirname(record.created_in) != _dirname(rel):
+                continue
+            if not _schema_ok(schema, _schema_of(record.name)):
                 continue
             for i, (name, cols, unique) in enumerate(record.indexes):
                 if name == old:
@@ -1344,36 +1332,73 @@ def _apply_create_table(
     )
 
 
+_STATEMENT_SEP_RE = re.compile(r";|^[ \t]*GO[ \t]*$", re.I | re.M)
+_DOLLAR_QUOTED_RE = re.compile(r"\$(?P<tag>\w*)\$.*?\$(?P=tag)\$", re.S)
+# DDL that starts a new statement. Found inside one `;`-span after its head,
+# a separator is missing and the second statement would be lost.
+_NEW_STATEMENT_RE = re.compile(
+    r"\b(?:CREATE\s|ALTER\s+(?:TABLE|INDEX)\b|RENAME\s+TABLE\b|"
+    r"DROP\s+(?:TABLE|INDEX|VIEW|SCHEMA|SEQUENCE|TYPE|FUNCTION|TRIGGER)\b)",
+    re.I,
+)
+# Statement heads that cannot change a shown fact (a table's columns,
+# primary key, indexes, partitions). Any other head is a coverage site.
+_NEUTRAL_HEAD_RE = re.compile(
+    r"(?:INSERT|UPDATE|DELETE|SELECT|SET|BEGIN|COMMIT|ROLLBACK|END|TRUNCATE"
+    r"|START\s+TRANSACTION|GRANT|REVOKE|COMMENT\s+ON|USE|PRAGMA|ANALYZE|VACUUM|LOCK"
+    r"|CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:TEMP|TEMPORARY|MATERIALIZED|RECURSIVE)\s+)*"
+    r"(?:VIEW|FUNCTION|PROCEDURE|TRIGGER|TYPE|EXTENSION|SEQUENCE|SCHEMA|ROLE|USER"
+    r"|POLICY|RULE|DOMAIN|AGGREGATE|COLLATION|OPERATOR|CAST|PUBLICATION"
+    r"|SUBSCRIPTION|DATABASE|TABLESPACE|EVENT|STATISTICS)"
+    r"|ALTER\s+(?:MATERIALIZED\s+)?(?:SEQUENCE|SCHEMA|TYPE|VIEW|FUNCTION|PROCEDURE"
+    r"|TRIGGER|EXTENSION|ROLE|USER|POLICY|RULE|DOMAIN|DEFAULT\s+PRIVILEGES|DATABASE"
+    r"|SYSTEM|TABLESPACE|PUBLICATION|SUBSCRIPTION|COLLATION|AGGREGATE|OPERATOR"
+    r"|STATISTICS)"
+    r"|DROP\s+(?:MATERIALIZED\s+)?(?:VIEW|FUNCTION|PROCEDURE|TRIGGER|TYPE|SEQUENCE"
+    r"|SCHEMA|EXTENSION|ROLE|USER|POLICY|RULE|DOMAIN|AGGREGATE|DATABASE|TABLESPACE"
+    r"|PUBLICATION|SUBSCRIPTION))\b",
+    re.I,
+)
+_RENAME_TABLE_RE = re.compile(rf"RENAME\s+TABLE\s+{_QIDENT.format('name')}", re.I)
+
+
 def _statement_spans(masked: str) -> list[tuple[int, int]]:
-    """`(start, end)` of each non-empty `;`-separated statement (`end`
-    excludes the `;`). `masked` has quoted text blanked, so a `;` inside
-    a literal never splits."""
+    """`(start, end)` of each non-empty statement, split on `;` and on a
+    line that is just `GO` (T-SQL). `masked` has quoted text blanked, so a
+    separator inside a literal never splits."""
     spans = []
     pos = 0
-    while pos < len(masked):
-        semi = masked.find(";", pos)
-        end = len(masked) if semi == -1 else semi
-        start = pos + (len(masked[pos:end]) - len(masked[pos:end].lstrip()))
+    for sep in [*_STATEMENT_SEP_RE.finditer(masked), None]:
+        end = len(masked) if sep is None else sep.start()
+        chunk = masked[pos:end]
+        start = pos + (len(chunk) - len(chunk.lstrip()))
         if start < end:
             spans.append((start, end))
-        pos = end + 1
+        if sep is not None:
+            pos = sep.end()
     return spans
+
+
+def _mask_dollar_quoted(masked: str) -> str:
+    """Blank `$$ ... $$` bodies (function and `DO` bodies): their `;` must
+    not split a statement, and DDL inside is not a migration step."""
+    return _DOLLAR_QUOTED_RE.sub(lambda m: re.sub(r"[^\n]", "\0", m.group(0)), masked)
 
 
 def _apply_sql_file(
     text: str, rel: str, tables: dict[str, TableRecord], warnings: list[str]
 ) -> None:
     """Replay one migration file, statement by statement in file order.
-    Every statement of a kind this reader handles — CREATE TABLE, ALTER
-    TABLE|INDEX, CREATE ... INDEX, DROP INDEX|TABLE — ends applied or as a
-    coverage site (`_unrecognised`, `_site_for`): there is no silent
-    fall-through."""
+    Every statement is applied, fact-neutral (`_NEUTRAL_HEAD_RE`), or a
+    coverage site (`_unrecognised`, `_site_for`) — an unknown head, a
+    handled kind no handler fully applies, or a second statement left
+    inside the span for lack of a `;`/`GO`. There is no silent fall-through."""
     text = _strip_sql_comments(text, rel, warnings)
     # Same length as `text`, quoted spans replaced with filler — used only
     # to find structure (closing parens, statement ends) without a
     # literal's own `(`, `)`, or `;` throwing it off. `text` itself
     # (unmasked) is what names and column text are sliced from.
-    masked = _mask_quoted_spans(text)
+    masked = _mask_dollar_quoted(_mask_quoted_spans(text))
     create_at = {m.start(): m for m in CREATE_RE.finditer(text)}
     partition_of_at = {m.start(): m for m in _PARTITION_OF_RE.finditer(text)}
 
@@ -1381,7 +1406,7 @@ def _apply_sql_file(
         head = masked[start:end]
         stmt = text[start:end]
         line = _line_of(text, start)
-        if _CREATE_TABLE_HEAD_RE.match(head):
+        if hm := _CREATE_TABLE_HEAD_RE.match(head):
             if start in create_at:
                 _apply_create_table(
                     create_at[start], text, masked, rel, tables, warnings
@@ -1390,20 +1415,36 @@ def _apply_sql_file(
                 _apply_partition_of(partition_of_at[start], line, rel, tables, warnings)
             else:
                 _unrecognised(warnings, rel, line, "CREATE TABLE")
-        elif _CREATE_INDEX_HEAD_RE.match(head):
+        elif hm := _CREATE_INDEX_HEAD_RE.match(head):
             m = CREATE_INDEX_RE.match(text, start, end)
             if m:
                 _apply_create_index(m, text, masked, rel, tables, warnings)
             else:
                 _unrecognised(warnings, rel, line, "CREATE INDEX")
-        elif _ALTER_TABLE_HEAD_RE.match(head):
+        elif hm := _ALTER_TABLE_HEAD_RE.match(head):
             _apply_alter(stmt, rel, line, tables, warnings)
-        elif _ALTER_INDEX_HEAD_RE.match(head):
+        elif hm := _ALTER_INDEX_HEAD_RE.match(head):
             _apply_alter_index(stmt, rel, line, tables, warnings)
-        elif _DROP_INDEX_HEAD_RE.match(head):
+        elif hm := _DROP_INDEX_HEAD_RE.match(head):
             _apply_drop_index(stmt, rel, line, tables, warnings)
-        elif _DROP_TABLE_HEAD_RE.match(head):
+        elif hm := _DROP_TABLE_HEAD_RE.match(head):
             _apply_drop_table(stmt, rel, line, tables, warnings)
+        elif _NEUTRAL_HEAD_RE.match(head):
+            continue
+        else:
+            rename = _RENAME_TABLE_RE.match(head)
+            word = re.match(r"[A-Za-z]+", head)
+            _unrecognised(warnings, rel, line, word.group(0).upper() if word else "?")
+            if rename:
+                _site_for(tables, _norm_name(rename.group("name")), rel, line, warnings)
+            continue
+        if _NEW_STATEMENT_RE.search(head, hm.end()):
+            _unrecognised(
+                warnings,
+                rel,
+                line,
+                "statement (a `;` or GO is missing before the next one)",
+            )
 
 
 def _read_sql(
@@ -1612,6 +1653,8 @@ ALEMBIC_OP_RE = re.compile(
     r"alter_column|rename_table|drop_table)\("
 )
 ALEMBIC_BATCH_RE = re.compile(r"with\s+op\.batch_alter_table\(")
+# Raw SQL (`op.execute("CREATE INDEX ..")`, `conn.execute(..)`) is not read.
+ALEMBIC_EXECUTE_RE = re.compile(r"\.execute\(")
 _ALEMBIC_DEF_RE = re.compile(r"^def\s+(\w+)\s*\(", re.M)
 # positional parameters: (as `op.<fn>`, as `<batch alias>.<fn>`)
 _ALEMBIC_PARAMS = {
@@ -1646,21 +1689,21 @@ def _string_literals(text: str) -> list[str]:
 
 
 def _upgrade_only(text: str) -> str:
-    """`text` with everything but the body of `def upgrade(` blanked (same
-    offsets and line breaks): a `downgrade()` re-creates and drops what
-    `upgrade()` did, and must not be read as schema. A file with no
-    `def upgrade(` is read whole."""
+    """`text` with the bodies of `def downgrade*(` blanked (same offsets
+    and line breaks): a downgrade re-creates and drops what the upgrade
+    did, and must not be read as schema. `upgrade()`, multidb
+    `upgrade_<engine>()` and the helpers they call all stay."""
     defs = list(_ALEMBIC_DEF_RE.finditer(text))
-    idx = next((i for i, d in enumerate(defs) if d.group(1) == "upgrade"), None)
-    if idx is None:
-        return text
-    start = defs[idx].start()
-    end = defs[idx + 1].start() if idx + 1 < len(defs) else len(text)
-
-    def blank(chunk: str) -> str:
-        return re.sub(r"[^\n]", " ", chunk)
-
-    return blank(text[:start]) + text[start:end] + blank(text[end:])
+    out, pos = [], 0
+    for i, d in enumerate(defs):
+        if not d.group(1).startswith("downgrade"):
+            continue
+        end = defs[i + 1].start() if i + 1 < len(defs) else len(text)
+        out.append(text[pos : d.start()])
+        out.append(re.sub(r"[^\n]", " ", text[d.start() : end]))
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def _alembic_pk(names: list[str]) -> str:
@@ -1808,6 +1851,10 @@ def _apply_alembic_ops(
         elif isinstance(warnings, _Warnings):
             warnings.sites.append((rel, _site(rel, line)))
 
+    for m in ALEMBIC_EXECUTE_RE.finditer(text):
+        line = _line_of(text, m.start())
+        _warn(warnings, rel, f"raw SQL execute() at {rel}:{line} is not read", line)
+    created: set[tuple[str, str]] = set()  # made earlier in THIS file
     for m in ALEMBIC_OP_RE.finditer(text):
         recv, fn = m.group("recv"), m.group("fn")
         line = _line_of(text, m.start())
@@ -1853,22 +1900,29 @@ def _apply_alembic_ops(
                 ", ".join(cols),
                 a.get("unique", "").replace(" ", "") == "True",
             )
+            created.add((table, name))
         elif fn == "create_unique_constraint":
             _add_index(record, name, ", ".join(cols), True)
+            created.add((table, name))
         elif fn == "create_primary_key":
+            created.add((table, ""))
             pk = _alembic_pk(cols)
             if not record.pk:
                 record.pk = pk
             elif _pk_columns(record.pk) != _pk_columns(pk):
                 site(record, line)
         elif fn == "drop_constraint":
+            # Files do not sort in migration order, so only a constraint
+            # created earlier in this same file can be removed for certain.
             kind = (_string_literals(a.get("type_", "")) or [""])[0]
-            known = [ix for ix in record.indexes if ix[0] == name]
             if kind in ("foreignkey", "check"):
                 continue  # moves no shown fact
             if kind == "primary":
-                record.pk = ""
-            elif known:
+                if (table, "") in created:
+                    record.pk = ""
+                else:
+                    site(record, line)
+            elif (table, name) in created:
                 record.indexes = [ix for ix in record.indexes if ix[0] != name]
             else:
                 site(record, line)
