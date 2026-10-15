@@ -541,3 +541,164 @@ def test_nest_bare_controller_and_scope_file_attribution(tmp_path):
         ["HEAD", "/:x"],
     ]
     assert coverage(result, "routes", "api") == "complete"
+
+
+# --- review round 1: nothing recognised may vanish under `complete` ----------
+
+
+def all_routes(result):
+    return sorted(
+        (r[0], r[1]) for s in result.sections for r in table_rows(s.l2_md)[1:]
+    )
+
+
+def test_dirs_named_test_are_not_skipped_but_suffixes_are(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/test/test.controller.ts": '@Controller("t") class T { @Get() a() {} }',
+            "src/e2e/e2e.controller.ts": '@Controller("e") class E { @Get() a() {} }',
+            "src/x.spec.ts": '@Controller("s") class S { @Get() a() {} }',
+            "src/__tests__/y.ts": '@Controller("y") class Y { @Get() a() {} }',
+        },
+    )
+    package(tmp_path, "web", "next")
+    write(tmp_path, "web/app/api/test/route.ts", "export function GET() {}\n")
+    write(tmp_path, "web/pages/api/test/ping.ts", "export default function h() {}\n")
+    package(tmp_path, "nx", "nuxt")
+    write(tmp_path, "nx/server/api/tests/run.post.ts", "export default 1\n")
+    result = run_routes(tmp_path)
+    assert all_routes(result) == [
+        ("ANY", "/api/test/ping"),
+        ("GET", "/api/test"),
+        ("GET", "/e"),
+        ("GET", "/t"),
+        ("POST", "/api/tests/run"),
+    ]
+
+
+def test_express_route_chain_on_untracked_receiver_is_a_site(tmp_path):
+    package(tmp_path, ".", "express")
+    write(
+        tmp_path,
+        "r.js",
+        'module.exports = (router) => {\n  router.route("/users").get(list).post(create);\n};\n',
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", ".") == "partial"
+    assert "r.js:2" in detail(result, ".")
+
+
+def test_express_new_router_is_tracked(tmp_path):
+    package(tmp_path, ".", "express")
+    write(
+        tmp_path,
+        "app.js",
+        'const express = require("express");\nconst app = express();\n'
+        'const r = new express.Router();\nr.get("/a", h);\napp.use("/p", r);\n'
+        'const q = new Router();\nq.get("/b", h);\napp.use("/q", q);\n',
+    )
+    result = run_routes(tmp_path)
+    assert coverage(result, "routes", ".") == "complete"
+    assert all_routes(result) == [("GET", "/p/a"), ("GET", "/q/b")]
+
+
+def test_express_unbound_verb_call_with_non_slash_literal_is_a_site(tmp_path):
+    package(tmp_path, ".", "express")
+    write(
+        tmp_path,
+        "a.js",
+        "module.exports = (router) => {\n  router.get(':id', h);\n  router.all('*', h);\n};\n",
+    )
+    result = run_routes(tmp_path)
+    assert detail(result, ".").split("; ") == ["a.js:2", "a.js:3"]
+
+
+def test_express_computed_verb_on_tracked_receiver_is_a_site(tmp_path):
+    package(tmp_path, ".", "express")
+    write(
+        tmp_path,
+        "a.js",
+        'const app = require("express")();\nconst m = "get";\napp[m]("/x", h);\n',
+    )
+    result = run_routes(tmp_path)
+    assert detail(result, ".") == "a.js:3"
+
+
+def test_nest_verb_calls_namespace_and_aliased_imports_are_sites(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/a.ts": (
+                "import { applyDecorators, Get } from '@nestjs/common';\n"
+                "export const Auth = () => applyDecorators(Get('all'), HttpCode(200));\n"
+            ),
+            "src/b.ts": (
+                "import * as common from '@nestjs/common';\n"
+                "@common.Controller('b') class B {\n  @common.Get('x') x() {}\n}\n"
+            ),
+            "src/c.ts": (
+                "import { Controller, Get as HttpGet } from '@nestjs/common';\n"
+                "@Controller('c') class C {\n  @HttpGet('y') y() {}\n}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert detail(result, "api") == "api/src/a.ts:2"
+    # namespace and aliased decorator imports resolve to real routes
+    assert all_routes(result) == [("GET", "/b/x"), ("GET", "/c/y")]
+
+
+def test_nest_router_module_for_routes_is_a_site(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/m.ts": "RouterModule.forRoutes([{ path: 'a', module: A }]);\n"
+            "RouterModule.register([{ path: 'b', module: B }]);\n"
+        },
+    )
+    assert detail(run_routes(tmp_path), "api").split("; ") == [
+        "api/src/m.ts:1",
+        "api/src/m.ts:2",
+    ]
+
+
+def test_nuxt_config_options_that_move_routes_are_sites(tmp_path):
+    package(tmp_path, ".", "nuxt")
+    write(tmp_path, "server/api/a.ts", "export default 1\n")
+    write(
+        tmp_path,
+        "nuxt.config.ts",
+        "export default defineNuxtConfig({\n  srcDir: 'src/',\n  app: { baseURL: '/x' },\n  runtimeConfig: { public: { apiBaseURL: '/y' } },\n  serverHandlers: [],\n})\n",
+    )
+    assert detail(run_routes(tmp_path), ".").split("; ") == [
+        "nuxt.config.ts:2",
+        "nuxt.config.ts:3",
+        "nuxt.config.ts:4",
+        "nuxt.config.ts:5",
+    ]
+
+
+def test_request_type_wrappers_are_unwrapped_for_field_lookup(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/d.controller.ts": (
+                '@Controller("d") class D {\n  @Post() a(@Body() x: CreateDto[]) {}\n'
+                "  @Put() b(@Body() x: Partial<CreateDto>) {}\n}\n"
+                "class CreateDto { name!: string }\n"
+            )
+        },
+    )
+    sec = section(run_routes(tmp_path), "api/src/d.controller.ts")
+    assert [r[4] for r in table_rows(sec.l2_md)[1:]] == [
+        "CreateDto[]",
+        "Partial<CreateDto>",
+    ]
+    assert sec.l3_md.count("| name | string | yes |") == 1  # CreateDto[]
+    assert sec.l3_md.count("| name | string | no |") == 1  # Partial<...>
+    assert "outside the repo" not in sec.l3_md

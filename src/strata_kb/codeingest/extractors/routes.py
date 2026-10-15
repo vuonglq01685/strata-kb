@@ -212,6 +212,8 @@ class RoutesExtractor:
                 )
                 continue
             found.update(result.routes)
+            # "; " separates sites in the coverage detail, so a file name
+            # containing it must not leak through (lossy by one space).
             sites = sorted({s.replace("; ", ";") for s in result.dynamic_sites})
             coverage.append(
                 CoverageRow(

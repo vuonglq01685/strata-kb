@@ -24,8 +24,10 @@ _JS_LANGS = frozenset({"javascript", "typescript", "tsx"})
 _TS_LANGS = frozenset({"typescript", "tsx"})
 _EXTS = (".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx")
 _CLASS_TYPES = ("class_declaration", "abstract_class_declaration")
+# Only unambiguous test markers: a directory named `test` / `e2e` can hold
+# product routes (`app/api/test/route.ts`), so those are never skipped.
 _TEST_RE = re.compile(
-    r"(?:^|/)(?:__tests__|__mocks__|tests?|e2e)/|\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$"
+    r"(?:^|/)(?:__tests__|__mocks__)/|\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$"
 )
 _SCRIPT_EXT_RE = re.compile(r"\.[cm]?[jt]sx?$")
 
@@ -57,13 +59,15 @@ def _site(rel: str, node: Node) -> str:
     return f"{rel}:{_ts.line_of(node)}"
 
 
-def _source_files(files: list[str]) -> list[str]:
+def _source_files(files: list[str], skip_tests: bool = True) -> list[str]:
+    """JS/TS files of a scope. File-system routers (Next, Nuxt) pass
+    `skip_tests=False`: every file under their route dirs is a route."""
     return [
         f
         for f in files
         if _ts.language_for(f) in _JS_LANGS
         and not f.endswith(".d.ts")
-        and not _TEST_RE.search(f)
+        and not (skip_tests and _TEST_RE.search(f))
     ]
 
 
@@ -118,16 +122,16 @@ def _config_sites(
     root: Path, scope: Scope, files: list[str], names: frozenset[str], option: bytes
 ) -> list[str]:
     """A config option that rewrites every served path (`basePath`,
-    `baseURL`) makes each listed path wrong: site its first line."""
+    `baseURL`, `srcDir`, ...) makes each listed path wrong: site every line
+    that sets one."""
     sites = []
     for rel in files:
         if PurePosixPath(_local(rel, scope)).name not in names:
             continue
         data = _read(root, rel) or b""
         for number, line in enumerate(data.splitlines(), start=1):
-            if re.search(rb"\b" + option + rb"\b", line):
+            if re.search(rb"\b(?:" + option + rb")\b", line):
                 sites.append(f"{rel}:{number}")
-                break
     return sites
 
 
@@ -220,6 +224,36 @@ def declared_fields(
     wins; otherwise the closest directory does (shortcut: imports are not
     followed, so two same-named types in different folders resolve by
     proximity -- upgrade if a repo hits that)."""
+    type_name, wrapper = _unwrap_type(type_name)
+    fields = _declared_fields(root, files, type_name, near)
+    if fields is None or wrapper is None:
+        return fields
+    return [(n, t, wrapper) for n, t, _req in fields]
+
+
+_ARRAY_RE = re.compile(r"(?:Readonly)?Array<(.+)>$|(.+)\[\]$")
+_WRAPPER_RE = re.compile(r"(Partial|Required|Readonly)<(.+)>$")
+
+
+def _unwrap_type(name: str) -> tuple[str, bool | None]:
+    """`CreateDto[]` / `Array<X>` -> the element; `Partial<X>` makes every
+    field optional, `Required<X>` required (returned as the forced flag)."""
+    forced: bool | None = None
+    while True:
+        array = _ARRAY_RE.match(name)
+        wrapper = _WRAPPER_RE.match(name)
+        if array:
+            name = array.group(1) or array.group(2)
+        elif wrapper:
+            name = wrapper.group(2)
+            forced = {"Partial": False, "Required": True}.get(wrapper.group(1), forced)
+        else:
+            return name, forced
+
+
+def _declared_fields(
+    root: Path, files: list[str], type_name: str, near: str
+) -> list[Field] | None:
     pattern = re.compile(
         rb"\b(?:class|interface)\s+" + re.escape(type_name.encode()) + rb"\b"
     )

@@ -74,16 +74,35 @@ _NEST_VERBS = {
 _NEST_HINT = re.compile(
     rb"@(?:Controller|Version|"
     + "|".join(_NEST_VERBS).encode()
-    + rb")\b|setGlobalPrefix|enableVersioning|RouterModule"
+    + rb")\b|@nestjs/common|applyDecorators|setGlobalPrefix|enableVersioning|RouterModule"
 )
 
 
-def _decorator(dec: Node) -> tuple[str, Node | None]:
-    """(name, call node or None for a bare `@Name`)."""
+def _decorator(
+    dec: Node, aliases: dict[str, str] | None = None
+) -> tuple[str, Node | None]:
+    """(name, call node or None for a bare `@Name`). `aliases` maps a local
+    name imported from `@nestjs/common` (`Get as HttpGet`) to its real one."""
     inner = dec.named_children[0] if dec.named_children else None
     if inner is not None and inner.type == "call_expression":
-        return _last_name(inner.child_by_field_name("function")), inner
-    return _last_name(inner), None
+        name, call = _last_name(inner.child_by_field_name("function")), inner
+    else:
+        name, call = _last_name(inner), None
+    return (aliases or {}).get(name, name), call
+
+
+def _nest_aliases(tree: Tree) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for node in _walk(tree.root_node):
+        if (
+            node.type == "import_statement"
+            and _lit(node.child_by_field_name("source")) == "@nestjs/common"
+        ):
+            for spec in (n for n in _walk(node) if n.type == "import_specifier"):
+                alias = _text(spec.child_by_field_name("alias"))
+                if alias:
+                    out[alias] = _text(spec.child_by_field_name("name"))
+    return out
 
 
 def _class_decorators(cls: Node) -> list[Node]:
@@ -145,14 +164,14 @@ def _verb_path(call: Node | None) -> str | None:
     return "" if not args else _lit(args[0])
 
 
-def _body_type(method: Node) -> str:
+def _body_type(method: Node, aliases: dict[str, str]) -> str:
     params = method.child_by_field_name("parameters")
     for param in params.named_children if params is not None else []:
         if param.type not in ("required_parameter", "optional_parameter"):
             continue
         is_body = False
         for dec in (c for c in param.children if c.type == "decorator"):
-            name, call = _decorator(dec)
+            name, call = _decorator(dec, aliases)
             is_body = is_body or (name == "Body" and not _args(call))
         annotation = param.child_by_field_name("type")
         if not is_body or annotation is None or not annotation.named_children:
@@ -189,7 +208,7 @@ def _global_prefix(loaded: list[tuple[str, Tree]], sites: list[str]) -> str | No
                 if len(args) > 1:
                     sites.append(_site(rel, node))
             elif name == "enableVersioning" or (
-                owner == "RouterModule" and name == "register"
+                owner == "RouterModule" and name in ("register", "forRoutes")
             ):
                 sites.append(_site(rel, node))
     distinct = {lit for _rel, _node, lit in literals}
@@ -207,9 +226,14 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     consumed: set[tuple[str, int]] = set()
     found: list[Route] = []
     for rel, tree in loaded:
+        aliases = _nest_aliases(tree)
         for cls in (n for n in _walk(tree.root_node) if n.type in _CLASS_TYPES):
             ctrl = next(
-                (d for d in _class_decorators(cls) if _decorator(d)[0] == "Controller"),
+                (
+                    d
+                    for d in _class_decorators(cls)
+                    if _decorator(d, aliases)[0] == "Controller"
+                ),
                 None,
             )
             if ctrl is None:
@@ -224,7 +248,7 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
             for method, decs in _members(cls):
                 mname = _text(method.child_by_field_name("name"))
                 for dec in decs:
-                    verb, call = _decorator(dec)
+                    verb, call = _decorator(dec, aliases)
                     if verb not in _NEST_VERBS:
                         continue
                     consumed.add((rel, dec.start_byte))
@@ -239,15 +263,29 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
                                 f"{cname}.{mname}",
                                 rel,
                                 _ts.line_of(dec),
-                                _body_type(method),
+                                _body_type(method, aliases),
                             )
                         )
         for node in _walk(tree.root_node):
             if node.type != "decorator":
                 continue
-            name, _call = _decorator(node)
+            name, _call = _decorator(node, aliases)
             if name == "Version" or (
                 name in _NEST_VERBS and (rel, node.start_byte) not in consumed
+            ):
+                result.dynamic_sites.append(_site(rel, node))
+        # `applyDecorators(Get('x'), ...)` and friends: a verb decorator
+        # factory called outside a decorator position is not followed.
+        for node in _walk(tree.root_node):
+            if (
+                node.type == "call_expression"
+                and node.parent is not None
+                and node.parent.type != "decorator"
+                and aliases.get(
+                    _last_name(node.child_by_field_name("function")),
+                    _last_name(node.child_by_field_name("function")),
+                )
+                in _NEST_VERBS
             ):
                 result.dynamic_sites.append(_site(rel, node))
     if prefix is not None:  # an unknown global prefix makes every path unknown
@@ -296,7 +334,7 @@ def _next_exports(tree: Tree) -> tuple[list[tuple[str, int]], bool]:
 
 def next_js(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     result = AdapterResult()
-    for rel in _source_files(files):
+    for rel in _source_files(files, skip_tests=False):
         local = _local(rel, scope)
         local = local[4:] if local.startswith("src/") else local
         parts = local.split("/")
@@ -349,7 +387,7 @@ _NUXT_ROOTS = {"server/api/": "api", "server/routes/": ""}
 
 def nuxt(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
     result = AdapterResult()
-    for rel in _source_files(files):
+    for rel in _source_files(files, skip_tests=False):
         local = _local(rel, scope)
         for base, prefix in _NUXT_ROOTS.items():
             if not local.startswith(base):
@@ -368,7 +406,7 @@ def nuxt(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
             scope,
             files,
             frozenset(f"nuxt.config.{e}" for e in ("js", "mjs", "cjs", "ts")),
-            b"baseURL",
+            b"baseURL|apiBaseURL|srcDir|serverDir|serverHandlers|handlers|apiDir|routesDir",
         )
     )
     return result

@@ -109,9 +109,11 @@ def _require_spec(node: Node | None) -> str | None:
 
 def _classify(value: Node | None) -> str | None:
     """ "app" for `express()`, "router" for `Router()` / `express.Router()`."""
-    if value is None or value.type != "call_expression":
+    if value is None or value.type not in ("call_expression", "new_expression"):
         return None
-    fn = value.child_by_field_name("function")
+    fn = value.child_by_field_name(
+        "constructor" if value.type == "new_expression" else "function"
+    )
     if fn is None:
         return None
     if fn.type == "identifier":
@@ -432,13 +434,22 @@ def _suspicious_unbound(
 ) -> None:
     """`x.get('/p', handler)` on a receiver we cannot track (a parameter, a
     field, a factory result) is probably a route we cannot attribute."""
-    if len(args) < 2 or args[1].type == "object":
-        return
-    first = _lit(args[0])
-    if (first is not None and first.startswith("/")) or (
-        first is None and imports_express
+    if len(args) < 2 or args[1].type not in (
+        *_FUNCTION_TYPES,
+        "identifier",
+        "member_expression",
     ):
+        return
+    # any string path counts (`':id'`, `'*'`), not only one starting with "/"
+    if _lit(args[0]) is not None or imports_express:
         info.sites.append(_site(info.rel, call))
+
+
+def _called_name(node: Node | None) -> str:
+    """Last name of the function a call expression calls, else ""."""
+    if node is None or node.type != "call_expression":
+        return ""
+    return _last_name(node.child_by_field_name("function"))
 
 
 def _is_route_call(node: Node | None, info: _FileInfo) -> bool:
@@ -459,6 +470,11 @@ def _analyse_calls(
         if node.type != "call_expression":
             continue
         fn = node.child_by_field_name("function")
+        if fn is not None and fn.type == "subscript_expression":
+            # app[method]("/x", h): the verb is computed
+            if _recv_key(fn.child_by_field_name("object")) in info.kinds:
+                info.sites.append(_site(info.rel, node))
+            continue
         if fn is None or fn.type != "member_expression":
             continue
         verb = _last_name(fn)
@@ -479,8 +495,13 @@ def _analyse_calls(
                 _route_chain(info, key, node)
             elif verb == "use":
                 _add_mount(info, file_set, key, node)
+        elif verb == "route" and args:
+            info.sites.append(_site(info.rel, node))  # untracked receiver
         elif verb in _EXPRESS_VERBS and not _is_route_call(obj, info):
-            _suspicious_unbound(info, node, verb, args, imports_express)
+            if _called_name(obj) == "route":
+                info.sites.append(_site(info.rel, node))  # untracked chain
+            else:
+                _suspicious_unbound(info, node, verb, args, imports_express)
 
 
 def _resolve_export(get_info, rel: str, name: str, depth: int = 0) -> _NodeKey | None:
