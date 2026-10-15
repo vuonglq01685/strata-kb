@@ -100,7 +100,10 @@ _TOOLS = [
 _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
     ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/")),
-    ("test", re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/")),
+    (
+        "test",
+        re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/|_test\.go$"),
+    ),
     # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code
     (
         "config",

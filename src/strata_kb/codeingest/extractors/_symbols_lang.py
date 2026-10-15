@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from strata_kb.codeingest.extractors import (
     _symbols_csharp,
+    _symbols_go,
     _symbols_jvm,
     _symbols_php,
     _symbols_python,
@@ -773,6 +774,7 @@ EXPORTERS: dict[str, Exporter] = {
     "scss": _css_reader(True),
     **_symbols_jvm.EXPORTERS,
     **_symbols_csharp.EXPORTERS,
+    **_symbols_go.EXPORTERS,
     **_symbols_php.EXPORTERS,
     **_symbols_python.EXPORTERS,
 }

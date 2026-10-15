@@ -530,6 +530,7 @@ def test_language_without_exporter_not_scanned(tmp_path, monkeypatch):
     write(tmp_path, "s.css", ":root { --x: 1; }\n")
     write(tmp_path, "main.go", "package main\nfunc Main() {}\n")
     monkeypatch.delitem(symbols.EXPORTERS, "css")
+    monkeypatch.delitem(symbols.EXPORTERS, "go")  # Go has an exporter since Task 18
     result = run_symbols(tmp_path)
     css = cover(result, ".", "css")
     assert (css.status, css.detail) == ("not scanned", "no exporter for css yet")
