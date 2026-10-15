@@ -29,9 +29,12 @@ from strata_kb.codeingest.extractors import (
     _dotnet_fields,
     _jvm_ast,
     _jvm_fields,
+    _py_fields,
+    _routes_django,
     _routes_dotnet,
     _routes_js,
     _routes_jvm,
+    _routes_python,
     _ts,
 )
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
@@ -88,6 +91,8 @@ ADAPTERS: dict[str, Adapter] = {
     **_routes_js.ADAPTERS,
     **_routes_jvm.ADAPTERS,
     **_routes_dotnet.ADAPTERS,
+    **_routes_python.ADAPTERS,
+    **_routes_django.ADAPTERS,
 }
 
 # `reader(root, repo files, type name, route file) -> [(name, type, required)]`
@@ -98,6 +103,7 @@ FIELD_READERS: list[
     _routes_js.declared_fields,
     _jvm_fields.declared_fields,
     _dotnet_fields.declared_fields,
+    _py_fields.declared_fields,
 ]
 
 _OUTSIDE = "request type declared outside the repo"
@@ -189,6 +195,7 @@ class RoutesExtractor:
                 return self._extract(root, opts)
         finally:
             _jvm_fields.clear_cache()  # source bytes read for request types
+            _py_fields.clear_cache()
 
     def _extract(self, root: Path, opts: CodeIngestOptions) -> ExtractResult:
         scopes = find_scopes(root, opts.kb_dir)

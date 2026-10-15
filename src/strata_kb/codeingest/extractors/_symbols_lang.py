@@ -29,7 +29,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from strata_kb.codeingest.extractors import _symbols_csharp, _symbols_jvm, _ts
+from strata_kb.codeingest.extractors import (
+    _symbols_csharp,
+    _symbols_jvm,
+    _symbols_python,
+    _ts,
+)
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -767,11 +772,13 @@ EXPORTERS: dict[str, Exporter] = {
     "scss": _css_reader(True),
     **_symbols_jvm.EXPORTERS,
     **_symbols_csharp.EXPORTERS,
+    **_symbols_python.EXPORTERS,
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     **dict.fromkeys(_JS_LANGS, _js_extras),
     "css": _css_extras(False),
     "scss": _css_extras(True),
+    "python": lambda tree, _src: Extras((), _symbols_python.unreadable_lines(tree)),
 }
 HINTS: dict[str, re.Pattern[bytes]] = {
     **dict.fromkeys(_JS_LANGS, re.compile(rb"\b(?:exports?|module)\b")),

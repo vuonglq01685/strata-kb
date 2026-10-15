@@ -33,7 +33,13 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from strata_kb.codeingest.extractors import _cs_ast, _kotlin_parse, _symbols_lang, _ts
+from strata_kb.codeingest.extractors import (
+    _cs_ast,
+    _kotlin_parse,
+    _py_ast,
+    _symbols_lang,
+    _ts,
+)
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_jsresolve import ModuleResolver
@@ -137,16 +143,13 @@ class _Surface:
 
 
 def _skip_rule(rel: str) -> str | None:
-    # C# test code is told by its project file only (`tests/` is not a signal)
-    cs = rel.endswith(".cs")
-    return next(
-        (
-            label
-            for label, pat in _SKIP_RULES
-            if not (cs and label == "test") and pat.search(rel)
-        ),
-        None,
-    )
+    # C# test code is told by its project file only, Python test code by
+    # pytest/unittest names (`tests?/` is not a signal for either of the C# ones)
+    own = rel.endswith((".cs", ".py"))
+    for label, pat in _SKIP_RULES:
+        if not (own and label == "test") and pat.search(rel):
+            return label
+    return "test" if rel.endswith(".py") and _py_ast.is_test(rel) else None
 
 
 def _bucket(scopes: list[Scope], rel: str) -> str:
