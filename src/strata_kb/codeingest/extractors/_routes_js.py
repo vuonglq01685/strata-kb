@@ -91,6 +91,25 @@ def _decorator(
     return (aliases or {}).get(name, name), call
 
 
+# Decorators that never declare a route. Anything else called with a path-like
+# (or no) argument inside a controller may be a verb decorator under another
+# name (`const G = Get`, a re-export alias) and is a site.
+_NON_ROUTE = frozenset(
+    {
+        "HttpCode", "Header", "Redirect", "Render", "SetMetadata", "UseGuards",
+        "UseInterceptors", "UsePipes", "UseFilters", "Throttle", "SkipThrottle",
+        "CacheKey", "CacheTTL", "Version",
+    }
+)  # fmt: skip
+
+
+def _unknown_route_like(name: str, call: Node | None) -> bool:
+    if call is None or name in _NON_ROUTE or name.startswith("Api"):
+        return False
+    args = _args(call)
+    return not args or args[0].type in ("string", "template_string", "array")
+
+
 def _nest_aliases(tree: Tree) -> dict[str, str]:
     out: dict[str, str] = {}
     for node in _walk(tree.root_node):
@@ -250,6 +269,8 @@ def nest(root: Path, scope: Scope, files: list[str]) -> AdapterResult:
                 for dec in decs:
                     verb, call = _decorator(dec, aliases)
                     if verb not in _NEST_VERBS:
+                        if _unknown_route_like(verb, call):
+                            result.dynamic_sites.append(_site(rel, dec))
                         continue
                     consumed.add((rel, dec.start_byte))
                     path = _verb_path(call)

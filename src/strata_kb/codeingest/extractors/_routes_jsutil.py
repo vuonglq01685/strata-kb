@@ -29,7 +29,8 @@ _CLASS_TYPES = ("class_declaration", "abstract_class_declaration")
 _TEST_RE = re.compile(
     r"(?:^|/)(?:__tests__|__mocks__)/|\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$"
 )
-_SUFFIX_RE = re.compile(r"\.(?:test|spec|e2e-spec)\.[cm]?[jt]sx?$")
+# Nitro's default ignore: `*.{spec,test}.{js,cts,mts,ts,jsx,tsx}`
+_SUFFIX_RE = re.compile(r"\.(?:spec|test)\.(?:js|cts|mts|ts|jsx|tsx)$")
 _SCRIPT_EXT_RE = re.compile(r"\.[cm]?[jt]sx?$")
 
 

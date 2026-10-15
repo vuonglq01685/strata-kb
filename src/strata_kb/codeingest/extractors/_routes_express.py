@@ -54,6 +54,7 @@ _EXPRESS_VERBS = {
 }
 _EXPRESS_HINT = re.compile(
     rb"express|Router|\.(?:get|post|put|patch|delete|all|options|head|use|route)\s*\("
+    rb"|\[\s*['\"`](?:get|post|put|patch|delete|all|options|head|use|route)['\"`]\s*\]\s*\("
 )
 _FUNCTION_TYPES = frozenset(
     {"arrow_function", "function_expression", "function", "generator_function"}
@@ -477,6 +478,10 @@ def _analyse_calls(
             # app[method]("/x", h): the verb is computed
             tracked = _recv_key(fn.child_by_field_name("object")) in info.kinds
             args = _args(node)
+            index = fn.child_by_field_name("index")
+            key = _lit(index) if index is not None else None
+            if key is not None and key not in (*_EXPRESS_VERBS, "use", "route"):
+                continue  # i18n["t"](...): not a routing verb
             if tracked or (len(args) >= 2 and _lit(args[0]) is not None):
                 info.sites.append(_site(info.rel, node))
             continue

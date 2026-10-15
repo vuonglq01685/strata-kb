@@ -746,3 +746,65 @@ def test_outermost_type_wrapper_wins():
     assert u._unwrap_type("Required<Partial<X>>") == ("X", True)
     assert u._unwrap_type("Partial<Required<X>>") == ("X", False)
     assert u._unwrap_type("Partial<X>[]") == ("X", False)
+
+
+# --- review round 3 ---------------------------------------------------------
+
+
+def test_computed_verb_only_file_is_scanned(tmp_path):
+    package(tmp_path, ".", "express")
+    write(tmp_path, "a.js", 'module.exports = (r) => {\n  r["get"]("/x", h);\n};\n')
+    write(
+        tmp_path, "b.ts", "export default (r: any) => {\n  r[\"post\"]('/y', h);\n};\n"
+    )
+    write(tmp_path, "c.js", 'module.exports = (i18n) => i18n["t"]("a", b);\n')
+    app = tmp_path / "d.js"
+    app.write_text(
+        'const app = require("express")();\nconst m = "get";\napp[m]("/z", h);\napp["get"]("/w", h);\n'
+    )
+    assert detail(run_routes(tmp_path), ".").split("; ") == [
+        "a.js:2",
+        "b.ts:2",
+        "d.js:3",
+        "d.js:4",
+    ]
+
+
+def test_nest_reexported_and_const_aliased_verbs_are_sites(tmp_path):
+    nest_app(
+        tmp_path,
+        "api",
+        files={
+            "src/lib.ts": "export { Get as HttpGet } from '@nestjs/common';\n",
+            "src/a.controller.ts": (
+                "import { HttpGet } from './lib';\n"
+                "import { Controller, Get, HttpCode, ApiTags } from '@nestjs/common';\n"
+                "const G = Get;\n"
+                "@Controller('a') class A {\n"
+                "  @HttpGet('x') x() {}\n"
+                "  @G('y') y() {}\n"
+                "  @HttpGet() z() {}\n"
+                "  @HttpCode(200) @ApiTags('t') @Get('ok') ok() {}\n"
+                "}\n"
+            ),
+        },
+    )
+    result = run_routes(tmp_path)
+    assert detail(result, "api").split("; ") == [
+        "api/src/a.controller.ts:5",
+        "api/src/a.controller.ts:6",
+        "api/src/a.controller.ts:7",
+    ]
+    assert all_routes(result) == [("GET", "/a/ok")]
+
+
+def test_nuxt_skips_only_nitro_default_ignored_suffixes(tmp_path):
+    package(tmp_path, ".", "nuxt")
+    write(tmp_path, "server/api/a.test.ts", "export default 1\n")
+    write(tmp_path, "server/api/b.spec.mts", "export default 1\n")
+    write(tmp_path, "server/api/c.e2e-spec.ts", "export default 1\n")
+    write(tmp_path, "server/api/d.test.mjs", "export default 1\n")
+    assert all_routes(run_routes(tmp_path)) == [
+        ("ANY", "/api/c.e2e-spec"),
+        ("ANY", "/api/d.test"),
+    ]
