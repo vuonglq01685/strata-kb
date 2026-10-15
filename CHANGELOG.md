@@ -3,14 +3,6 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.27.2 — 2026-10-15
-
-Release fix; no code change.
-
-- **Release smoke test.** The release image smoke test failed for 1.27.0 and 1.27.1, so neither reached PyPI or GHCR. Since 1.26.0 the hub writes its account store and session key to `<hub>/.kb-auth/` at start, and the smoke test's `/data` was not writable by the container user `app`. The smoke test now makes its `/data` writable and prints the container log when the hub does not answer. 1.27.2 ships everything from 1.27.0 and 1.27.1.
-- **Upgrade note.** The hub's `/data` mount (the hub checkout) must be writable by the container user `app` (uid 1000), as it already is when the checkout belongs to uid 1000.
-- **Docs.** The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
-
 ## 1.27.1 — 2026-10-15
 
 First-run admin setup page.
@@ -21,6 +13,7 @@ First-run admin setup page.
 - **Fallbacks.** `kb user add` and `STRATA_KB_BOOTSTRAP_ADMIN` + `STRATA_KB_BOOTSTRAP_PASSWORD_HASH` still work. The empty-accounts hint on the login page is gone (that state now redirects to the setup page).
 - **Docs.** README, `QUICKSTART-hub.md`, the hub guide (EN, VI) and `docs/deploy-remote-mcp.md` describe it. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
 - **Upgrade.** Upgrade and restart the hub. A hub that already has accounts behaves as before.
+- **Release fix.** The release image smoke test failed for 1.27.0 and the first 1.27.1 run, so neither reached PyPI or GHCR; 1.27.1 ships everything from 1.27.0. Since 1.26.0 the hub writes `<hub>/.kb-auth/` at start, and the smoke test's `/data` was not writable by the container user `app`. The smoke test now makes `/data` writable and prints the container log when the hub does not answer. The hub's `/data` mount (the hub checkout) must be writable by `app` (uid 1000).
 
 ## 1.27.0 — 2026-10-14
 
