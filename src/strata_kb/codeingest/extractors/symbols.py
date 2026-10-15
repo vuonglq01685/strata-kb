@@ -99,11 +99,18 @@ _TOOLS = [
 # (label in the coverage detail, pattern); a file counts under the first match.
 _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
-    ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/|\.pb\.go$")),
+    (
+        "generated",
+        re.compile(
+            r"\.generated\.|(?:^|/)__generated__/|\.pb\.go$"
+            r"|\.(?:g|freezed|gr|mocks|pb|pbenum|pbjson|pbgrpc)\.dart$"
+        ),
+    ),
     (
         "test",
         re.compile(
-            r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?|testdata)/|_test\.go$"
+            r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?|Tests|testdata|integration_test)/"
+            r"|_test\.(?:go|dart)$"
             r"|(?:^|/)(?:benches|examples)/(?:[^/]+/main|[^/]+)\.rs$"
         ),
     ),

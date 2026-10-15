@@ -38,6 +38,7 @@ from strata_kb.codeingest.extractors import (
     _routes_php,
     _routes_python,
     _routes_rust,
+    _routes_swift,
     _ts,
 )
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
@@ -99,6 +100,7 @@ ADAPTERS: dict[str, Adapter] = {
     **_routes_php.ADAPTERS,
     **_routes_gin.ADAPTERS,
     **_routes_rust.ADAPTERS,
+    **_routes_swift.ADAPTERS,
 }
 
 # `reader(root, repo files, type name, route file) -> [(name, type, required)]`

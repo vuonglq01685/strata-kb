@@ -24,20 +24,30 @@ ESM `import`/`export` statement; in an ES module those are ordinary names.
 from __future__ import annotations
 
 import re
-from bisect import bisect_left
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from strata_kb.codeingest.extractors import (
     _symbols_csharp,
+    _symbols_dart,
     _symbols_go,
     _symbols_jvm,
     _symbols_php,
     _symbols_python,
     _symbols_rust,
+    _symbols_swift,
     _ts,
 )
+from strata_kb.codeingest.extractors._symbols_css import (
+    DYNAMIC_PROP,
+    PROPERTY_AT_RULE,
+    clean_style,
+    declarations,
+)
+
+# the CSS scanners live in `_symbols_css`; the old private names stay for tests
+_clean_style, _declarations = clean_style, declarations
 
 if TYPE_CHECKING:
     from tree_sitter import Node, Tree
@@ -703,55 +713,14 @@ def _js_extras(tree: Tree, source: bytes) -> Extras:
 
 # -- CSS / SCSS --------------------------------------------------------------
 
-_BLOCK_COMMENT = re.compile(rb"/\*.*?\*/", re.S)
-_STRING = re.compile(rb""""(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'""")
-_URL = re.compile(rb"url\([^)\n]*\)", re.I)
-_SUPPORTS = re.compile(rb"@supports[^{;]*")
-_LINE_COMMENT = re.compile(rb"//[^\n]*")
-_CUSTOM_PROP = re.compile(rb"(?<![\w-])(--[\w-]+)\s*:")
-_PROPERTY_AT_RULE = re.compile(rb"@property\s+(--[\w-]+)")
-_DYNAMIC_PROP = re.compile(rb"(?<![\w-])--[\w-]*#\{")
-
-
-def _blank(pattern: re.Pattern[bytes], text: bytes) -> bytes:
-    # same line count, so line numbers survive
-    return pattern.sub(lambda m: re.sub(rb"[^\n]", b" ", m.group(0)), text)
-
-
-def _clean_style(source: bytes, scss: bool) -> bytes:
-    """`source` with everything that can hold a `--x:` lookalike blanked:
-    comments, strings, `url(..)`, `@supports (..)` conditions."""
-    text = _blank(_BLOCK_COMMENT, source)
-    for pattern in (_STRING, _URL, _SUPPORTS, *([_LINE_COMMENT] if scss else [])):
-        text = _blank(pattern, text)
-    return text
-
-
-def _declarations(text: bytes) -> list[bytes]:
-    """`--name` at declaration position: after `{`, `;`, `}` or the start,
-    outside parentheses (so a map key inside a value is not one)."""
-    opens = [m.start() for m in re.finditer(rb"\(", text)]
-    closes = [m.start() for m in re.finditer(rb"\)", text)]
-    found = []
-    for m in _CUSTOM_PROP.finditer(text):
-        start = m.start(1)
-        i = start
-        while i > 0 and text[i - 1 : i].isspace():
-            i -= 1
-        before = text[i - 1 : i] if i else b""
-        depth = bisect_left(opens, start) - bisect_left(closes, start)
-        if depth <= 0 and before in (b"", b"{", b";", b"}"):
-            found.append(m.group(1))
-    return found
-
 
 def _css_reader(scss: bool) -> Exporter:
     def exports(_tree: Tree, source: bytes) -> list[tuple[str, str]]:
         # shortcut: regex, not the tree -- the SCSS grammar loses every
         # declaration after `--x: #{$v}`.
-        text = _clean_style(source, scss)
-        names = set(_declarations(text))
-        names |= {m.group(1) for m in _PROPERTY_AT_RULE.finditer(text)}
+        text = clean_style(source, scss)
+        names = set(declarations(text))
+        names |= {m.group(1) for m in PROPERTY_AT_RULE.finditer(text)}
         return sorted((n.decode("utf-8", "replace"), "css-var") for n in names)
 
     return exports
@@ -760,9 +729,9 @@ def _css_reader(scss: bool) -> Exporter:
 def _css_extras(scss: bool) -> Callable[[Tree, bytes], Extras]:
     def extras(_tree: Tree, source: bytes) -> Extras:
         # a custom property named by interpolation (`--#{$k}: v`) has no static name
-        text = _clean_style(source, scss)
+        text = clean_style(source, scss)
         lines = {
-            text.count(b"\n", 0, m.start()) + 1 for m in _DYNAMIC_PROP.finditer(text)
+            text.count(b"\n", 0, m.start()) + 1 for m in DYNAMIC_PROP.finditer(text)
         }
         return Extras((), tuple(sorted(lines)))
 
@@ -775,10 +744,12 @@ EXPORTERS: dict[str, Exporter] = {
     "scss": _css_reader(True),
     **_symbols_jvm.EXPORTERS,
     **_symbols_csharp.EXPORTERS,
+    **_symbols_dart.EXPORTERS,
     **_symbols_go.EXPORTERS,
     **_symbols_php.EXPORTERS,
     **_symbols_python.EXPORTERS,
     **_symbols_rust.EXPORTERS,
+    **_symbols_swift.EXPORTERS,
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     **dict.fromkeys(_JS_LANGS, _js_extras),
@@ -793,6 +764,7 @@ HINTS: dict[str, re.Pattern[bytes]] = {
     "scss": re.compile(rb"--"),
     "java": re.compile(rb"\bpublic\b"),  # nothing else is exported
     "csharp": re.compile(rb"\bpublic\b"),
+    **_symbols_swift.HINTS,
     "php": re.compile(
         rb"\b(?:class|interface|trait|enum)\b", re.IGNORECASE
     ),  # nothing else is exported

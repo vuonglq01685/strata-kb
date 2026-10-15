@@ -88,8 +88,25 @@ def _query(lang: str, query: str) -> Any:
     return Query(get_language(lang), query)  # type: ignore[arg-type]
 
 
+# tree-sitter-swift reads the `{` after `if let x = try await f(..)` as a
+# trailing closure and loses the rest of the function. Parenthesising the
+# awaited expression (same line, so line numbers survive) parses cleanly.
+_SWIFT_AWAIT_CONDITION = re.compile(
+    rb"^([ \t]*(?:\}[ \t]*else[ \t]+)?(?:if|while|switch)\b[^\n]*?)"
+    rb"(\btry[?!]?[ \t]+await\b[^\n]*?)([ \t]*\{[^\n]*)$",
+    re.M,
+)
+
+
 def parse(lang: str, source: bytes) -> Tree:
-    return _parser(lang).parse(source)
+    tree = _parser(lang).parse(source)
+    if lang == "swift" and tree.root_node.has_error:
+        fixed = _SWIFT_AWAIT_CONDITION.sub(rb"\1(\2)\3", source)
+        if fixed != source:
+            retry = _parser(lang).parse(fixed)
+            if not retry.root_node.has_error:
+                return retry
+    return tree
 
 
 def matches(lang: str, query: str, node: Node) -> list[dict[str, list[Node]]]:
