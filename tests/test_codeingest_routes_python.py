@@ -2072,3 +2072,82 @@ def test_non_drf_register_calls_do_not_make_a_site(tmp_path):
     )
     result = run_routes(tmp_path)
     assert (row(result).status, row(result).detail) == ("complete", "")
+
+
+# --- review round 5 ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "head, body",
+    [
+        (
+            "from import_export.admin import ImportExportMixin\n",
+            "class PostAdmin(ImportExportMixin, admin.ModelAdmin):\n    pass\n\n"
+            "admin.site.register(Post, PostAdmin)\n",
+        ),
+        (
+            "",
+            "class AuditMixin:\n    pass\n\n"
+            "class PostAdmin(AuditMixin, admin.ModelAdmin):\n    pass\n\n"
+            "admin.site.register(Post, PostAdmin)\n",
+        ),
+        (
+            "from import_export.admin import ExportActionMixin\n",
+            "class MySite(admin.AdminSite):\n    pass\n\nmy_site = MySite()\n\n"
+            "class PostAdmin(ExportActionMixin, admin.ModelAdmin):\n    pass\n\n"
+            "my_site.register(Post, PostAdmin)\n",
+        ),
+    ],
+)
+def test_model_admin_with_a_mixin_base_is_not_a_site(tmp_path, head, body):
+    _drf_scope(
+        tmp_path,
+        "from django.contrib import admin\nfrom django.db import models\n"
+        f"{head}\nclass Post(models.Model):\n    pass\n\n{body}",
+    )
+    result = run_routes(tmp_path)
+    assert (row(result).status, row(result).detail) == ("complete", "")
+
+
+def test_drf_view_with_a_mixin_and_a_viewset_base_is_still_a_site(tmp_path):
+    _drf_scope(
+        tmp_path,
+        "from rest_framework import viewsets\nfrom lib import get_thing, Mixin\n"
+        "api = get_thing()\n\n"
+        "class V(Mixin, viewsets.GenericViewSet):\n    pass\n\napi.register(PREFIX, V)\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "for p, vs in [('a', PostViewSet)]:\n    api.register(p, vs)",
+        "vs = PostViewSet\napi.register(P, vs)",
+        "def go(vs):\n    api.register(P, vs)",
+        "api.register(P, undefined_view)",
+    ],
+)
+def test_lowercase_view_that_may_be_a_class_is_a_site(tmp_path, call):
+    _drf_scope(
+        tmp_path,
+        "from rest_framework import viewsets\nfrom lib import get_thing\n"
+        "api = get_thing()\nP = 'x'\n\n"
+        f"class PostViewSet(viewsets.ModelViewSet):\n    pass\n\n{call}\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert any(s.startswith("api.py:") for s in sites_of(result))
+
+
+def test_lowercase_function_or_external_view_argument_is_not_a_site(tmp_path):
+    _drf_scope(
+        tmp_path,
+        "from django.core import checks\nfrom lib import signals, ext_handler\n\n"
+        "def handler(sender):\n    return 1\n\n"
+        "signals.register('evt', handler)\nsignals.register(PREFIX_X, ext_handler)\n"
+        "checks.register(handler, checks.Tags.security)\n",
+    )
+    result = run_routes(tmp_path)
+    assert (row(result).status, row(result).detail) == ("complete", "")

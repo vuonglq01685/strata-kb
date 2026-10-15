@@ -105,24 +105,36 @@ _NOT_A_VIEW = (
     "dictionary",
     "lambda",
 )
-_VIEW_MARKS = ("ViewSet", "Viewset", "APIView", "GenericAPIView", "Mixin")
+_VIEW_MARKS = ("ViewSet", "Viewset", "APIView", "GenericAPIView")
+_MIXIN = ("Mixin",)  # a view mark only where a model registration is out of the way
 
 
-def _drf_view(proj: ast.Project, file: str, cls: Node, depth: int) -> bool:
-    """Does an in-repo class derive, at any depth, from a DRF view base?"""
+def _derives(
+    proj: ast.Project, file: str, cls: Node, test: Callable[[str], bool], depth: int
+) -> bool:
+    """Does an in-repo class have, at any depth, a base whose text passes `test`?"""
     bases = cls.child_by_field_name("superclasses")
     for base in bases.named_children if bases is not None else []:
-        if any(mark in ast.text(base) for mark in _VIEW_MARKS):
+        if test(ast.text(base)):
             return True
         ref = proj.chain(file, base)
         if (
             ref.kind == "class"
             and ref.node is not None
             and depth < 12
-            and _drf_view(proj, ref.file, ref.node, depth + 1)
+            and _derives(proj, ref.file, ref.node, test, depth + 1)
         ):
             return True
     return False
+
+
+def _drf_view(
+    proj: ast.Project, file: str, cls: Node, marks: tuple[str, ...] = _VIEW_MARKS
+) -> bool:
+    """Does an in-repo class derive from a DRF view base? A `ModelAdmin` never."""
+    return not _derives(
+        proj, file, cls, lambda t: t.split(".")[-1].endswith("Admin"), 0
+    ) and _derives(proj, file, cls, lambda t: any(m in t for m in marks), 0)
 
 
 def _line(node: Node) -> int:
@@ -228,14 +240,16 @@ class Routers:
         parts = ast.dotted(second)
         if parts is None:
             return second.type not in _NOT_A_VIEW
-        if not parts[-1][:1].isupper():
-            return False  # a function, a constant: `f_int`, `Tags.security`
+        ref = self.proj.chain(rel, second)
+        if not parts[-1][:1].isupper() and ref.kind in ("func", "external", "attr"):
+            return False  # a function or constant: `f_int`, `Tags.security`
         if (first is not None and first.type in _STRINGS) or (
             {"basename", "prefix", "viewset"} & args.kw.keys()
         ):
             return True
-        ref = self.proj.chain(rel, second)
-        return ref.kind != "class" or ref.node is None  # a view not readable here
+        if ref.kind != "class" or ref.node is None:
+            return True  # a view not readable here
+        return _drf_view(self.proj, ref.file, ref.node, _VIEW_MARKS + _MIXIN)
 
     def _drf_view_arg(self, rel: str, view: Node) -> bool:
         if any(mark in ast.text(view) for mark in _VIEW_MARKS):
@@ -244,7 +258,7 @@ class Routers:
         return (
             ref.kind == "class"
             and ref.node is not None
-            and _drf_view(self.proj, ref.file, ref.node, 0)
+            and _drf_view(self.proj, ref.file, ref.node)
         )
 
     def unexpanded(self) -> list[Router]:
