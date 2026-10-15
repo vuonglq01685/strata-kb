@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up — Strata</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="login-card">
+  <span class="brand-mark">KB</span>
+  <h1>Set up CENTER·KB</h1>
+  <p class="lede">Create the first hub account. It becomes the admin.
+    The setup code is in the hub log: <code class="inline">docker compose logs hub</code>.</p>
+  {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+  {% if not code_active %}<div class="error-banner">No setup code is active. Restart the hub to get a new one, or create the admin with
+    <code class="inline">docker compose exec hub kb user add &lt;name&gt; --role admin</code>.</div>{% endif %}
+  <form method="post" action="/ui/setup">
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Username</span>
+      <input type="text" name="username" value="{{ username }}" autocomplete="username" autofocus required>
+    </label>
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Password</span>
+      <input type="password" name="password" autocomplete="new-password" required>
+    </label>
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Confirm password</span>
+      <input type="password" name="confirm" autocomplete="new-password" required>
+    </label>
+    <label style="display:flex; flex-direction:column; gap:6px">
+      <span class="kicker">Setup code</span>
+      <input type="text" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required>
+    </label>
+    <button type="submit">Create admin</button>
+  </form>
+  <p class="meta-line">/api and /mcp keep using the bearer token.</p>
+</div>
+</body>
+</html>

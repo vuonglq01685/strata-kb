@@ -30,6 +30,7 @@ from strata_kb.serving.accounts import (
 )
 from strata_kb.serving.auth import SessionAuth, TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
+from strata_kb.serving.setupcode import start_setup
 from strata_kb.web import api, planui, qaui, registry_routes, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
@@ -78,6 +79,8 @@ def create_app(
     auth_dir = auth_dir_for(config.kb_dir)
     accounts = Accounts(auth_dir / "users.db")
     bootstrap_from_env(accounts, os.environ)
+    # After the env bootstrap: it may have made the first admin, so no code.
+    setup = start_setup(accounts)
     session = SessionAuth(load_or_create_session_key(auth_dir), accounts)
 
     async def root(request: Request) -> RedirectResponse:
@@ -91,6 +94,7 @@ def create_app(
         login_limiter=auth_limiter,
         trusted_proxies=trusted_proxies,
         session=session,
+        setup=setup,
     )
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
     routes += planui.plan_routes(config)
@@ -183,7 +187,7 @@ def create_app(
         lifespan=lifespan,
         exception_handlers={api.SnapshotCorruptError: snapshot_corrupt},
     )
-    return SecurityHeadersMiddleware(
+    wrapped = SecurityHeadersMiddleware(
         TokenAuthMiddleware(
             app,
             token,
@@ -192,3 +196,6 @@ def create_app(
             session=session,
         )
     )
+    # Test seam: tests read the live code here instead of parsing the log.
+    wrapped.setup = setup  # pyright: ignore[reportAttributeAccessIssue]
+    return wrapped

@@ -109,7 +109,9 @@ the PR itself using a GitHub App.
    reason in `detail` for the OIDC caller). Registry-page edits are commits on the
    hub's default branch pushed by the same App, so a protected default branch must
    allow the App to push. UI accounts live in `<hub>/.kb-auth/` and are never
-   committed; create the first admin with
+   committed; create the first admin by opening the hub in a browser (while no
+   account exists it shows `/ui/setup`; read the one-time setup code with
+   `journalctl -u <unit>` and enter it with a username and password), or with
    `kb user add <name> --role admin --kb /srv/kb-hub/.kb` or
    `STRATA_KB_BOOTSTRAP_ADMIN` + `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`
    (keep the single quotes in a Compose `.env`: Compose expands `$`, and the hash

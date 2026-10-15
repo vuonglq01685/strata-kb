@@ -141,7 +141,7 @@ def test_logout_clears_the_cookie(web_client, admin_user):
     assert "strata_kb_session=;" in resp.headers["set-cookie"].replace('""', "")
 
 
-def test_a_raw_token_cookie_no_longer_authorises(web_client):
+def test_a_raw_token_cookie_no_longer_authorises(web_client, admin_user):
     web_client.cookies.set("strata_kb_session", TOKEN)
     resp = web_client.get("/ui/docs", follow_redirects=False)
     assert resp.status_code == 302

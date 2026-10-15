@@ -427,7 +427,11 @@ People sign in to `/ui` with a username and password. Accounts live in
 a new hub's `.gitignore` lists it and the running hub also git-excludes it.
 Deleting `session.key` logs everyone out.
 
-- **Create the first admin** with
+- **Create the first admin** by opening the hub in a browser: while no account
+  exists it shows `/ui/setup`, and you enter the one-time setup code the hub
+  prints to its log (`docker compose logs hub`) plus a username and password.
+  That account becomes the `admin`; the code is kept in memory only and
+  changes on every restart. Alternatively run
   `docker compose exec hub kb user add <name> --role admin`, or set
   `STRATA_KB_BOOTSTRAP_ADMIN` and `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'`
   (the output of `kb user hash`) in `.env`. Keep the single quotes: Docker

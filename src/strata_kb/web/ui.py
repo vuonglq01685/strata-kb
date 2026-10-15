@@ -42,6 +42,7 @@ from strata_kb.kinds import (
     normalize_kinds,
 )
 from strata_kb.query import AmbiguousDocError, get_section, search, tokenize
+from strata_kb.serving.accounts import AccountError, AccountExistsError, User
 from strata_kb.serving.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE,
@@ -58,6 +59,7 @@ from strata_kb.serving.ratelimit import (
     client_key,
     trusted_proxies_from_env,
 )
+from strata_kb.serving.setupcode import SetupCode
 from strata_kb.web import api, bodycap, templating, uidata
 from strata_kb.web.mdrender import render as md_render
 
@@ -540,14 +542,29 @@ def _verified_user(session: SessionAuth | None, username: str, password: str):
         return None
 
 
-def _no_accounts(session: SessionAuth | None) -> bool:
+def _create_first_admin(session: SessionAuth, username: str, password: str):
+    """The new admin `User`, or the message to show. `AccountExistsError`
+    (a concurrent setup won) propagates so the caller can send to /ui/login."""
+    try:
+        return session.accounts.add_first_admin(username, password)
+    except AccountExistsError:
+        raise
+    except AccountError as exc:
+        return str(exc)
+    except (UnicodeError, sqlite3.Error):
+        # A username sqlite cannot bind (lone surrogate) or a locked store.
+        logger.exception("first admin creation failed")
+        return "Could not create the account."
+
+
+def _users_exist(session: SessionAuth | None) -> bool:
     if session is None:
         return True
     try:
-        return session.accounts.count() == 0
+        return session.accounts.count() > 0
     except sqlite3.Error:
         logger.exception("account count failed")
-        return False
+        return True
 
 
 def build_routes(
@@ -557,6 +574,7 @@ def build_routes(
     login_limiter=None,
     trusted_proxies: int | None = None,
     session: SessionAuth | None = None,
+    setup: SetupCode | None = None,
 ) -> list[Route]:
     limiter = login_limiter or SlidingWindowLimiter(
         LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS
@@ -573,13 +591,107 @@ def build_routes(
         trusted_proxies = trusted_proxies_from_env()
 
     async def render_login(error: str = "", status: int = 200) -> HTMLResponse:
-        # sqlite read: off the event loop (see login_post's verify).
-        no_accounts = await run_in_threadpool(_no_accounts, session)
         return HTMLResponse(
-            templating.render("login.html", error=error, no_accounts=no_accounts),
+            templating.render("login.html", error=error),
             status_code=status,
             headers=NO_STORE,
         )
+
+    def session_redirect(
+        request: Request, session: SessionAuth, user: User
+    ) -> RedirectResponse:
+        """303 to /ui carrying `user`'s session cookie (login and first setup)."""
+        resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
+        secure = cookie_is_secure(request, trusted_proxies)
+        if not secure:
+            logger.warning(
+                "session cookie set without Secure — request arrived over "
+                "plain HTTP. Behind a TLS proxy, set "
+                "STRATA_KB_TRUSTED_PROXIES to the number of proxies in "
+                "front so X-Forwarded-Proto is believed."
+            )
+        resp.set_cookie(
+            COOKIE_NAME,
+            make_user_session(session.key, user),
+            httponly=True,
+            samesite="lax",
+            secure=secure,
+            max_age=SESSION_MAX_AGE,
+        )
+        # Drop cookies from prior product names so an upgrade does not
+        # leave an old session (or the pre-0.25 raw-token cookie) in
+        # the jar. Path="/" matches those set_cookie calls.
+        resp.delete_cookie("center_kb_token", path="/")
+        resp.delete_cookie("center_kb_session", path="/")
+        return resp
+
+    def render_setup(
+        error: str = "", status: int = 200, username: str = ""
+    ) -> HTMLResponse:
+        # Passwords and the code are never echoed; the username may be.
+        return HTMLResponse(
+            templating.render(
+                "setup.html",
+                error=error,
+                username=username,
+                code_active=setup is not None and setup.code is not None,
+            ),
+            status_code=status,
+            headers=NO_STORE,
+        )
+
+    async def setup_closed() -> bool:
+        # sqlite read: off the event loop.
+        return setup is None or await run_in_threadpool(_users_exist, session)
+
+    async def setup_get(request: Request) -> Response:
+        if await setup_closed():
+            return HTMLResponse("Not found", status_code=404, headers=NO_STORE)
+        return render_setup()
+
+    async def setup_post(request: Request) -> Response:
+        if setup is None or session is None or await setup_closed():
+            return HTMLResponse("Not found", status_code=404, headers=NO_STORE)
+        # Same guards, in the same order, as login_post (see the comments there).
+        if int(request.headers.get("content-length") or 0) > LOGIN_MAX_BODY:
+            return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
+        client_ip = client_key(request, trusted_proxies)
+        if not limiter.allow(client_ip):
+            logger.warning("setup rate-limited for %s", client_ip)
+            return render_setup("Too many attempts — try again later.", 429)
+        capped = Request(
+            request.scope,
+            bodycap.capped_receive(request, LOGIN_MAX_BODY, _LoginBodyTooLarge),
+        )
+        try:
+            form = await capped.form(max_files=0, max_fields=8)
+        except _LoginBodyTooLarge:
+            return HTMLResponse("body too large", status_code=413, headers=NO_STORE)
+        username = str(form.get("username", ""))
+        password = str(form.get("password", ""))
+        confirm = str(form.get("confirm", ""))
+        submitted_code = str(form.get("code", ""))
+        await capped.close()
+        # Never log the submitted values.
+        if not setup.matches(submitted_code):
+            logger.warning("failed setup attempt from %s", client_ip)
+            return render_setup("Wrong setup code — copy it from the hub log.")
+        if password != confirm:
+            return render_setup("Passwords do not match.", username=username)
+        if not password:
+            return render_setup("Password must not be empty.", username=username)
+        try:
+            # scrypt plus a write transaction: never on the event loop.
+            result = await run_in_threadpool(
+                _create_first_admin, session, username, password
+            )
+        except AccountExistsError:
+            return RedirectResponse("/ui/login", status_code=303, headers=NO_STORE)
+        if isinstance(result, str):
+            return render_setup(result, username=username)
+        setup.consume()
+        logger.warning("first hub admin created via /ui/setup from %s", client_ip)
+        return session_redirect(request, session, result)
 
     async def login_get(request: Request) -> HTMLResponse:
         return await render_login()
@@ -620,29 +732,7 @@ def build_routes(
         # or one login POST would stall /api, /mcp and /ui for everyone.
         user = await run_in_threadpool(_verified_user, session, username, password)
         if user is not None and session is not None:
-            resp = RedirectResponse("/ui", status_code=303, headers=NO_STORE)
-            secure = cookie_is_secure(request, trusted_proxies)
-            if not secure:
-                logger.warning(
-                    "session cookie set without Secure — request arrived over "
-                    "plain HTTP. Behind a TLS proxy, set "
-                    "STRATA_KB_TRUSTED_PROXIES to the number of proxies in "
-                    "front so X-Forwarded-Proto is believed."
-                )
-            resp.set_cookie(
-                COOKIE_NAME,
-                make_user_session(session.key, user),
-                httponly=True,
-                samesite="lax",
-                secure=secure,
-                max_age=SESSION_MAX_AGE,
-            )
-            # Drop cookies from prior product names so an upgrade does not
-            # leave an old session (or the pre-0.25 raw-token cookie) in
-            # the jar. Path="/" matches those set_cookie calls.
-            resp.delete_cookie("center_kb_token", path="/")
-            resp.delete_cookie("center_kb_session", path="/")
-            return resp
+            return session_redirect(request, session, user)
         # never log the submitted values — a password may be a near-miss
         logger.warning("failed login attempt from %s", client_ip)
         return await render_login("Wrong username or password.")
@@ -1030,6 +1120,8 @@ def build_routes(
         Route("/ui/login", login_get, methods=["GET"]),
         Route("/ui/login", login_post, methods=["POST"]),
         Route("/ui/logout", logout_post, methods=["POST"]),
+        Route("/ui/setup", setup_get, methods=["GET"]),
+        Route("/ui/setup", setup_post, methods=["POST"]),
         Route("/ui/docs", docs_page, methods=["GET"]),
         Route("/ui/code", code_page, methods=["GET"]),
         Route("/ui/docs/{doc}", doc_page, methods=["GET"]),

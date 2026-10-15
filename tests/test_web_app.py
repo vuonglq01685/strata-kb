@@ -27,6 +27,9 @@ def test_api_and_ui_reachable_through_one_app(fed_hub):
 
 
 def test_unauthenticated_api_401_ui_redirect(fed_hub):
+    from strata_kb.serving.accounts import Accounts
+
+    Accounts(fed_hub / ".kb-auth" / "users.db").add("boss", "pw", "admin")
     client = TestClient(create_app(_config(fed_hub), TOKEN))
     assert client.get("/api/docs").status_code == 401
     resp = client.get("/ui", follow_redirects=False)

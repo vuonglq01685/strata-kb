@@ -14,7 +14,7 @@ def test_headers_on_an_authorised_page(web_client_logged_in):
     assert set(resp.headers) >= REQUIRED
 
 
-def test_headers_on_the_login_redirect(web_client):
+def test_headers_on_the_login_redirect(web_client, admin_user):
     resp = web_client.get("/ui", follow_redirects=False)
     assert resp.status_code == 302
     assert set(resp.headers) >= REQUIRED
