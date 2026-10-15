@@ -104,6 +104,7 @@ _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "test",
         re.compile(
             r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?|testdata)/|_test\.go$"
+            r"|(?:^|/)(?:benches|examples)/(?:[^/]+/main|[^/]+)\.rs$"
         ),
     ),
     # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code

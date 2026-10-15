@@ -35,6 +35,7 @@ from strata_kb.codeingest.extractors import (
     _symbols_jvm,
     _symbols_php,
     _symbols_python,
+    _symbols_rust,
     _ts,
 )
 
@@ -777,12 +778,14 @@ EXPORTERS: dict[str, Exporter] = {
     **_symbols_go.EXPORTERS,
     **_symbols_php.EXPORTERS,
     **_symbols_python.EXPORTERS,
+    **_symbols_rust.EXPORTERS,
 }
 EXTRAS: dict[str, Callable[[Tree, bytes], Extras]] = {
     **dict.fromkeys(_JS_LANGS, _js_extras),
     "css": _css_extras(False),
     "scss": _css_extras(True),
     "python": lambda tree, _src: Extras((), _symbols_python.unreadable_lines(tree)),
+    "rust": lambda tree, _src: Extras((), _symbols_rust.unreadable_lines(tree)),
 }
 HINTS: dict[str, re.Pattern[bytes]] = {
     **dict.fromkeys(_JS_LANGS, re.compile(rb"\b(?:exports?|module)\b")),
