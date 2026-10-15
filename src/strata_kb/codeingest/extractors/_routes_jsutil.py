@@ -228,6 +228,8 @@ def declared_fields(
     wins; otherwise the closest directory does (shortcut: imports are not
     followed, so two same-named types in different folders resolve by
     proximity -- upgrade if a repo hits that)."""
+    if _ts.language_for(near) not in _JS_LANGS:  # a JS/TS route reads TS types only
+        return None
     type_name, wrapper = _unwrap_type(type_name)
     fields = _declared_fields(root, files, type_name, near)
     if fields is None or wrapper is None:

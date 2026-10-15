@@ -33,14 +33,12 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from strata_kb.codeingest.extractors import _symbols_lang, _ts
+from strata_kb.codeingest.extractors import _kotlin_parse, _symbols_lang, _ts
 from strata_kb.codeingest.extractors._coverage import NOT_INSTALLED
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.extractors._routes_jsresolve import ModuleResolver
 from strata_kb.codeingest.extractors._routes_jsutil import (
     _EXTS,
-    _error_line,
-    _parse,
     _read,
 )
 from strata_kb.codeingest.extractors._scopes import Scope, find_scopes, scope_of
@@ -177,7 +175,7 @@ class _Reader:
         if hint is not None and not hint.search(data):
             return _Surface([], (), [])
         try:
-            tree = _parse(rel, data)
+            tree = _kotlin_parse.parse(rel, data)
             names = exporter(tree, data)
             extras = _symbols_lang.EXTRAS.get(lang)
             found = extras(tree, data) if extras is not None else None
@@ -185,7 +183,11 @@ class _Reader:
             self._warnings.append(f"symbols: {rel} could not be read: {exc!r}")
             return _Surface([], (), [f"{rel}:1"])
         sites = [f"{rel}:{n}" for n in (found.unreadable if found else ())]
-        line = None if lang in _symbols_lang.LENIENT else _error_line(tree)
+        line = (
+            None
+            if lang in _symbols_lang.LENIENT
+            else _kotlin_parse.error_line(tree, lang)
+        )
         if line is not None:
             sites.append(f"{rel}:{line}")
         default = found.default if found else None

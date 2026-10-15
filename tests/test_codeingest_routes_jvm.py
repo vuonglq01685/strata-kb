@@ -627,7 +627,7 @@ data class Greeting(val text: String, val lang: String? = null)
     result = run_routes(tmp_path)
     assert paths(result) == [
         ("GET", "/health"),
-        ("GET", "/hello/{name}{?lang}"),
+        ("GET", "/hello/{name}"),
         ("POST", "/hello"),
     ]
     assert row(result).status == "complete"
@@ -881,3 +881,445 @@ def test_kotlin_request_type_with_base_class_has_no_fields(tmp_path):
     )
     l3 = section(run_routes(tmp_path), f"{KOTLIN}/K.kt").l3_md
     assert "Req: request type declared outside the repo" in l3
+
+
+# --- fix round 1 ------------------------------------------------------------
+
+
+def detail_sites(result) -> list[str]:
+    return [s for s in row(result).detail.split("; ") if s]
+
+
+def test_controller_with_no_route_and_no_site_gets_a_class_site(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/Empty.java",
+        "package app;\n@RestController\npublic class Empty {\n}\n",
+    )
+    result = run_routes(tmp_path)
+    assert result.sections == []
+    assert (row(result).status, row(result).detail) == (
+        "partial",
+        f"{JAVA}/Empty.java:3",
+    )
+
+
+def test_spring_interface_implementation_is_a_site(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/UserApi.java",
+        'package app;\n@RequestMapping("/api/users")\npublic interface UserApi {\n  @GetMapping("/{id}")\n  UserDto get(@PathVariable Long id);\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/UserController.java",
+        "package app;\n@RestController\npublic class UserController implements UserApi {\n  @Override\n  public UserDto get(Long id) { return null; }\n}\n",
+    )
+    result = run_routes(tmp_path)
+    assert result.sections == []
+    assert row(result).status == "partial"
+    assert detail_sites(result) == [
+        f"{JAVA}/UserApi.java:2",
+        f"{JAVA}/UserApi.java:4",
+        f"{JAVA}/UserController.java:5",
+    ]
+
+
+def test_override_in_controller_is_a_site_even_beside_real_routes(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        'package app;\n@RestController\npublic class C implements Api {\n  @GetMapping("/x") public String x() { return ""; }\n  @Override\n  public String y() { return ""; }\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{KOTLIN}/K.kt",
+        'package app\n\n@RestController\nclass K : PetsApi {\n    override fun listPets(): String = ""\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [("GET", "/x")]
+    assert detail_sites(result) == [f"{JAVA}/C.java:6", f"{KOTLIN}/K.kt:5"]
+
+
+def test_quarkus_resource_implementing_interface_is_a_site(tmp_path):
+    gradle(tmp_path, QUARKUS)
+    write(
+        tmp_path,
+        f"{JAVA}/R.java",
+        '@Path("/r")\npublic class R implements RApi {\n  @Override\n  public String g() { return ""; }\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert result.sections == [] and row(result).status == "partial"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "id 'org.openapi.generator' version '7.0.0'",
+        "id 'io.quarkiverse.openapi.generator' version '2.0'",
+        "implementation 'io.swagger:swagger-codegen:3'",
+    ],
+)
+def test_openapi_generator_in_build_file_is_a_site(tmp_path, line):
+    write(
+        tmp_path,
+        "build.gradle",
+        f"plugins {{\n  {line}\n}}\ndependencies {{\n  implementation '{SPRING}'\n}}\n",
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        '@RestController class C { @GetMapping("/x") void x() {} }\n',
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert detail_sites(result) == ["build.gradle:2"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "base"),
+    [
+        ("interface", '@RequestMapping("/api")\npublic interface Base {}\n'),
+        ("abstract", '@RequestMapping("/api")\npublic abstract class Base {}\n'),
+    ],
+)
+def test_class_level_prefix_on_a_non_controller_is_a_site(tmp_path, kind, base):
+    gradle(tmp_path, SPRING)
+    write(tmp_path, f"{JAVA}/Base.java", "package app;\n" + base)
+    write(
+        tmp_path,
+        f"{JAVA}/UserController.java",
+        "package app;\n@RestController\npublic class UserController "
+        + ("implements" if kind == "interface" else "extends")
+        + ' Base {\n  @GetMapping("/users")\n  public String list() { return ""; }\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert f"{JAVA}/Base.java:2" in row(result).detail
+
+
+def test_composed_annotation_only_files_are_still_scanned(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/ApiV1.java",
+        '@RestController\n@RequestMapping("/api/v1")\npublic @interface ApiV1 {}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/GetJson.java",
+        '@GetMapping(produces = "application/json")\npublic @interface GetJson {}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/Users.java",
+        'package app;\n@ApiV1\npublic class Users {\n  @GetJson("/users")\n  public String list() { return ""; }\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{KOTLIN}/Api.kt",
+        "package app\n\n@RestController\nannotation class KApi\n",
+    )
+    write(
+        tmp_path,
+        f"{KOTLIN}/Ku.kt",
+        'package app\n\n@KApi\nclass Ku {\n    fun u() = "u"\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert f"{JAVA}/Users.java:2" in row(result).detail
+    assert f"{JAVA}/Users.java:4" in row(result).detail
+    assert f"{KOTLIN}/Ku.kt:3" in row(result).detail
+
+
+@pytest.mark.parametrize(
+    ("fw", "text"),
+    [
+        (
+            SPRING,
+            '@RestController\n@RequestMapping("${api.prefix}/orders")\nclass C { @GetMapping("/x") void x() {} }\n',
+        ),
+        (
+            SPRING,
+            '@RestController\nclass C {\n  @GetMapping("${p.x:/x}") void x() {}\n}\n',
+        ),
+        (
+            MICRONAUT,
+            '@Controller("${api.base:/api}/health")\nclass C {\n  @Get void h() {}\n}\n',
+        ),
+    ],
+)
+def test_placeholder_path_is_a_site_not_a_route(tmp_path, fw, text):
+    gradle(tmp_path, fw)
+    write(tmp_path, f"{JAVA}/C.java", text)
+    result = run_routes(tmp_path)
+    assert result.sections == [] and row(result).status == "partial"
+
+
+def test_path_literal_escapes_are_decoded(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        '@RestController class C {\n  @GetMapping("/{id:\\\\d+}") void a() {}\n}\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/{id:\\d+}")]
+
+
+def test_micronaut_query_templates_are_stripped(tmp_path):
+    gradle(tmp_path, MICRONAUT)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        '@Controller("/c")\nclass C {\n  @Get("/list{?max,offset}") void a() {}\n  @Get("/{id}{&x}") void b() {}\n}\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/c/list"), ("GET", "/c/{id}")]
+
+
+def test_request_type_fields_come_from_the_routes_own_language(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/U.java",
+        'package app;\n@RestController\nclass U {\n  @PostMapping("/u") void c(@RequestBody Req r) {}\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/Req.java",
+        "package app;\npublic record Req(String email) {}\n",
+    )
+    write(tmp_path, "frontend/package.json", '{"dependencies": {"react": "18"}}')
+    write(
+        tmp_path,
+        "frontend/src/types.ts",
+        "export interface Req { displayName?: string }\n",
+    )
+    l3 = section(run_routes(tmp_path), f"{JAVA}/U.java").l3_md
+    assert "| email | String | yes |" in l3 and "displayName" not in l3
+
+
+def test_java_reader_does_not_answer_for_a_typescript_route(tmp_path):
+    from strata_kb.codeingest.extractors import _jvm_fields
+
+    write(tmp_path, "src/Req.java", "public record Req(String email) {}\n")
+    assert (
+        _jvm_fields.declared_fields(tmp_path, ["src/Req.java", "a.ts"], "Req", "a.ts")
+        is None
+    )
+
+
+def test_spring_boot_jersey_resource_is_a_site(tmp_path):
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-jersey")
+    write(
+        tmp_path,
+        f"{JAVA}/H.java",
+        'package app;\n@Component\n@Path("/hello")\npublic class H {\n  @GET public String h() { return ""; }\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert row(result).detail == f"{JAVA}/H.java:3"
+
+
+def test_spring_data_rest_repositories_are_sites_only_with_the_dependency(tmp_path):
+    gradle(tmp_path, "org.springframework.boot:spring-boot-starter-data-rest")
+    write(
+        tmp_path,
+        f"{JAVA}/PersonRepository.java",
+        "package app;\npublic interface PersonRepository\n    extends JpaRepository<Person, Long> {\n}\n",
+    )
+    write(
+        tmp_path,
+        f"{KOTLIN}/PetRepository.kt",
+        "package app\n\ninterface PetRepository : CrudRepository<Pet, Long>\n",
+    )
+    result = run_routes(tmp_path)
+    assert detail_sites(result) == [
+        f"{JAVA}/PersonRepository.java:2",
+        f"{KOTLIN}/PetRepository.kt:3",
+    ]
+    plain = tmp_path / "plain"
+    gradle(plain, SPRING)
+    write(
+        plain,
+        f"{JAVA}/PersonRepository.java",
+        "package app;\npublic interface PersonRepository extends JpaRepository<Person, Long> {}\n",
+    )
+    assert row(run_routes(plain)).status == "complete"
+
+
+def test_spring_http_exchange_on_a_controller_is_listed(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/G.java",
+        """package app;
+@RestController
+@HttpExchange("/greet")
+public class G {
+  @GetExchange("/{name}")
+  public String greet(@PathVariable String name) { return name; }
+  @PostExchange
+  public void add(@RequestBody Msg m) {}
+  @HttpExchange(method = "PUT", url = "/p")
+  public void put() {}
+}
+""",
+    )
+    write(
+        tmp_path,
+        f"{JAVA}/Client.java",
+        'package app;\n@HttpExchange("/remote")\npublic interface Client {\n  @GetExchange("/x") String x();\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [
+        ("GET", "/greet/{name}"),
+        ("POST", "/greet"),
+        ("PUT", "/greet/p"),
+    ]
+    assert row(result).status == "complete"
+
+
+def test_quarkus_spring_web_controller_is_a_site(tmp_path):
+    gradle(tmp_path, QUARKUS)
+    write(
+        tmp_path,
+        f"{JAVA}/S.java",
+        'package app;\n@RestController\n@RequestMapping("/s")\npublic class S {\n  @GetMapping("/x") public String x() { return ""; }\n}\n',
+    )
+    result = run_routes(tmp_path)
+    assert result.sections == [] and row(result).status == "partial"
+    assert f"{JAVA}/S.java:2" in row(result).detail
+
+
+def test_kotlin_one_line_bodies_do_not_make_a_controller_partial(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/C.kt",
+        """package app
+
+@RestController
+@RequestMapping("/c")
+class C {
+    companion object { private val log = LoggerFactory.getLogger(C::class.java) }
+
+    @GetMapping("/ok")
+    fun ok(): String {
+        return "ok"
+    }
+}
+
+object Paths { const val X = "/x" }
+
+data class P(val a: Int) { fun b() = a }
+""",
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [("GET", "/c/ok")]
+    assert (row(result).status, row(result).detail) == ("complete", "")
+
+
+def test_kotlin_handler_inside_a_one_line_body_is_still_found(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/C.kt",
+        'package app\n\n@RestController\nclass C { @GetMapping("/a") fun a() {} }\n',
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [("GET", "/a")]
+    assert row(result).status == "complete"
+
+
+def test_kotlin_one_line_object_symbols_are_read(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/P.kt",
+        'package app\n\nobject Paths { const val X = "/x" }\n\nclass K { fun f() {} }\n',
+    )
+    result = run_symbols(tmp_path)
+    assert ("Paths.X", "member") in names_of(result)
+    (cov,) = [r for r in result.coverage if r.framework == "kotlin"]
+    assert cov.status == "complete"
+
+
+def test_product_files_named_like_tests_are_scanned(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/ABTest.java",
+        'package app;\n@RestController\npublic class ABTest {\n  @GetMapping("/ab")\n  public String ab() { return ""; }\n}\n',
+    )
+    write(
+        tmp_path,
+        f"{KOTLIN}/ProductSpec.kt",
+        'package app\n\n@RestController\nclass ProductSpec {\n    @GetMapping("/spec")\n    fun s() = ""\n}\n',
+    )
+    write(
+        tmp_path,
+        "src/test/java/app/FooTest.java",
+        '@RestController class FooTest { @GetMapping("/t") void t() {} }\n',
+    )
+    assert paths(run_routes(tmp_path)) == [("GET", "/ab"), ("GET", "/spec")]
+
+
+def test_request_type_sources_are_read_once_per_run(tmp_path, monkeypatch):
+    from strata_kb.codeingest.extractors import _jvm_fields
+
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{JAVA}/C.java",
+        'package app;\n@RestController\nclass C {\n  @PostMapping("/a") void a(@RequestBody A a) {}\n  @PostMapping("/b") void b(@RequestBody B b) {}\n}\n',
+    )
+    write(tmp_path, f"{JAVA}/A.java", "package app;\nclass A { String a; }\n")
+    write(tmp_path, f"{JAVA}/B.java", "package app;\nclass B { String b; }\n")
+    seen: list[str] = []
+    real = _jvm_fields._read
+    monkeypatch.setattr(
+        _jvm_fields, "_read", lambda root, rel: (seen.append(rel), real(root, rel))[1]
+    )
+    run_routes(tmp_path)
+    assert seen and len(seen) == len(set(seen))
+
+
+def test_kotlin_controller_survives_the_grammar_misparse(tmp_path):
+    # tree-sitter-kotlin reads `@A @B("x") class C {}` as an expression when
+    # another top-level declaration follows; the file must still be read
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/C.kt",
+        """package app
+
+@RestController
+@RequestMapping("/c")
+class C {
+    @GetMapping("/ok")
+    fun ok() = "ok"
+}
+
+data class Dto(val a: String)
+
+fun helper() {
+}
+""",
+    )
+    result = run_routes(tmp_path)
+    assert paths(result) == [("GET", "/c/ok")]
+    assert (row(result).status, row(result).detail) == ("complete", "")
+    symbols_result = run_symbols(tmp_path)
+    assert {"C", "Dto", "helper"} <= {n for n, _k in names_of(symbols_result)}
+
+
+def test_kotlin_misparse_that_cannot_be_repaired_is_a_site(tmp_path):
+    gradle(tmp_path, SPRING)
+    write(
+        tmp_path,
+        f"{KOTLIN}/C.kt",
+        'package app\n\n@RestController\n@RequestMapping("/c")\nclass C {\n    @GetMapping("/ok") fun ok() = (\n}\n\nclass D {\n}\n',
+    )
+    assert row(run_routes(tmp_path)).status == "partial"

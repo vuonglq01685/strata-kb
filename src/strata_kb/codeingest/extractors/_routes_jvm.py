@@ -23,24 +23,20 @@ nothing, so they are skipped. Test source sets are not product routes.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from strata_kb.codeingest.extractors import _jvm_ast as ast
+from strata_kb.codeingest.extractors import _kotlin_parse, _ts
 from strata_kb.codeingest.extractors._jvm_config import (
     MICRONAUT_KEYS,
     QUARKUS_KEYS,
     SPRING_KEYS,
     config_sites,
 )
-from strata_kb.codeingest.extractors._routes_jsutil import (
-    _error_line,
-    _parse,
-    _read,
-    _walk,
-)
+from strata_kb.codeingest.extractors._routes_jsutil import _read, _walk
 from strata_kb.codeingest.extractors._routes_model import (
     AdapterResult,
     Route,
@@ -57,6 +53,11 @@ _HTTP_VERBS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"}
 )
 _META = re.compile(rb"@interface\b|\bannotation\s+class\b")
+_QUERY_TEMPLATE = re.compile(r"\{[?&][^}]*\}")
+_GENERATOR = re.compile(
+    r"openapi[-._]?generator|openapitools|swagger[-._]?codegen", re.IGNORECASE
+)
+_MANIFESTS = frozenset({"pom.xml", "build.gradle", "build.gradle.kts"})
 _COMMENT = re.compile(r"^\s*(?://|/\*|\*)")
 
 # (verb, relative paths) per handler annotation set; None = not readable
@@ -75,20 +76,33 @@ class _Fw:
     prefix: Callable[[list[ast.Ann]], _Prefix]
     routes: Callable[[list[ast.Ann]], _Found]
     app_path: frozenset[str] = frozenset()
+    # routing annotations that only count on a stereotype class (an
+    # interface that carries them is an HTTP client, not a server)
+    exchange: frozenset[str] = frozenset()
+    # class annotations of another framework's server: not followed here
+    foreign: frozenset[str] = frozenset()
+    # manifest text that turns every repository interface into an endpoint
+    data_rest: re.Pattern[str] | None = None
 
     @property
     def carriers(self) -> frozenset[str]:
         return self.handlers | self.stereotypes
 
-    @property
-    def hint(self) -> re.Pattern[bytes]:
-        names = self.carriers | self.clients | self.app_path
-        return re.compile(
-            rb"\b(?:"
-            + "|".join(sorted(names)).encode()
-            + rb")\b|"
-            + self.unfollowed.pattern.encode()
+    def hint(
+        self, extra: Iterable[str] = (), repositories: bool = False
+    ) -> re.Pattern[bytes]:
+        """Cheap prefilter: a file with none of these is never parsed."""
+        names = (
+            self.carriers
+            | self.clients
+            | self.app_path
+            | self.exchange
+            | self.foreign
+            | frozenset(extra)
         )
+        pattern = rb"\b(?:" + "|".join(sorted(names)).encode() + rb")\b|"
+        pattern += self.unfollowed.pattern.encode()
+        return re.compile(pattern + (rb"|Repository\b" if repositories else b""))
 
 
 def _paths(node: Node | None) -> list[str] | None:
@@ -110,8 +124,20 @@ _SPRING_VERBS = {
 }
 
 
+_EXCHANGE_VERBS = {
+    "GetExchange": "GET",
+    "PostExchange": "POST",
+    "PutExchange": "PUT",
+    "PatchExchange": "PATCH",
+    "DeleteExchange": "DELETE",
+}
+
+
 def _spring_prefix(anns: list[ast.Ann]) -> _Prefix:
+    exchange = next((a for a in anns if a.name == "HttpExchange"), None)
     mapping = next((a for a in anns if a.name == "RequestMapping"), None)
+    if mapping is None and exchange is not None:
+        return _paths(exchange.arg("value", "url", "")), exchange.line
     if mapping is None:
         return [""], 0
     if mapping.arg("method") is not None:  # a verb filter on the class
@@ -122,6 +148,19 @@ def _spring_prefix(anns: list[ast.Ann]) -> _Prefix:
 def _spring_routes(anns: list[ast.Ann]) -> _Found:
     out: _Found = []
     for ann in anns:
+        if ann.name in _EXCHANGE_VERBS or ann.name == "HttpExchange":
+            given = ann.arg("method") if ann.name == "HttpExchange" else None
+            verbs = [_EXCHANGE_VERBS.get(ann.name, "ANY")]
+            if given is not None:
+                named = ast.strings(given)
+                verbs = [v.upper() for v in named or []]
+                if not verbs or any(v not in _HTTP_VERBS for v in verbs):
+                    return None
+            paths = _paths(ann.arg("value", "url", ""))
+            if paths is None:
+                return None
+            out += [(v, paths) for v in verbs]
+            continue
         if ann.name in _SPRING_VERBS:
             verbs = [_SPRING_VERBS[ann.name]]
         elif ann.name == "RequestMapping":
@@ -190,6 +229,8 @@ def _micronaut_routes(anns: list[ast.Ann]) -> _Found:
         paths = _paths(ann.arg("value", "uri", "uris", ""))
         if paths is None:
             return None
+        # RFC 6570 query templates (`{?max,offset}`, `{&x}`) are not path
+        paths = [_QUERY_TEMPLATE.sub("", p) for p in paths]
         out.append((_MICRONAUT_VERBS[ann.name], paths))
     return out
 
@@ -209,6 +250,9 @@ _FRAMEWORKS: dict[str, _Fw] = {
         ),
         prefix=_spring_prefix,
         routes=_spring_routes,
+        exchange=frozenset({*_EXCHANGE_VERBS, "HttpExchange"}),
+        foreign=frozenset({"Path"}),  # Jersey under Spring Boot
+        data_rest=re.compile(r"data-rest"),
     ),
     "Quarkus": _Fw(
         handlers=frozenset({*_JAXRS_VERBS, "Path", "HttpMethod"}),
@@ -222,6 +266,7 @@ _FRAMEWORKS: dict[str, _Fw] = {
         prefix=_quarkus_prefix,
         routes=_quarkus_routes,
         app_path=frozenset({"ApplicationPath"}),
+        foreign=frozenset({"RestController", "RequestMapping"}),  # quarkus-spring-web
     ),
     "Micronaut": _Fw(
         handlers=frozenset({*_MICRONAUT_VERBS, "CustomHttpMethod"}),
@@ -236,18 +281,26 @@ _FRAMEWORKS: dict[str, _Fw] = {
 }
 
 
-def _composed(parsed: list[tuple[str, Tree]], fw: _Fw) -> frozenset[str]:
+def _composed(trees: dict[str, Tree], fw: _Fw) -> frozenset[str]:
     """Names of repo-defined annotations that themselves carry a routing
-    annotation (`@ApiV1` = `@RestController @RequestMapping("/v1")`)."""
+    annotation, directly or through another such annotation (`@ApiV1` =
+    `@RestController @RequestMapping("/v1")`)."""
     found: set[str] = set()
-    for _rel, tree in parsed:
-        for node in _walk(tree.root_node):
-            if (
-                node.type in ("annotation_type_declaration", "class_declaration")
-                and ast.is_annotation_type(node)
-                and any(a.name in fw.carriers for a in ast.annotations_of(node))
-            ):
-                found.add(ast.class_name(node))
+    grew = True
+    while grew:
+        grew = False
+        for tree in trees.values():
+            for node in _walk(tree.root_node):
+                if (
+                    node.type in ("annotation_type_declaration", "class_declaration")
+                    and ast.is_annotation_type(node)
+                    and ast.class_name(node) not in found
+                    and any(
+                        a.name in fw.carriers | found for a in ast.annotations_of(node)
+                    )
+                ):
+                    found.add(ast.class_name(node))
+                    grew = True
     return frozenset(found)
 
 
@@ -263,41 +316,59 @@ def _scan_class(
 ) -> list[Route]:
     anns = ast.annotations_of(cls)
     members = [(m, ast.annotations_of(m)) for m in ast.methods(cls)]
-    result.dynamic_sites += [
+    sites = result.dynamic_sites
+    start = len(sites)
+    sites += [
         f"{rel}:{a.line}"
         for a in [*anns, *(a for _m, found in members for a in found)]
         if a.name in composed
     ]
-    mapped = [
-        (m, next(a for a in found if a.name in fw.handlers), found)
-        for m, found in members
-        if any(a.name in fw.handlers for a in found)
-    ]
+    sites += [f"{rel}:{a.line}" for a in anns if a.name in fw.foreign]
     names = {a.name for a in anns}
-    if not mapped or names & fw.clients:
+    if names & fw.clients:
         return []
     if not names & fw.stereotypes:
-        result.dynamic_sites.append(f"{rel}:{mapped[0][1].line}")
+        # a handler annotation on an interface or base class: the classes
+        # that inherit it serve routes this scan cannot attach a path to
+        sites += [f"{rel}:{a.line}" for a in anns if a.name in fw.handlers]
+        for _m, found in members:
+            first = next((a for a in found if a.name in fw.handlers), None)
+            if first is not None:
+                sites.append(f"{rel}:{first.line}")
         return []
+    routing = fw.handlers | fw.exchange
+    mapped = [
+        (m, next(a for a in found if a.name in routing), found)
+        for m, found in members
+        if any(a.name in routing for a in found)
+    ]
+    # an override serves whatever the supertype mapped; invisible from here
+    sites += [
+        f"{rel}:{ast.name_line(m)}"
+        for m, found in members
+        if ast.is_override(m) and not any(a.name in routing for a in found)
+    ]
+    out: list[Route] = []
     prefixes, line = fw.prefix(anns)
     if prefixes is None:
-        result.dynamic_sites.append(f"{rel}:{line}")
-        return []
-    handler_class = ast.class_name(cls)
-    out: list[Route] = []
-    for method, first, found in mapped:
-        read = fw.routes(found)
-        if read is None:
-            result.dynamic_sites.append(f"{rel}:{first.line}")
-            continue
-        handler = f"{handler_class}.{_method_name(method)}"
-        body = _request_type(method, fw)
-        out += [
-            Route(verb, join_path(prefix, path), handler, rel, first.line, body)
-            for verb, paths in read
-            for prefix in prefixes
-            for path in paths
-        ]
+        sites.append(f"{rel}:{line}")
+    else:
+        handler_class = ast.class_name(cls)
+        for method, first, found in mapped:
+            read = fw.routes(found)
+            if read is None:
+                sites.append(f"{rel}:{first.line}")
+                continue
+            handler = f"{handler_class}.{_method_name(method)}"
+            body = _request_type(method, fw)
+            out += [
+                Route(verb, join_path(prefix, path), handler, rel, first.line, body)
+                for verb, paths in read
+                for prefix in prefixes
+                for path in paths
+            ]
+    if not out and len(sites) == start:  # a controller that yields nothing
+        sites.append(f"{rel}:{ast.name_line(cls)}")
     return out
 
 
@@ -330,6 +401,42 @@ def _application_prefix(found: list[tuple[str, ast.Ann]], result: AdapterResult)
     return ""
 
 
+def _manifests(
+    root: Path, scope: Scope, repo_files: list[str]
+) -> list[tuple[str, str]]:
+    """(path, text) of the build files in the scope's own directory."""
+    out = []
+    for rel in repo_files:
+        folder, _sep, name = rel.rpartition("/")
+        if name in _MANIFESTS and (folder or ".") == scope.path:
+            data = _read(root, rel)
+            if data is not None:
+                out.append((rel, data.decode("utf-8", "replace")))
+    return out
+
+
+def _generator_sites(manifests: list[tuple[str, str]]) -> list[str]:
+    """Generated server stubs (OpenAPI Generator, swagger-codegen) come from
+    a build step: their interfaces are not in the tree."""
+    return [
+        f"{rel}:{number}"
+        for rel, text in manifests
+        for number, line in enumerate(text.splitlines(), start=1)
+        if _GENERATOR.search(line)
+    ]
+
+
+def _repository_sites(rel: str, tree: Tree) -> list[str]:
+    """Spring Data REST exports every repository interface as endpoints."""
+    sites = []
+    for decl in ast.classes(tree.root_node):
+        header = ast.header_text(decl)
+        supertypes = header.split(ast.class_name(decl), 1)[-1]
+        if ast.is_interface(decl) and re.search(r"\w*Repository\b", supertypes):
+            sites.append(f"{rel}:{ast.name_line(decl)}")
+    return sites
+
+
 def _adapter(
     label: str,
 ) -> Callable[[Path, Scope, list[str], list[str]], AdapterResult]:
@@ -339,26 +446,45 @@ def _adapter(
         root: Path, scope: Scope, files: list[str], repo_files: list[str]
     ) -> AdapterResult:
         result = AdapterResult()
-        parsed: list[tuple[str, Tree]] = []
         sources: dict[str, bytes] = {}
         for rel in ast.jvm_files(files):
             data = _read(root, rel)
             if data is None:
                 result.dynamic_sites.append(f"{rel}:1")
-                continue
-            if not (fw.hint.search(data) or _META.search(data)):
-                continue
-            tree = _parse(rel, data)
-            line = _error_line(tree)
-            if line is not None:
-                result.dynamic_sites.append(f"{rel}:{line}")
-            parsed.append((rel, tree))
-            sources[rel] = data
-        composed = _composed(parsed, fw)
+            else:
+                sources[rel] = data
+        trees: dict[str, Tree] = {}
+
+        def tree_of(rel: str) -> None:
+            if rel not in trees:
+                trees[rel] = _kotlin_parse.parse(rel, sources[rel])
+                lang = _ts.language_for(rel) or ""
+                line = _kotlin_parse.error_line(trees[rel], lang)
+                if line is not None:
+                    result.dynamic_sites.append(f"{rel}:{line}")
+
+        manifests = _manifests(root, scope, repo_files)
+        result.dynamic_sites += _generator_sites(manifests)
+        data_rest = fw.data_rest is not None and any(
+            fw.data_rest.search(text) for _rel, text in manifests
+        )
+        # annotation declarations first: a file that only uses `@ApiV1` has
+        # none of the routing words, so the prefilter needs their names
+        for rel in sorted(sources):
+            if _META.search(sources[rel]):
+                tree_of(rel)
+        composed = _composed(trees, fw)
+        hint = fw.hint(composed, data_rest)
+        for rel in sorted(sources):
+            if hint.search(sources[rel]):
+                tree_of(rel)
         routes: list[Route] = []
         app_paths: list[tuple[str, ast.Ann]] = []
-        for rel, tree in parsed:
+        for rel in sorted(trees):
+            tree = trees[rel]
             result.dynamic_sites += _unfollowed_sites(rel, sources[rel], fw)
+            if data_rest:
+                result.dynamic_sites += _repository_sites(rel, tree)
             for cls in ast.classes(tree.root_node):
                 app_paths += [
                     (rel, a) for a in ast.annotations_of(cls) if a.name in fw.app_path

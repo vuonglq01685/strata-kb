@@ -33,17 +33,34 @@ CLASS_TYPES = frozenset(
 )
 _ARRAY_TYPES = frozenset({"element_value_array_initializer", "collection_literal"})
 _ARRAY_CALLS = frozenset({"arrayOf", "listOf", "setOf"})
-_TEST_RE = re.compile(
+_TEST_DIR = re.compile(
     r"(?:^|/)src/(?:test|integrationTest|testFixtures|functionalTest)/"
-    r"|(?:Tests?|IT|Spec)\.(?:java|kt|kts)$"
 )
+# `FooTest.java` is a test only outside `src/main`: `ABTest` can be a product class
+_TEST_NAME = re.compile(r"(?:Tests?|IT|Spec)\.(?:java|kt|kts)$")
+_MAIN = re.compile(r"(?:^|/)src/main/")
+
+
+def _is_test(rel: str) -> bool:
+    if _TEST_DIR.search(rel):
+        return True
+    return not _MAIN.search(rel) and bool(_TEST_NAME.search(rel))
 
 
 def jvm_files(files: list[str]) -> list[str]:
     """Java/Kotlin product sources of a scope (test source sets skipped)."""
-    return [
-        f for f in files if _ts.language_for(f) in JVM_LANGS and not _TEST_RE.search(f)
-    ]
+    return [f for f in files if _ts.language_for(f) in JVM_LANGS and not _is_test(f)]
+
+
+def flatten(node: Node | None) -> list[Node]:
+    """Children of a body, with the members of an ERROR wrapper spliced in."""
+    out: list[Node] = []
+    for child in node.children if node is not None else []:
+        if child.type == "ERROR":
+            out += flatten(child)
+        else:
+            out.append(child)
+    return out
 
 
 @dataclass
@@ -169,12 +186,48 @@ def _body(cls: Node) -> Node | None:
 
 
 def methods(cls: Node) -> list[Node]:
-    body = _body(cls)
     return [
         m
-        for m in (body.children if body is not None else [])
+        for m in flatten(_body(cls))
         if m.type in ("method_declaration", "function_declaration")
     ]
+
+
+def name_line(decl: Node) -> int:
+    """Line of a class or method name (its annotations may start the node
+    on an earlier line)."""
+    named = decl.child_by_field_name("name") or next(
+        (
+            c
+            for c in decl.children
+            if c.type in ("type_identifier", "simple_identifier")
+        ),
+        decl,
+    )
+    return _ts.line_of(named)
+
+
+def is_interface(decl: Node) -> bool:
+    return decl.type == "interface_declaration" or any(
+        c.type == "interface" for c in decl.children
+    )
+
+
+def header_text(decl: Node) -> str:
+    """The declaration up to its body: name, type parameters, supertypes."""
+    body = _body(decl)
+    end = body.start_byte if body is not None else decl.end_byte
+    return (decl.text or b"")[: end - decl.start_byte].decode("utf-8", "replace")
+
+
+def is_override(method: Node) -> bool:
+    """`@Override` (Java) or the `override` modifier (Kotlin)."""
+    return any(a.name == "Override" for a in annotations_of(method)) or any(
+        _text(c) == "override"
+        for mods in method.children
+        if mods.type == "modifiers"
+        for c in mods.children
+    )
 
 
 def params(method: Node) -> list[Param]:
@@ -230,9 +283,10 @@ def strings(node: Node | None) -> list[str] | None:
     out: list[str] = []
     for item in items:
         value = _ts.string_literal(item)
-        if value is None:
+        # `${...}` is a property placeholder resolved at runtime
+        if value is None or "${" in value:
             return None
-        out.append(value)
+        out.append(re.sub(r'\\(["\\])', r"\1", value))
     return out
 
 

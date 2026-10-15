@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from strata_kb.codeingest.extractors._jvm_ast import flatten
 from strata_kb.codeingest.extractors._routes_jsutil import _text
 
 if TYPE_CHECKING:
@@ -106,7 +107,7 @@ def _property_names(prop: Node) -> list[str]:
 
 def _const_members(owner: str, body: Node | None) -> list[_Name]:
     out: list[_Name] = []
-    for prop in body.children if body is not None else []:
+    for prop in flatten(body):
         if prop.type != "property_declaration":
             continue
         words = _text_modifiers(prop)
@@ -129,7 +130,7 @@ def _kotlin_class(decl: Node) -> list[_Name]:
     body = next(
         (c for c in decl.children if c.type in ("class_body", "enum_class_body")), None
     )
-    for member in body.children if body is not None else []:
+    for member in flatten(body):
         if member.type == "enum_entry":
             out.append(
                 (f"{name}.{_first_name(member, ('simple_identifier',))}", "member")
@@ -153,7 +154,7 @@ def _text_modifiers(decl: Node) -> set[str]:
 
 def _kotlin(tree: Tree, _source: bytes) -> list[_Name]:
     out: list[_Name] = []
-    for decl in tree.root_node.children:
+    for decl in flatten(tree.root_node):
         if _text_modifiers(decl) & _HIDDEN:
             continue
         if decl.type == "class_declaration":

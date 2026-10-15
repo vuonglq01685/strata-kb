@@ -16,19 +16,19 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb.codeingest.extractors import _ts
+from strata_kb.codeingest.extractors import _kotlin_parse, _ts
 from strata_kb.codeingest.extractors._jvm_ast import (
     JVM_LANGS,
     Ann,
     annotations_of,
     class_name,
     classes,
+    flatten,
 )
 from strata_kb.codeingest.extractors._routes_jsutil import (
     Field,
     _common_dirs,
     _lit,
-    _parse,
     _read,
     _text,
 )
@@ -108,9 +108,7 @@ def _kotlin_fields(decl: Node) -> list[Field] | None:
         return None
     ctor = next((c for c in kids if c.type == "primary_constructor"), None)
     body = next((c for c in kids if c.type == "class_body"), None)
-    if ctor is None or any(
-        c.type == "property_declaration" for c in (body.children if body else [])
-    ):
+    if ctor is None or any(c.type == "property_declaration" for c in flatten(body)):
         return None
     out = []
     for param in ctor.named_children:
@@ -136,13 +134,36 @@ def _kotlin_fields(decl: Node) -> list[Field] | None:
     return out
 
 
+# Source bytes read for the run in progress. `routes.py` passes the same
+# `files` list to every call of a run, so list identity scopes the cache; a
+# new run brings a new list and drops it.
+_reads: tuple[list[str], dict[str, bytes | None]] | None = None
+
+
+def _run_cache(files: list[str]) -> dict[str, bytes | None]:
+    global _reads
+    if _reads is None or _reads[0] is not files:
+        _reads = (files, {})
+    return _reads[1]
+
+
 def declared_fields(
     root: Path, files: list[str], type_name: str, near: str
 ) -> list[Field] | None:
     """Fields of `type_name` when it is a plain class/record declared in the
     repo, else None. A declaration in `near` (the route's file) wins, then
     the closest directory (shortcut: imports are not followed -- upgrade if
-    a repo hits two same-named types)."""
+    a repo hits two same-named types). Only a Java/Kotlin route reads
+    Java/Kotlin types."""
+    if _ts.language_for(near) not in JVM_LANGS:
+        return None
+    reads = _run_cache(files)
+
+    def data_of(rel: str) -> bytes | None:
+        if rel not in reads:
+            reads[rel] = _read(root, rel)
+        return reads[rel]
+
     type_name = element_type(type_name)
     pattern = re.compile(
         rb"\b(?:class|record|interface|enum)\s+"
@@ -152,15 +173,15 @@ def declared_fields(
     candidates = []
     for rel in files:
         if _ts.language_for(rel) in JVM_LANGS:
-            data = _read(root, rel)
+            data = data_of(rel)
             if data is not None and pattern.search(data):
                 candidates.append(rel)
     candidates.sort(key=lambda rel: (rel != near, -_common_dirs(rel, near), rel))
     for rel in candidates:
-        data = _read(root, rel)
+        data = data_of(rel)
         if data is None:
             continue
-        for decl in classes(_parse(rel, data).root_node):
+        for decl in classes(_kotlin_parse.parse(rel, data).root_node):
             if class_name(decl) == type_name:
                 if _ts.language_for(rel) == "java":
                     return _java_fields(decl)
