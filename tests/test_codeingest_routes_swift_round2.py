@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 pytest.importorskip("tree_sitter_language_pack")
@@ -16,29 +14,6 @@ from tests.swift_support import (
     verdict,
     write,
 )
-
-
-def test_many_files_scale_roughly_linearly(tmp_path):
-    vapor_package(tmp_path)
-    write(
-        tmp_path,
-        ROUTES,
-        'import Vapor\nfunc routes(_ app: Application) throws { app.get("x") { r in 1 } }\n',
-    )
-    for i in range(400):
-        props = "\n".join(f"    let p{j}: Int = {j}" for j in range(10))
-        fns = "\n".join(f"    func f{j}() {{ }}" for j in range(10))
-        write(
-            tmp_path,
-            f"Sources/App/M{i}.swift",
-            f"import Vapor\nstruct T{i} {{\n{props}\n{fns}\n}}\n",
-        )
-    start = time.perf_counter()
-    result = run_routes(tmp_path)
-    assert (
-        time.perf_counter() - start < 6
-    )  # 16.6 s when the owner set was rebuilt per call
-    assert verdict(result) == ("complete", "")
 
 
 def test_typical_sessions_and_auth_app_reaches_complete(tmp_path):

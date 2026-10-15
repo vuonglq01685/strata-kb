@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from strata_kb.codeingest.extractors._routes_jsutil import _lit, _text
 from strata_kb.codeingest.extractors._swift_ast import Arg, Call, kids
-from strata_kb.codeingest.extractors._vapor_index import Index
+from strata_kb.codeingest.extractors._vapor_index import Fn, Index
 from strata_kb.codeingest.extractors._vapor_values import (
     HANDLER,
     LITERALS,
@@ -23,6 +23,7 @@ from strata_kb.codeingest.extractors._vapor_values import (
     Frame,
     Items,
     Plain,
+    Router,
     Text,
     unroll,
 )
@@ -113,6 +114,21 @@ def path_constructor(node: Node) -> list[str] | None:
     return [":" + text] if _CONSTRUCTORS[word] else [text]
 
 
+def _builds_middleware(idx: Index, fn: Fn) -> bool:
+    kind = fn.returns()
+    return kind in MIDDLEWARE_TYPES or idx.conforms_any(kind, MIDDLEWARE_PROTOCOLS)
+
+
+def _known_name(idx: Index, name: str) -> bool:
+    """A Vapor middleware factory or type name, unless the repo declares the
+    same name as something that is not middleware."""
+    if name not in MIDDLEWARE_FACTORIES and name not in MIDDLEWARE_TYPES:
+        return False
+    if idx.has_type(name) and not idx.conforms_any(name, MIDDLEWARE_PROTOCOLS):
+        return False
+    return all(_builds_middleware(idx, f) for f in idx.fns_named.get(name, []))
+
+
 def _is_middleware_call(idx: Index, node: Node) -> bool:
     """`User.authenticator()`, `FileMiddleware(..)`, `AuthMiddleware()` of an
     in-repo middleware type: calls that provably build middleware."""
@@ -121,15 +137,35 @@ def _is_middleware_call(idx: Index, node: Node) -> bool:
         return False
     if len(steps) == 1:  # `Type(..)`
         name = _text(base)
-        return name in MIDDLEWARE_TYPES or idx.conforms_any(name, MIDDLEWARE_PROTOCOLS)
+        return _known_name(idx, name) or idx.conforms_any(name, MIDDLEWARE_PROTOCOLS)
     last = steps[-2]
     if last.kind != "m":
         return False
-    if last.name in MIDDLEWARE_FACTORIES or last.name in MIDDLEWARE_TYPES:
+    if _known_name(idx, last.name):
         return True  # `User.authenticator()`, `Vapor.FileMiddleware(..)`
-    return (
-        len(steps) == 2 and _text(base) in MIDDLEWARE_TYPES
+    return len(steps) == 2 and _known_name(
+        idx, _text(base)
     )  # `ErrorMiddleware.default()`
+
+
+def _is_sessions_middleware(frame: Frame, node: Node) -> bool:
+    """`app.sessions.middleware` and `req.application.sessions.middleware`: the
+    base must be the application, or the member is just a path value."""
+    base, steps = unroll(node)
+    names = [s.name for s in steps]
+    if any(s.kind != "m" for s in steps):
+        return False
+    if base.type == "self_expression":
+        root: object = frame.me
+    elif base.type == "simple_identifier" and _text(base) not in frame.unsafe:
+        root = frame.env.lookup(_text(base))[1]
+    else:
+        return False
+    if names == ["sessions", "middleware"]:
+        return isinstance(root, Router)
+    if names == ["application", "sessions", "middleware"]:
+        return isinstance(root, Plain) and root.type == "Request"
+    return False
 
 
 def is_middleware(idx: Index, frame: Frame, node: Node) -> bool:
@@ -139,9 +175,8 @@ def is_middleware(idx: Index, frame: Frame, node: Node) -> bool:
     if node.type == "array_literal":
         parts = kids(node)
         return bool(parts) and all(is_middleware(idx, frame, p) for p in parts)
-    if node.type == "navigation_expression":  # `app.sessions.middleware`
-        spelled = "".join(_text(node).split())
-        return spelled.endswith(".sessions.middleware") and spelled[0].isalpha()
+    if node.type == "navigation_expression":
+        return _is_sessions_middleware(frame, node)
     if node.type == "simple_identifier":
         name = _text(node)
         found, value = frame.env.lookup(name)

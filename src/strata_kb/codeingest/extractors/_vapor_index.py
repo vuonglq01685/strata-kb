@@ -47,6 +47,9 @@ _DECLARATIONS = frozenset(
     }
 )  # fmt: skip
 _BODIES = ("class_body", "enum_class_body", "protocol_body")
+_TYPE_NODES = frozenset(
+    {"user_type", "opaque_type", "existential_type", "optional_type", "array_type"}
+)
 _MAX_CHAIN = 12  # supertype hops followed
 
 
@@ -71,6 +74,13 @@ class Fn:
     @property
     def line(self) -> int:
         return self.node.start_point[0] + 1
+
+    def returns(self) -> str:
+        """Short name of the declared return type, '' when it has none."""
+        for child in kids(self.node):
+            if child.type in _TYPE_NODES:
+                return type_name(child)
+        return ""
 
     @property
     def body(self) -> Node | None:
@@ -145,6 +155,7 @@ class Index:
     props: dict[tuple[str, str], set[str]] = field(default_factory=dict)
     aliases: dict[str, set[str]] = field(default_factory=dict)
     all_fns: list[Fn] = field(default_factory=list)
+    fns_named: dict[str, list[Fn]] = field(default_factory=dict)  # any owner
     members: list[tuple[str, str, Node]] = field(
         default_factory=list
     )  # (file, owner, node)
@@ -183,6 +194,8 @@ class Index:
             name = first_of(node, "simple_identifier")
             fn = Fn(node, rel, owner, _text(name) if name is not None else "")
             self.all_fns.append(fn)
+            if fn.name:
+                self.fns_named.setdefault(fn.name, []).append(fn)
             if fn.name:
                 key = (
                     self.methods.setdefault((owner, fn.name), [])
