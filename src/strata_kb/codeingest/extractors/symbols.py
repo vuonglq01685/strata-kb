@@ -144,7 +144,8 @@ class _Surface:
 
 def _skip_rule(rel: str) -> str | None:
     # C# test code is told by its project file only, Python test code by
-    # pytest/unittest names; the generic `tests?/` and `.test.` rule is JS-only
+    # pytest/unittest names; the generic `tests?/` and `.test.` rule applies to
+    # every other file (not `.cs`, not `.py`)
     own = rel.endswith((".cs", ".py"))
     for label, pat in _SKIP_RULES:
         if not (own and label == "test") and pat.search(rel):

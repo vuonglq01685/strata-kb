@@ -195,6 +195,8 @@ def _type_text(node: Node | None, depth: int = 0) -> str:
         ) or [generic[0]]
         if generic[0] == "Literal":
             return ".".join(head)
+        if generic[0] == "Annotated" and generic[1]:
+            return _type_text(generic[1][0], depth + 1)  # metadata is not a type
         args = ", ".join(_type_text(a, depth + 1) for a in generic[1])
         return f"{'.'.join(head)}[{args}]"
     parts = ast.dotted(node)
@@ -209,8 +211,7 @@ def _type_text(node: Node | None, depth: int = 0) -> str:
         left = _type_text(node.child_by_field_name("left"), depth + 1)
         return f"{left} {op} {_type_text(node.child_by_field_name('right'), depth + 1)}"
     if node.type == "string":
-        inner = (ast.lit(node) or "").strip()
-        return inner if inner.replace(".", "").replace("_", "").isalnum() else "?"
+        return "?"  # a forward reference is indistinguishable from a secret
     if node.type == "list":
         return (
             "[" + ", ".join(_type_text(c, depth + 1) for c in node.named_children) + "]"
@@ -378,7 +379,7 @@ def body_type(root: Path, files: list[str], func: Node, near: str) -> str:
         peeled = _peel(ann)
         name = _element(ann)
         if is_model(root, files, name, near):
-            return ast.text(peeled)
+            return _type_text(peeled)
         if "Body" in markers and peeled is not None:
-            return ast.text(peeled)
+            return _type_text(peeled)
     return ""

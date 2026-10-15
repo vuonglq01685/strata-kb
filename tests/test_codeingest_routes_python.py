@@ -1841,3 +1841,78 @@ def test_root_path_site_only_for_server_settings(tmp_path):
     write(tmp_path, "assign.py", "from main import app\napp.root_path = '/q'\n")
     result = run_routes(tmp_path)
     assert sites_of(result) == ["assign.py:2", "run.py:2"]
+
+
+# --- review round 2 ---------------------------------------------------------
+
+
+def test_wrapped_multiline_decorator_receiver_is_a_site(tmp_path):
+    fastapi(tmp_path)
+    write(tmp_path, "main.py", "from fastapi import FastAPI\napp = FastAPI()\n")
+    write(
+        tmp_path,
+        "other.py",
+        "from lib import registry\n\n@registry.router_for(\n    'some-long-name',\n"
+        "    version=2,\n).get('/y')\ndef y():\n    return 1\n\n"
+        "@ROUTERS[\n    'v1'\n].post('/z')\ndef z():\n    return 1\n\n"
+        "@mk() . get('/w')\ndef w():\n    return 1\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert sorted(sites_of(result)) == ["other.py:10", "other.py:16", "other.py:3"]
+
+
+def test_param_helper_also_used_as_a_value_is_not_bound(tmp_path):
+    flask(tmp_path)
+    write(
+        tmp_path,
+        "app.py",
+        "from flask import Flask, Blueprint\napp = Flask(__name__)\n"
+        "bp = Blueprint('b', __name__, url_prefix='/b')\n"
+        "def reg(t):\n    @t.route('/cb')\n    def cb():\n        return ''\n"
+        "reg(app)\nfor h in [reg]:\n    h(bp)\napp.register_blueprint(bp)\n",
+    )
+    result = run_routes(tmp_path)
+    assert row(result).status == "partial"
+    assert "app.py:5" in sites_of(result)
+
+
+def test_drf_unresolved_router_variable_or_concatenated_prefix_is_a_site(tmp_path):
+    django(tmp_path)
+    write(
+        tmp_path,
+        "urls.py",
+        "from django.urls import path\nurlpatterns = [path('a/', lambda r: 1)]\n",
+    )
+    write(
+        tmp_path,
+        "api.py",
+        "from rest_framework import viewsets\nfrom lib import router\nPREFIX = 'x'\n"
+        "class V(viewsets.ModelViewSet):\n    pass\n\n"
+        "router.register(PREFIX, V)\n"
+        "router.register('a' 'b', V)\n"
+        "router.register(PREFIX, V, basename='v')\n"
+        "admin.site.register(Model, ModelAdmin)\n",
+    )
+    result = run_routes(tmp_path)
+    assert sorted(sites_of(result)) == ["api.py:7", "api.py:8", "api.py:9"]
+
+
+def test_nested_annotated_and_string_never_leak_into_field_types(tmp_path):
+    fastapi(tmp_path)
+    write(
+        tmp_path,
+        "main.py",
+        "from typing import Annotated, Literal, Optional\nfrom fastapi import Body, FastAPI\n"
+        "from pydantic import BaseModel\napp = FastAPI()\n\n"
+        "class M(BaseModel):\n"
+        "    a: Optional[Annotated[str, 'ghp_TOKEN']] = None\n"
+        "    b: list['sk_live_fwd'] = []\n\n"
+        "@app.post('/m')\ndef m(body: M):\n    return 1\n\n"
+        "@app.post('/p')\ndef p(payload: Annotated[Literal['sk_live_X'], Body()]):\n    return 1\n",
+    )
+    result = run_routes(tmp_path)
+    blob = "\n".join(s.l2_md + s.l3_md for s in result.sections)
+    assert "ghp_" not in blob and "sk_live" not in blob
+    assert "| a | Optional[str] | no |" in section(result, "main.py").l3_md
+    assert "Literal" in blob

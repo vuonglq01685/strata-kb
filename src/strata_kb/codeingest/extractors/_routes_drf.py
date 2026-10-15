@@ -157,11 +157,7 @@ class Routers:
         if router is None:
             # `admin.site.register(Model, Admin)`, `atexit.register(fn)`: not a
             # path first. A string first argument is a router prefix.
-            first = args.pos[0] if args.pos else args.kw.get("prefix")
-            second = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
-            if (first is not None and first.type == "string") or ast.text(
-                second
-            ).endswith(("ViewSet", "Viewset")):
+            if self._looks_like_registration(rel, args):
                 self.site(rel, call)
             return
         prefix = args.pos[0] if args.pos else args.kw.get("prefix")
@@ -170,6 +166,29 @@ class Routers:
             self.site(rel, call)
             return
         router.regs.append((prefix, view, rel, _line(call)))
+
+    def _looks_like_registration(self, rel: str, args: ast.Args) -> bool:
+        """An unresolved `x.register(...)` that reads as a router's: a string
+        prefix, `basename=`, or a ViewSet second argument. (`admin.site.register
+        (Model, ModelAdmin)` is none of those.)"""
+        first = args.pos[0] if args.pos else args.kw.get("prefix")
+        second = args.pos[1] if len(args.pos) > 1 else args.kw.get("viewset")
+        if (first is not None and first.type in ("string", "concatenated_string")) or (
+            "basename" in args.kw or "prefix" in args.kw or "viewset" in args.kw
+        ):
+            return True
+        if second is None:
+            return False
+        if "ViewSet" in ast.text(second) or "Viewset" in ast.text(second):
+            return True
+        ref = self.proj.chain(rel, second)
+        if ref.kind != "class" or ref.node is None:
+            return False
+        bases = ref.node.child_by_field_name("superclasses")
+        return any(
+            "ViewSet" in ast.text(b) or "APIView" in ast.text(b)
+            for b in (bases.named_children if bases is not None else [])
+        )
 
     def unexpanded(self) -> list[Router]:
         return [r for r in self.routers.values() if r.regs and not r.expanded]

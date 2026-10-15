@@ -72,8 +72,11 @@ _UNKNOWN_SITES = _IMPERATIVE - {"mount", "add_route"}
 _VIEW_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
 _HINT = re.compile(
     rb"FastAPI|APIRouter|Flask|Blueprint|MethodView|root_path"
-    # any receiver: `@get_router().get(..)`, `@ROUTERS['v1'].post(..)`
-    rb"|^[ \t]*@[^\n]*\.(?:get|post|put|patch|delete|head|options|trace|route|api_route"
+    # any receiver, on one line or wrapped: `@get_router().get(..)`,
+    # `@ROUTERS['v1'].post(..)`, `@reg.router_for(\n..\n).get(..)`
+    rb"|[)\]][ \t\r\n]*\.[ \t\r\n]*(?:get|post|put|patch|delete|head|options|trace|route|api_route"
+    rb"|websocket\w*)\s*\("
+    rb"|^[ \t]*@[^\n]*\.[ \t]*(?:get|post|put|patch|delete|head|options|trace|route|api_route"
     rb"|websocket\w*)\s*\("
     rb"|\.(?:include_router|register_blueprint|add_url_rule|add_api_route|add_route|mount"
     rb"|add_resource|add_namespace|add_api|add_websocket_route|add_api_websocket_route)\s*\("
@@ -202,7 +205,7 @@ class _Engine:
         self.analyzed: set[str] = set()
         self.file_sites: dict[str, list[str]] = {}
         self._binding = False
-        self._call_sites: dict[str, list[tuple[str, Node]]] = {}
+        self._call_sites: dict[str, list[tuple[str, Node]] | None] = {}
 
     # -- bookkeeping
     def _stray(self, rel: str, node: Node) -> None:
@@ -334,7 +337,10 @@ class _Engine:
         self._binding = True
         try:
             found: set[Holder | None] = set()
-            for rel, call in self._callers(ast.func_name(func)):
+            callers = self._callers(ast.func_name(func))
+            if callers is None:
+                return None
+            for rel, call in callers:
                 args = ast.call_args(call)
                 node = args.kw.get(ref.name)
                 if node is None and index < len(args.pos) and not args.splat:
@@ -346,21 +352,24 @@ class _Engine:
             self._binding = False
         return next(iter(found)) if len(found) == 1 else None
 
-    def _callers(self, name: str) -> list[tuple[str, Node]]:
+    def _callers(self, name: str) -> list[tuple[str, Node]] | None:
+        """Every call of a function by name; None when the name is also used
+        as a value (a callback list, a decorator argument): then a parameter
+        may hold anything."""
         if name not in self._call_sites:
-            needle = name.encode() + b"("
-            out: list[tuple[str, Node]] = []
+            needle = name.encode()
+            out: list[tuple[str, Node]] | None = []
             for rel in sorted(self.proj.files):
                 if needle not in (self.proj.data(rel) or b""):
                     continue
                 info = self.proj.info(rel)
                 if info is None:
                     continue
-                for call in ast.all_calls(info.tree):
-                    fn = ast.callee(call)
-                    parts = ast.dotted(fn) if fn is not None else None
-                    if parts and parts[-1] == name:
-                        out.append((rel, call))
+                found = _uses(info.tree, name)
+                if found is None:
+                    out = None
+                    break
+                out += [(rel, call) for call in found]
             self._call_sites[name] = out
         return self._call_sites[name]
 
@@ -654,6 +663,45 @@ class _Engine:
             return
         handler = ast.handler_text(view)
         holder.decls += [Decl(m, path, handler, rel, line) for m in explicit or ["GET"]]
+
+
+_NAME_HOMES = frozenset(
+    {"dotted_name", "aliased_import", "import_from_statement", "import_statement"}
+)
+
+
+def _uses(tree: Tree, name: str) -> list[Node] | None:
+    """Calls of `name` in a file; None if it also appears as a plain value.
+    A definition and an import of the name are neither."""
+    calls: list[Node] = []
+    for node in ast.walk(tree.root_node):
+        if node.type != "identifier" or ast.text(node) != name:
+            continue
+        parent = node.parent
+        if parent is None:
+            continue
+        if parent.type in _NAME_HOMES or (
+            parent.type == "function_definition"
+            and parent.child_by_field_name("name") == node
+        ):
+            continue
+        # `name(...)` or `mod.name(...)`
+        site = parent if parent.type == "attribute" else node
+        outer = site.parent
+        if (
+            parent.type == "attribute"
+            and parent.child_by_field_name("attribute") != node
+        ):
+            return None
+        if (
+            outer is not None
+            and outer.type == "call"
+            and outer.child_by_field_name("function") == site
+        ):
+            calls.append(outer)
+            continue
+        return None
+    return calls
 
 
 def ast_line(node: Node) -> int:
