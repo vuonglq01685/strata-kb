@@ -10,7 +10,7 @@ runs without the `code` extra.
 **Default to a site, never drop.** A config option that moves the pages
 directory or rewrites served paths (Next `basePath` / `pageExtensions` /
 `i18n`, Nuxt `srcDir` / `dir.pages` / `pages:extend`, SvelteKit
-`kit.files.routes` / `paths`), an intercepting route, a page whose path a
+`kit.files.routes` / `paths`, `reroute` hook), an intercepting route, a page whose path a
 `definePageMeta` overrides, a non-literal middleware matcher: each is a
 `file:line` site, so the scope reads `partial`.
 """
@@ -43,7 +43,7 @@ __all__ = ["next_pages", "nuxt_pages", "sveltekit_pages"]
 
 _GROUP_RE = re.compile(r"^\(.*\)$")
 _INTERCEPT_RE = re.compile(r"^\(\.{1,3}\)")
-_NEXT_EXT = r"(?:tsx|ts|jsx|js|mdx|md)"
+_NEXT_EXT = r"(?:tsx|ts|jsx|js)"  # `pageExtensions` changes are a site
 _NEXT_APP_FILE = re.compile(rf"^page\.{_NEXT_EXT}$")
 _NEXT_PAGES_FILE = re.compile(rf"^(?P<stem>.+)\.{_NEXT_EXT}$")
 _NEXT_SPECIAL = frozenset({"_app", "_document", "_error", "_middleware"})
@@ -51,6 +51,7 @@ _NEXT_CONFIGS = frozenset(f"next.config.{e}" for e in ("js", "mjs", "cjs", "ts")
 _MIDDLEWARE = frozenset(
     f"{base}{ext}" for base in ("middleware", "proxy") for ext in (".ts", ".js", ".mjs")
 )
+_NUXT_LAYER = re.compile(r"^layers/[^/]+/(?:app/)?pages/(?P<inner>.+)$")
 _NUXT_FILE = re.compile(r"^(?P<stem>.+)\.(?:vue|[cm]?[jt]sx?)$")
 _NUXT_CONFIGS = frozenset(f"nuxt.config.{e}" for e in ("js", "mjs", "cjs", "ts"))
 _SVELTE_PAGE = re.compile(r"^\+page(?:@[^.]*)?\.svelte$")
@@ -218,6 +219,13 @@ def _config_matcher(value: Node | None, at: Node) -> tuple[list[str], int | None
                 None,
             )
             text = _lit(source)
+            if any(
+                p.type == "pair"
+                and _text(p.child_by_field_name("key")).strip("'\"")
+                in ("has", "missing", "locale")
+                for p in item.named_children
+            ):
+                dynamic = dynamic or _ts.line_of(item)  # conditions narrow it
         if text is None:
             dynamic = dynamic or _ts.line_of(item)
         else:
@@ -236,8 +244,11 @@ def nuxt_pages(
     names = sorted(local)
     base = _base(names, "pages", "app/pages")
     for loc in names:
+        layer = _NUXT_LAYER.match(loc)  # local layers/* are auto-registered
         if base and loc.startswith(base + "/"):
             _nuxt_page(root, local[loc], loc[len(base) + 1 :], result)
+        elif layer:
+            _nuxt_page(root, local[loc], layer.group("inner"), result)
         if PurePosixPath(loc).name.startswith("router.options."):
             result.dynamic_sites.append(f"{local[loc]}:1")  # custom route table
     result.dynamic_sites.extend(
@@ -246,7 +257,7 @@ def nuxt_pages(
             scope,
             files,
             _NUXT_CONFIGS,
-            b"srcDir|extendPages|pages:extend|dir(?=\\s*:)",
+            b"srcDir|extendPages|pages:extend|dir(?=\\s*:)|extends|i18n",
         )
     )
     return result
@@ -294,4 +305,10 @@ def sveltekit_pages(
     result.dynamic_sites.extend(
         _config_sites(root, scope, files, _SVELTE_CONFIGS, b"files|routes|paths")
     )
+    for hooks in ("src/hooks.ts", "src/hooks.js"):  # `reroute` remaps URLs
+        rel = hooks if scope.path == "." else f"{scope.path}/{hooks}"
+        match = re.search(rb"\breroute\b", _read(root, rel) or b"")
+        if match:
+            line = (_read(root, rel) or b"")[: match.start()].count(b"\n") + 1
+            result.dynamic_sites.append(f"{rel}:{line}")
     return result

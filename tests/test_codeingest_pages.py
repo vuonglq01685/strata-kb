@@ -675,3 +675,174 @@ def test_react_namespace_import_route_and_angular_type_assertion(tmp_path):
         == row(result, "n", "Angular").status
         == "complete"
     )
+
+
+# --- review fix round 1 -----------------------------------------------------
+
+
+def test_nuxt_layers_extends_and_i18n_are_sites(tmp_path):
+    package(tmp_path, ".", "nuxt")
+    write(tmp_path, "pages/index.vue")
+    write(
+        tmp_path,
+        "nuxt.config.ts",
+        "export default defineNuxtConfig({\n  extends: ['../base'],\n  modules: ['@nuxtjs/i18n'],\n  i18n: {},\n})",
+    )
+    r = row(run_pages(tmp_path, "w"), ".", "Nuxt")
+    assert (
+        r.status == "partial"
+        and r.detail == "nuxt.config.ts:2; nuxt.config.ts:3; nuxt.config.ts:4"
+    )
+
+
+def test_nuxt_local_layer_pages_are_listed(tmp_path):
+    package(tmp_path, ".", "nuxt")
+    write(tmp_path, "pages/index.vue")
+    write(
+        tmp_path, "layers/admin/nuxt.config.ts", "export default defineNuxtConfig({})"
+    )
+    write(tmp_path, "layers/admin/pages/admin/index.vue")
+    result = run_pages(tmp_path, "w")
+    assert rows_of(result, "w") == [
+        ["/", "pages/index.vue", ""],
+        ["/admin", "layers/admin/pages/admin/index.vue", ""],
+    ]
+    assert row(result, ".", "Nuxt").status == "complete"
+
+
+def test_react_routes_reexported_through_a_barrel_are_found(tmp_path):
+    package(tmp_path, ".", "react", "react-router-dom")
+    write(
+        tmp_path,
+        "src/lib/router.ts",
+        "export { Route, Routes } from 'react-router-dom'\n",
+    )
+    write(
+        tmp_path,
+        "src/AppRoutes.tsx",
+        "import { Route, Routes } from './lib/router'\nexport const A = () => (<Routes><Route path='/a' element={<A />} /></Routes>)\n",
+    )
+    result = run_pages(tmp_path, "w")
+    assert paths_of(result, "w") == ["/a"]
+    assert row(result, ".", "React").status == "complete"
+
+
+def test_vue_router_created_through_a_wrapper_is_found(tmp_path):
+    package(tmp_path, ".", "vue", "vue-router")
+    write(
+        tmp_path,
+        "src/router.ts",
+        "import { createRouter } from './lib'\nexport default createRouter({ routes: [{ path: '/a', component: A }] })\n",
+    )
+    assert paths_of(run_pages(tmp_path, "w"), "w") == ["/a"]
+
+
+@pytest.mark.parametrize(
+    ("framework", "deps"),
+    [("React", ("react", "react-router-dom")), ("Vue", ("vue", "vue-router"))],
+)
+def test_router_lib_with_no_pages_and_no_sites_is_a_site(tmp_path, framework, deps):
+    package(tmp_path, "app", *deps)
+    write(tmp_path, "app/src/main.ts", "export const x = 1\n")
+    r = row(run_pages(tmp_path), "app", framework)
+    assert r.status == "partial" and r.detail == "app/package.json:1"
+
+
+def test_flutter_go_router_with_no_pages_is_a_site(tmp_path):
+    pubspec(tmp_path, ".", "go_router")
+    write(tmp_path, "lib/main.dart", "void main() {}\n")
+    r = row(run_pages(tmp_path, "app"), ".", "Flutter")
+    assert r.status == "partial" and r.detail == "pubspec.yaml:1"
+
+
+def test_flutter_home_is_root_and_imperative_routes_are_sites(tmp_path):
+    pubspec(tmp_path, ".")
+    write(
+        tmp_path,
+        "lib/main.dart",
+        "Widget build(c) {\n  return MaterialApp(home: const HomePage());\n}\n"
+        "void go(c) => Navigator.push(c, MaterialPageRoute(builder: (_) => D()));\n",
+    )
+    result = run_pages(tmp_path, "app")
+    assert rows_of(result, "app") == [["/", "lib/main.dart", ""]]
+    r = row(result, ".", "Flutter")
+    assert r.status == "partial" and r.detail == "lib/main.dart:4"
+
+
+def test_angular_classic_lazy_module_follows_its_routing_module(tmp_path):
+    package(tmp_path, ".", "@angular/core")
+    write(
+        tmp_path,
+        "src/app-routing.module.ts",
+        "const routes: Routes = [\n"
+        "  { path: '', component: Home },\n"
+        "  { path: 'customers', loadChildren: () => import('./customers/customers.module').then(m => m.CustomersModule) },\n"
+        "];\n@NgModule({ imports: [RouterModule.forRoot(routes)] })\nexport class AppRoutingModule {}\n",
+    )
+    write(
+        tmp_path,
+        "src/customers/customers-routing.module.ts",
+        "import { NgModule } from '@angular/core';\n"
+        "const routes: Routes = [{ path: '', component: C }, { path: ':id', component: C }];\n"
+        "@NgModule({ imports: [RouterModule.forChild(routes)] })\nexport class CustomersRoutingModule {}\n",
+    )
+    write(
+        tmp_path,
+        "src/customers/customers.module.ts",
+        "import { CustomersRoutingModule } from './customers-routing.module';\n"
+        "@NgModule({ imports: [CommonModule, CustomersRoutingModule] })\nexport class CustomersModule {}\n",
+    )
+    result = run_pages(tmp_path, "ng")
+    assert paths_of(result, "ng") == ["/", "/customers", "/customers/:id"]
+    assert row(result, ".", "Angular").status == "complete"
+
+
+def test_next_markdown_pages_are_not_pages(tmp_path):
+    package(tmp_path, ".", "next")
+    write(tmp_path, "app/page.tsx")
+    write(tmp_path, "app/docs/page.md")
+    write(tmp_path, "pages/readme.md")
+    assert paths_of(run_pages(tmp_path, "w"), "w") == ["/"]
+
+
+def test_analog_router_is_unsupported_for_angular(tmp_path):
+    package(tmp_path, ".", "@angular/core", "@analogjs/router")
+    r = row(run_pages(tmp_path, "w"), ".", "Angular")
+    assert r.status == "not scanned" and "@analogjs/router" in r.detail
+
+
+def test_sveltekit_reroute_hook_is_site(tmp_path):
+    package(tmp_path, ".", "svelte", "@sveltejs/kit")
+    write(tmp_path, "src/routes/+page.svelte")
+    write(
+        tmp_path,
+        "src/hooks.ts",
+        "import x from 'y';\nexport const reroute = ({ url }) => url.pathname;\n",
+    )
+    r = row(run_pages(tmp_path, "w"), ".", "Svelte")
+    assert r.status == "partial" and r.detail == "src/hooks.ts:2"
+
+
+def test_next_matcher_with_has_or_missing_is_site(tmp_path):
+    package(tmp_path, ".", "next")
+    write(tmp_path, "app/page.tsx")
+    write(
+        tmp_path,
+        "middleware.ts",
+        "export const config = {\n  matcher: [{ source: '/a', has: [{ type: 'header', key: 'x' }] }],\n};\n",
+    )
+    result = run_pages(tmp_path, "w")
+    assert row(result, ".", "Next.js").detail == "middleware.ts:2"
+    assert rows_of(result, "w")[-1][0] == "Middleware matcher: /a"
+
+
+def test_top_level_declaration_wins_over_nested_shadow(tmp_path):
+    package(tmp_path, ".", "@angular/core")
+    write(
+        tmp_path,
+        "src/r.ts",
+        "function f() { const routes = [{ path: 'nested', component: N }]; return routes; }\n"
+        "const routes = [{ path: 'real', component: R }];\n"
+        "@NgModule({ imports: [RouterModule.forRoot(routes)] })\nexport class M {}\n",
+    )
+    assert paths_of(run_pages(tmp_path, "w"), "w") == ["/real"]

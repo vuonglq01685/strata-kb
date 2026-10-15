@@ -126,7 +126,9 @@ class Source:
         tree = self.tree(rel)
         if tree is None:
             return None
-        for node in _walk(tree.root_node):
+        # a top-level declaration wins over a same-named one in a function
+        top = [d for stmt in tree.root_node.named_children for d in _declarators(stmt)]
+        for node in [*top, *_walk(tree.root_node)]:
             if (
                 node.type == "variable_declarator"
                 and _text(node.child_by_field_name("name")) == name
@@ -160,6 +162,11 @@ class Source:
             if n.type in ("class_declaration", "abstract_class_declaration")
             and _text(n.child_by_field_name("name")) == name
         ]
+
+
+def _declarators(stmt: Node) -> list[Node]:
+    decl = stmt.child_by_field_name("declaration") or stmt
+    return [c for c in decl.named_children if c.type == "variable_declarator"]
 
 
 def _imported(tree: Tree) -> dict[str, tuple[str, str]]:
@@ -349,17 +356,42 @@ class Walker:
         if value is not None and value[1].type == "array":
             self.array(value[0], value[1], prefix, layout)
             return True
-        # an NgModule: its `RouterModule.forChild(<routes>)`
+        # an NgModule: `RouterModule.forChild(<routes>)` in its own file, or
+        # in a routing module it imports (`ng g module --route`)
         tree = self.src.tree(rel)
-        if tree is None or not self.src.classes(rel, name):
+        classes = self.src.classes(rel, name)
+        if tree is None or not classes:
             return False
+        if self._for_child(rel, prefix, layout):
+            return True
+        imported = _imported(tree)
+        targets = []
+        for cls in classes:
+            for dec in _decorators(cls):
+                for pair in (n for n in _walk(dec) if n.type == "pair"):
+                    if _text(pair.child_by_field_name("key")) != "imports":
+                        continue
+                    value = pair.child_by_field_name("value")
+                    for item in value.named_children if value is not None else []:
+                        spec = imported.get(_text(item))
+                        found = (
+                            self.src.resolver.resolve(rel, spec[0]) if spec else None
+                        )
+                        if found is not None:
+                            targets.append(found)
+        # every imported module is walked (no short-circuit): a module may
+        # have several routing modules
+        return any([self._for_child(t, prefix, layout) for t in dict.fromkeys(targets)])
+
+    def _for_child(self, rel: str, prefix: str, layout: str) -> bool:
+        """Walk every `RouterModule.forChild(<routes>)` table of `rel`."""
+        tree = self.src.tree(rel)
         calls = [
             n
-            for n in _walk(tree.root_node)
+            for n in (_walk(tree.root_node) if tree is not None else [])
             if n.type == "call_expression"
             and _text(n.child_by_field_name("function")) == "RouterModule.forChild"
         ]
-        ok = bool(calls)
         for call in calls:
             args = _args(call)
             value = self.src.value(rel, args[0]) if args else None
@@ -367,7 +399,14 @@ class Walker:
                 self.array(value[0], value[1], prefix, layout)
             else:
                 self.site(rel, call)
-        return ok
+        return bool(calls)
+
+
+def _decorators(cls: Node) -> list[Node]:
+    decs = [c for c in cls.children if c.type == "decorator"]
+    if cls.parent is not None and cls.parent.type == "export_statement":
+        decs += [c for c in cls.parent.children if c.type == "decorator"]
+    return decs
 
 
 def _then_name(node: Node) -> str:

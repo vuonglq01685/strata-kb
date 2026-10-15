@@ -6,7 +6,8 @@ Needs tree-sitter (Dart grammar); `pages.py` reports `not scanned` without it.
 
 **Default to a site, never drop.** A non-literal `path:` or map key, a
 `routes:` value or spread it cannot follow in the same file,
-`onGenerateRoute`, go_router_builder's `@TypedGoRoute`, a syntax error: each
+`onGenerateRoute`, imperative `MaterialPageRoute` / `PageRouteBuilder`,
+go_router_builder's `@TypedGoRoute`, a syntax error: each
 is a `file:line` site.
 """
 
@@ -39,11 +40,14 @@ __all__ = ["flutter_pages"]
 _HINT = re.compile(
     rb"GoRoute|ShellRoute|StatefulShell|MaterialApp|CupertinoApp|onGenerateRoute"
     rb"|TypedGoRoute|TypedShellRoute|TypedStatefulShellRoute"
+    rb"|MaterialPageRoute|CupertinoPageRoute|PageRouteBuilder"
 )
 _SKIP = re.compile(r"(?:^|/)(?:test|integration_test)/|\.(?:g|freezed)\.dart$")
 _SHELLS = frozenset({"ShellRoute", "StatefulShellRoute", "StatefulShellBranch"})
 _ROUTE_KINDS = _SHELLS | {"GoRoute"}
 _APPS = frozenset({"MaterialApp", "CupertinoApp"})
+# pages pushed by hand (`Navigator.push(MaterialPageRoute(...))`) have no path
+_IMPERATIVE = frozenset({"MaterialPageRoute", "CupertinoPageRoute", "PageRouteBuilder"})
 _TYPED = re.compile(r"^Typed(?:GoRoute|ShellRoute|StatefulShellRoute)$")
 _DECLARATIONS = frozenset(
     {
@@ -235,9 +239,13 @@ class _FileRoutes:
 
 def _material_apps(rel: str, tree: Tree, result: PageResult) -> None:
     for call in _calls(tree):
+        if call.name in _IMPERATIVE:
+            result.dynamic_sites.append(_site(rel, call.node))
         if call.name not in _APPS:
             continue
         named = _named(call.args)
+        if "home" in named:  # the page shown at "/"
+            result.pages.append(Page("/", rel, line_of(call.node)))
         for key in ("onGenerateRoute", "onGenerateInitialRoutes"):
             if key in named:
                 result.dynamic_sites.append(_site(rel, call.node))

@@ -51,13 +51,16 @@ _ANGULAR_TYPE = re.compile(r"^(?:Readonly)?(?:Routes|Route\[\]|Array<Route>)$")
 _ANGULAR_CALLS = frozenset(
     {"RouterModule.forRoot", "RouterModule.forChild", "provideRouter"}
 )
-_VUE_HINT = re.compile(rb"vue-router")
+_VUE_HINT = re.compile(rb"vue-router|createRouter|new VueRouter|RouteRecordRaw")
 _VUE_TYPE = re.compile(
     r"^(?:Readonly)?(?:RouteRecordRaw|RouteConfig)(?:\[\]|>)$|^Array<"
 )
 _VUE_TYPE_ITEM = re.compile(r"(?:RouteRecordRaw|RouteConfig)")
 _VUE_CTORS = frozenset({"VueRouter", "Router"})
-_REACT_HINT = re.compile(rb"react-router")
+_REACT_HINT = re.compile(
+    rb"react-router|<[\w.]*Route\b|createBrowserRouter|createHashRouter"
+    rb"|createMemoryRouter|useRoutes|RouteObject"
+)
 _REACT_TYPE = re.compile(r"^(?:Readonly)?(?:RouteObject\[\]|Array<RouteObject>)$")
 _REACT_CALLS = frozenset(
     {

@@ -87,6 +87,7 @@ _UNSUPPORTED: dict[str, tuple[str, ...]] = {
         "wouter",
     ),
     "Vue": ("unplugin-vue-router", "vite-plugin-pages"),
+    "Angular": ("@analogjs/router",),
     "Svelte": (
         "@roxi/routify",
         "svelte-navigator",
@@ -112,6 +113,8 @@ class _Job:
     adapter: Adapter | None  # None: only an unsupported router is present
     parse: bool  # needs tree-sitter
     unsupported: tuple[str, ...] = ()
+    # a router library is a dependency, so "found nothing" is not believable
+    gated: bool = False
 
 
 def _unsupported(framework: str, names: set[str]) -> tuple[str, ...]:
@@ -140,7 +143,10 @@ def _jobs(scope: Scope, names: set[str], local: list[str]) -> list[_Job]:
             continue
         unsupported = _unsupported(label, names)
         if runs:
-            jobs.append(_Job(label, adapter, parse, unsupported))
+            gated = label in _ROUTER_LIBS or (
+                label == "Flutter" and "go_router" in names
+            )
+            jobs.append(_Job(label, adapter, parse, unsupported, gated))
         elif unsupported:
             jobs.append(_Job(label, None, False, unsupported))
     return jobs
@@ -151,6 +157,10 @@ def _dep_names(root: Path, scope: Scope) -> set[str]:
     return {n.lower() for n in deps.manifest_dep_names(base / scope.manifest)}
 
 
+def _manifest(scope: Scope) -> str:
+    return scope.manifest if scope.path == "." else f"{scope.path}/{scope.manifest}"
+
+
 def _scope_name(scope: Scope, opts: CodeIngestOptions) -> str:
     return opts.repo_id if scope.path == "." else scope.path
 
@@ -158,6 +168,8 @@ def _scope_name(scope: Scope, opts: CodeIngestOptions) -> str:
 def _row(
     scope: Scope, job: _Job, result: PageResult | None, available: bool
 ) -> CoverageRow:
+    # "; " separates sites in the coverage detail, so a file name containing
+    # it must not leak through (lossy by one space); same rule as routes.py.
     sites = sorted(
         {s.replace("; ", ";") for s in (result.dynamic_sites if result else [])}
     )
@@ -250,11 +262,7 @@ class PagesExtractor:
                     try:
                         result = job.adapter(root, sc, scope_files, files)
                     except Exception as exc:  # noqa: BLE001 -- degrade, never crash: one bad adapter must not abort the run
-                        manifest = (
-                            sc.manifest
-                            if sc.path == "."
-                            else f"{sc.path}/{sc.manifest}"
-                        )
+                        manifest = _manifest(sc)
                         warnings.append(
                             f"pages: {job.framework} adapter failed in {sc.path}: {exc!r}"
                         )
@@ -268,6 +276,8 @@ class PagesExtractor:
                             )
                         )
                         continue
+                    if job.gated and not result.pages and not result.dynamic_sites:
+                        result.dynamic_sites.append(f"{_manifest(sc)}:1")
                     pages += result.pages
                     matcher = result.matcher or matcher
                 coverage.append(_row(sc, job, result, available))
