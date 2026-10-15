@@ -380,15 +380,59 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_27_2_everywhere():
+def test_version_is_1_28_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.27.2"
+    assert project["project"]["version"] == "1.28.0"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.27.2"]
+    assert [p["version"] for p in own] == ["1.28.0"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.27.2 — 2026-10-15")
+    assert first.startswith("1.28.0 — 2026-10-15")
     assert "guide PDFs" in first and "were not rebuilt" in first
+
+
+def test_docs_describe_structural_coverage():
+    """1.28.0: README and the four guides name the new section kinds, the
+    `code` extra, the coverage statuses and the jobs-never-complete rule."""
+    from strata_kb.codeingest.extractors.routes import ROUTE_FRAMEWORKS
+
+    docs = {
+        "README.md": REPO_ROOT / "README.md",
+        **{
+            f"guide-{g}.{lang}.md": REPO_ROOT / "docs" / "src" / f"guide-{g}.{lang}.md"
+            for g in ("dev", "ba")
+            for lang in ("en", "vi")
+        },
+    }
+    for name, path in docs.items():
+        text = _normalised(path.read_text(encoding="utf-8"))
+        # the BA guides cite the kinds as `route.*`; only README and the Dev
+        # guides carry the section tables
+        kinds = (
+            ()
+            if name.startswith("guide-ba")
+            else (
+                "`route.<slug>`",
+                "`page.<slug>`",
+                "`job.<slug>`",
+                "`sym.<slug>`",
+                "`struct.files.<dir>`",
+            )
+        )
+        for needle in (
+            *kinds,
+            "`struct.coverage`",
+            "`complete`",
+            "`partial`",
+            "`not scanned`",
+            "strata-kb[code]",
+            "jobs outside framework schedulers are not detectable",
+        ):
+            assert needle in text, (name, needle)
+    for name in ("README.md", "guide-dev.en.md", "guide-dev.vi.md"):
+        text = docs[name].read_text(encoding="utf-8")
+        for framework in ROUTE_FRAMEWORKS:
+            assert framework in text, (name, framework)

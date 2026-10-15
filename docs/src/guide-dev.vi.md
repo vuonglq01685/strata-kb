@@ -45,9 +45,14 @@ container C4 lấy alias, nhãn và công nghệ từ `-code`, còn phần mô t
 # 2. Thiết lập một lần
 
 ```bash
-pip install strata-kb
+pip install "strata-kb[code]"
 kb init --kind dev
 ```
+
+Extra `code` (`tree-sitter` cùng `tree-sitter-language-pack`, khoảng 184 MB) là
+thứ cho phép `kb code-ingest` đọc route, page, job và symbol từ mã nguồn (§7.5).
+Thiếu nó, các vùng đó được báo là `not scanned` và SA sẽ hỏi bạn. `kb doctor`
+cảnh báo khi thiếu, và `kb-code.yml` cài nó trong CI.
 
 ## 2.1 Cấu hình
 
@@ -504,8 +509,9 @@ kb code-ingest --db data/app.sqlite     # nêu tên database một cách tườn
 kb code-ingest --json                   # báo cáo dạng máy đọc
 ```
 
-Bảy extractor, tổ chức theo **loại artefact chứ không theo ngôn ngữ lập trình**,
-vì Strata được áp dụng trên nhiều dòng dự án.
+Mười một extractor, tổ chức theo **loại artefact chứ không theo ngôn ngữ lập
+trình**, vì Strata được áp dụng trên nhiều dòng dự án. Bảy cái đầu đọc file
+build, deploy và hợp đồng; bốn cái cuối đọc mã nguồn bằng tree-sitter (§7.5).
 
 | Extractor | Tiền tố section | Đọc |
 |---|---|---|
@@ -516,10 +522,18 @@ vì Strata được áp dụng trên nhiều dòng dự án.
 | `schema` | `db.<table>` | migration SQL, Prisma, Alembic, EF, và file SQLite được nêu tên tường minh |
 | `integrations` | `int.<name>` | **chỉ tên khoá** biến môi trường |
 | `api` | `api.<tag>` | hợp đồng OpenAPI và Swagger nằm trong repo |
+| `routes` | `route.<slug>` | route HTTP khai báo trong mã nguồn (cần `[code]`) |
+| `pages` | `page.<slug>` | route trang UI (router theo file hệ thống chạy được không cần `[code]`) |
+| `jobs` | `job.<slug>` | job định kỳ của các scheduler framework (cần `[code]`) |
+| `symbols` | `sym.<slug>` | tên được export, member của enum và object, CSS custom property (cần `[code]`) |
 
-`tree` thì lúc nào cũng tìm ra thứ gì đó, nên quy tắc không-phát-hiện-gì là:
-`kb code-ingest` thoát `1` khi **không extractor nào ngoài `tree`** tìm được gì.
-Một tài liệu chỉ chứa danh sách thư mục là cấu hình sai, không phải tri thức.
+`tree` còn ghi `struct.files.<dir>`, và mọi extractor báo cáo vào
+`struct.coverage` (§7.5). `tree` thì lúc nào cũng tìm ra thứ gì đó và bốn
+extractor đọc mã nguồn không được tính là bằng chứng của một codebase, nên quy
+tắc không-phát-hiện-gì là: `kb code-ingest` thoát `1` khi **không cái nào trong
+`services`, `deps`, `commands`, `schema`, `integrations` và `api`** tìm được gì.
+Một tài liệu chỉ chứa danh sách thư mục và các section sinh từ mã nguồn là cấu
+hình sai, không phải tri thức.
 
 ## 7.1 Hai thuộc tính an toàn
 
@@ -545,8 +559,10 @@ Một tài liệu chỉ chứa danh sách thư mục là cấu hình sai, không
   kèm cảnh báo nêu tên cả hai file, và `ADD COLUMN` chỉ áp dụng trong thư mục của
   `CREATE TABLE` tương ứng. Hai schema độc lập trùng tên bảng không bao giờ bị
   gộp thành một thứ không tồn tại ở đâu cả.
-- `RENAME`, `DROP`, `ADD CONSTRAINT` và `ADD INDEX` được cảnh báo là ngoài phạm
-  vi.
+- Mệnh đề partition, khoá chính, `CREATE INDEX` và `ADD CONSTRAINT … PRIMARY
+  KEY|UNIQUE` được đọc. Câu lệnh mà `schema` không áp dụng được (`RENAME`, một
+  action `ALTER` lạ) đánh dấu coverage `schema` của bảng đó là `partial` và nêu
+  `file:line`.
 - Tên bảng không khớp dạng định danh nhận diện được sẽ bị bỏ qua **kèm cảnh báo
   nêu tên file**. Bộ đọc đếm số từ khoá `CREATE TABLE` và so với số nó nhận diện
   được, nên việc bỏ qua không bao giờ im lặng.
@@ -559,7 +575,7 @@ Một tài liệu chỉ chứa danh sách thư mục là cấu hình sai, không
 
 Nếu `.kb/<doc_id>/` đã có Markdown hoặc manifest, mà manifest đó thiếu, không đọc
 được, không mang tiêu đề `… — code knowledge`, hoặc liệt kê một id section nằm
-ngoài bảy tiền tố được sinh ra, thì `kb code-ingest` thoát 1 và không ghi gì cả.
+ngoài các tiền tố được sinh ra, thì `kb code-ingest` thoát 1 và không ghi gì cả.
 Không có cờ ghi đè — hãy chuyển tài liệu đi hoặc chọn `--doc-id` khác.
 
 ## 7.4 Tính tất định và lưu ý về cây làm việc chưa sạch
@@ -577,6 +593,70 @@ trong khi cây làm việc của bạn có thể đang có thay đổi chưa com
 `-code` cục bộ là thứ CI sẽ sinh ra nếu các file đang được track của bạn được
 commit ngay bây giờ; `kb doctor` cảnh báo khi strata-kb đã cài trên máy bạn
 khác với phiên bản mà `kb-code.yml` ghim.
+
+## 7.5 Route, page, job, symbol và coverage
+
+Bốn extractor đọc cú pháp mã nguồn bằng tree-sitter và cần
+`pip install "strata-kb[code]"`. Phiên bản được ghim chính xác
+(`tree-sitter-language-pack` 0.13.0, không bao giờ 1.x vì bản 1.x tải grammar
+từ mạng lúc chạy), nên cùng một commit cho ra cùng từng byte trên mọi máy. Ngôn
+ngữ: JS/TS, Java/Kotlin, C#, Python, PHP, Go, Rust, Swift và Dart, cộng CSS/SCSS
+cho custom property.
+
+| Section | Chứa |
+|---|---|
+| `route.<slug>` | Một section cho mỗi controller class, file router hoặc file route. Bảng `Method \| Path \| Handler \| File \| Request type`, các tiền tố của class, router, group và global được nối lại; L3 thêm các trường của request type định nghĩa trong repo |
+| `page.<slug>` | Một section cho mỗi ứng dụng front-end. Bảng `Path \| File \| Layout/group`; route group như `(admin)` và segment động (`[id]`, `:id`, `[...slug]`) giữ nguyên như đã viết; matcher của `middleware` Next.js là một dòng `Middleware matcher` |
+| `job.<slug>` | Một section cho mỗi file hoặc manifest khai báo. Bảng `Name \| Schedule \| Handler \| File`; schedule là biểu thức như đã viết, `hosted`, hoặc `(dynamic)` |
+| `sym.<slug>` | Một section cho mỗi package root (thư mục có manifest riêng), nếu không thì theo thư mục cấp cao nhất. Bảng `Name \| Kind \| File`; kind gồm `function`, `class`, `interface`, `type`, `const`, `enum`, `member`, `css-var` |
+| `struct.files.<dir>` | Mọi file được track dưới một thư mục cấp cao nhất, không giới hạn; `struct.tree` vẫn là bản tổng quan có giới hạn |
+| `db.<table>` | Thêm các dòng `Table`, `Primary key`, `Partition` và `Indexes`. Model Prisma và migration SQL của cùng một bảng được gộp thành một section `db.<Model>`; khi hai nguồn lệch nhau, cả hai giá trị hiện ra kèm nguồn |
+
+Framework được hỗ trợ:
+
+- **Route:** NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut,
+  ASP.NET Core, FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum,
+  Rocket, Vapor.
+- **Page:** Next.js, Nuxt, SvelteKit, Angular, Vue, React (react-router),
+  Flutter (go_router).
+- **Job:** NestJS, Spring / Quarkus / Micronaut, Hangfire, Quartz và hosted
+  service của .NET, Celery, Laravel, Symfony, node-cron, BullMQ, robfig/cron,
+  tokio-cron-scheduler, `CronJob` của Kubernetes.
+
+Section được tách theo file, package hoặc thư mục cấp cao nhất, không bao giờ
+theo kích thước, và không danh sách nào bị cắt. Chỉ tên được phát ra; các chuỗi
+literal duy nhất là đường dẫn route và page, matcher của middleware, biểu thức
+cron hoặc interval và tên CSS custom property. Giá trị env, giá trị hằng số và
+giá trị member của enum không bao giờ xuất hiện.
+
+**`struct.coverage`** cho SA biết nên tin một sự vắng mặt đến đâu. Một bảng,
+`Area | Scope | Framework/language | Status | Detail`, các vùng `routes`,
+`pages`, `jobs`, `symbols`, `files` và `schema`:
+
+| Status | Ý nghĩa |
+|---|---|
+| `complete` | Mọi dạng được nhận diện trong phạm vi đó đều đã được giải quyết |
+| `partial` | Đã thấy nhưng không giải quyết được: đường dẫn route động, file không parse được, re-export mà bộ đọc không lần theo được. Mỗi vị trí được nêu dạng `file:line` |
+| `not scanned` | Chưa quét gì; phần detail nêu lý do (thiếu extra, ngôn ngữ hoặc framework chưa có adapter) |
+
+Vì vậy một đường dẫn động trong code của bạn làm phạm vi của nó thành `partial`,
+chứ không lặng lẽ bỏ mất route. **`jobs` không bao giờ `complete`:** một job có
+thể nằm ở chỗ không adapter nào nhìn tới (`pg_cron` trong migration, một
+`setInterval` viết tay, một crontab), nên dòng của nó luôn là `partial` với
+detail `jobs outside framework schedulers are not detectable`. Job đã có thì được
+liệt kê; job vắng mặt luôn là một câu hỏi dành cho bạn.
+
+Điều này thay đổi gì với bạn: với route, page, symbol, file hoặc partition,
+index, khoá chính của một bảng, SA chỉ ghi `<thing> in <path> [NEW: D<n>]` khi
+phạm vi đó là `complete`. Ngược lại nó là một mục `Open decisions`, trích trạng
+thái. `kb ticket check` thực thi quy tắc này (xem hướng dẫn BA §3.8). Tài liệu
+`-code` tạo bởi bản cũ không có `struct.coverage`, nên các vùng đó vẫn là câu hỏi
+dành cho bạn cho tới khi repo của nó được publish lại.
+
+**Nâng cấp lên 1.28.0:** chạy `pip install "strata-kb[code]"` ở máy; chạy lại
+`kb init --kind dev` để có `kb-code.yml` mới (nó cài extra trong CI); sau đó
+`kb publish` (hoặc push lên nhánh mặc định) để publish lại `-code`. Chạy lại
+`kb init --kind ba` ở repo BA để có SA prompt và ticket template mới.
 
 ---
 
@@ -656,7 +736,7 @@ tắt. Đó là một dấu hiệu để con người nhìn lại.
 
 | Hiện tượng | Nguyên nhân | Cách xử lý |
 |---|---|---|
-| `kb code-ingest` thoát 1: không phát hiện gì | Chỉ có `tree` tìm được thứ gì đó | Kiểm tra xem file compose, manifest hay CI workflow có nằm đúng chỗ extractor tìm không; nêu `--db` nếu schema là thứ bạn cần |
+| `kb code-ingest` thoát 1: không phát hiện gì | Chỉ có `tree` và các extractor đọc mã nguồn tìm được thứ gì đó | Kiểm tra xem file compose, manifest hay CI workflow có nằm đúng chỗ extractor tìm không; nêu `--db` nếu schema là thứ bạn cần |
 | `kb code-ingest` thoát 1: từ chối đích đến | Có một tài liệu do người soạn đang nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb build` fail trên CI ở một section `-svc` | Một section `pending` đã bị commit | Hoàn tất bước seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | Do gõ nhầm, hoặc file của service mới chưa được track | Copy id từ `services.md`; `git add` các file mới rồi thử lại |
@@ -725,7 +805,7 @@ lai dựa vào. Mỗi tiền tố có đúng một chủ sở hữu:
 
 | Tiền tố | Tài liệu | Chủ sở hữu |
 |---|---|---|
-| `struct.tree`, `svc.<name>`, `db.<table>`, `dep.<eco>`, `int.<name>`, `api.<tag>`, `cmd.<purpose>` | `-code` | extractor |
+| `struct.tree`, `struct.files.<dir>`, `struct.coverage`, `svc.<name>`, `db.<table>`, `dep.<eco>`, `int.<name>`, `api.<tag>`, `route.<slug>`, `page.<slug>`, `job.<slug>`, `sym.<slug>`, `cmd.<purpose>` | `-code` | extractor |
 | `svc.<name>` | `-svc` | bạn (model soạn nháp) |
 | `flow.<name>` | `-svc` | bạn |
 | `hist.<name>` | `-svc` | chỉ `kb svc note` |

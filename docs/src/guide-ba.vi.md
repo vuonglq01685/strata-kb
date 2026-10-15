@@ -229,8 +229,9 @@ Ready` và `## Review record`. `## KB context`, `## Dependencies` và
 Bước 7 làm việc này thay bạn. Khi lint báo `DoR: PASS`, agent lưu bản nháp
 rồi gọi `/sa-ticket-ground` trên chính file đó như một subagent riêng. Lệnh
 này điền mục `## Technical grounding` do SA sở hữu — service, file, bảng,
-route, external, volumes, lệnh healthcheck và device reservations, lệnh
-test — mỗi dòng là một section id lấy từ tài liệu `<repo>-code` trên hub.
+route, page, job, symbol, external, volumes, lệnh healthcheck và device
+reservations, lệnh test — mỗi dòng là một section id lấy từ tài liệu
+`<repo>-code` trên hub.
 Nó không bao giờ sửa mục của bạn; một phát biểu nghiệp vụ mâu thuẫn với sự
 thật trong code sẽ được trích lại ở đó, không bị sửa.
 
@@ -239,7 +240,9 @@ kế. SA đề xuất nó thành một dòng trong `## Technology decisions` c�
 cha (trạng thái `OPEN`, chủ sở hữu là một con người) và ghi `[NEW: D<n>]` trỏ
 tới dòng đó. Chỉ những gì code đã có mà tài liệu không chứng minh được —
 luồng nội bộ, tình huống lỗi, thân request — mới được gác dưới
-`Open decisions` cho lập trình viên.
+`Open decisions` cho lập trình viên. Ngoại lệ duy nhất là route, page, job,
+symbol, file, hoặc partition, index, khoá chính của một bảng: ở đó SA phải kiểm
+tra trước xem lần quét đã `complete` chưa (xem *Coverage* bên dưới).
 
 `kb ticket check tickets/<ticket-id>.md` là cổng: PASS chỉ khi mọi id phân
 giải được, mọi `[NEW: D<n>]` trỏ tới một dòng `DECIDED`, và `Open decisions`
@@ -263,6 +266,47 @@ Cổng này cũng so revision ở `Grounded on:` với `-code` hiện tại. Rev
 
 Open decisions và các dòng `[NEW: D<k>]` chưa quyết vẫn fail như trước, không có
 dòng đó: chúng là quyết định của bạn, không phải việc ground lại.
+
+### Coverage: khi nào "không có trong tài liệu" nghĩa là "chưa xây"
+
+Tài liệu `<repo>-code` có `struct.coverage`, một bảng cho biết, theo từng vùng
+và phạm vi, bộ sinh đã đọc code đến đâu: `complete` (mọi dạng được nhận diện
+trong phạm vi đó đều đã được giải quyết), `partial` (đã thấy nhưng không giải
+quyết được; `file:line` được nêu tên) hoặc `not scanned` (chưa quét; có nêu lý
+do, ví dụ repo Dev chưa cài `strata-kb[code]`). Các vùng là `routes`, `pages`,
+`jobs`, `symbols`, `files` và `schema` (partition, index hay khoá chính của một
+bảng). Chi tiết xem hướng dẫn Dev §7.5.
+
+Quy tắc chỉ áp dụng cho sáu vùng đó:
+
+- **Vắng trong phạm vi `complete` = chưa xây.** SA ghi mục đó là
+  `<what> in <path> [NEW: D<n>]`, nêu file nó sẽ nằm; phạm vi là phạm vi
+  coverage dài nhất làm tiền tố của đường dẫn đó. Các dòng `Routes:`,
+  `Pages:`, `Symbols:` và `Files:` có thể mang một mục như vậy. Mục mới nằm ở
+  một gạch đầu dòng con riêng, không bao giờ trên dòng đã trích một id có sẵn.
+- **Vắng trong phạm vi `partial` hoặc `not scanned` = chưa biết.** SA không thể
+  phân biệt "chưa xây" với "lần quét bỏ sót", nên mục đó được gác dưới
+  `Open decisions`, trích trạng thái coverage, và Dev trả lời. Cổng làm fail
+  `[NEW: D<n>]` trên phạm vi như vậy (`cannot claim new: coverage of … is
+  partial; move it to Open decisions`).
+- **Job không bao giờ `complete`** (`jobs outside framework schedulers are not
+  detectable`). Job đã có thì được liệt kê ở `Jobs:` dạng `job.<slug> — <name>`;
+  job vắng mặt luôn đi vào `Open decisions`, và `[NEW]` trên dòng `Jobs:` luôn
+  là lỗi của cổng.
+- **`[NEW]` cho thứ tài liệu đã liệt kê thì fail** (`already exists in <id>;
+  cite it instead`), khi nó đã được liệt kê ở revision mà ticket được ground.
+- Mọi thứ khác (`svc.*`, `int.*`, volumes, devices, một bảng hoàn toàn mới) giữ
+  quy tắc trên: chưa xây là một quyết định thiết kế, `[NEW: D<n>]`.
+- Tài liệu `-code` từ trước 1.28.0 không có `struct.coverage`: sáu vùng đó đi
+  vào `Open decisions` cho tới khi repo Dev được publish lại, và cổng không xét
+  các quy tắc coverage trên nó, nên ticket cũ vẫn pass.
+
+Các dòng mới trong `## Technical grounding` là `Pages: page.<slug> — <path>`,
+`Jobs: job.<slug> — <name>` và `Symbols: sym.<slug> — <Name>`; `Routes:` còn nhận
+`route.<slug> — <METHOD> <path>` (tham số đường dẫn `:id`, `{id}`, `<int:id>` và
+`[id]` được coi là một), và `Files:` có thể trích bất kỳ đường dẫn nào trong
+`struct.tree` hoặc một section `struct.files.*`. `kb init --kind ba` ghi SA
+prompt và ticket template đã cập nhật. `QUICKSTART-BA.md` liệt kê các trường.
 
 Chỉ chạy `/sa-ticket-ground` bằng tay khi `kb ticket check` fail với
 `re-run /sa-ticket-ground`.
@@ -638,7 +682,8 @@ Publish không cần thêm gì: mục đã sửa đi cùng lần `kb publish` k�
 
 Ngoài tài liệu nghiệp vụ, hub còn giữ hai tài liệu cho mỗi repo sản phẩm, do
 chính workflow của repo đó publish: `<repo>-code` (cấu trúc do máy sinh —
-`svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `struct.tree`) và `<repo>-svc`
+`svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `route.*`, `page.*`, `job.*`,
+`sym.*`, `struct.tree`, `struct.files.*`, `struct.coverage`) và `<repo>-svc`
 (trách nhiệm do người biên soạn — mỗi service thực sự để làm gì).
 
 Các skill `ba-ticket-author` và `ba-mission-plan` không tự đọc hai tài liệu
