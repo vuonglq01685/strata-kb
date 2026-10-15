@@ -151,3 +151,15 @@ def test_generated_document_with_coverage_builds_clean(tmp_path, monkeypatch):
     report = build_kb(tmp_path / ".kb")
     assert report.errors == [], report.errors
     assert report.ok
+
+
+def test_prose_details_sort_first_and_are_never_capped_or_hidden():
+    rows = [
+        CoverageRow("jobs", ".", "-", "partial", f"a/f{n:02d}.ts:1") for n in range(25)
+    ] + [CoverageRow("jobs", ".", "-", "partial", _coverage.JOBS_DETAIL)]
+    (row,) = merge_rows(rows)
+    assert row.detail.startswith(f"{_coverage.JOBS_DETAIL}; a/f00.ts:1")
+    l2 = render_section([row]).l2_md
+    assert _coverage.JOBS_DETAIL in l2
+    assert "a/f19.ts:1" in l2 and "a/f20.ts:1" not in l2
+    assert "+5 more" in l2

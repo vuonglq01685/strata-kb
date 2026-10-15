@@ -9,6 +9,8 @@ a reader (or a later ticket-grounding check) can tell "none found" from
 
 from __future__ import annotations
 
+import re
+
 from strata_kb.codeingest.extractors._mdcells import escape_cell
 from strata_kb.codeingest.types import CodeSection, CoverageRow
 
@@ -30,10 +32,21 @@ _HEADER = "| Area | Scope | Framework/language | Status | Detail |"
 _RULE = "| --- | --- | --- | --- | --- |"
 
 
+_SITE_RE = re.compile(r":\d+$")
+
+
+def _is_site(detail: str) -> bool:
+    return _SITE_RE.search(detail) is not None
+
+
 def _join_sites(sites: list[str], limit: int | None) -> str:
-    if limit is not None and len(sites) > limit:
-        sites = [*sites[:limit], f"+{len(sites) - limit} more"]
-    return "; ".join(sites)
+    # Prose details (`jobs outside ...`, `not scanned ...`) are not sites:
+    # they sort first and the cap neither counts nor hides them.
+    prose = [s for s in sites if not _is_site(s)]
+    located = [s for s in sites if _is_site(s)]
+    if limit is not None and len(located) > limit:
+        located = [*located[:limit], f"+{len(located) - limit} more"]
+    return "; ".join([*prose, *located])
 
 
 def _sites(detail: str) -> list[str]:
@@ -42,7 +55,8 @@ def _sites(detail: str) -> list[str]:
 
 def merge_rows(rows: list[CoverageRow]) -> list[CoverageRow]:
     """One row per `(area, scope, framework)`, worst status wins. Details
-    are de-duplicated, sorted and joined with "; ". Never truncated here:
+    are de-duplicated and joined with "; ", prose first, then sites, each
+    group sorted. Never truncated here:
     L3 shows every site, `render_section` caps only the L2 cell."""
     status: dict[tuple[str, str, str], str] = {}
     sites: dict[tuple[str, str, str], set[str]] = {}
@@ -52,7 +66,11 @@ def merge_rows(rows: list[CoverageRow]) -> list[CoverageRow]:
             status[key] = row.status
         sites.setdefault(key, set()).update(_sites(row.detail))
     return [
-        CoverageRow(*key, status[key], _join_sites(sorted(sites[key]), None))
+        CoverageRow(
+            *key,
+            status[key],
+            _join_sites(sorted(sites[key], key=lambda s: (_is_site(s), s)), None),
+        )
         for key in sorted(status)
     ]
 
