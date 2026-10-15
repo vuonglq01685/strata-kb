@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb.codeingest.extractors import _ts
+from strata_kb.codeingest.extractors import _cs_testproj, _ts
 from strata_kb.codeingest.extractors._jvm_ast import run_cached
 from strata_kb.codeingest.extractors._routes_jsutil import _read, _text, _walk
 
@@ -34,16 +34,6 @@ TYPE_NODES = frozenset(
         "enum_declaration",
     }
 )
-# A test project is told by what its project file (or the Directory.Build.props
-# / Directory.Packages.props above it) references, never by a folder or file
-# name: `Features/Tests/`, `Features/LabTests/`, `LabTest.cs` are product code.
-# `InternalsVisibleTo Include="Api.xUnitTests"` is not a reference.
-_TEST_PROJECT = re.compile(
-    r"<(?:Global)?PackageReference\s[^>]*?Include\s*=\s*\"(?:Microsoft\.NET\.Test\.Sdk"
-    r"|xunit|NUnit|MSTest)[^\"]*\"|<IsTestProject>\s*true",
-    re.IGNORECASE,
-)
-_PROPS = ("Directory.Build.props", "Directory.Packages.props")
 _TYPE_DECL = re.compile(
     rb"\b(?:class|interface|struct|enum|record(?:\s+(?:class|struct))?)\s+(\w+)"
 )
@@ -60,33 +50,14 @@ _GENERIC_ARGS = re.compile(r"<.*>", re.DOTALL)
 
 
 def test_project_dirs(root: Path, files: list[str]) -> frozenset[str]:
-    """Directories ("" is the repo root) of the projects that pull in a test
-    framework, in their `.csproj` or in a Directory.*.props at or above them;
-    every file under one is test code."""
+    """Directories ("" is the repo root) of the test projects; every file
+    under one is test code (`_cs_testproj` says how a project is told)."""
 
     def text(rel: str) -> str:
         data = source(root, rel)
         return data.decode("utf-8", "replace") if data is not None else ""
 
-    def find() -> frozenset[str]:
-        props = {rel: text(rel) for rel in files if rel.rpartition("/")[2] in _PROPS}
-        found = set()
-        for rel in files:
-            if not rel.endswith(".csproj"):
-                continue
-            here = rel.rpartition("/")[0]
-            above = [
-                t
-                for p, t in props.items()
-                if not p.rpartition("/")[0]
-                or here == p.rpartition("/")[0]
-                or here.startswith(p.rpartition("/")[0] + "/")
-            ]
-            if _TEST_PROJECT.search("\n".join([text(rel), *above])):
-                found.add(here)
-        return frozenset(found)
-
-    return run_cached(("cs-test-dirs", root), find)
+    return run_cached(("cs-test-dirs", root), lambda: _cs_testproj.find(files, text))
 
 
 def is_test(rel: str, test_dirs: frozenset[str]) -> bool:

@@ -76,7 +76,7 @@ _UNFOLLOWED = re.compile(
     rb"\bUsePathBase\b|\bPathBase\s*=|\.Conventions\.Add\s*\(|\bI(?:Application|Controller|Action)ModelConvention\b"
     rb"|\bUseMvc\w*|\bAddApplicationPart\b|\bApplicationPartManager\b|\bControllerFeatureProvider\b"
     rb"|\bMapODataRoute\b|\bUseFastEndpoints\b|\bI?CarterModule\b"
-    rb"|\b(?:class|record)\s+\w+[^{;=]*:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
+    rb"|\b(?:class|record)\s+\w+(?:\((?:[^()]|\([^()]*\))*\)|[^{;=(])*:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
     rb"|^\s*:\s*(?:Endpoint(?:Without(?:Request|Response)|WithMapper)?\b|Ep\.)"
     rb"|\[\s*RoutePrefix\b"
 )

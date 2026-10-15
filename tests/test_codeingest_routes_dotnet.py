@@ -1834,6 +1834,140 @@ def test_endpoint_in_a_ternary_or_call_is_not_a_fast_endpoints_base(tmp_path):
     assert row(run_routes(tmp_path)).status == "complete"
 
 
+PRODUCT_API = (
+    "src/Api/Controllers/UsersController.cs",
+    '[Route("api/u")] public class UsersController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\npublic class Plan { }\n',
+)
+FAKE_API = (
+    "qa/Api.Tests/FakeController.cs",
+    '[Route("fake")] public class FakeController : ControllerBase { [HttpGet] public IActionResult G() => Ok(); }\npublic class Fixture { }\n',
+)
+
+
+def two_projects(
+    root: Path,
+    props: str,
+    tests_csproj: str = '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
+):
+    write(root, "src/Api/Api.csproj", WEB)
+    write(root, "qa/Api.Tests/Api.Tests.csproj", tests_csproj)
+    write(root, "Directory.Build.props", props)
+    for rel, text in (PRODUCT_API, FAKE_API):
+        write(root, rel, text)
+
+
+XUNIT = '<PackageReference Include="xunit" Version="2.6.0" /><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.0.0" />'
+
+
+SPECS = "Condition=\"$(MSBuildProjectName.Contains('Specs'))\" "
+XUNIT_SPECS = XUNIT.replace("<PackageReference ", "<PackageReference " + SPECS)
+
+
+@pytest.mark.parametrize(
+    ("props", "tests_csproj", "tests_skipped"),
+    [
+        # name-conditioned refs apply to the project whose file name matches
+        (
+            f"<Project><ItemGroup Condition=\"$(MSBuildProjectName.EndsWith('Tests'))\">{XUNIT}</ItemGroup></Project>",
+            None,
+            True,
+        ),
+        (
+            f"<Project><ItemGroup Condition=\"$(MSBuildProjectName).StartsWith('Api.T')\">{XUNIT}</ItemGroup></Project>",
+            None,
+            True,
+        ),
+        (
+            f"<Project><ItemGroup Condition=\"'$(MSBuildProjectName)' == 'Api.Tests'\">{XUNIT}</ItemGroup></Project>",
+            None,
+            True,
+        ),
+        (
+            f"<Project><ItemGroup>{XUNIT_SPECS}</ItemGroup></Project>",
+            None,
+            False,
+        ),
+        # IsTestProject-conditioned refs need the csproj to say so
+        (
+            f"<Project><ItemGroup Condition=\"'$(IsTestProject)' == 'true'\">{XUNIT}</ItemGroup></Project>",
+            None,
+            False,
+        ),
+        (
+            f"<Project><ItemGroup Condition=\"'$(IsTestProject)' == 'true'\">{XUNIT}</ItemGroup></Project>",
+            '<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>',
+            True,
+        ),
+        # any other condition is not evaluated: not a test project
+        (
+            f"<Project><ItemGroup Condition=\"'$(TargetFramework)' == 'net8.0'\">{XUNIT}</ItemGroup></Project>",
+            None,
+            False,
+        ),
+        (
+            f"<Project><ItemGroup Condition=\"Exists('x.txt')\">{XUNIT}</ItemGroup></Project>",
+            None,
+            False,
+        ),
+        # unconditional props reference: every project below is a test project
+        (f"<Project><ItemGroup>{XUNIT}</ItemGroup></Project>", None, True),
+    ],
+)
+def test_conditions_on_props_references_are_evaluated_against_the_project(
+    tmp_path, props, tests_csproj, tests_skipped
+):
+    two_projects(
+        tmp_path,
+        props,
+        tests_csproj or '<Project Sdk="Microsoft.NET.Sdk.Web"></Project>\n',
+    )
+    got = names_of(run_symbols(tmp_path))
+    if (
+        props.count("Condition") == 0
+        and "<PackageReference " in props
+        and tests_skipped
+    ):
+        # unconditional: the product project is a test project too
+        assert ("Plan", "class") not in got
+        return
+    assert ("Plan", "class") in got
+    assert (("Fixture", "class") not in got) is tests_skipped
+    expected = (
+        [("GET", "/api/u")] if tests_skipped else [("GET", "/api/u"), ("GET", "/fake")]
+    )
+    assert paths(run_routes(tmp_path)) == expected
+
+
+def test_only_the_nearest_directory_props_applies_unless_it_imports_the_parent(
+    tmp_path,
+):
+    write(
+        tmp_path,
+        "Directory.Build.props",
+        f"<Project><ItemGroup>{XUNIT}</ItemGroup></Project>",
+    )
+    write(tmp_path, "src/Directory.Build.props", "<Project></Project>")
+    write(tmp_path, "src/Api/Api.csproj", WEB)
+    write(tmp_path, PRODUCT_API[0], PRODUCT_API[1])
+    assert paths(run_routes(tmp_path)) == [("GET", "/api/u")]
+    write(
+        tmp_path,
+        "src/Directory.Build.props",
+        "<Project><Import Project=\"$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))\" /></Project>",
+    )
+    assert paths(run_routes(tmp_path)) == []
+
+
+def test_fast_endpoints_base_after_a_primary_constructor_with_defaults(tmp_path):
+    web(tmp_path)
+    write(
+        tmp_path,
+        "Ep.cs",
+        "public class Hello(IFoo? foo = null) : Endpoint<Req, Res>\n{\n}\n",
+    )
+    assert row(run_routes(tmp_path)).detail == "Ep.cs:1"
+
+
 # --- symbols ----------------------------------------------------------------
 
 
