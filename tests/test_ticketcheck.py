@@ -1559,13 +1559,13 @@ def test_files_check_unknown_deep_path_is_error_when_struct_files_present(code_d
     assert not any("cannot verify" in w for w in warnings(report))
 
 
-def test_files_union_adds_files_sections_and_directory_prefixes(
+def test_structure_adds_files_sections_and_directory_prefixes(
     code_doc, tmp_path, run_git
 ):
     kb_dir, _ = code_doc
     _commit_deep_file(tmp_path, run_git, kb_dir)
     doc = ticketcheck.load_doc_dir(kb_dir / "demo-code", str(kb_dir / "demo-code"))
-    union = ticketcheck._files_union(doc)
+    union = ticketcheck._read_structure(doc).paths
     assert {DEEP, "src/airspace/deep/deeper", "src/airspace/deep", "src"} <= union
 
 
@@ -1586,6 +1586,7 @@ _COVERAGE = """\
 | symbols | apps/web | tsx | complete |  |
 """
 _MEDIA = "route.apps-media-src-media-controller"
+_API = "route.apps-api-src-x-controller"
 _PAGES = "page.apps-web"
 _JOBS = "job.apps-api-src-maintenance-service-073d57"
 _SYMS = "sym.apps-api"
@@ -1604,6 +1605,11 @@ def _synth_doc(*, coverage: bool = True, revision: str = "abc1234"):
             "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
             "| GET | /media/ping | MediaController.ping | apps/media/src/media.controller.ts |  |\n"
             "| GET | /watch/{id} | MediaController.watch | apps/media/src/media.controller.ts |  |\n",
+        ),
+        _API: (
+            "routes",
+            "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+            "| POST | /api/x | X.create | apps/api/src/x.controller.ts |  |\n",
         ),
         _PAGES: (
             "pages",
@@ -1751,7 +1757,7 @@ def test_new_rejected_when_scope_partial():
 def test_new_rejected_when_scope_not_scanned():
     report = run_synth(["- Pages: /x in `apps/other/app/x/page.tsx` [NEW: tbd]"])
     assert any(
-        "coverage of apps/other/app/x (pages) is not scanned" in e
+        "coverage of apps/other/app/x/page.tsx (pages) is not scanned" in e
         for e in errors(report)
     ), errors(report)
 
@@ -1911,3 +1917,88 @@ def test_existing_ticket_fixtures_unchanged_with_real_coverage(code_doc):
         kb_dir,
     )
     assert errors(report) == [], report.render("Grounding")
+
+
+# --- Task 11 fix round 1 --------------------------------------------------
+
+
+def test_two_route_ids_on_one_line_are_checked_separately():
+    line = f"- Routes: {_MEDIA} — GET /media/ping, {_API} — POST /api/x"
+    report = run_synth([line])
+    assert errors(report) == [], report.render("Grounding")
+    swapped = run_synth([f"- Routes: {_MEDIA} — POST /api/x, {_API} — GET /media/ping"])
+    msgs = errors(swapped)
+    assert len(msgs) == 2, msgs
+    assert f"is not in {_MEDIA}" in msgs[0] and f"is not in {_API}" in msgs[1]
+
+
+@pytest.mark.parametrize(
+    "fname",
+    [
+        "users.route.ts",
+        "+page.svelte",
+        "+page.server.ts",
+        "export.job.ts",
+        "a-sym.x.ts",
+    ],
+)
+def test_file_names_are_never_read_as_section_ids(fname):
+    prose = run_synth([f"- Routes: {_MEDIA} — GET /media/ping (handled in {fname})"])
+    assert errors(prose) == [], errors(prose)
+    target = run_synth(
+        [f"- Routes: GET /media/fresh in apps/media/src/{fname} [NEW: tbd]"]
+    )
+    assert errors(target) == [], errors(target)
+    assert any(n.startswith("new: GET /media/fresh") for n in notes(target))
+
+
+def test_structure_is_read_once_per_check():
+    doc = _synth_doc()
+    reads: list[str] = []
+
+    def read_raw(group):
+        reads.append(group)
+        return doc.read_raw(group)
+
+    counted = ticketcheck.LoadedDoc(doc.manifest, doc.source, doc.read_group, read_raw)
+    run_synth(
+        [
+            "- Files:",
+            "  - apps/media/src/media.controller.ts",
+            "  - apps/media/src/fresh.ts [NEW: tbd]",
+        ],
+        doc=counted,
+    )
+    assert reads == ["structure"]
+
+
+def test_exists_label_has_no_code_span_backticks():
+    report = run_synth(
+        ["- Symbols: `AdminController` in apps/api/src/admin.controller.ts [NEW: tbd]"]
+    )
+    assert any(
+        e.startswith("symbol 'AdminController' already exists") for e in errors(report)
+    )
+
+
+def test_unscoped_target_names_the_path():
+    report = run_synth(["- Symbols: Foo in tools/gen/foo.ts [NEW: tbd]"])
+    assert any(
+        "coverage of tools/gen/foo.ts (symbols) is not scanned" in e
+        for e in errors(report)
+    )
+
+
+def test_multi_row_scope_uses_the_row_matching_the_file_language():
+    # apps/web symbols: css partial, tsx complete
+    ok = run_synth(["- Symbols: Foo in apps/web/src/foo.tsx [NEW: tbd]"])
+    assert errors(ok) == [], errors(ok)
+    bad = run_synth(["- Symbols: --x in apps/web/src/theme.css [NEW: tbd]"])
+    assert any(
+        "coverage of apps/web (symbols, css) is partial" in e for e in errors(bad)
+    ), errors(bad)
+    # language not determinable (.md): worst row of the scope decides
+    worst = run_synth(["- Symbols: Foo in apps/web/src/foo.md [NEW: tbd]"])
+    assert any(
+        "coverage of apps/web (symbols, css) is partial" in e for e in errors(worst)
+    )

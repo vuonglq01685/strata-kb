@@ -20,6 +20,7 @@ so the engine stays free of filesystem/CLI imports.
 
 from __future__ import annotations
 
+import functools
 import posixpath
 import re
 from collections.abc import Callable
@@ -67,10 +68,11 @@ def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
     return out
 
 
-# `route|page|job|sym` are not matched after a `/`, so a file name such as
-# `app/api/route.ts` or `app/page.tsx` is never read as a section id.
+# `route|page|job|sym` are not matched when glued to a path or file name
+# (`app/api/route.ts`, `users.route.ts`, `+page.svelte`, `export.job.ts`),
+# so a file name is never read as a section id.
 ID_RE = re.compile(
-    r"\b(?:svc|db|api|int|cmd|dep|struct|(?<!/)(?:route|page|job|sym))"
+    r"\b(?:svc|db|api|int|cmd|dep|struct|(?<![\w/.+-])(?:route|page|job|sym))"
     r"\.[A-Za-z0-9_][A-Za-z0-9_.-]*"
 )
 NEW_RE = re.compile(r"\[NEW(?::\s*(?P<reason>[^\]]*))?\]")
@@ -488,10 +490,18 @@ def check(
     _check_tables_routes_commands(section, doc, issues)
     if heading != SERVICES_HEADING:
         _check_compose_facts(section, doc, decisions, issues, notes)
-    _check_files(section, doc, decisions, issues, notes)
-    _judge_new_entries(section, doc, decisions, issues, notes)
-    _check_new_coverage(section, doc, issues)
-    _check_new_exists(section, doc, issues, notes, moved, load_at, repo, rev)
+
+    @functools.cache
+    def structure() -> _Structure:  # structure.raw.md: read and parsed at most once
+        return _read_structure(doc)
+
+    new_entries = _new_entries(section)
+    _check_files(section, doc, decisions, issues, notes, structure)
+    _judge_new_entries(new_entries, doc, decisions, issues, notes)
+    _check_new_coverage(new_entries, doc, issues)
+    _check_new_exists(
+        new_entries, doc, issues, notes, moved, load_at, structure, repo, rev
+    )
     if moved:
         fact_issues = issues[start:]
         skipped = any(i.code == UNVERIFIED for i in fact_issues) or any(
@@ -825,13 +835,13 @@ def _cited_name(text: str) -> str:
 
 def _check_route_citation(
     sid: str,
-    line: str,
+    text: str,
     lineno: int,
     doc: LoadedDoc,
     unreadable: set[str],
     issues: list[Issue],
 ) -> None:
-    pairs = ROUTE_RE.findall(line)
+    pairs = ROUTE_RE.findall(text)
     if not pairs:
         return
     body = _l2_slice(doc, sid, unreadable, issues)
@@ -916,7 +926,13 @@ def _check_tables_routes_commands(
                     )
             # api.<tag> / route.<slug> — METHOD /path
             elif raw.startswith(("api.", "route.")) and raw in known:
-                _check_route_citation(raw, line, lineno, doc, unreadable, issues)
+                # one route id on the line: any order; several: each id owns
+                # the text up to the next id
+                owners = [
+                    i for i in ids if i.rstrip(".").startswith(("api.", "route."))
+                ]
+                text = line if len(owners) <= 1 else _segment_after(line, raw)
+                _check_route_citation(raw, text, lineno, doc, unreadable, issues)
             # page.<slug> — /path, job.<slug> — name, sym.<slug> — Name
             elif raw.startswith(("page.", "job.", "sym.")) and raw in known:
                 _check_listed_citation(
@@ -1280,18 +1296,13 @@ def _read_structure(doc: LoadedDoc) -> _Structure:
     )
 
 
-def _files_union(doc: LoadedDoc) -> set[str]:
-    """Every path the document can vouch for: struct.tree's paths, every
-    struct.files.* line, and each directory prefix of those."""
-    return _read_structure(doc).paths
-
-
 def _check_files(
     section: _Section,
     doc: LoadedDoc,
     decisions: _Decisions,
     issues: list[Issue],
     notes: list[str],
+    structure: Callable[[], _Structure],
 ) -> None:
     entries = list(section.subitems.get("Files", []))
     for i, line in enumerate(section.lines):
@@ -1301,21 +1312,21 @@ def _check_files(
                 entries.insert(0, (section.first_line + i, m.group("rest").strip()))
     if not entries:
         return
-    structure = _read_structure(doc)
-    if not structure.tree_readable:
+    struct = structure()
+    if not struct.tree_readable:
         issues.append(
             Issue(
                 "warning",
-                f"could not read {structure.group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped",
+                f"could not read {struct.group or 'structure'}.raw.md of {doc.manifest.id} — file checks skipped",
                 code=UNVERIFIED,
             )
         )
         return
-    paths = structure.paths
+    paths = struct.paths
     # struct.files.* lists every file, so a path missing from the union is
     # provably absent however deep it is or however capped struct.tree is.
-    complete = structure.complete
-    first_dropped = structure.first_dropped
+    complete = struct.complete
+    first_dropped = struct.first_dropped
     for lineno, text in entries:
         new = NEW_RE.search(text)
         path = NEW_RE.sub("", text).strip().strip("`").rstrip("/")
@@ -1389,7 +1400,8 @@ _IN_RE = re.compile(r"\s+in\s+")
 class _NewEntry:
     field: str  # Routes | Pages | Jobs | Symbols | Files
     lineno: int
-    thing: str  # what is new: `GET /x`, `/page`, a name, a path
+    text: str  # the field line / sub-bullet as written
+    thing: str  # what is new, no code-span backticks: `GET /x`, `/page`, a name, a path
     target: str | None  # the repo-relative file it will live in
     marker: re.Match[str]
 
@@ -1416,15 +1428,20 @@ def _new_entries(section: _Section) -> list[_NewEntry]:
             clean = NEW_RE.sub("", text).strip()
             if field == "Files":
                 path = clean.strip("`").rstrip("/")
-                out.append(_NewEntry(field, lineno, path, path, marker))
+                out.append(_NewEntry(field, lineno, text, path, path, marker))
                 continue
             thing, target = _split_target(clean)
-            out.append(_NewEntry(field, lineno, thing, target, marker))
+            thing = (
+                _cited_name(thing) or thing
+                if field in ("Jobs", "Symbols")
+                else thing.replace("`", "")
+            )
+            out.append(_NewEntry(field, lineno, text, thing, target, marker))
     return out
 
 
 def _judge_new_entries(
-    section: _Section,
+    entries: list[_NewEntry],
     doc: LoadedDoc,
     decisions: _Decisions,
     issues: list[Issue],
@@ -1434,55 +1451,109 @@ def _judge_new_entries(
     lines are judged by `_check_files`; a line carrying an unknown section id is
     judged by `_check_ids`."""
     known = _known_ids(doc)
-    for e in _new_entries(section):
+    for e in entries:
         if e.field == "Files":
             continue
-        line = next((t for n, t in _field_lines(section, e.field) if n == e.lineno), "")
-        if any(sid.rstrip(".") not in known for sid in ID_RE.findall(line)):
+        if any(sid.rstrip(".") not in known for sid in ID_RE.findall(e.text)):
             continue
         _judge_new(e.thing, e.marker, e.lineno, decisions, issues, notes)
 
 
-def _coverage(doc: LoadedDoc, issues: list[Issue]) -> dict[str, dict[str, str]] | None:
-    """`{area: {scope: worst status}}` from `struct.coverage`; None for a
-    pre-release document (no such section) or one that cannot be read."""
+@dataclass(frozen=True)
+class _CovRow:
+    framework: str  # the Framework/language cell
+    status: str
+
+
+def _rank(row: _CovRow) -> int:
+    return _STATUS_RANK.get(row.status, 1)
+
+
+def _coverage(
+    doc: LoadedDoc, issues: list[Issue]
+) -> dict[str, dict[str, list[_CovRow]]] | None:
+    """`{area: {scope: rows}}` from `struct.coverage`; None for a pre-release
+    document (no such section) or one that cannot be read."""
     if "struct.coverage" not in _known_ids(doc):
         return None
     body = _l2_slice(doc, "struct.coverage", set(), issues)
     if body is None:
         return None
-    out: dict[str, dict[str, str]] = {}
-    for area, scope, status in _table_values(body, "area", "scope", "status"):
-        scopes = out.setdefault(area, {})
-        old = scopes.get(scope, _COMPLETE)
-        scopes[scope] = max(old, status, key=lambda s: _STATUS_RANK.get(s, 1))
+    out: dict[str, dict[str, list[_CovRow]]] = {}
+    for area, scope, framework, status in _table_values(
+        body, "area", "scope", "framework/language", "status"
+    ):
+        out.setdefault(area, {}).setdefault(scope, []).append(
+            _CovRow(framework, status)
+        )
     return out
 
 
+# File extension -> the language name `struct.coverage` rows carry.
+_EXT_LANGUAGE = {
+    ".ts": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
+    ".tsx": "tsx",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".css": "css",
+    ".scss": "scss",
+    ".py": "python",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".cs": "csharp",
+    ".go": "go",
+    ".rs": "rust",
+    ".php": "php",
+    ".swift": "swift",
+    ".dart": "dart",
+}
+
+
 def _scope_status(
-    cov: dict[str, dict[str, str]], area: str, path: str
-) -> tuple[str, str]:
-    """`(scope, status)` covering `path` for `area`: `files` scopes are
-    top-level directories (`.` for root files), the others package scopes
-    (longest prefix). No row at all counts as `not scanned`."""
+    cov: dict[str, dict[str, list[_CovRow]]], area: str, path: str
+) -> tuple[str, str, str]:
+    """`(scope label, status, deciding framework/language)` for `path`. `files`
+    scopes are top-level directories (`.` for root files), the others package
+    scopes (longest prefix). No row covering the path = `not scanned`, labelled
+    with the top-level directory (`files`) or the path. A scope with several rows for the area is judged by the row
+    whose language matches the file's, else by its worst row; the deciding
+    framework is returned only then."""
     scopes = cov.get(area, {})
     if area == "files":
         top = path.split("/")[0] if "/" in path else "."
-        return top, scopes.get(top, _NOT_SCANNED)
-    covering = [s for s in scopes if s == "." or path == s or path.startswith(f"{s}/")]
+        if top not in scopes:
+            return top, _NOT_SCANNED, ""
+        covering = [top]
+    else:
+        covering = [
+            s for s in scopes if s == "." or path == s or path.startswith(f"{s}/")
+        ]
     if not covering:
-        return posixpath.dirname(path) or ".", _NOT_SCANNED
+        return path, _NOT_SCANNED, ""
     best = max(covering, key=len)
-    return best, scopes[best]
+    rows = scopes[best]
+    language = _EXT_LANGUAGE.get(posixpath.splitext(path)[1].lower())
+    matching = [r for r in rows if language and r.framework.lower() == language]
+    deciding = max(matching or rows, key=_rank)
+    framework = (
+        deciding.framework if len(rows) > 1 and deciding.framework != "-" else ""
+    )
+    return best, deciding.status, framework
 
 
-def _check_new_coverage(section: _Section, doc: LoadedDoc, issues: list[Issue]) -> None:
+def _check_new_coverage(
+    entries: list[_NewEntry], doc: LoadedDoc, issues: list[Issue]
+) -> None:
     """A `[NEW]` route/page/job/symbol/file is only believable when the code
     scan of its scope was complete -- otherwise the thing may already exist
     where the scan could not see. Jobs never complete, so a new job is always
     refused. A document without `struct.coverage` (pre-release) is not gated,
     except for Jobs."""
-    entries = _new_entries(section)
     if not entries:
         return
     cov = _coverage(doc, issues)
@@ -1498,14 +1569,16 @@ def _check_new_coverage(section: _Section, doc: LoadedDoc, issues: list[Issue]) 
                 )
             )
             continue
-        scope, status = _scope_status(cov or {}, _NEW_AREA[e.field], e.target)
+        area = _NEW_AREA[e.field]
+        scope, status, framework = _scope_status(cov or {}, area, e.target)
         if e.field == "Jobs" and (cov is None or status == _COMPLETE):
             status = _PARTIAL
         if status != _COMPLETE:
+            what = f"{area}, {framework}" if framework else area
             issues.append(
                 Issue(
                     "error",
-                    f"cannot claim new: coverage of {scope} ({_NEW_AREA[e.field]}) is {status}; move it to Open decisions (line {e.lineno})",
+                    f"cannot claim new: coverage of {scope} ({what}) is {status}; move it to Open decisions (line {e.lineno})",
                     code=DECISION,
                 )
             )
@@ -1562,12 +1635,13 @@ def _existing_file_section(structure: _Structure, path: str) -> str | None:
 
 
 def _check_new_exists(
-    section: _Section,
+    entries: list[_NewEntry],
     doc: LoadedDoc,
     issues: list[Issue],
     notes: list[str],
     moved: bool,
     load_at: LoadAt | None,
+    structure: Callable[[], _Structure],
     repo: str | None = None,
     rev: str = "",
 ) -> None:
@@ -1575,19 +1649,14 @@ def _check_new_exists(
     the ticket is grounded on an older revision (`moved`), the thing may have
     been built since: it is an error only if it was already listed at the
     grounded revision, otherwise a note (also when that revision cannot be
-    read back)."""
-    entries = _new_entries(section)
-    if not entries:
-        return
-    structure = (
-        _read_structure(doc) if any(e.field == "Files" for e in entries) else None
-    )
+    read back). `load_at` returns L2 text, which lists no file paths, so a
+    moved-revision Files `[NEW]` is always a note."""
     bodies: dict[str, str | None] = {}
     unreadable: set[str] = set()
     found: list[Issue] = []
     for e in entries:
         if e.field == "Files":
-            sid = _existing_file_section(structure, e.thing) if structure else None
+            sid = _existing_file_section(structure(), e.thing)
         else:
             sid = _existing_section(e, doc, bodies, unreadable, found)
         if sid is None:

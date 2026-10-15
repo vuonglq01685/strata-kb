@@ -620,3 +620,52 @@ def test_drift_baseline_failure_degrades_to_the_no_baseline_warning(
     assert result.exit_code == 0, result.output
     assert result.exception is None
     assert "no baseline to diff" in result.output
+
+
+def test_new_on_existing_route_uses_hub_load_at(
+    code_doc, fed_hub, run_git, tmp_path, monkeypatch
+):
+    """`load_at` is wired to ticketstale.drift_refs: a [NEW] route listed at
+    the grounded revision is an error, one the baseline lacks is a note."""
+    from strata_kb import ticketstale
+    from strata_kb.kbcontext import KBRef
+    from strata_kb.resolve import ResolvedRef
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    _republish_moved(
+        fed_hub,
+        kb_dir,
+        run_git,
+        {"services.md": ("Container `gpuworker`", "Container `gpuworker` (v2)")},
+    )
+    text = ticket(
+        grounding(rev, Routes="GET /airspace in src/airspace/routes.py [NEW: x]")
+    )
+    calls: list[tuple] = []
+
+    def fake(content: str):
+        def drift_refs(hub, repo, doc, at_rev, ids):
+            calls.append((repo, doc, at_rev, ids))
+            return [
+                ResolvedRef(
+                    ref=KBRef(repo_id="demo", doc_id=doc, section_id=ids[0]),
+                    status="ok",
+                    citation="c",
+                    content=content,
+                    tokens=0,
+                )
+            ]
+
+        return drift_refs
+
+    listed = "| Method | Path |\n| --- | --- |\n| GET | /airspace |\n"
+    monkeypatch.setattr(ticketstale, "drift_refs", fake(listed))
+    result = _check_against_hub(text, fed_hub, tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "already exists in api.airspace; cite it instead" in result.output
+    assert ("demo", "demo-code", rev, ["api.airspace"]) in calls
+
+    monkeypatch.setattr(ticketstale, "drift_refs", fake("| Method | Path |\n"))
+    result = _check_against_hub(text, fed_hub, tmp_path)
+    assert "now exists in api.airspace — built since grounding" in result.output
