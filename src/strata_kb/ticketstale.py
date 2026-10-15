@@ -24,7 +24,9 @@ from strata_kb.resolve import ResolvedRef, resolve_refs
 # `_parse_section` / `_id_lines` are private to ticketcheck: reusing them keeps
 # the id-reading rules in one place instead of copying the skip rules here.
 from strata_kb.ticketcheck import (
+    GUARDED_KINDS,
     HEADING,
+    ID_TAIL,
     NEW_RE,
     SERVICES_HEADING,
     DocLoadError,
@@ -43,7 +45,7 @@ KB_CONTEXT = "kb-context"
 ARCHITECTURE = "architecture"
 BASELINE_MISSING = "baseline not on hub"
 # Narrower than ticketcheck.ID_RE: only the ids a `-code` section can carry.
-_ARCH_ID_RE = re.compile(r"\b(?:svc|db|api|int|cmd)\.[A-Za-z0-9._-]+")
+_ARCH_ID_RE = re.compile(rf"\b(?:svc|db|api|int|cmd|{GUARDED_KINDS}){ID_TAIL}")
 _MIN_REV_LEN = 7
 
 

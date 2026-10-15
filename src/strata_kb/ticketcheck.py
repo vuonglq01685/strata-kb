@@ -78,11 +78,13 @@ _SOURCE_EXTS = (
     "ts|tsx|js|jsx|mjs|cjs|mts|cts|py|go|rs|java|kt|cs|php|swift|dart|vue|svelte"
     "|css|scss|sql|prisma|md|yaml|yml|json"
 )
-ID_RE = re.compile(
-    r"\b(?:svc|db|api|int|cmd|dep|struct|(?<![\w/.+-])(?:route|page|job|sym))"
+# `route|page|job|sym` behind the glue guard; shared with ticketstale.
+GUARDED_KINDS = r"(?<![\w/.+-])(?:route|page|job|sym)"
+ID_TAIL = (
     rf"\.(?!(?:{_SOURCE_EXTS})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_]))"
     r"[A-Za-z0-9_][A-Za-z0-9_.-]*"
 )
+ID_RE = re.compile(rf"\b(?:svc|db|api|int|cmd|dep|struct|{GUARDED_KINDS}){ID_TAIL}")
 NEW_RE = re.compile(r"\[NEW(?::\s*(?P<reason>[^\]]*))?\]")
 ROUTE_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)")
 CODE_SPAN_RE = re.compile(r"`([^`]+)`")

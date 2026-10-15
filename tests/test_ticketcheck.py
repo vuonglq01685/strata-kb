@@ -2102,3 +2102,39 @@ def test_ids_that_merely_start_like_an_extension_still_count():
     assert any("unknown id 'route.tsx-extra'" in e for e in errors(report))
     report = run_synth(["- Routes: db.json_events"])
     assert any("unknown id 'db.json_events'" in e for e in errors(report))
+
+
+# --- Task 12: drift judges the new citations -------------------------------
+
+
+def _synth_ref(sid: str, status: str) -> ResolvedRef:
+    return _drift_ref(sid, status, "OLD\n")
+
+
+def test_moved_revision_route_citation_still_valid_is_pass_note():
+    report = run_synth(
+        [f"- Routes: {_MEDIA} — GET /watch/:id"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_MEDIA, "ok")],
+    )
+    assert errors(report) == [], report.render("Grounding")
+    assert any("still valid at @abc1234" in n for n in notes(report))
+
+
+def test_moved_revision_route_citation_gone_is_tier2():
+    report = run_synth(
+        [f"- Routes: {_MEDIA} — GET /watch/:id/gone"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_MEDIA, "ok")],
+    )
+    assert tier2("deadbee", "abc1234") in errors(report)
+
+
+def test_moved_revision_changed_page_section_warns_with_diff():
+    report = run_synth(
+        [f"- Pages: {_PAGES} — /admin"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_PAGES, "stale")],
+    )
+    assert errors(report) == []
+    assert any(f"§{_PAGES} changed" in w for w in warnings(report))

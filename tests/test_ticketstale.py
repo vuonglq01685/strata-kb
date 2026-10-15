@@ -465,3 +465,24 @@ def test_drift_refs_none_without_unique_holder(fed_hub, run_git):
     _publish(fed_hub, run_git, "rev1", svc_a="A")
     hub = HubHandle(root=fed_hub)
     assert ticketstale.drift_refs(hub, None, "ghost-code", "rev1", ["svc.a"]) is None
+
+
+def test_cited_ids_include_route_page_job_sym():
+    body = "\n".join(
+        [
+            "- Routes: route.apps-api-x — GET /x, api.tag",
+            "- Pages: page.apps-web — /admin",
+            "- Jobs: job.apps-api-m-073d57 — `nightly`",
+            "- Symbols: sym.apps-api — Foo",
+            "- Files: apps/api/route.ts, +page.svelte, export.job.ts",
+            "- New: route.apps-new — GET /y [NEW: tbd]",
+        ]
+    )
+    text = "## Technical grounding\n- Grounded on: demo:demo-code @ aaaaaaa\n" + body
+    assert ticketstale.cited_ids(text) == [
+        "route.apps-api-x",
+        "api.tag",
+        "page.apps-web",
+        "job.apps-api-m-073d57",
+        "sym.apps-api",
+    ]
