@@ -61,13 +61,51 @@ __all__ = ["EXPORTERS", "Symbol", "SymbolsExtractor"]
 # entry there, a test can drop one here.
 EXPORTERS = _symbols_lang.EXPORTERS
 
+# Tools whose `<tool>.config.*` is configuration, not product code; any other
+# `*.config.*` (Angular `app.config.ts`, Nest `database.config.ts`) is source.
+_TOOLS = [
+    "next",
+    "nuxt",
+    "vite",
+    "vitest",
+    "jest",
+    "webpack",
+    "rollup",
+    "tailwind",
+    "postcss",
+    "babel",
+    "eslint",
+    "prettier",
+    "svelte",
+    "astro",
+    "playwright",
+    "cypress",
+    "tsup",
+    "esbuild",
+    "karma",
+    "metro",
+    "remix",
+    "drizzle",
+    "commitlint",
+    "lint-staged",
+    "stylelint",
+    "turbo",
+]
+
 # (label in the coverage detail, pattern); a file counts under the first match.
 _SKIP_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("*.d.ts", re.compile(r"\.d\.[cm]?ts$")),
     ("generated", re.compile(r"\.generated\.|(?:^|/)__generated__/")),
     ("test", re.compile(r"\.(?:test|spec)\.|(?:^|/)(?:__tests__|tests?)/")),
     # tool configuration (`vite.config.ts`, `.eslintrc.js`), not product code
-    ("config", re.compile(r"\.config\.[cm]?[jt]s$|(?:^|/)\.[^/]*\.[cm]?[jt]s$")),
+    (
+        "config",
+        re.compile(
+            r"(?:^|/)(?:"
+            + "|".join(_TOOLS)
+            + r")\.config(?:\.[\w-]+)?\.[cm]?[jt]s$|(?:^|/)\.[^/]*\.[cm]?[jt]s$"
+        ),
+    ),
 )
 _HEADER = "| Name | Kind | File |"
 _RULE = "| --- | --- | --- |"
@@ -196,7 +234,10 @@ class _Reader:
         sites = {site} if target is None and not outside else set()
         if reexport.kind == "ns":
             return (
-                [(exported, "const", False) for _s, exported in reexport.names],
+                [
+                    (exported, "const", exported == DEFAULT_NAME)
+                    for _s, exported in reexport.names
+                ],
                 sites,
                 frozenset(),
             )
@@ -208,20 +249,25 @@ class _Reader:
             there = [
                 (n, k, n.split(".")[0] in surface.defaults) for n, k in surface.names
             ]
+            cuts = frozenset({target})
         elif target is not None:
             there, _sites, cuts = self._public(target, seen)
         default = next((n for n, _k, d in there if d and "." not in n), None)
         names: list[_Entry] = []
         for imported, exported in reexport.names:
-            source = (default or DEFAULT_NAME) if imported == DEFAULT_NAME else imported
-            kind = next((k for n, k, _d in there if n == source), "const")
+            from_default = imported == DEFAULT_NAME
+            source = (default or DEFAULT_NAME) if from_default else imported
+            # a plain `const` may be a cycle's guess; a specific kind wins
+            kinds = [k for n, k, _d in there if n == source]
+            kind = next(
+                (k for k in kinds if k != "const"), kinds[0] if kinds else "const"
+            )
             is_default = exported == DEFAULT_NAME
-            if is_default and target is not None:  # named after the target
-                exported = (
-                    default
-                    if default and default != DEFAULT_NAME
-                    else PurePosixPath(target).stem
-                )
+            if is_default and from_default and target is not None:
+                named = default if default and default != DEFAULT_NAME else None
+                exported = named or PurePosixPath(target).stem
+            elif is_default and not from_default:
+                exported = imported  # `{ Foo as default }`: still called Foo
             names.append((exported, kind, is_default))
             prefix = source + "."
             names += [

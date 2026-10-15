@@ -24,6 +24,7 @@ spec's "exported" for JS/TS is `export` syntax; revisit with a CJS repo.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -309,6 +310,64 @@ def _cjs_slot(left: Node | None) -> tuple[str, str | None] | None:
     return "prop", _ts.string_literal(index) if index is not None else None
 
 
+_FUNCTION_NODES = frozenset(
+    {
+        "function_declaration",
+        "generator_function_declaration",
+        "function_expression",
+        "function",
+        "generator_function",
+        "arrow_function",
+        "method_definition",
+    }
+)
+
+
+def _shadows_exports(fn: Node) -> bool:
+    """True when a parameter or a top-level local of `fn` is named `exports`
+    or `module` (conservative: the whole function is then not read)."""
+    params = fn.child_by_field_name("parameters") or fn.child_by_field_name("parameter")
+    bound: list[str] = []
+    if params is not None and params.type == "identifier":
+        bound.append(_ts.node_text(params))
+    elif params is not None:
+        for param in params.named_children:
+            bound += _pattern_names(param.child_by_field_name("pattern") or param)
+    body = fn.child_by_field_name("body")
+    for stmt in (
+        body.named_children
+        if body is not None and body.type == "statement_block"
+        else []
+    ):
+        if stmt.type in _VARIABLE_DECLS:
+            for declarator in stmt.named_children:
+                bound += _pattern_names(declarator.child_by_field_name("name"))
+    return "exports" in bound or "module" in bound
+
+
+def _passes_exports(call: Node) -> bool:
+    """`f(module.exports, ..)` / `f(exports, ..)` can add names this reader
+    cannot list; `Object.defineProperty(exports, '__esModule', ..)` cannot."""
+    args = call.child_by_field_name("arguments")
+    given = args.named_children if args is not None else []
+    hit = [
+        a
+        for a in given
+        if _is_module_exports(a)
+        or (a.type == "identifier" and _ts.node_text(a) == "exports")
+    ]
+    if not hit:
+        return False
+    fn = call.child_by_field_name("function")
+    marker = (
+        fn is not None
+        and _ts.node_text(fn) == "Object.defineProperty"
+        and len(given) > 1
+        and _ts.string_literal(given[1]) == "__esModule"
+    )
+    return not marker
+
+
 def _value_kind(value: Node | None) -> str:
     if value is not None and value.type in _FUNCTION_VALUES:
         return "function"
@@ -337,6 +396,17 @@ class _Reader:
         kind, source = self.locals.get(local, (fallback, None))
         self.emit(exported, kind, source)
 
+    def import_reexport(self, local: str, exported: str, at: Node) -> bool:
+        """Record `exported` as a re-export when `local` is an import (not
+        shadowed by a declaration); the repo resolves what it is."""
+        if local in self.locals or local not in self.imports:
+            return False
+        spec, imported = self.imports[local]
+        kind = "ns" if imported == "*" else "named"
+        pair = ("*" if kind == "ns" else imported, exported)
+        self.imported.append(Reexport(kind, spec, (pair,), _ts.line_of(at)))
+        return True
+
     def default(self, stmt: Node) -> None:
         node = stmt.child_by_field_name("declaration")
         if node is not None:
@@ -349,8 +419,10 @@ class _Reader:
             return
         value = _unwrap(stmt.child_by_field_name("value"))
         if value is not None and value.type == "identifier":
-            name = self.default_name = _ts.node_text(value)
-            self.local(name, name, "const")
+            name = _ts.node_text(value)
+            if not self.import_reexport(name, DEFAULT_NAME, value):
+                self.default_name = name
+                self.local(name, name, "const")
         else:
             self.default_name = DEFAULT_NAME
             kind = "const"
@@ -371,13 +443,7 @@ class _Reader:
             if local is None or exported is None:
                 self.unreadable.append(_ts.line_of(spec_node))
                 continue
-            if local not in self.locals and local in self.imports:
-                spec, imported = self.imports[local]
-                kind = "ns" if imported == "*" else "named"
-                pair = ("*" if kind == "ns" else imported, exported)
-                self.imported.append(
-                    Reexport(kind, spec, (pair,), _ts.line_of(spec_node))
-                )
+            if self.import_reexport(local, exported, spec_node):
                 continue
             if exported == DEFAULT_NAME:
                 self.default_name = DEFAULT_NAME
@@ -388,7 +454,13 @@ class _Reader:
         stack = [root]
         while stack:
             node = stack.pop()
+            if node.type in _FUNCTION_NODES and _shadows_exports(node):
+                continue  # `exports` / `module` there is not the module's
             stack.extend(reversed(node.children))
+            if node.type == "call_expression":
+                if _passes_exports(node):
+                    self.unreadable.append(_ts.line_of(node))
+                continue
             if node.type != "assignment_expression":
                 continue
             slot = _cjs_slot(node.child_by_field_name("left"))
@@ -577,12 +649,27 @@ def _clean_style(source: bytes, scss: bool) -> bytes:
     return text
 
 
+def _declarations(text: bytes) -> list[bytes]:
+    """`--name` at declaration position: after `{`, `;`, `}` or the start,
+    outside parentheses (so a map key inside a value is not one)."""
+    opens = [m.start() for m in re.finditer(rb"\(", text)]
+    closes = [m.start() for m in re.finditer(rb"\)", text)]
+    found = []
+    for m in _CUSTOM_PROP.finditer(text):
+        start = m.start(1)
+        before = text[:start].rstrip()[-1:]
+        depth = bisect_left(opens, start) - bisect_left(closes, start)
+        if depth <= 0 and before in (b"", b"{", b";", b"}"):
+            found.append(m.group(1))
+    return found
+
+
 def _css_reader(scss: bool) -> Exporter:
     def exports(_tree: Tree, source: bytes) -> list[tuple[str, str]]:
         # shortcut: regex, not the tree -- the SCSS grammar loses every
         # declaration after `--x: #{$v}`.
         text = _clean_style(source, scss)
-        names = {m.group(1) for m in _CUSTOM_PROP.finditer(text)}
+        names = set(_declarations(text))
         names |= {m.group(1) for m in _PROPERTY_AT_RULE.finditer(text)}
         return sorted((n.decode("utf-8", "replace"), "css-var") for n in names)
 

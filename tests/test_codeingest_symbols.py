@@ -782,3 +782,123 @@ def test_shared_reexport_target_is_computed_once(tmp_path, monkeypatch):
     monkeypatch.setattr(symbols._Reader, "_follow", spy)
     run_symbols(tmp_path)
     assert calls.count("src/d.ts") == 1
+
+
+# --- review round 2 ----------------------------------------------------------
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Object.assign(module.exports, { a: 1, b: 2 });",
+        "Object.defineProperty(exports, 'x', { get() { return 1 } });",
+        "__exportStar(require('./x'), exports);",
+        "(function (root) {})(exports);",
+    ],
+)
+def test_commonjs_export_object_passed_to_a_call_is_a_site(tmp_path, line):
+    result = solo(tmp_path, line + "\n", "lib/x.js")
+    row = cover(result, ".", "javascript")
+    assert row.status == "partial"
+    assert "lib/x.js:1" in row.detail
+
+
+@needs_ts
+def test_commonjs_es_module_marker_is_not_a_site(tmp_path):
+    result = solo(
+        tmp_path,
+        "Object.defineProperty(exports, '__esModule', { value: true });\nexports.y = 1;\n",
+        "lib/x.js",
+    )
+    assert names(result) == ["y"]
+    assert cover(result, ".", "javascript").status == "complete"
+
+
+@needs_ts
+def test_commonjs_shadowed_exports_are_not_module_exports(tmp_path):
+    result = solo(
+        tmp_path,
+        "function wrap(exports) { exports.inner = 1 }\n"
+        "const f = (module) => { module.exports = require('x') };\n"
+        "function g() { const exports = {}; exports.local = 1 }\n"
+        "module.exports = { outer: 1 };\n",
+        "lib/x.js",
+    )
+    assert names(result) == ["outer"]
+    assert cover(result, ".", "javascript").status == "complete"
+
+
+@needs_ts
+def test_default_alias_reexport_takes_the_imported_name_not_the_targets_default(
+    tmp_path,
+):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "src/x.ts",
+        "export const Foo = { K: 1 };\nexport default class Bar {}\n",
+    )
+    write(tmp_path, "src/re.ts", "export { Foo as default } from './x';\n")
+    write(
+        tmp_path,
+        "src/re2.ts",
+        "import { Foo } from './x';\nexport { Foo as default };\n",
+    )
+    write(tmp_path, "src/re3.ts", "import Bar from './x';\nexport default Bar;\n")
+    write(tmp_path, "src/all.ts", "export * from './re';\n")
+    got = {}
+    for name, kind, file in rows(run_symbols(tmp_path), "sym.root"):
+        got.setdefault(file, {})[name] = kind
+    assert got["src/re.ts"] == {"Foo": "const", "Foo.K": "member"}
+    assert got["src/re2.ts"] == {"Foo": "const", "Foo.K": "member"}
+    assert got["src/re3.ts"] == {"Bar": "class"}
+    assert "src/all.ts" not in got  # still a default
+
+
+@needs_ts
+def test_reexport_cycle_kind_does_not_depend_on_file_order(tmp_path):
+    package(tmp_path, ".")
+    write(tmp_path, "src/a.ts", "export * from './b';\nexport * from './c';\n")
+    write(tmp_path, "src/b.ts", "export { X } from './a';\n")
+    write(tmp_path, "src/c.ts", "export class X {}\n")
+    got = {(r[2], r[0]): r[1] for r in rows(run_symbols(tmp_path), "sym.root")}
+    assert got[("src/b.ts", "X")] == "class"
+    assert got[("src/c.ts", "X")] == "class"
+
+
+@needs_ts
+@pytest.mark.parametrize(
+    ("rel", "kept"),
+    [
+        ("vite.config.ts", False),
+        ("apps/web/next.config.js", False),
+        ("jest.config.e2e.js", False),
+        ("tailwind.config.cjs", False),
+        (".prettierrc.js", False),
+        ("src/app.config.ts", True),
+        ("src/database.config.ts", True),
+    ],
+)
+def test_only_known_tool_configs_are_skipped(tmp_path, rel, kept):
+    package(tmp_path, ".")
+    write(tmp_path, rel, "export const settings = {};\n")
+    result = run_symbols(tmp_path)
+    assert (bool(result.sections)) is kept
+
+
+@needs_ts
+def test_scss_map_keys_inside_a_value_are_not_declarations(tmp_path):
+    package(tmp_path, ".")
+    write(
+        tmp_path,
+        "s.scss",
+        ":root { --map: (--k: 1, --j: 2); --multi: (\n  --m: 3\n); --real: 1 }\n"
+        "a{color:red;--min:1}\n",
+    )
+    assert sorted(names(run_symbols(tmp_path))) == [
+        "--map",
+        "--min",
+        "--multi",
+        "--real",
+    ]
