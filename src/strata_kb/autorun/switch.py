@@ -10,10 +10,14 @@ import re
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
+from strata_kb import gitio
 from strata_kb.autorun import state as autostate
-from strata_kb.config import KBConfig, load_config
+from strata_kb.config import HubConfigError, KBConfig, load_config, require_hub
 from strata_kb.federation import RegistryError, load_registry
+from strata_kb.hub import resolve_hub
+from strata_kb.models import Registry
 
 _AUTO_LINE = re.compile(r"^auto:[ \t]*(#.*)?$", re.MULTILINE)
 _AUTO_ANY = re.compile(r"^auto:", re.MULTILINE)
@@ -55,21 +59,32 @@ def set_enabled(config_path: Path, on: bool) -> None:
     config_path.write_text(out, encoding="utf-8", newline="\n")
 
 
-def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
-    from strata_kb.cli import _hub_or_reason  # lazy: cli imports this package
-
-    warnings = [ADMIN_WARNING]
-    handle, reason = _hub_or_reason(hub, kb_dir)
-    if handle is None:
-        warnings.append(
-            f"Hub unavailable ({reason}): registry not checked, "
-            "so a second Dev repo would go unnoticed."
-        )
-        return warnings
+def _registry_or_reason(kb_dir: Path, hub: str) -> tuple[Registry | None, str]:
+    """The hub's registry, or why it could not be read. Never exits or prints."""
     try:
-        registry = load_registry(handle.federation_dir)
-    except RegistryError as exc:
-        warnings.append(f"Hub registry unreadable ({exc}): registry not checked.")
+        handle = resolve_hub(require_hub(hub, kb_dir))
+        if handle is None:
+            return None, "hub unreachable and not cached"
+        return load_registry(handle.federation_dir), ""
+    except (
+        HubConfigError,
+        RegistryError,
+        gitio.GitError,
+        yaml.YAMLError,
+        ValidationError,
+        ValueError,
+        OSError,
+    ) as exc:
+        return None, gitio.redact_url(" ".join(str(exc).split()))
+
+
+def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
+    warnings = [ADMIN_WARNING]
+    registry, reason = _registry_or_reason(kb_dir, hub)
+    if registry is None:
+        warnings.append(
+            f"Registry not checked ({reason}), so a second Dev repo would go unnoticed."
+        )
         return warnings
     devs = [
         repo

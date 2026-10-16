@@ -103,8 +103,13 @@ def test_warnings_one_dev_only_admin_line(tmp_path, fed_hub):
 
 def test_warnings_unreachable_hub_says_registry_not_checked(tmp_path):
     warnings = warnings_for_on(_kb(tmp_path, "kind: dev\n"), "")
-    assert any("registry not checked" in w for w in warnings)
+    assert any("registry not checked" in w.lower() for w in warnings)
     assert any("admin" in w for w in warnings)
+
+
+def test_warnings_broken_config_is_a_line_not_a_crash(tmp_path):
+    warnings = warnings_for_on(_kb(tmp_path, "auto: [oops\n"), "")
+    assert any("registry not checked" in w.lower() for w in warnings)
 
 
 def test_status_defaults_and_empty_state_fields(tmp_path):
