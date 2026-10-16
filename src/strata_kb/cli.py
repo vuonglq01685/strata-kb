@@ -125,6 +125,9 @@ code_sync_app = typer.Typer(
 )
 app.add_typer(code_sync_app, name="code-sync")
 
+auto_app = typer.Typer(help="Full-auto mode: switch it on or off per repo, see status.")
+app.add_typer(auto_app, name="auto")
+
 user_app = typer.Typer(help="Hub UI accounts: add, passwd, role, remove, list, hash.")
 app.add_typer(user_app, name="user")
 
@@ -968,6 +971,66 @@ def _code_sync_root(kb_dir: Path, command: str) -> Path:
 
     _require_hub_kind(kb_dir, command)
     return gitio.git_root(kb_dir.resolve().parent)
+
+
+@auto_app.command("on")
+def auto_on(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Turn full-auto mode on (ba/dev repos only). Prints the risks first."""
+    from strata_kb.autorun import switch
+    from strata_kb.config import load_config
+
+    path = kb_dir / "config.yaml"
+    try:
+        kind = load_config(kb_dir).kind
+        if kind not in ("ba", "dev"):
+            typer.secho(
+                f"kb auto works in ba or dev repos only (this repo kind: {kind or 'unset'})",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        for line in switch.warnings_for_on(kb_dir, hub):
+            typer.echo(line)
+        switch.set_enabled(path, True)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+    typer.echo("auto: on")
+
+
+@auto_app.command("off")
+def auto_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn full-auto mode off."""
+    from strata_kb.autorun import switch
+
+    path = kb_dir / "config.yaml"
+    try:
+        switch.set_enabled(path, False)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+    typer.echo("auto: off")
+
+
+@auto_app.command("status")
+def auto_status(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    as_json: bool = typer.Option(False, "--json", help="Print the status as JSON"),
+) -> None:
+    """Show the auto switch, its intervals and the runner's current state."""
+    from strata_kb.autorun import switch
+
+    try:
+        data = switch.status(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(kb_dir / "config.yaml", exc)
+    if as_json:
+        typer.echo(json.dumps(data))
+        return
+    for key, value in data.items():
+        typer.echo(f"{key}: {value}")
 
 
 @code_sync_app.command("scan")

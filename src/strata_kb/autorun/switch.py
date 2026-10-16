@@ -1,0 +1,89 @@
+"""switch — the `auto:` block in `.kb/config.yaml`: flip it, warn, report.
+
+`set_enabled` edits text, not the parsed model, so operator comments and
+other keys survive (same append-only style as `initcmd._record_kind`).
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from strata_kb.config import load_config
+from strata_kb.federation import RegistryError, load_registry
+
+_AUTO_LINE = re.compile(r"^auto:[ \t]*(#.*)?$", re.MULTILINE)
+_AUTO_ANY = re.compile(r"^auto:", re.MULTILINE)
+_NEXT_TOP_KEY = re.compile(r"^\S", re.MULTILINE)
+_ENABLED_LINE = re.compile(r"^([ \t]+)enabled:.*$", re.MULTILINE)
+
+ADMIN_WARNING = (
+    "Auto mode merges pull requests as admin, with no review. "
+    "Turn it on only for a repo where that is acceptable."
+)
+
+
+def set_enabled(config_path: Path, on: bool) -> None:
+    flag = "true" if on else "false"
+    text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    if text and not text.endswith("\n"):
+        text += "\n"
+    head = _AUTO_LINE.search(text)
+    if head is None:
+        if _AUTO_ANY.search(text):
+            raise ValueError("`auto:` must be a block mapping to be switched")
+        out = text + f"auto:\n  enabled: {flag}\n"
+    else:
+        nxt = _NEXT_TOP_KEY.search(text, head.end() + 1)
+        end = nxt.start() if nxt else len(text)
+        block = text[head.end() : end]
+        if _ENABLED_LINE.search(block):
+            block = _ENABLED_LINE.sub(rf"\1enabled: {flag}", block, count=1)
+        else:
+            block = f"\n  enabled: {flag}" + block
+        out = text[: head.end()] + block + text[end:]
+    config_path.write_text(out, encoding="utf-8", newline="\n")
+
+
+def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
+    from strata_kb.cli import _hub_or_reason  # lazy: cli imports this package
+
+    warnings = [ADMIN_WARNING]
+    handle, reason = _hub_or_reason(hub, kb_dir)
+    if handle is None:
+        warnings.append(
+            f"Hub unavailable ({reason}): registry not checked, "
+            "so a second Dev repo would go unnoticed."
+        )
+        return warnings
+    try:
+        registry = load_registry(handle.federation_dir)
+    except RegistryError as exc:
+        warnings.append(f"Hub registry unreadable ({exc}): registry not checked.")
+        return warnings
+    devs = [
+        repo
+        for repo in registry.repos
+        if (entry := registry.resolve(repo)) and entry.kind == "dev"
+    ]
+    if len(devs) > 1:
+        warnings.append(
+            f"Auto mode supports one Dev repo per hub, "
+            f"but the registry lists {len(devs)}: {', '.join(sorted(devs))}."
+        )
+    return warnings
+
+
+def status(kb_dir: Path) -> dict:
+    auto = load_config(kb_dir).auto
+    return {
+        "enabled": auto.enabled,
+        "qa_interval": auto.qa_interval,
+        "idle_interval": auto.idle_interval,
+        "hotfix_base": auto.hotfix_base,
+        # Task 5 adds the state file and fills these in.
+        "task": None,
+        "attempts": None,
+        "waiting_on": None,
+        "stop_reason": None,
+    }
