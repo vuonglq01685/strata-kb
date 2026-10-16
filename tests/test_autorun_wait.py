@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 from typer.testing import CliRunner
 
 from strata_kb.autorun import wait
@@ -65,7 +62,9 @@ def test_wait_reports_progress_on_task_change(tmp_path, monkeypatch):
     monkeypatch.setattr(wait, "running_pid", lambda kb: 42)
 
     def sleeper(_):
-        save(tmp_path, _state(task="ba-answer-questions:qa", attempts=1, waiting=(3, 4)))
+        save(
+            tmp_path, _state(task="ba-answer-questions:qa", attempts=1, waiting=(3, 4))
+        )
 
     got = wait.wait_for_change(tmp_path, 100, sleep=sleeper, now=_clock())
 

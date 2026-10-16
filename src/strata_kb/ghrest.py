@@ -39,9 +39,8 @@ def _gh(root: Path, args: list[str], stdin: str | None) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=_GH_TIMEOUT_SECONDS,
-            **(
-                {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
-            ),
+            input=stdin,
+            stdin=subprocess.DEVNULL if stdin is None else None,
         )
     except FileNotFoundError:
         raise GHError("gh not found: install and authenticate the GitHub CLI") from None
