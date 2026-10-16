@@ -107,12 +107,25 @@ File: `src/strata_kb/autorun/qathread.py` (plus `runner.py` only if needed).
      skip the push. A git error here is logged as a warning and does not stop
      the loop.
   4. Log one `WARNING` naming the ticket and the branch.
-- The ticket id is the token after `dor-unticked` in `result.reason`.
+- The ticket parked is the one the runner launched the run with, not the
+  token in `result.reason` (the model may write the id differently). A
+  `dor-unticked` result therefore always parks the launched ticket.
+- **Which results park.** In the skill, every ticket-level stop ends
+  `failed dor-unticked <ticket-id>`: a DoR box left unticked, `kb ticket check`
+  still failing after the re-ground (open decision, undecided `[NEW: D<k>]`,
+  cited `SUPERSEDED` row), or `kb_ticket_lint` never passing. Only failures that
+  are not about one ticket (`ci-red`, `hub-refused`, `qa-needs-hub-server`, a
+  crash) use other reasons and keep the two-in-a-row stop.
 - **Resume.** In the skill (5.1 file), step 3's "resume an unpublished N+1"
-  bullet gains: when `origin/auto/qa-parked/<ticket>` exists, run
-  `git fetch origin auto/qa-parked/<ticket> && git merge --no-edit FETCH_HEAD`
-  first, then resume that revision. (Both commands are in the allowlist;
-  `git checkout <ref> -- <file>` and `git show` are not.)
+  bullet gains: run `git fetch origin auto/qa-parked/<ticket>`; when it exists,
+  read the ticket's `> Revision:` on `FETCH_HEAD` and merge it
+  (`git merge --no-edit FETCH_HEAD`) **only when** that revision is higher than
+  both the default branch's and the hub's revision of the ticket; otherwise the
+  draft is stale (already published, or overtaken by the main BA task) and is
+  ignored. A merge conflict → `git merge --abort` and start the amendment fresh
+  from the default branch. (`git fetch`, `git merge`, `git log`/`git diff` are in
+  the allowlist; `git checkout <ref> -- <file>` and `git show` are not — read
+  the revision with `git diff` or `git log -p` against `FETCH_HEAD`.)
 - Every other failure kind keeps the current two-in-a-row stop.
 
 ### 5.3 G2 + G4 — two lines in the task prompt
@@ -186,4 +199,10 @@ File: `src/strata_kb/autorun/runner.py`, `run_once`, around `run_task`.
 - The runner (not the skill) saves the parked draft, and the branch name is
   `auto/qa-parked/<ticket>`; parked branches are not cleaned up.
 - One ticket per Q&A run (needed to skip parked tickets).
+- Park keys on the ticket the runner launched, never on the parsed reason.
+- Every ticket-level stop in the skill ends `dor-unticked <ticket>` (so it parks).
+- A parked draft is merged on resume only when its revision is above the
+  default branch's and the hub's; a conflict aborts the merge and starts fresh.
+- `kb-auto.md` (the interactive `/kb-auto` skill) also uses `git -C`; it is not
+  covered by `prompt_for` and is left as is (a human approves its prompts).
 - Version 1.31.0.
