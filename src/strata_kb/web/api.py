@@ -30,7 +30,7 @@ from strata_kb.query import (
     search,
     stale_hub_note,
 )
-from strata_kb.serving.config import ServerConfig
+from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
 
 logger = logging.getLogger("strata_kb.web.api")
 
@@ -293,7 +293,6 @@ def build_routes(config: ServerConfig) -> list[Route]:
         # not a reason to create the store from a GET.
         from strata_kb import ticketqa
         from strata_kb.errors import KbError
-        from strata_kb.mcp import hub_serves_own_checkout
 
         if not hub_serves_own_checkout(config):
             return _error(503, "qa_needs_hub_server", QA_NEEDS_HUB_DETAIL)
