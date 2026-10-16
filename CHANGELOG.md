@@ -3,6 +3,19 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.30.0 — 2026-10-16
+
+Full-auto mode on Claude Code cloud: one cloud session runs a BA or Dev repo's loop with no local machine. Local runs are unchanged.
+
+- **Cloud.** `strata_kb.cloud.is_cloud()` is true when `CLAUDE_CODE_REMOTE` is `1` or `true`; `STRATA_KB_CLOUD=1|0` forces either side. `/kb-auto run` on cloud runs on the session's `claude/...` branch. When the default branch's switch is off it opens an `auto/switch` PR that flips only `auto.enabled` (`kb auto on --kb-dir` in a worktree; it stops if the default branch's `.claude/settings.json` differs), waits for green checks, admin squash-merges it after telling the owner, then starts `kb auto run` detached and re-arms `kb auto wait` in the background (`timeout: 7200000`).
+- **Hub live reads.** New hub routes: `GET /api/plan/next[?repo=]`, `GET /api/registry/entry?repo_id=` (one repo's `repo_id`, `kind`, `auto_merge` and `dev_repos`; never the whole registry or the workflow pins) and `POST /api/resolve` (64 KiB cap). On cloud the runner, `kb auto on`, `kb resolve` and `kb mission next [--from-hub]` read the hub live through them (`STRATA_KB_HUB_URL` + `STRATA_KB_HTTP_TOKEN`); nothing from the hub is copied, `resolve_hub` never clones, and every other hub-reading CLI command refuses with a pointer to the `strata-kb` MCP tools.
+- **`kb pr`.** `kb pr find|view|open|checks|merge|edit` over the GitHub REST API (`gh api`), JSON keys like `gh pr --json`; `--delete-branch` skips fork heads. GraphQL is blocked on cloud, so every skill now calls `kb pr` instead of `gh pr`.
+- **`kb auto wait [--max 6600] [--interval 30]`.** Blocks until the loop exits, its stop reason changes or `--max` seconds pass, then prints one short line. `kb auto status --json` gains `cloud`.
+- **Default branch.** `gitio.default_branch` asks the remote (`git ls-remote --symref`, 30 s) when `origin/HEAD` is unset and caches the answer with `git remote set-head`. This also fixes a wrong `default_branch` in `kb auto status` for any clone made without `origin/HEAD`, local included.
+- **Known limits.** The cloud session must stay open for the whole run. Not verified on real cloud (the spike was skipped): a session lasting over 3 h, pushing `auto/*` branches, a REST admin merge past a required review, `gh run` over REST. `kb publish --branch` (used by `kb-code-sync`) still opens its PR through `gh pr` and fails on cloud. A local `auto/switch` branch left by a failed switch PR must be deleted by hand (`git branch -D auto/switch`). The cloud origin must be a plain GitHub URL for `kb pr`.
+- **Docs.** README "Full-auto mode" gains "On Claude Code cloud", and `QUICKSTART-ba.md` and `QUICKSTART-dev.md` a short paragraph. The BA and Dev guides (EN, VI) do not describe the cloud path yet, and the guide PDFs under `docs/` were not rebuilt for this release; the README is the reference.
+- **Upgrade.** Upgrade and restart the **hub** first (the three routes), then the CLI. Re-run `kb init --kind ba` or `kb init --kind dev` to get the skill changes (`kb pr`, the cloud path of `/kb-auto run`). Set `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the cloud environment. Nothing changes locally.
+
 ## 1.29.0 — 2026-10-16
 
 Full-auto mode: a switch per `ba` and `dev` repo that lets the two repos run on their own, on your machine in Claude Code CLI with your subscription, until every ticket on the hub is done. It is built for one BA repo and one Dev repo per hub.

@@ -478,6 +478,15 @@ that rule and accept that the agent can then bypass it.
 - Re-run `kb init --kind ba` to get the permission allowlist and the skills' Auto
   mode sections. The full reference is the README's "Full-auto mode" section.
 
+**On Claude Code cloud.** `/kb-auto run` works in a cloud session too. Set
+`STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the cloud environment; the hub must
+be 1.30.0 or later. The loop reads the hub live through its API (nothing is copied),
+`kb pr` replaces `gh pr` (REST; GraphQL is blocked), and the skill stays on the
+session's `claude/...` branch: if the default branch's switch is off it opens an
+`auto/switch` PR that flips only `auto.enabled`, waits for green checks, admin
+squash-merges it after telling you, then starts the loop and keeps `kb auto wait`
+armed. Keep the session open. Details and known limits: README, "On Claude Code cloud".
+
 ## Upgrading an existing BA repo
 
 Re-run `kb init --kind ba` to pick up new templates. This only ever

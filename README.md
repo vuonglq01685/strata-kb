@@ -301,10 +301,11 @@ that follows it.
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their `> Parent mission: M-x [@ rev N]` line; `--into <folder>` for the rest |
 | `kb impl tidy` | Move flat `docs/impl/<id>-{design,plan,context}.md` and `<id>-review/` into `docs/impl/<id>/`; never overwrites |
 | `kb pr lint` | Check a pull-request description carries its evidence |
+| `kb pr find\|view\|open\|checks\|merge\|edit` | Pull requests over the GitHub REST API (`gh api`), JSON keys as in `gh pr --json`; what the skills call instead of `gh pr`, which GraphQL-blocked Claude Code cloud cannot run |
 | `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
-| `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL]` runs the loop (exit `0` done, `2` stopped, `1` refused). See [Full-auto mode](#full-auto-mode) |
+| `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL]` runs the loop (exit `0` done, `2` stopped, `1` refused); `wait [--max 6600] [--interval 30]` blocks until the loop ends or changes. See [Full-auto mode](#full-auto-mode) |
 
 `kb usage` records what each ticket cost from Claude Code's own transcripts,
 subagents included (`Stop` + `SubagentStop` hooks, scaffolded by
@@ -1876,6 +1877,30 @@ and every story and ticket carries `depends_on`.
   (add the command to `permissions.allow`), then `kb auto run`.
 - One BA repo and one Dev repo per hub, one ticket at a time per repo. The BA's Q&A
   thread is the only concurrency.
+
+#### On Claude Code cloud
+
+`/kb-auto run` also works in a Claude Code cloud session, with no local machine.
+Cloud is detected from `CLAUDE_CODE_REMOTE` (`STRATA_KB_CLOUD=1|0` forces it).
+Set `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the cloud environment; the
+hub must be **1.30.0 or later** (`GET /api/plan/next`, `GET /api/registry/entry`,
+`POST /api/resolve`). On cloud the runner, `kb auto on`, `kb resolve` and
+`kb mission next [--from-hub]` read the hub live through those routes and copy
+nothing from it; every other hub-reading `kb` command refuses and points at the
+`strata-kb` MCP tools. `kb pr find|view|open|checks|merge|edit` talk to the GitHub
+REST API (`gh api`), because GraphQL is blocked there; the skills call `kb pr`, not
+`gh pr`. The origin must be a plain GitHub URL.
+
+`/kb-auto run` there stays on the session's `claude/...` branch. When the default
+branch's switch is off it opens an `auto/switch` PR that flips only `auto.enabled`
+(it stops if the default branch's `.claude/settings.json` differs), waits for green
+checks, admin squash-merges it after telling you, starts `kb auto run` detached and
+keeps `kb auto wait [--max 6600] [--interval 30]` armed in the background.
+**The session must stay open** for the whole run. Not verified on real cloud yet:
+a session lasting over 3 h, pushing `auto/*` branches, an admin merge past a
+required review, `gh run` over REST. `kb publish --branch` (used by `kb-code-sync`)
+still opens its PR through `gh pr` and fails on cloud. A local `auto/switch` branch
+left by a failed switch PR must be deleted by hand (`git branch -D auto/switch`).
 
 ---
 
