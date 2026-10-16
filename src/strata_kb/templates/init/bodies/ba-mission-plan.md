@@ -308,3 +308,30 @@ Change rules:
   hub is a recorded decision: the BA flips it at mission time, in step
   5b, not ticket by ticket. A proposal without a citation stays `OPEN`
   with a human owner.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+The runner starts this skill only as `/ba-mission-plan --amend <mission-id>`, for a mission that holds a story back: an `OPEN` row in `## Technology decisions`, or an unticked row in `## Open questions` with `blocks:`. It never starts a new mission. Nobody answers questions during the run: a step above that says "ask the BA" or "hand it to the BA" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row, so the one-row-per-revision check is unaffected. Each D-row and each open question you settle gets its own line.
+
+**Blockers to settle.** Run `kb mission next --json` and take the blockers named in the `reasons` of this mission's stories (`D<n> OPEN`, `Q<n> open`). Settle those rows and no others.
+
+**Already finished.** The runner re-runs a task after a crash, so check first: `gh pr list --head auto/<mission-id> --state all --json number,state,url`. When every blocker above is already `DECIDED` or ticked on `origin/main` and no PR is open, the work is already finished: change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git fetch origin && git switch auto/<mission-id>` and continue at the CI step of the branch rule.
+
+- **Amend step 2, "Ask the BA for the trigger(s)"** → the trigger comes from the runner's task. Settling a blocker is trigger `scope`, with `Affected` listing the full ids of the stories it unblocks. When the settlement supersedes a `DECIDED` row, the trigger is `architecture`, as the change rules require. Add `kb-context` when the `kb_ticket_stale` findings call for it.
+- **Ground: "the BA MUST choose — never auto-pick"** (also the Hard rule "let the BA choose") → pick the best-matching refs yourself by the ref rule in ba-ticket-author's Auto mode, and write the choice and the reason in an Auto decision line.
+- **Step 5b, a `Technology decisions` row stays `OPEN` — "You never flip a status"** → decide the row, then flip it to `DECIDED`. Read the row, the architecture section it cites (`kb_get_section`) and the evidence `kb_search` finds (`kinds=["kb","dev"]`). List the options: those the row names, or those the architecture document allows. Pick the one the evidence supports best; when the evidence does not separate them, pick the smallest and most reversible. Give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the row, the options, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once, then go with that decision. Write the decision into the row's Decision cell with its citation, set the status to `DECIDED`, keep the owner, and log the Auto decision line.
+- **Open question with `blocks:` — "never tick an open-question checkbox"** → answer it and tick it. Answer from the mission, the KB and the decided rows, with the same fresh-context check as a D-row. Put the answer, its source and the reason in an Auto decision line and in the change-log row's `What changed` (`Q<n>: <answer>`), then tick the box. An open question without `blocks:` stays as written.
+- **The mission DoR box "Backlog reviewed with the team; no known missing slice" — "never — the BA's judgement"** stays unticked. The mission DoR does not gate publishing.
+- **"it never commits or pushes", "The BA's next `kb publish` ships the amended mission" and "The agent's output is a draft; the BA publishes it"** → the branch rule in ba-ticket-author's Auto mode, on branch `auto/<mission-id>`. The merge publishes through `kb-publish-request.yml`; follow that rule's last step and do not run `kb publish` by hand otherwise.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+
+- `AUTO-RESULT: done` — the blockers are settled, the PR is merged, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `mission-lint <mission-id>` when `kb_mission_lint` will not reach `DoR: PASS`, or `no-blocker <mission-id>` when `kb mission next --json` names no blocker for this mission. The reason goes on the same line.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
@@ -678,3 +679,241 @@ def test_dev_sa_returns_text_only_and_names_the_business_reading():
     command = " ".join(read_template("claude-command-dev-sa.md").split())
     assert "plus what the AC could mean either way" in command
     assert "It returns text only" in command
+
+
+# --- full auto mode: BA skills take the auto path (Task 11) --------------------
+
+AUTO_HEADING = "\n## Auto mode\n"
+AUTO_OPENING = (
+    "Run `kb auto status --json`. When `enabled` is false, this section does not "
+    "apply. When true, the rules below replace the human gates named in them."
+)
+PRE_AUTO = Path(__file__).parent / "fixtures" / "bodies-pre-auto"
+
+BA_AUTO_BODIES = ["ba-ticket-author", "ba-mission-plan", "ba-answer-questions"]
+KB_PUBLISH_COPIES = [
+    "claude-skill-kb-publish.md",
+    "copilot-kb-publish.prompt.md",
+    "cursor-kb-publish.md",
+]
+# Template file -> fixture holding its text before this task. The Claude
+# ba-ticket-author skill and ba-mission-plan command are full copies, not stubs
+# over the shared body, and kb-publish is three separate files; each gets the
+# same section appended.
+AUTO_FILES = {
+    **{f"bodies/{n}.md": f"{n}.md" for n in BA_AUTO_BODIES},
+    "claude-skill-ba-ticket-author.md": "claude-skill-ba-ticket-author.md",
+    "claude-command-ba-mission-plan.md": "claude-command-ba-mission-plan.md",
+    **{n: n for n in KB_PUBLISH_COPIES},
+}
+
+
+def _raw(template: str) -> str:
+    return BASE.joinpath(template).read_text(encoding="utf-8")
+
+
+def _auto_section(template: str) -> str:
+    text = _raw(template)
+    assert text.count(AUTO_HEADING) == 1, template
+    return text[text.index(AUTO_HEADING) + 1 :]
+
+
+def _bullets(section: str) -> list[str]:
+    """Each top-level `- ` bullet of the section as one whitespace-joined line."""
+    out: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("- "):
+            out.append(line[2:])
+        elif out and line.startswith("  ") and line.strip():
+            out[-1] += " " + line.strip()
+        elif not line.strip() or line.startswith("#"):
+            continue
+        elif out and not line.startswith(("    ", "|")):
+            out.append("")  # a paragraph ends the bullet run
+    return [" ".join(b.split()) for b in out if b]
+
+
+@pytest.mark.parametrize("name", BA_AUTO_BODIES)
+def test_ba_body_has_auto_mode_section(name):
+    section = _auto_section(f"bodies/{name}.md")
+    text = " ".join(section.split())
+    assert "AUTO-RESULT:" in text
+    assert text.startswith(f"## Auto mode {AUTO_OPENING}")
+    assert "**Auto decision:**" in text
+    assert "### Result line" in section
+
+
+@pytest.mark.parametrize("template", sorted(AUTO_FILES))
+def test_auto_mode_is_the_last_h2_and_ends_with_the_result_line_subsection(template):
+    section = _auto_section(template)
+    assert "\n## " not in section[len("## Auto mode") :], template
+    assert section.index("### Result line") > section.index(AUTO_OPENING), template
+    assert "\n## " not in section, template
+
+
+@pytest.mark.parametrize("template", sorted(AUTO_FILES))
+def test_off_path_text_is_unchanged(template):
+    # Rule: everything before the `## Auto mode` heading, trailing blank lines
+    # trimmed, equals the file as it stood before Task 11 (the fixture, same trim).
+    before = _raw(template)
+    before = before[: before.index(AUTO_HEADING)].rstrip("\n") + "\n"
+    pre = (PRE_AUTO / AUTO_FILES[template]).read_text(encoding="utf-8")
+    assert before == pre.rstrip("\n") + "\n", template
+
+
+@pytest.mark.parametrize(
+    "name", ["copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md"]
+)
+def test_shared_ba_ticket_author_stubs_render_the_auto_section(name):
+    assert read_template(name).endswith(_auto_section("bodies/ba-ticket-author.md"))
+
+
+def test_claude_ba_ticket_author_skill_carries_the_same_auto_section():
+    assert _auto_section("claude-skill-ba-ticket-author.md") == _auto_section(
+        "bodies/ba-ticket-author.md"
+    )
+
+
+def test_claude_mission_plan_command_carries_the_same_auto_section():
+    # The four ba-mission-plan wrappers are byte-identical from `## Workflow`.
+    assert _auto_section("claude-command-ba-mission-plan.md") == _auto_section(
+        "bodies/ba-mission-plan.md"
+    )
+
+
+def test_kb_publish_copies_carry_one_identical_auto_section():
+    sections = {n: _auto_section(n) for n in KB_PUBLISH_COPIES}
+    assert len(set(sections.values())) == 1, sections.keys()
+    assert " ".join(sections[KB_PUBLISH_COPIES[0]].split()).startswith(
+        f"## Auto mode {AUTO_OPENING}"
+    )
+
+
+def _gates(template: str) -> list[str]:
+    return [b for b in _bullets(_auto_section(template)) if b.startswith("**")]
+
+
+# Every gate of spec 6.7 that a BA skill names, as the body names it.
+_BA_GATES = {
+    "bodies/ba-ticket-author.md": [
+        "Ask, don't guess",  # intake
+        "never auto-pick",  # KB-ref pick
+        "confirms which sections apply",  # pin
+        "Every AC is Given/When/Then",  # the BA-only DoR box
+        "Ask the BA for the trigger",  # amend trigger
+        "never commits or pushes",  # runner-driven PR
+    ],
+    "bodies/ba-mission-plan.md": [
+        "never auto-pick",
+        "Ask the BA for the trigger",
+        "You never flip a status",  # D-row OPEN -> DECIDED
+        "never tick an open-question checkbox",  # open question with blocks:
+        "never commits or pushes",
+    ],
+    "bodies/ba-answer-questions.md": [
+        "never answer a question yourself",
+        "ask them to re-check and re-tick",
+        "never commits, pushes or publishes",
+    ],
+    **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
+}
+
+
+@pytest.mark.parametrize("template", sorted(_BA_GATES))
+def test_every_replaced_gate_is_a_bullet_with_its_auto_rule(template):
+    gates = _gates(template)
+    for fragment in _BA_GATES[template]:
+        matching = [g for g in gates if fragment in g.split(" → ")[0]]
+        assert matching, (template, fragment)
+        assert all(" → " in g for g in matching), (template, fragment)
+
+
+def test_ba_ticket_author_auto_ticks_dor_box():
+    body = _body("ba-ticket-author.md")
+    # the off path keeps the row, and points nowhere: a human ticks it
+    assert (
+        "| Every AC is Given/When/Then and acceptance-testable … | never — the BA's judgement |"
+        in body
+    )
+    (gate,) = [
+        g
+        for g in _gates("bodies/ba-ticket-author.md")
+        if "Every AC is Given/When/Then" in g
+    ]
+    for phrase in ("fresh-context", "tick", "docs/ac-quality.md", "rewrite"):
+        assert phrase in gate, phrase
+    assert "never — the BA's judgement" in gate
+
+
+BRANCH_LINES = [
+    "git fetch origin && git switch -c auto/<ticket-id> origin/main",
+    "git push -u origin HEAD",
+    "gh pr create",
+    "gh pr checks --watch",
+    "AUTO-RESULT: failed ci-red <pr-url>",
+    "gh pr merge --squash --delete-branch",
+    "--admin",
+    "kb-publish-request.yml",
+]
+
+
+def test_branch_rule_is_written_once_in_ba_ticket_author():
+    text = " ".join(_auto_section("bodies/ba-ticket-author.md").split())
+    for line in BRANCH_LINES:
+        assert line in text, line
+    assert "up to 2 rounds" in text
+    assert "never check out `main`" in text
+    for name in ("ba-mission-plan.md", "ba-answer-questions.md"):
+        other = " ".join(_auto_section(f"bodies/{name}").split())
+        assert "the branch rule in ba-ticket-author's Auto mode" in other, name
+        assert "git switch -c" not in other, name
+    assert "auto/<mission-id>" in " ".join(
+        _auto_section("bodies/ba-mission-plan.md").split()
+    )
+    assert "`auto/qa`" in " ".join(
+        _auto_section("bodies/ba-answer-questions.md").split()
+    )
+
+
+@pytest.mark.parametrize("template", sorted(AUTO_FILES))
+def test_result_line_contract_matches_parse_result(template):
+    from strata_kb.autorun.claude import parse_result
+
+    section = _auto_section(template)
+    text = " ".join(section.split())
+    assert "AUTO-RESULT: done" in text
+    assert "AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]" in text
+    assert "AUTO-RESULT: failed <reason>" in text
+    assert "last line" in text
+    assert parse_result("x\nAUTO-RESULT: done").kind == "done"
+    assert parse_result("x\nAUTO-RESULT: failed ci-red https://h/pr/1").kind == "failed"
+    assert parse_result("x\nAUTO-RESULT: blocked-qa Q1,Q2").ids == (1, 2)
+    # `done` takes no text after it, and `failed` needs a reason
+    assert "no text after `done`" in text
+    assert "always give a reason" in text
+
+
+def test_ba_skills_are_idempotent_on_finished_work():
+    for template in (
+        "bodies/ba-ticket-author.md",
+        "bodies/ba-mission-plan.md",
+        "bodies/ba-answer-questions.md",
+        *KB_PUBLISH_COPIES,
+    ):
+        text = " ".join(_auto_section(template).split())
+        assert "already finished" in text, template
+        assert "AUTO-RESULT: done" in text, template
+
+
+def test_kb_publish_auto_replaces_the_hard_rule_with_a_diff_review():
+    text = " ".join(_auto_section("claude-skill-kb-publish.md").split())
+    assert "NEVER run `kb publish` until the user has explicitly confirmed" in " ".join(
+        _raw("claude-skill-kb-publish.md").split()
+    )
+    for phrase in ("reviews the diff", "kb doctor", "kb diff", "proceed"):
+        assert phrase in text, phrase
+
+
+def test_auto_sections_name_no_model_id():
+    for template in AUTO_FILES:
+        assert "claude-" not in _auto_section(template), template

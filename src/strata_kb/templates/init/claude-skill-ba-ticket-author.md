@@ -364,3 +364,40 @@ Change rules:
   it closes gaps with facts already confirmed by the BA or the KB, and
   everything else becomes an owned `OPEN(...)`. Scores below 4 after
   3 rounds are reported, not hidden.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+The runner starts this skill as `/ba-ticket-author <us-id>` (a new ticket) or `/ba-ticket-author --amend <ticket-id>`. Nobody answers questions during the run: a step above that says "ask the BA", "the BA confirms" or "hand it to the BA" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row, so the one-row-per-revision check is unaffected. A new ticket has no rows yet; its Auto decision lines still go there.
+
+**Open questions stay owned.** The Hard rule "never tick an open-question checkbox" stays: an open question this ticket carries stays open with its owner. Close it only when the mission, the KB or an earlier answer already settles it, and say so in an Auto decision line.
+
+**Already finished.** The runner re-runs a task after a crash, so check first: `gh pr list --head auto/<ticket-id> --state all --json number,state,url`. A merged PR and the ticket on `origin/main` with `DoR: PASS` mean the work is already finished: change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>`, check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below.
+
+- **Intake: "Ask, don't guess"** (business need, tags, mission, folder) → take them from the task. The story title, goal and scope come from the mission's US backlog row and its Business goal and Scope; the search tags from the mission's `## KB context` refs; the folder is the parent mission id, so the file is `tickets/<mission-id>/<us-id>.md`. A story with no parent mission keeps the folder its ticket already has; if there is none, end `AUTO-RESULT: failed no-folder <us-id>`.
+- **Intake: a story blocked by a Technology-decisions row or an open question is "NOT drafted"** → do not draft it; end `AUTO-RESULT: failed blocked-by-mission <row id>` (the runner amends the mission first). A story blocked only by unfinished dependencies is drafted: record the reasons as an Auto decision and carry them into the ticket's Dependencies section.
+- **Ground: "the BA MUST choose — never auto-pick"** (also the Hard rule "let the BA choose") → list every returned candidate with its citation, then pick the best-matching refs yourself: the section whose scope matches the story's capability, role and tags, and the AC it will back. When two close-scoring hits fire the ambiguity note, pick the one whose scope fits the AC, or pin both when both apply. Write the query, the candidates, the choice and the reason in an Auto decision line. A candidate you drop is named there, never dropped silently.
+- **Pin: "after the BA confirms which sections apply"** → pin the refs you chose; claims cite only those.
+- **Amend step 2, "Ask the BA for the trigger(s)"** → the trigger comes from the runner's task, not from a person. Read the `kb_ticket_stale` findings (`kb-context` or `architecture`), the parent mission's change-log rows after the ticket's `@ rev` that list this story (`scope` or `delivery`, as the row says), and the failing `kb ticket lint` or `kb ticket check` lines. When the ticket is `draft` only because lint or check fails with no drift and no mission change, the trigger is `scope` and `What changed` says what was fixed. Never use `question`; only `/ba-answer-questions` does.
+- **DoR box "Every AC is Given/When/Then and acceptance-testable …" — "never — the BA's judgement"** → review every AC, then tick or fix. Give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these two inputs) the ticket's ACs and `docs/ac-quality.md` (plus `docs/ac-quality.local.md` when it exists). It returns pass or fail per AC with a one-line reason. Tick the box only when every AC passes. Otherwise rewrite the failing ACs (an unsettled value becomes `OPEN(<owner>)` plus an `## Open questions` row), re-run lint and review again, for at most 2 rewrite rounds. If an AC still fails, leave the box unticked, open no PR, and end `AUTO-RESULT: failed ac-quality <ticket-id>`. Log the verdict per AC count in an Auto decision line.
+- **"The agent's output is a draft; the BA publishes it" and "it never commits or pushes"** (the handover, the BA's commit, the Jira paste) → the branch rule below. Skip the Jira export; the merged ticket reaches the Dev through the hub.
+
+**The branch rule.** This is the only place it is written; `ba-mission-plan` and `ba-answer-questions` follow it from here.
+
+1. Create the branch with `git fetch origin && git switch -c auto/<ticket-id> origin/main`; never check out `main`. (`auto/<mission-id>` for a mission amend; the Q&A run is already on `auto/qa`.)
+2. Commit the changed files (stage them by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
+3. Open the PR with `gh pr create`, titled with the ticket id.
+4. Wait for the checks with `gh pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`), fix it, commit, `git push`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
+5. Every check green: `gh pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `gh pr merge --squash --admin` instead, and only after every required check is green.
+6. After the merge, `kb-publish-request.yml` on `main` publishes the change: do not run `kb publish` by hand. If the repo has no `.github/workflows/kb-publish-request.yml`, run `kb publish` once.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+
+- `AUTO-RESULT: done` — the ticket is merged (and published by the branch rule's last step), or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `ac-quality <ticket-id>`, `blocked-by-mission <row id>`, `no-folder <us-id>`, or `lint <ticket-id>` when `kb_ticket_lint` will not reach `DoR: PASS` after the review rounds. The reason goes on the same line.

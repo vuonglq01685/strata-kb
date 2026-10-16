@@ -59,3 +59,22 @@ seeing the diff, that the current .kb/ state should be published.
      the change into `main`, which publishes it, or run
      `kb-publish-request.yml` by hand on `main`.
    - Other git/hub errors → show the stderr and suggest `kb doctor`.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+Nobody confirms during the run. Write the decision as one `**Auto decision:**` line in your reply: what you checked, the options (publish or stop), the choice, and why. The runner keeps the reply in its task log.
+
+**Already finished.** The runner re-runs a task after a crash. When `kb doctor` reports that local `.kb/` does not differ from the published snapshot, the work is already finished: publish nothing and end `AUTO-RESULT: done`.
+
+- **Step 3, the explicit go/no-go; the HARD-RULE "NEVER run `kb publish` until the user has explicitly confirmed"** → the agent reviews the diff and proceeds. Run steps 1 and 2 as written, with `kb doctor`, `kb diff <doc-id> --against HEAD` for each changed doc and, in a `ba` repo, `kb plan-ingest`. Proceed only when every change is one this task made and none removes a document or a section that the task did not set out to remove. Then state the hub or intake and the `kind: … → hub menu: …` line in the Auto decision line, and run `kb publish`. A change you cannot explain, a document that vanishes, a `pending` section, or an unrecorded kind means no publish: end `AUTO-RESULT: failed publish-review <reason>`.
+- **Step 5, errors that tell the user to act** (`kb mcp-setup`, `kb init --kind`, a refused tag push) → nothing was published: end `AUTO-RESULT: failed publish-refused <reason>` with the error's first line.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+
+- `AUTO-RESULT: done` — `kb publish` succeeded (the PR URL or tag is in the reply), or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill.
+- `AUTO-RESULT: failed <reason>` — `publish-review <reason>` or `publish-refused <reason>`. The reason goes on the same line.
