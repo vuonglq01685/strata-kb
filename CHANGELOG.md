@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.29.0 — 2026-10-16
+## 1.28.1 — 2026-10-16
 
 Plans can mark tasks that share a running environment, and the A1/A2 reviews are built to converge instead of finding new old gaps every round.
 
