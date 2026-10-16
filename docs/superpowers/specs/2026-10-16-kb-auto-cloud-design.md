@@ -141,59 +141,33 @@ Local `/kb-auto run` keeps step 2 and the direct push unchanged.
 
 ### 6.4 Hub over HTTP, no clone
 
-The runner touches the hub in three places, all through `resolve_hub` (git
-clone):
+*(Revised while planning — designer's call.)* Every hub read in the runner,
+the picker and the CLI commands the skills call (`kb mission next`,
+`kb resolve --cache|--write-cache`, the `kb ticket ...` / `kb mission lint` /
+`kb query` / `kb doctor` fallbacks — 19 callers of `_hub_or_exit` /
+`_hub_or_reason` plus `runner._resolve_hub` and `switch.registry_or_reason`)
+goes through one function, `hub.resolve_hub`, which returns a `HubHandle`
+whose `root` holds `.kb/` and `federation/`. So instead of an HTTP reader per
+caller, change only how that directory is filled:
 
-| Caller | Needs |
-|---|---|
-| `runner.preflight` / `switch.registry_or_reason` | registry: this repo's entry, `auto_merge`, Dev repo count |
-| `runner._check_done`, `picker.pick_dev` | `planstatus.next_from_hub(hub)`: stories, unparented, notes |
-| `switch.warnings_for_on` | registry (Dev repo count) |
+- New hub route `GET /api/hub/snapshot` (same bearer token and rate limiter
+  as `/api/questions`): a `tar.gz` of the served hub's `.kb/` and
+  `federation/` trees (no `.git`, `.kb-work`, `.kb-qa`).
+- In `resolve_hub`, on cloud (§6.1) with `STRATA_KB_HUB_URL` and
+  `STRATA_KB_HTTP_TOKEN` set and a non-local hub ref, fetch that snapshot
+  into the usual cache directory (keyed by the hub URL) instead of
+  `git clone`/`pull`, honouring the same TTL marker and the same "stale cache
+  on a failed refresh" rule. Every caller is unchanged.
+- A 404 from the route means the hub server is too old: log it and return
+  `None` (callers already report "hub unreachable"), naming the version
+  needed.
+- The snapshot is read-only: it has no git remote, so a hub *write* through
+  it (direct-mode `kb publish`, `kb reindex` push) fails. Auto mode
+  publishes through intake, so nothing in the loop writes. Those write paths
+  must refuse with one clear line when the handle is a snapshot.
 
-Add read-only endpoints to the hub HTTP API (same bearer token, same rate
-limiter as `/api/questions`):
-
-- `GET /api/registry` — the parsed registry (repo key, `repo_id`, kind,
-  `auto_merge`).
-- `GET /api/plan/next` — exactly what `planstatus.next_from_hub` returns,
-  serialised (stories with their status/reasons, unparented, notes).
-
-In the runner, introduce one small hub-reader seam with two implementations:
-the existing clone-backed `HubHandle` path, and an HTTP path built from
-`STRATA_KB_HUB_URL` + `STRATA_KB_HTTP_TOKEN` (reuse `qa.py`'s HTTP client
-and env names). Selection: on cloud, HTTP is required (missing URL/token is
-a preflight refusal naming the variables); locally, HTTP is used only when
-`cfg.hub` is empty and the env vars are set, otherwise the clone path as
-today.
-
-The hub server must be upgraded to the release that has these endpoints.
-Preflight on the HTTP path calls them first; a 404 means "hub server too old"
-and is a refusal saying which version is needed.
-
-Q&A already uses `/api/questions`, and publish goes through intake (a tag
-the repo's CI uploads), so neither needs a clone.
-
-**The task processes too.** The owner wants *every* hub read on cloud to go
-over HTTP/MCP, not only the runner's. The skills are already MCP-first for
-most hub reads; the CLI commands they call that still reach the hub through
-`_hub_or_exit` / `_hub_or_reason` (a clone) need an HTTP path on cloud:
-
-- `kb mission next` — when the Dev's `<x>-svc` document is not in the local
-  `.kb/`, it loads it from the hub to work out which stories are done
-  (`cli.py` ~3882). `pick_ba` and every BA "Already finished" check depend on
-  it. Needs an endpoint returning a published doc dir as `ticketcheck`
-  expects (or reuse `/api/docs/{doc}` if it carries enough).
-- `kb resolve --status-only --cache` / `--write-cache` — CLI-first in
-  `dev-implement-ticket` (no MCP path). Needs an HTTP path.
-- The MCP-first commands whose CLI is only a fallback (`kb ticket check|lint|
-  stale`, `kb mission lint`, `kb context new`, `kb query`, `kb get`,
-  `kb doctor`): on cloud the fallback must not clone; it fails with one line
-  saying to use the `strata-kb` MCP tool. *(Builder's call: give a fallback
-  an HTTP path instead when it is cheap.)*
-
-The rule for the builder: on cloud, `_hub_or_exit` / `_hub_or_reason` never
-clone. They return the HTTP reader where a command supports it, otherwise a
-clear refusal. Grep every caller and classify it.
+Q&A keeps using `/api/questions` (the Q&A store is not in the snapshot), and
+publish keeps going through intake.
 
 ### 6.5 GitHub without GraphQL
 
@@ -306,9 +280,7 @@ settings files by hand, never force-push, warnings verbatim.
 
 ## 8. Left to the builder
 
-- Names and module placement of the hub-reader seam and the `kb pr` commands.
-- JSON shape of `/api/registry` and `/api/plan/next` (mirror the Python
-  models).
+- Names and module placement of the `kb pr` commands.
 - Whether `kb auto wait` is a new subcommand or a flag on `status`.
 - How to fake the cloud env and the REST calls in tests.
 - Order of work, with the §6.6 spike first.
