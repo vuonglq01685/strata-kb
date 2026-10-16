@@ -254,6 +254,9 @@ ALLOW = [
     "Bash(kb code-ingest*)",
     "Bash(kb usage *)",
     "Bash(kb auto status*)",
+    "Bash(kb status*)",
+    "Bash(kb diff *)",
+    "Bash(kb plan-ingest*)",
 ]
 DENY = [
     "Bash(git push *main*)",

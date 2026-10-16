@@ -746,7 +746,6 @@ def test_ba_body_has_auto_mode_section(name):
 @pytest.mark.parametrize("template", sorted(AUTO_FILES))
 def test_auto_mode_is_the_last_h2_and_ends_with_the_result_line_subsection(template):
     section = _auto_section(template)
-    assert "\n## " not in section[len("## Auto mode") :], template
     assert section.index("### Result line") > section.index(AUTO_OPENING), template
     assert "\n## " not in section, template
 
@@ -846,13 +845,14 @@ def test_ba_ticket_author_auto_ticks_dor_box():
 
 
 BRANCH_LINES = [
-    "git fetch origin && git switch -c auto/<ticket-id> origin/main",
+    "git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD",
     "git push -u origin HEAD",
-    "gh pr create",
+    'gh pr create --title "<ticket-id>: <short description>" --body',
     "gh pr checks --watch",
     "AUTO-RESULT: failed ci-red <pr-url>",
     "gh pr merge --squash --delete-branch",
-    "--admin",
+    "gh pr merge --squash --admin --delete-branch",
+    "gh pr view --json state,mergedAt",
     "kb-publish-request.yml",
 ]
 
@@ -917,3 +917,38 @@ def test_kb_publish_auto_replaces_the_hard_rule_with_a_diff_review():
 def test_auto_sections_name_no_model_id():
     for template in AUTO_FILES:
         assert "claude-" not in _auto_section(template), template
+
+
+@pytest.mark.parametrize("template", sorted(AUTO_FILES))
+def test_no_auto_section_names_origin_main_in_a_branch_switching_command(template):
+    # The deny list blocks `git switch|checkout|branch *main*`; deny beats allow.
+    for line in _auto_section(template).splitlines():
+        if re.search(r"git (switch|checkout|branch)", line):
+            assert "origin/main" not in line, (template, line)
+    assert "origin/main" not in _auto_section(template), template
+
+
+def test_ticket_author_already_finished_uses_the_mission_next_status():
+    text = " ".join(_auto_section("bodies/ba-ticket-author.md").split())
+    assert "`ready` or `done` (not `draft` or `to-draft`)" in text
+    assert "on `origin/main` with `DoR: PASS`" not in text
+
+
+def test_mission_plan_separates_done_from_no_blocker():
+    text = " ".join(_auto_section("bodies/ba-mission-plan.md").split())
+    assert "gh pr list --state merged --head auto/<mission-id>" in text
+    assert "no blocker and no such PR ever" in text
+
+
+def test_answer_questions_resumes_a_crashed_run_from_the_remote_branch():
+    text = " ".join(_auto_section("bodies/ba-answer-questions.md").split())
+    assert "git fetch origin && git pull origin auto/qa" in text
+    assert "git push -u origin HEAD" in text
+    assert "answers still go through the PR and the merge" in text
+
+
+def test_kb_publish_auto_leaves_publishing_to_the_merge_when_the_workflow_exists():
+    text = " ".join(_auto_section("claude-skill-kb-publish.md").split())
+    assert ".github/workflows/kb-publish-request.yml" in text
+    assert "do not run `kb publish` by hand" in text
+    assert "the merged PR that triggered it" in text

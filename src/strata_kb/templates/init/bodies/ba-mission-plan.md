@@ -319,7 +319,7 @@ The runner starts this skill only as `/ba-mission-plan --amend <mission-id>`, fo
 
 **Blockers to settle.** Run `kb mission next --json` and take the blockers named in the `reasons` of this mission's stories (`D<n> OPEN`, `Q<n> open`). Settle those rows and no others.
 
-**Already finished.** The runner re-runs a task after a crash, so check first: `gh pr list --head auto/<mission-id> --state all --json number,state,url`. When every blocker above is already `DECIDED` or ticked on `origin/main` and no PR is open, the work is already finished: change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git fetch origin && git switch auto/<mission-id>` and continue at the CI step of the branch rule.
+**Already finished.** The runner re-runs a task after a crash, so check first: `gh pr list --head auto/<mission-id> --state all --json number,state,url`. When no blocker is named and a merged PR exists (`gh pr list --state merged --head auto/<mission-id>`), the work is already finished: change nothing and end `AUTO-RESULT: done`. With no blocker and no such PR ever, end `AUTO-RESULT: failed no-blocker <mission-id>`. An open PR means a crashed run: `git fetch origin && git switch auto/<mission-id>` and continue at the CI step of the branch rule.
 
 - **Amend step 2, "Ask the BA for the trigger(s)"** → the trigger comes from the runner's task. Settling a blocker is trigger `scope`, with `Affected` listing the full ids of the stories it unblocks. When the settlement supersedes a `DECIDED` row, the trigger is `architecture`, as the change rules require. Add `kb-context` when the `kb_ticket_stale` findings call for it.
 - **Ground: "the BA MUST choose — never auto-pick"** (also the Hard rule "let the BA choose") → pick the best-matching refs yourself by the ref rule in ba-ticket-author's Auto mode, and write the choice and the reason in an Auto decision line.
@@ -334,4 +334,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done` — the blockers are settled, the PR is merged, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.
-- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `mission-lint <mission-id>` when `kb_mission_lint` will not reach `DoR: PASS`, or `no-blocker <mission-id>` when `kb mission next --json` names no blocker for this mission. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `mission-lint <mission-id>` when `kb_mission_lint` will not reach `DoR: PASS`, or `no-blocker <mission-id>` when `kb mission next --json` names no blocker for this mission and no merged `auto/<mission-id>` PR exists. The reason goes on the same line.
