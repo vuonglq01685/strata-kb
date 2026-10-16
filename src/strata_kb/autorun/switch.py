@@ -59,7 +59,7 @@ def set_enabled(config_path: Path, on: bool) -> None:
     config_path.write_text(out, encoding="utf-8", newline="\n")
 
 
-def _registry_or_reason(kb_dir: Path, hub: str) -> tuple[Registry | None, str]:
+def registry_or_reason(kb_dir: Path, hub: str) -> tuple[Registry | None, str]:
     """The hub's registry, or why it could not be read. Never exits or prints."""
     try:
         handle = resolve_hub(require_hub(hub, kb_dir))
@@ -80,7 +80,7 @@ def _registry_or_reason(kb_dir: Path, hub: str) -> tuple[Registry | None, str]:
 
 def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
     warnings = [ADMIN_WARNING]
-    registry, reason = _registry_or_reason(kb_dir, hub)
+    registry, reason = registry_or_reason(kb_dir, hub)
     if registry is None:
         warnings.append(
             f"Registry not checked ({reason}), so a second Dev repo would go unnoticed."

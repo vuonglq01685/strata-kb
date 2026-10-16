@@ -1,0 +1,313 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import pytest
+
+from strata_kb import planstatus
+from strata_kb.autorun import picker
+from strata_kb.autorun import runner as runner_mod
+from strata_kb.autorun import state as autostate
+from strata_kb.autorun.claude import TaskResult
+from strata_kb.autorun.picker import Task
+from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
+from strata_kb.config import AutoConfig, KBConfig
+from strata_kb.errors import KbError
+from strata_kb.hub import HubHandle
+from strata_kb.missionnext import StoryStatus
+from strata_kb.models import Registry, RegistryEntry
+
+TASK = Task("dev-implement-ticket", "M-x-US3")
+
+
+def S(us_id: str, status: str) -> StoryStatus:
+    return StoryStatus(us_id, "M-x", "t", status, ())
+
+
+def cfg_of(kind: str = "dev", **auto) -> KBConfig:
+    return KBConfig(
+        kind=kind,  # type: ignore[arg-type]
+        repo_id="svc",
+        intake="http://intake",
+        auto=AutoConfig(enabled=True, **auto),
+    )
+
+
+class FakeQa:
+    def __init__(self, states=None, open_=(), fail=False):
+        self._states, self._open, self._fail = states or {}, list(open_), fail
+
+    def states(self, ids):
+        if self._fail:
+            raise KbError("hub answered 400")
+        return {i: s for i, s in self._states.items() if i in ids}
+
+    def list(self, status="open", repo="", ticket=""):
+        if self._fail:
+            raise KbError("hub answered 400")
+        return [{"id": i, "state": "open"} for i in self._open]
+
+
+class Script:
+    """A `run_task` double: returns the scripted results in order."""
+
+    def __init__(self, *results: TaskResult):
+        self.results, self.prompts = list(results), []
+
+    def __call__(self, root, prompt, *, log_dir):
+        self.prompts.append(prompt)
+        return self.results.pop(0)
+
+
+@pytest.fixture
+def env(tmp_path: Path, monkeypatch):
+    kb_dir = tmp_path / ".kb"
+    kb_dir.mkdir()
+    hub = HubHandle(root=tmp_path)
+    tickets = {"stories": [S("US3", "ready")]}
+    monkeypatch.setattr(
+        planstatus, "next_from_hub", lambda h, repo=None: (tickets["stories"], [], [])
+    )
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root: TASK)
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: TASK)
+    return tmp_path, kb_dir, hub, tickets
+
+
+def once(env, script, cfg=None, qa=None, **kw):
+    root, kb_dir, hub, _ = env
+    return run_once(
+        root,
+        kb_dir,
+        cfg=cfg or cfg_of(),
+        hub=hub,
+        qa=qa or FakeQa(),
+        run_task=script,
+        sleep=kw.pop("sleep", lambda s: None),
+        **kw,
+    )
+
+
+def test_switch_off_stops_at_task_boundary(env):
+    script = Script(TaskResult("done"))
+    assert once(env, script) == "ran"
+    off = KBConfig(kind="dev", auto=AutoConfig(enabled=False))
+    assert once(env, script, cfg=off) == "stopped"
+    assert autostate.load(env[1]).stop_reason == "switched off"
+    assert len(script.prompts) == 1  # the second run never started
+
+
+def test_waiting_question_does_not_resume(env):
+    script = Script(TaskResult("blocked-qa", (12,)))
+    assert once(env, script) == "waiting"
+    assert autostate.load(env[1]).waiting_on == (12,)
+    assert once(env, script, qa=FakeQa({12: "waiting"})) == "waiting"
+    assert len(script.prompts) == 1
+
+
+def test_answered_question_reruns_same_task(env):
+    script = Script(TaskResult("blocked-qa", (12, 13)), TaskResult("done"))
+    once(env, script)
+    assert once(env, script, qa=FakeQa({12: "answered", 13: "open"})) == "waiting"
+    assert once(env, script, qa=FakeQa({12: "answered", 13: "answered"})) == "ran"
+    assert script.prompts[0] == script.prompts[1]
+    assert script.prompts[1].startswith("/dev-implement-ticket M-x-US3")
+    state = autostate.load(env[1])
+    assert (state.waiting_on, state.task) == ((), None)
+
+
+def test_second_failure_stops(env):
+    script = Script(TaskResult("failed", (), "lint"), TaskResult("failed", (), "lint"))
+    assert once(env, script) == "ran"
+    assert autostate.load(env[1]).attempts == 1
+    assert once(env, script) == "stopped"
+    state = autostate.load(env[1])
+    assert (state.attempts, state.stop_reason) == (2, "lint")
+    assert state.task == TASK.key
+
+
+def test_ci_red_stops_immediately(env, caplog):
+    script = Script(TaskResult("failed", (), "ci-red PR #7: unit, lint"))
+    with caplog.at_level(logging.ERROR):
+        assert once(env, script) == "stopped"
+    assert autostate.load(env[1]).attempts == 0
+    assert "ci-red PR #7" in caplog.text
+    assert TASK.key in caplog.text
+    assert "kb auto run" in caplog.text
+
+
+def test_usage_limit_backoff_sequence(env):
+    limit = TaskResult("usage-limit", (), "usage limit reached")
+    script = Script(limit, limit, limit, limit, TaskResult("done"))
+    sleeps: list[float] = []
+    backoff = Backoff()
+    for _ in range(5):
+        once(env, script, sleep=sleeps.append, backoff=backoff)
+    assert sleeps == [900, 1800, 3600, 3600]
+    assert autostate.load(env[1]).attempts == 0
+    assert backoff.next() == 900  # reset by the done result
+
+
+def test_all_done_exits_zero(env, caplog):
+    env[3]["stories"] = [S("US3", "done")]
+    script = Script()
+    with caplog.at_level(logging.INFO):
+        assert once(env, script) == "done"
+    assert script.prompts == []
+    assert "all 1 tickets done" in caplog.text
+
+
+def test_ba_open_question_blocks_done(env):
+    env[3]["stories"] = [S("US3", "done")]
+    script = Script(TaskResult("done"))
+    assert once(env, script, cfg=cfg_of("ba"), qa=FakeQa(open_=[5])) == "ran"
+    assert once(env, Script(), cfg=cfg_of("ba")) == "done"
+
+
+def test_idle_when_nothing_to_pick(env, monkeypatch):
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root: None)
+    assert once(env, Script()) == "idle"
+    monkeypatch.setattr(
+        picker, "pick_dev", lambda h, root: (_ for _ in ()).throw(KbError("boom"))
+    )
+    assert once(env, Script()) == "idle"
+
+
+def test_qa_error_is_waiting_not_failure(env):
+    assert once(env, Script(), qa=FakeQa(fail=True), cfg=cfg_of("ba")) == "waiting"
+    autostate.save(env[1], autostate.AutoState(TASK.key, 0, (12,), None, ""))
+    assert once(env, Script(), qa=FakeQa(fail=True)) == "waiting"
+    state = autostate.load(env[1])
+    assert (state.attempts, state.stop_reason) == (0, None)
+
+
+def test_crash_resumes_stored_task(env, monkeypatch):
+    autostate.save(env[1], autostate.AutoState("dev-fix-bug:BUG-2", 1, (), None, ""))
+    script = Script(TaskResult("done"))
+    assert once(env, script) == "ran"
+    assert script.prompts[0].startswith("/dev-fix-bug BUG-2")
+
+
+def _loop(env, script, sleep=lambda s: None):
+    root, kb_dir, hub, _ = env
+    (kb_dir / "config.yaml").write_text(
+        "kind: dev\nrepo_id: svc\nintake: http://intake\n"
+        "auto:\n  enabled: true\n  idle_interval: 11\n  qa_interval: 7\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return run_loop(root, kb_dir, sleep=sleep, hub=hub, qa=FakeQa(), run_task=script)
+
+
+def test_run_loop_exits_2_when_stopped(env):
+    script = Script(TaskResult("failed", (), "x"), TaskResult("failed", (), "x"))
+    assert _loop(env, script) == 2
+
+
+def test_run_loop_exits_0_when_done_and_clears_old_stop(env):
+    autostate.save(env[1], autostate.AutoState(TASK.key, 2, (), "lint", ""))
+    env[3]["stories"] = [S("US3", "done")]
+    assert _loop(env, Script()) == 0
+    state = autostate.load(env[1])
+    assert (state.stop_reason, state.attempts) == (None, 0)
+
+
+def test_run_loop_resumes_after_stop_with_fresh_attempts(env):
+    autostate.save(env[1], autostate.AutoState(TASK.key, 2, (), "lint", ""))
+    script = Script(TaskResult("done"))
+
+    def run_and_finish(root, prompt, *, log_dir):
+        env[3]["stories"] = [S("US3", "done")]
+        return script(root, prompt, log_dir=log_dir)
+
+    assert _loop(env, run_and_finish) == 0
+    assert len(script.prompts) == 1
+
+
+def test_run_loop_sleeps_per_outcome_and_survives_errors(env, monkeypatch):
+    sleeps: list[float] = []
+    picks = iter([None, KbError("x"), RuntimeError("boom"), TASK])
+
+    def pick(hub, root):
+        item = next(picks)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(picker, "pick_dev", pick)
+    script = Script(TaskResult("blocked-qa", (4,)))
+
+    def record(seconds):
+        sleeps.append(seconds)
+        if seconds == 7:
+            env[3]["stories"] = [S("US3", "done")]
+
+    assert _loop(env, script, sleep=record) == 0
+    assert sleeps == [11, 11, 11, 7]  # idle, KbError->idle, crash->idle, waiting
+
+
+def _registry(**entries):
+    return Registry(repos=entries)
+
+
+def _write_config(kb_dir: Path, text: str) -> None:
+    (kb_dir / "config.yaml").write_text(text, encoding="utf-8", newline="\n")
+
+
+GOOD = "kind: dev\nrepo_id: svc\nintake: http://i\nauto:\n  enabled: true\n"
+
+
+def test_preflight_refuses_without_auto_merge(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (_registry(**{"o/r": RegistryEntry(repo_id="svc")}), ""),
+    )
+    _write_config(kb_dir, GOOD)
+    (reason,) = preflight(root, kb_dir)
+    assert "auto_merge" in reason and "svc" in reason
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    assert preflight(root, kb_dir) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "needle"),
+    [
+        ("kind: dev\nrepo_id: svc\nintake: http://i\n", "switched off"),
+        ("kind: hub\nrepo_id: svc\nintake: http://i\nauto:\n  enabled: true\n", "kind"),
+        ("kind: dev\nrepo_id: svc\nauto:\n  enabled: true\n", "intake"),
+    ],
+)
+def test_preflight_names_each_refusal(env, monkeypatch, text, needle):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    _write_config(kb_dir, text)
+    reasons = preflight(root, kb_dir)
+    assert len(reasons) == 1 and needle in reasons[0]
+
+
+def test_preflight_reports_unreachable_hub(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (None, "hub unreachable and not cached"),
+    )
+    _write_config(kb_dir, GOOD)
+    (reason,) = preflight(root, kb_dir)
+    assert "hub unreachable and not cached" in reason
