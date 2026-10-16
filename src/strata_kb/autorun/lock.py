@@ -17,6 +17,10 @@ from strata_kb.autorun import state as autostate
 from strata_kb.errors import KbError
 
 LOCK_NAME = "run.lock"
+# Windows byte-range locks are mandatory: a locked byte cannot be read by any
+# other handle. The pid lives in the first bytes, so the lock sits far past
+# it (locking beyond EOF is allowed), and `running_pid` can still read.
+_NT_LOCK_OFFSET = 4096
 
 
 def lock_path(kb_dir: Path) -> Path:
@@ -31,7 +35,7 @@ def _try_lock(fh) -> bool:
     if os.name == "nt":
         import msvcrt
 
-        fh.seek(0)
+        fh.seek(_NT_LOCK_OFFSET)
         try:
             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
@@ -50,7 +54,7 @@ def _unlock(fh) -> None:
     if os.name == "nt":
         import msvcrt
 
-        fh.seek(0)
+        fh.seek(_NT_LOCK_OFFSET)
         msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
     else:
         import fcntl
