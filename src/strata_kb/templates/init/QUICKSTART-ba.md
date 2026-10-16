@@ -457,7 +457,7 @@ A ticket the agent gets wrong goes straight to `main` and the hub. The repo owne
 must enable GitHub branch protection on `main` (block force pushes and deletions,
 include administrators) and keep the ticket-lint CI check (`lint` in
 `kb-ticket-lint.yml`) required. Do **not** require approving reviews on `main`: the
-agent cannot approve its own PR, and `gh pr merge --admin` is refused when
+agent cannot approve its own PR, and `kb pr merge --admin` is refused when
 administrators are included. If you do require reviews, exclude administrators from
 that rule and accept that the agent can then bypass it.
 

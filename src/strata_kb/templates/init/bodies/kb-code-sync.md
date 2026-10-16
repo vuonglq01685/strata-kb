@@ -113,9 +113,9 @@ document, on one side only is reported.
    - `git fetch --prune origin` first: publish decisions read the local
      tracking refs.
    - `origin/kb-bot/code-sync` exists: look at its PRs with
-     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt,isCrossRepository`
-     (it may list several). **Ignore rows where `isCrossRepository` is
-     true**: fork PRs that happen to use the same branch name. Decide in this
+     `kb pr find --head kb-bot/code-sync --state all --json`
+     (it may list several). **Ignore rows whose `headRepoFullName` is
+     another repo**: fork PRs that happen to use the same branch name. Decide in this
      order:
      - **Any PR is open**: that is the rolling PR. Continue.
        `git checkout kb-bot/code-sync` (git tracks the remote one if there
@@ -135,8 +135,8 @@ document, on one side only is reported.
    - A **local** `kb-bot/code-sync` already exists and the remote one does
      not (a PR that merged, a closed PR, or an earlier run that ended with
      nothing to do): run
-     `gh pr list --head kb-bot/code-sync --state all --json number,state,mergedAt,isCrossRepository`
-     (ignore rows where `isCrossRepository` is true) and describe the case
+     `kb pr find --head kb-bot/code-sync --state all --json`
+     (ignore rows whose `headRepoFullName` is another repo) and describe the case
      to the manager (merged / closed unmerged / no PR ever). Run `git log --oneline origin/<default>..kb-bot/code-sync` and
      show it: any commit listed is **not on the default branch** and would
      be lost, so warn the manager before asking. Ask whether to delete the
@@ -208,11 +208,11 @@ document, on one side only is reported.
      opens or reuses the PR. A refusal (direct mode, no remote, no `gh`):
      show it and stop.
    - **Always read the PR's current body first**, as data:
-     `gh pr view kb-bot/code-sync --json body --jq .body`. Empty body: start
+     `kb pr view kb-bot/code-sync --json` (read `body`). Empty body: start
      fresh. `--body-file` replaces the whole body, so the new body must
      carry every earlier round forward.
    - Write the new body to a file, then set the rolling PR's title and body:
-     `gh pr edit kb-bot/code-sync --title "kb code-sync: <n> hub section(s) @ <scan sha12>" --body-file <file>`
+     `kb pr edit kb-bot/code-sync --title "kb code-sync: <n> hub section(s) @ <scan sha12>" --body-file <file>`
      where `<n>` is the number of hub sections edited this round.
    - Body layout, in this order:
      1. A header line: scan sha, baseline sha, this round's counts per

@@ -464,7 +464,7 @@ must enable GitHub branch protection on `main` (block force pushes and deletions
 include administrators) and keep `kb-test.yml` (or the workflow with the
 `kb-test` marker) as a required check (branch protection picks it by job
 name: `test-<lang>`). Do **not** require approving reviews on `main`: the agent
-cannot approve its own PR, and `gh pr merge --admin` is refused when
+cannot approve its own PR, and `kb pr merge --admin` is refused when
 administrators are included. If you do require reviews, exclude administrators
 from that rule and accept that the agent can then bypass it.
 

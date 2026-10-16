@@ -157,7 +157,7 @@ edit above it.
     `## Review record` table → run `dev-plan`'s A2 review first; a clean
     round recorded → `plan 📝 draft`, offer GATE 2. approved → tasks =
     ticked/total checkboxes.
-  - `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
+  - `kb pr find --head <branch> --state merged` non-empty → `PR ✅ merged`,
     flow done; `--state closed` non-empty → `PR ❌ closed`, next step is
     re-handover or reopen — never end the flow silently; `gh` absent →
     `PR ? unknown (gh not installed)`.

@@ -134,7 +134,7 @@ Re-entry is derived, never stored:
   test and the full suite pass on the branch; no PR yet → Fix, then
   Handover. A fix that failed cleared `Root cause:` (step 4), so this
   state never loops back into Fix.
-- `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
+- `kb pr find --head <branch> --state merged` non-empty → `PR ✅ merged`,
   flow done; `--state closed` non-empty → `PR ❌ closed`: re-handover or
   reopen; `gh` absent → `PR ? unknown (gh not installed)`.
 - no branch matches `git branch --list "*<BUG-id>*"` and HEAD is the
