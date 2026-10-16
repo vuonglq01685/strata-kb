@@ -56,7 +56,8 @@ docs/impl/<ticket-id>/plan.md`; an error returns the plan to `dev-plan` —
 except when `kb plan waves` reports only `has no Depends on: line` errors,
 one per task: the plan predates waves and runs sequentially as today, say
 so in the Next-step block; any other error still returns the plan to
-`dev-plan` — a wave of one
+`dev-plan` — tasks listed after `serial:` in a wave are left out of its
+lanes and do not count toward its size; a wave of one
 task runs the per-task flow unchanged, and a wave of two or more tasks —
 when the runtime can dispatch subagents — runs each task in its own lane:
 `git worktree add .worktrees/<ticket-id>-task-<n> -b
@@ -82,7 +83,13 @@ the lane branch (`git diff <merge-commit>^1...<lane-branch>`), the lane
 branch deleted after A3 is clean; A3 fix commits land on the ticket
 branch after the merge, a re-review after a fix diffing
 `<merge-commit>^1...HEAD` limited to the task's paths, with the wave's
-`cmd.test` / `cmd.lint` re-run when a fix landed. Then, per unticked task, in its
+`cmd.test` / `cmd.lint` re-run when a fix landed. A task listed after
+`serial:` declares a `Serial resource:` (an e2e stack, fixed host ports)
+that a parallel lane would rebuild or restart under another lane's run, so
+it never runs in a lane: once the wave's lanes are merged and verified, the
+serial tasks run one at a time, in the order listed, in the ticket worktree
+— where the stack's gitignored `.env` and certificates already live — each
+with the per-task flow, ticked after its A3 before the next one starts. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
 entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the

@@ -268,7 +268,11 @@ runs sequentially. `dev-execute` runs it after isolating the branch: a wave of
 one task runs as before; a wave of several runs each task in its own git
 worktree lane cut from the ticket branch, at most 3 lanes at a time, merged
 back in task order with `--no-ff`, the full suite run once per wave. A merge
-conflict means the plan was wrong and goes back to `dev-plan`.
+conflict means the plan was wrong and goes back to `dev-plan`. A task that
+drives a shared running environment (an e2e stack, fixed host ports) carries
+`Serial resource: <name>`; `kb plan waves` prints it after `serial:` in its
+wave, and `dev-execute` runs those tasks one at a time in the ticket worktree,
+never in a lane.
 
 ## The four gates, five agent review rounds
 

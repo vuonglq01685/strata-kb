@@ -227,5 +227,69 @@ def test_render_and_json():
         planwaves.render(waves)
         == "wave 1: task 1, task 3\nwave 2: task 2\nwave 3: task 4"
     )
-    assert planwaves.to_json([], waves) == {"errors": [], "waves": [[1, 3], [2], [4]]}
-    assert planwaves.to_json(["e"], []) == {"errors": ["e"], "waves": []}
+    assert planwaves.to_json([], waves) == {
+        "errors": [],
+        "waves": [[1, 3], [2], [4]],
+        "serial": [[], [], []],
+    }
+    assert planwaves.to_json(["e"], []) == {"errors": ["e"], "waves": [], "serial": []}
+
+
+# Tasks 2, 3 and 4 share the e2e stack but no file and no Interface, so they
+# land in one wave; task 5 is unit-only and keeps its lane.
+SERIAL_PLAN = (
+    "### Task 1: base\nDepends on: none\n**Files:**\n- Create: `a.py`\n\n"
+    "### Task 2: e2e login\nDepends on: task 1\nSerial resource: e2e-stack\n"
+    "**Files:**\n- Test: `e2e/login.spec.ts`\n\n"
+    "### Task 3: e2e logout\nDepends on: task 1\n**Serial resource:** E2E-Stack, db\n"
+    "**Files:**\n- Test: `e2e/logout.spec.ts`\n\n"
+    "### Task 4: e2e cookie\nDepends on: task 1\nSerial resources: e2e-stack\n"
+    "**Files:**\n- Test: `e2e/cookie.spec.ts`\n\n"
+    "### Task 5: unit\nDepends on: task 1\nSerial resource: none\n"
+    "**Files:**\n- Create: `b.py`\n\n"
+    "### Task 6: verify\nDepends on: task 2, task 3, task 4, task 5\n"
+    "**Files:**\n- Test: `tests/`\n"
+)
+
+
+def test_parse_plan_reads_serial_resources():
+    tasks = planwaves.parse_plan(SERIAL_PLAN)
+    assert [t.serial for t in tasks] == [
+        None,
+        ("e2e-stack",),
+        ("e2e-stack", "db"),
+        ("e2e-stack",),
+        None,
+        None,
+    ]
+
+
+def test_serial_resource_adds_no_dependency_and_marks_the_wave():
+    tasks = planwaves.parse_plan(SERIAL_PLAN)
+    errors, waves = planwaves.check(tasks)
+    assert errors == []
+    assert waves == [[1], [2, 3, 4, 5], [6]]
+    assert planwaves.serial_of(tasks, waves) == [[], [2, 3, 4], []]
+
+
+def test_render_lists_serial_tasks_after_the_lanes():
+    tasks = planwaves.parse_plan(SERIAL_PLAN)
+    _, waves = planwaves.check(tasks)
+    assert planwaves.render(waves, planwaves.serial_of(tasks, waves)) == (
+        "wave 1: task 1\nwave 2: task 5; serial: task 2, task 3, task 4\nwave 3: task 6"
+    )
+    assert planwaves.render([[2, 3]], [[2, 3]]) == "wave 1: serial: task 2, task 3"
+
+
+def test_json_carries_serial_per_wave():
+    tasks = planwaves.parse_plan(SERIAL_PLAN)
+    _, waves = planwaves.check(tasks)
+    out = planwaves.to_json([], waves, planwaves.serial_of(tasks, waves))
+    assert out["serial"] == [[], [2, 3, 4], []]
+
+
+def test_check_reports_an_empty_serial_resource_line():
+    text = "### Task 1: a\nDepends on: none\nSerial resource:\n**Files:**\n- Create: `x.py`\n"
+    errors, waves = planwaves.check(planwaves.parse_plan(text))
+    assert errors == ["task 1 has an empty Serial resource: line"]
+    assert waves == []

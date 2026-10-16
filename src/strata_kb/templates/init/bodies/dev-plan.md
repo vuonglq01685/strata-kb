@@ -57,7 +57,14 @@ hub.
   Interface A produces, **or** B and A share a path under **Files**, the
   later task depending on the earlier. Two
   tasks with no dependency path are therefore file-disjoint, which is
-  what lets `dev-execute` run them in parallel lanes. The closing
+  what lets `dev-execute` run them in parallel lanes. A task that
+  rebuilds, restarts or drives a shared running environment (an e2e or
+  compose stack, a shared database, fixed host ports) carries
+  `Serial resource: <name>` on the next line — one or more names,
+  comma-separated, the same name on every task that uses that environment.
+  It is a declaration, not a dependency: it adds no `Depends on:` edge, and
+  `kb plan waves` lists such tasks after `serial:` in their wave so
+  `dev-execute` runs them one at a time. The closing
   verification task depends on every other task. Run
   `kb plan waves docs/impl/<ticket-id>/plan.md` before offering GATE 2:
   it prints the waves and fails on a shared path without a dependency,
@@ -172,10 +179,19 @@ the hub or asks the BA itself, and keeps `## Technical decisions` and
 its `## Questions raised` before the reviewer is dispatched. Then review it
 with a different context.
 
+**Author self-check.** Before any reviewer sees a draft, the author — and
+every fix round after it — runs this checklist and fixes what it finds: every
+consumed Interface names the task that produces it; every task a task cites
+is the task that holds what it cites; every standard value cites a section of
+`docs/impl/<ticket-id>/context.md`; every task that drives a shared running
+environment declares `Serial resource:`; `kb plan waves` exits 0; every block
+a formatter re-wrapped is re-read. It returns the checklist result with the
+draft.
+
 Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
-`docs/pr-review-rubric.local.md`. It answers five questions and nothing else:
+`docs/pr-review-rubric.local.md`. It answers six questions and nothing else:
 
 - Is there exactly one task per AC — none missing, none invented?
 - Does every task state its failing test before its implementation?
@@ -189,10 +205,67 @@ path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
   interface names its producer, no cycle? A miss is a BLOCKER. The
   reviewer also runs `kb plan waves` and quotes its output; an error
   there is a BLOCKER on its own.
+- Does every task that rebuilds, restarts or drives a shared running
+  environment (an e2e or compose stack, a shared database, fixed host
+  ports) declare `Serial resource:`? A missing line is a BLOCKER: two such
+  tasks in one wave would run in parallel lanes against the same stack.
 
-Fix subagent, re-review, at most 3 rounds. The fix subagent gets the same
-Questions rule and preservation rule as the author. Record each round in the plan file's
-`## Review record` table, same shape as the design file's. GATE 2 is offered
+**Round 1 is exhaustive.** The reviewer writes its report to
+`docs/impl/<ticket-id>/review/a2-r<n>.md` (`mkdir -p` the folder first): a
+coverage matrix — every task against the six questions, each cell PASS, FAIL
+or not-checked — and a gap list in which every gap names its task, its
+severity, a defect class (a short name such as `interface not
+self-sufficient` or `mutation masking`) and a proposed fix. A not-checked
+cell sends a reviewer back to exactly those cells before anything is fixed:
+round 1 finds every gap, not the first few.
+
+**Size check.** Before round 1, count the plan's tasks and lines. Up to 12
+tasks and 600 lines, one `plan-reviewer` reviews the whole plan. Above
+either, split the review into slices of at most 8 tasks, cut at wave
+boundaries where possible, and dispatch one `plan-reviewer` per slice in
+parallel (report `a2-r<n>-<slice>.md`). Then dispatch one
+`plan-lead-reviewer` with a fresh context, handing it the plan, the ticket's
+acceptance criteria, the approved design and every slice report. It writes
+the consolidated report `a2-r<n>.md`:
+
+- what no slice can see — `Depends on:` and Interfaces across slice borders,
+  every AC traced to a task across the whole plan, and the `kb plan waves`
+  output;
+- every slice finding re-checked against the plan text: a finding that does
+  not hold is dropped with the reason, duplicates are merged, and one defect
+  class gets one severity across slices;
+- drift — work no AC asks for, an AC weakened or left out, a design decision
+  changed without a `## Technical decisions` entry — in the plan or in a
+  proposed fix;
+- the slices' coverage matrices together cover every cell.
+
+A plan that needed slices adds a NOTE suggesting the BA split tickets of
+this size.
+
+**Class-wide fix.** Copy the plan to
+`docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
+with the gap list. For every gap it fixes the cited instance, sweeps the
+whole plan for the same defect class, and lists each further instance it
+fixed; then it re-runs the author self-check. The fix subagent gets the same
+Questions rule and preservation rule as the author.
+
+**Verification rounds.** Round 2 and later are not a fresh full review. A
+`plan-reviewer` with a fresh context gets the previous gap list with its
+classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
+fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
+previous gap is closed, spot-checks instances of each class outside the
+sweep list, and checks the diff for regressions; it still reports any other
+defect it sees, and still runs `kb plan waves`. A full review runs again
+only for not-checked cells or a slice the diff mostly rewrote.
+
+**Stop.** Record each round in the plan file's `## Review record` table,
+same shape as the design file's: the verdict counts, coverage (checked cells
+over all cells) and the defect classes found. A gap a verification round
+finds outside the diff is recorded as `round-1 coverage miss`. The target is
+one review round plus one verification round. When a round's BLOCKER plus
+SUGGESTED count is not lower than the round before, stop at once and hand the
+Dev the trend and the open classes instead of spending the rounds left;
+otherwise the cap of 3 rounds holds. GATE 2 is offered
 only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
 left open; NOTE and NITS are recorded, not fixed.
 

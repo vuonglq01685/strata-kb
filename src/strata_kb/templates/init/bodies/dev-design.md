@@ -145,6 +145,14 @@ After each author or fix round returns, handle its `## Questions raised`
 before the reviewer is dispatched. You orchestrate; you do not draft and
 then judge your own draft.
 
+**Author self-check.** Before any reviewer sees a draft, the author — and
+every fix round after it — runs this checklist and fixes what it finds: every
+AC is answered by a named design section; every placeholder and standard
+value cites a section of the resolved context cache; every precondition an
+AC's test needs is set up by something the design names; every
+cross-reference points at a section that exists; every block a formatter
+re-wrapped is re-read. It returns the checklist result with the draft.
+
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent and hand it exactly
 these things: the path `docs/impl/<ticket-id>/design.md`, the ticket's
@@ -152,18 +160,67 @@ acceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`
 plus `docs/pr-review-rubric.local.md`. Not your reasoning, not this
 conversation.
 
-It returns pass/fail per axis plus a gap list in which every gap names the
-section it lives in, its severity, and a proposed fix. Apply BLOCKER and
-SUGGESTED gaps through a fix subagent, then re-review — at most 3 rounds.
-The fix subagent gets the same Questions rule and preservation rule as the
+**Round 1 is exhaustive.** The reviewer writes its report to
+`docs/impl/<ticket-id>/review/a1-r<n>.md` (`mkdir -p` the folder first):
+pass/fail per axis; a coverage matrix — every AC and every Pre-code axis item
+against the design section that answers it, each cell PASS, FAIL or
+not-checked; and a gap list in which every gap names the section it lives in,
+its severity, a defect class (a short name such as `uncited literal` or
+`precondition not set up`) and a proposed fix. A not-checked cell sends a
+reviewer back to exactly those cells before anything is fixed: round 1 finds
+every gap, not the first few.
+
+**Size check.** Before round 1, count the ticket's ACs and the design's
+lines. Up to 8 ACs and 600 lines, one `design-reviewer` reviews the whole
+design. Above either, split the review into slices of at most 4 ACs, each
+with the design sections that answer them, and dispatch one
+`design-reviewer` per slice in parallel (report `a1-r<n>-<slice>.md`). Then
+dispatch one `design-lead-reviewer` with a fresh context, handing it the
+design, the ticket's acceptance criteria, the context cache path and every
+slice report. It writes the consolidated report `a1-r<n>.md`:
+
+- what no slice can see — components, data and interfaces shared across
+  slices, and every AC traced to a section across the whole design;
+- every slice finding re-checked against the design text: a finding that
+  does not hold is dropped with the reason, duplicates are merged, and one
+  defect class gets one severity across slices;
+- drift — scope no AC asks for, an AC weakened or left out, a standard value
+  not taken from the context cache — in the design or in a proposed fix;
+- the slices' coverage matrices together cover every cell.
+
+A design that needed slices adds a NOTE suggesting the BA split tickets of
+this size.
+
+**Class-wide fix.** Copy the design to
+`docs/impl/<ticket-id>/review/design-r<n>.md`, then apply BLOCKER and
+SUGGESTED gaps through a fix subagent. For every gap it fixes the cited
+instance, sweeps the whole design for the same defect class, and lists each
+further instance it fixed; then it re-runs the author self-check. The fix
+subagent gets the same Questions rule and preservation rule as the
 author.
 
-Record every round in the design file's `## Review record` table, creating it
-below the design body on round 1:
+**Verification rounds.** Round 2 and later are not a fresh full review. A
+`design-reviewer` with a fresh context gets the previous gap list with its
+classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
+fix against the design, written to `review/a1-r<n>.diff`. It checks that every
+previous gap is closed, spot-checks instances of each class outside the
+sweep list, and checks the diff for regressions; it still reports any other
+defect it sees. A full review runs again only for not-checked cells or a
+slice the diff mostly rewrote.
 
-    | Date | Round | Verdict | Reviewer | Open gaps |
-    |---|---|---|---|---|
-    | <date> | 1 | BLOCKER x1 | design-reviewer | AC3 not addressed |
+**Stop.** Record every round in the design file's `## Review record` table,
+creating it below the design body on round 1:
+
+    | Date | Round | Verdict | Reviewer | Coverage | Classes | Open gaps |
+    |---|---|---|---|---|---|---|
+    | <date> | 1 | BLOCKER x1, SUGGESTED x2 | design-reviewer | 38/40 | precondition not set up | AC3 not addressed |
+
+Coverage is checked cells over all cells. A gap a verification round finds
+outside the diff is recorded as `round-1 coverage miss`. The target is one
+review round plus one verification round. When a round's BLOCKER plus
+SUGGESTED count is not lower than the round before, stop at once and hand the
+Dev the trend and the open classes instead of spending the rounds left;
+otherwise the cap of 3 rounds holds.
 
 GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
 no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
