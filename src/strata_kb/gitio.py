@@ -653,11 +653,46 @@ def worktree_prune(root: Path) -> None:
     _run(root, "worktree", "prune")
 
 
+_REMOTE_HEAD_TIMEOUT = 30.0
+
+
+def _remote_default_branch(root: Path) -> str | None:
+    """The branch the remote's HEAD points at, asked of the remote itself;
+    None when it cannot be reached or reports no symref."""
+    try:
+        proc = _run_network(
+            root,
+            {},
+            "ls-remote",
+            "ls-remote",
+            "--symref",
+            "origin",
+            "HEAD",
+            timeout=_REMOTE_HEAD_TIMEOUT,
+        )
+    except GitError:
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        ref, _, target = line.partition("\t")
+        if ref.startswith("ref: refs/heads/") and target == "HEAD":
+            return ref[len("ref: refs/heads/") :]
+    return None
+
+
 def default_branch(root: Path) -> str:
-    """origin/HEAD's branch when there is a remote, else the current branch."""
+    """origin/HEAD's branch; else, with a remote, the branch the remote's HEAD
+    names (cached into origin/HEAD for next time -- cloud clones lack it);
+    else the current branch."""
     proc = _run(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
     if proc.returncode == 0 and proc.stdout.strip():
         return proc.stdout.strip().split("/", 1)[-1]
+    if has_remote(root):
+        branch = _remote_default_branch(root)
+        if branch:
+            _run(root, "remote", "set-head", "origin", branch)  # best effort
+            return branch
     return current_branch(root)
 
 
