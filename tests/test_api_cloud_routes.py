@@ -112,13 +112,25 @@ def test_registry_entry_needs_repo_id(web_client, auth):
     assert web_client.get("/api/registry/entry", headers=auth).status_code == 400
 
 
-def test_registry_entry_invalid_registry_is_503(web_client, hub_dir, auth):
-    (hub_dir / "federation" / "registry.yaml").write_text(
-        "repos: [broken\n", encoding="utf-8", newline="\n"
+def test_registry_entry_invalid_registry_is_503_without_leaking(
+    web_client, hub_dir, auth
+):
+    write_registry(
+        hub_dir,
+        {
+            "acme/ba-one": {
+                "repo_id": "ba-one",
+                "workflw": "typo-pin@refs/heads/main",
+            }
+        },
     )
-    resp = web_client.get("/api/registry/entry?repo_id=x", headers=auth)
+    resp = web_client.get("/api/registry/entry?repo_id=ba-one", headers=auth)
     assert resp.status_code == 503
-    assert resp.json()["error"] == "registry_invalid"
+    assert resp.json() == {
+        "error": "registry_invalid",
+        "detail": "hub registry is invalid",
+    }
+    assert "typo-pin" not in resp.text and "acme" not in resp.text
 
 
 def test_resolve_returns_results(web_client, hub_dir, auth):
@@ -136,6 +148,19 @@ def test_resolve_returns_results(web_client, hub_dir, auth):
         }  # fmt: skip
         assert r["status"] in ("ok", "stale", "broken")
         assert r["citation"]
+
+
+def test_resolve_git_error_is_503(web_client, hub_dir, auth, monkeypatch):
+    from strata_kb import gitio, resolve
+
+    def boom(hub, ctx):
+        raise gitio.GitError("git exploded: secret-detail")
+
+    monkeypatch.setattr(resolve, "resolve_refs", boom)
+    resp = web_client.post("/api/resolve", content=context_block(hub_dir), headers=auth)
+    assert resp.status_code == 503
+    assert resp.json()["error"] == "git_error"
+    assert "secret-detail" not in resp.text
 
 
 def test_resolve_bad_context_is_400(web_client, auth):

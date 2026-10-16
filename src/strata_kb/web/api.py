@@ -382,7 +382,9 @@ def build_routes(config: ServerConfig) -> list[Route]:
         try:
             registry = federation.load_registry(hub.federation_dir)
         except federation.RegistryError as exc:
-            return _error(503, "registry_invalid", str(exc))
+            # The pydantic text echoes workflow pins and other repos' keys.
+            logger.warning("hub registry unreadable: %s", exc)
+            return _error(503, "registry_invalid", "hub registry is invalid")
         entries = [e for k in registry.repos if (e := registry.resolve(k))]
         found = next((e for e in entries if e.repo_id == repo_id), None)
         if found is None:
@@ -408,6 +410,11 @@ def build_routes(config: ServerConfig) -> list[Route]:
             ctx = kbcontext.parse(text)
         except kbcontext.KBContextError as exc:
             return _error(400, "kb_context_error", str(exc))
+        try:
+            results = resolve.resolve_refs(hub, ctx)
+        except gitio.GitError as exc:
+            logger.warning("resolve: git error: %s", exc)
+            return _error(503, "git_error", "hub git read failed — see hub log")
         return JSONResponse(
             {
                 "version": ctx.version,
@@ -421,7 +428,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
                         "reason": r.reason,
                         "pinned_rev": r.pinned_rev,
                     }
-                    for r in resolve.resolve_refs(hub, ctx)
+                    for r in results
                 ],
             }
         )
