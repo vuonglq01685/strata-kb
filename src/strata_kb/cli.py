@@ -107,9 +107,7 @@ usage_app = typer.Typer(
 )
 app.add_typer(usage_app, name="usage")
 
-pr_app = typer.Typer(
-    help="Pull-request gate: check a PR description carries its evidence."
-)
+pr_app = typer.Typer(help="Pull requests: the description gate and REST helpers.")
 app.add_typer(pr_app, name="pr")
 
 plan_app = typer.Typer(
@@ -721,10 +719,12 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
     treats "no hub" as a fact to report, not a fatal error. A malformed
     operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`:
     that is an authoring error, not a "no hub configured" fact."""
-    from strata_kb import gitio
+    from strata_kb import cloud, gitio
     from strata_kb.config import HubConfigError, require_hub
-    from strata_kb.hub import resolve_hub
+    from strata_kb.hub import CLOUD_HUB_MESSAGE, resolve_hub
 
+    if cloud.is_cloud():  # the hub is never cloned on cloud
+        return None, CLOUD_HUB_MESSAGE
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
     except HubConfigError as exc:
@@ -1060,6 +1060,22 @@ def auto_status(
         return
     for key, value in data.items():
         typer.echo(f"{key}: {value}")
+
+
+@auto_app.command("wait")
+def auto_wait(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    max_seconds: int = typer.Option(
+        6600, "--max", min=1, help="Give up waiting after this many seconds"
+    ),
+    interval: int = typer.Option(30, "--interval", min=1, help="Seconds between reads"),
+) -> None:
+    """Wait until the auto loop's task changes, it stops, or --max elapses;
+    print one status line. A cloud session re-arms this to stay alive."""
+    from strata_kb.autorun import wait
+
+    _refuse_inside_auto_task("wait")
+    typer.echo(wait.wait_for_change(kb_dir, max_seconds, interval))
 
 
 @auto_app.command("run")
@@ -3018,7 +3034,8 @@ def resolve(
     ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
-    from strata_kb import kbcontext
+    from strata_kb import cloud, hubapi, kbcontext
+    from strata_kb.errors import KbError
     from strata_kb.resolve import (
         cache_problem,
         render_cache,
@@ -3043,11 +3060,15 @@ def resolve(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1) from None
-    handle = _hub_or_exit(hub, kb_dir)
     try:
-        ctx = kbcontext.parse(text)
-        results = resolve_refs(handle, ctx)
-    except kbcontext.KBContextError as exc:
+        if cloud.is_cloud():
+            ctx = kbcontext.parse(text)  # fail on a bad block before calling the hub
+            _version, results = hubapi.from_env().resolve(text)
+        else:
+            handle = _hub_or_exit(hub, kb_dir)
+            ctx = kbcontext.parse(text)
+            results = resolve_refs(handle, ctx)
+    except (kbcontext.KBContextError, KbError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
@@ -3570,6 +3591,134 @@ def pr_lint(
         raise typer.Exit(1)
 
 
+def _pr_fail(message: str) -> typer.Exit:
+    typer.secho(message, fg=typer.colors.RED)
+    return typer.Exit(1)
+
+
+def _read_text_arg(source: str, what: str) -> str:
+    """Text from a file path, or stdin for '-'. A PR body stays out of argv."""
+    if source == "-":
+        return sys.stdin.read()
+    try:
+        return Path(source).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise _pr_fail(f"could not read {what} '{source}': {exc}") from None
+
+
+def _emit_pr(pr: dict, json_output: bool) -> None:
+    typer.echo(json.dumps(pr) if json_output else pr["url"])
+
+
+_PR_JSON = typer.Option(False, "--json", help="Emit gh-pr-shaped JSON instead of URLs")
+
+
+@pr_app.command("find")
+def pr_find(
+    head: str = typer.Option(..., "--head", help="Head branch to look up"),
+    state: str = typer.Option("open", "--state", help="open | closed | merged | all"),
+    json_output: bool = _PR_JSON,
+) -> None:
+    """List the PRs whose head is a branch (REST; GraphQL is blocked on cloud)."""
+    from strata_kb import ghrest
+
+    prs = ghrest.find_prs(Path.cwd(), head, state)
+    if json_output:
+        typer.echo(json.dumps(prs))
+    else:
+        for pr in prs:
+            typer.echo(pr["url"])
+
+
+@pr_app.command("view")
+def pr_view(
+    ref: str | None = typer.Argument(
+        None, help="PR number or branch (default: current branch)"
+    ),
+    json_output: bool = _PR_JSON,
+) -> None:
+    """Show one PR: number, url, state, mergedAt, title, body, headRefName."""
+    from strata_kb import ghrest
+
+    _emit_pr(ghrest.view_pr(Path.cwd(), ref), json_output)
+
+
+@pr_app.command("open")
+def pr_open(
+    title: str = typer.Option(..., "--title"),
+    body: str | None = typer.Option(None, "--body", help="PR description text"),
+    body_file: str | None = typer.Option(
+        None, "--body-file", help="File holding the description ('-' for stdin)"
+    ),
+    head: str | None = typer.Option(None, "--head", help="Default: current branch"),
+    base: str | None = typer.Option(None, "--base", help="Default: default branch"),
+) -> None:
+    """Open a PR and print its URL."""
+    from strata_kb import ghrest
+
+    if (body is None) == (body_file is None):
+        raise _pr_fail("give exactly one of --body or --body-file")
+    text = body if body is not None else _read_text_arg(body_file or "", "body file")
+    _emit_pr(ghrest.open_pr(Path.cwd(), title, text, head, base), False)
+
+
+@pr_app.command("checks")
+def pr_checks(
+    ref: str | None = typer.Argument(None, help="PR number or branch"),
+    watch: bool = typer.Option(False, "--watch", help="Poll until checks settle"),
+    interval: int = typer.Option(15, "--interval", min=1, help="Seconds between polls"),
+    timeout: int = typer.Option(3600, "--timeout", min=1, help="Give up after seconds"),
+) -> None:
+    """One 'name<TAB>state' line per check. Exit 0 all success, 1 any failure,
+    8 still pending (or --watch timed out; no check yet counts as pending)."""
+    from strata_kb import ghrest
+
+    root = Path.cwd()
+    if watch:
+        code, rows = ghrest.wait_for_checks(root, ref, interval, timeout)
+    else:
+        rows = ghrest.checks(root, ref)
+        code = ghrest.exit_code(rows)
+    for row in rows:
+        typer.echo(f"{row['name']}\t{row['state']}")
+    if code:
+        raise typer.Exit(code)
+
+
+@pr_app.command("merge")
+def pr_merge(
+    ref: str | None = typer.Argument(None, help="PR number or branch"),
+    squash: bool = typer.Option(False, "--squash", help="Squash merge (default)"),
+    merge: bool = typer.Option(False, "--merge", help="Merge commit"),
+    delete_branch: bool = typer.Option(False, "--delete-branch"),
+    admin: bool = typer.Option(
+        False, "--admin", help="Accepted for gh parity; REST merges with your rights"
+    ),
+) -> None:
+    """Merge a PR (default squash); optionally delete its head branch."""
+    from strata_kb import ghrest
+
+    if squash and merge:
+        raise _pr_fail("give --squash or --merge, not both")
+    pr = ghrest.merge_pr(Path.cwd(), ref, "merge" if merge else "squash", delete_branch)
+    _emit_pr(pr, False)
+
+
+@pr_app.command("edit")
+def pr_edit(
+    ref: str | None = typer.Argument(None, help="PR number or branch"),
+    title: str | None = typer.Option(None, "--title"),
+    body_file: str | None = typer.Option(
+        None, "--body-file", help="File holding the new description ('-' for stdin)"
+    ),
+) -> None:
+    """Change a PR's title and/or description."""
+    from strata_kb import ghrest
+
+    text = _read_text_arg(body_file, "body file") if body_file is not None else None
+    _emit_pr(ghrest.edit_pr(Path.cwd(), ref, title, text), False)
+
+
 @plan_app.command("waves")
 def plan_waves(
     source: str = typer.Argument(..., help="Plan file (or '-' to read from stdin)"),
@@ -3776,18 +3925,25 @@ def mission_next(
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import missionnext, planrev, planstatus, ticketcheck
+    from strata_kb import cloud, hubapi, missionnext, planrev, planstatus, ticketcheck
+    from strata_kb.errors import KbError
 
     if repo and not from_hub:
         typer.secho("--repo needs --from-hub", fg=typer.colors.RED)
         raise typer.Exit(1)
     if from_hub:
-        handle, reason = _hub_or_reason(hub, kb_dir)
-        results, unparented, notes = (
-            planstatus.next_from_hub(handle, repo or None)
-            if handle is not None
-            else ([], [], [f"hub unavailable ({reason})"])
-        )
+        if cloud.is_cloud():
+            try:
+                results, unparented, notes = hubapi.from_env().plan_next(repo or None)
+            except KbError as exc:
+                results, unparented, notes = [], [], [f"hub unavailable ({exc})"]
+        else:
+            handle, reason = _hub_or_reason(hub, kb_dir)
+            results, unparented, notes = (
+                planstatus.next_from_hub(handle, repo or None)
+                if handle is not None
+                else ([], [], [f"hub unavailable ({reason})"])
+            )
         if json_output:
             typer.echo(json.dumps(missionnext.to_json(results, notes, unparented)))
         else:
@@ -3868,7 +4024,16 @@ def mission_next(
     else:
         rid = doc_id = None
     done: set[str] | None = None
-    if doc_id is None:
+    if cloud.is_cloud():
+        # The hub's published plan already marks each story done; no -svc doc is read.
+        try:
+            plan_stories, plan_unparented, _plan_notes = hubapi.from_env().plan_next()
+            done = {
+                s.us_id for s in (*plan_stories, *plan_unparented) if s.status == "done"
+            }
+        except KbError as exc:
+            notes.append(f"done: unknown ({exc})")
+    elif doc_id is None:
         notes.append("done: unknown (no repo id — pass --repo-id)")
     else:
         local = kb_dir / doc_id

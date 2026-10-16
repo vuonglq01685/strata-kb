@@ -12,10 +12,11 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import gitio
+from strata_kb import cloud, gitio, hubapi
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.lock import running_pid
 from strata_kb.config import HubConfigError, KBConfig, load_config, require_hub
+from strata_kb.errors import KbError
 from strata_kb.federation import RegistryError, load_registry
 from strata_kb.hub import resolve_hub
 from strata_kb.models import Registry
@@ -79,8 +80,44 @@ def registry_or_reason(kb_dir: Path, hub: str) -> tuple[Registry | None, str]:
         return None, gitio.redact_url(" ".join(str(exc).split()))
 
 
+def cloud_entry_or_reason(repo_id: str) -> tuple[dict | None, str]:
+    """Cloud: `repo_id`'s registry facts from the hub's API, else why not.
+    `(None, "")` = the hub does not list it."""
+    try:
+        return hubapi.from_env().registry_entry(repo_id), ""
+    except KbError as exc:
+        return None, gitio.redact_url(" ".join(str(exc).split()))
+
+
+def _cloud_warnings(kb_dir: Path) -> list[str]:
+    try:
+        repo_id = load_config(kb_dir).repo_id
+    except (
+        OSError,
+        ValueError,
+        yaml.YAMLError,
+    ) as exc:  # ValidationError is a ValueError
+        return [
+            f"Registry not checked ({' '.join(str(exc).split())}), so a second Dev repo would go unnoticed."
+        ]
+    facts, reason = cloud_entry_or_reason(repo_id)
+    if facts is None:
+        reason = reason or f"repo_id '{repo_id}' is not in the hub registry"
+        return [
+            f"Registry not checked ({reason}), so a second Dev repo would go unnoticed."
+        ]
+    if facts["dev_repos"] > 1:
+        return [
+            f"Auto mode supports one Dev repo per hub, "
+            f"but the registry lists {facts['dev_repos']}."
+        ]
+    return []
+
+
 def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
     warnings = [ADMIN_WARNING]
+    if cloud.is_cloud():
+        return warnings + _cloud_warnings(kb_dir)
     registry, reason = registry_or_reason(kb_dir, hub)
     if registry is None:
         warnings.append(
@@ -116,6 +153,9 @@ def status(kb_dir: Path) -> dict:
         # switch must be pushed to.
         "running": _running_pid(kb_dir),
         "default_branch": _default_branch(kb_dir),
+        # For /kb-auto: on Claude Code cloud the switch goes out as an
+        # `auto/switch` PR and the session watches the loop with `kb auto wait`.
+        "cloud": cloud.is_cloud(),
     }
 
 

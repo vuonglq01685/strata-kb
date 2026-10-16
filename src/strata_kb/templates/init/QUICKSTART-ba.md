@@ -457,7 +457,7 @@ A ticket the agent gets wrong goes straight to `main` and the hub. The repo owne
 must enable GitHub branch protection on `main` (block force pushes and deletions,
 include administrators) and keep the ticket-lint CI check (`lint` in
 `kb-ticket-lint.yml`) required. Do **not** require approving reviews on `main`: the
-agent cannot approve its own PR, and `gh pr merge --admin` is refused when
+agent cannot approve its own PR, and `kb pr merge --admin` is refused when
 administrators are included. If you do require reviews, exclude administrators from
 that rule and accept that the agent can then bypass it.
 
@@ -477,6 +477,15 @@ that rule and accept that the agent can then bypass it.
   (`.kb/auto/worktrees/qa`). State and logs: `.kb/auto/` (git-ignored).
 - Re-run `kb init --kind ba` to get the permission allowlist and the skills' Auto
   mode sections. The full reference is the README's "Full-auto mode" section.
+
+**On Claude Code cloud.** `/kb-auto run` works in a cloud session too. Set
+`STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the cloud environment; the hub must
+be 1.30.0 or later. The loop reads the hub live through its API (nothing is copied),
+`kb pr` replaces `gh pr` (REST; GraphQL is blocked), and the skill stays on the
+session's `claude/...` branch: if the default branch's switch is off it opens an
+`auto/switch` PR that flips only `auto.enabled`, waits for green checks, admin
+squash-merges it after telling you, then starts the loop and keeps `kb auto wait`
+armed. Keep the session open. Details and known limits: README, "On Claude Code cloud".
 
 ## Upgrading an existing BA repo
 

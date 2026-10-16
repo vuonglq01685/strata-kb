@@ -134,7 +134,7 @@ Re-entry is derived, never stored:
   test and the full suite pass on the branch; no PR yet → Fix, then
   Handover. A fix that failed cleared `Root cause:` (step 4), so this
   state never loops back into Fix.
-- `gh pr list --head <branch> --state merged` non-empty → `PR ✅ merged`,
+- `kb pr find --head <branch> --state merged` non-empty → `PR ✅ merged`,
   flow done; `--state closed` non-empty → `PR ❌ closed`: re-handover or
   reopen; `gh` absent → `PR ? unknown (gh not installed)`.
 - no branch matches `git branch --list "*<BUG-id>*"` and HEAD is the
@@ -215,7 +215,7 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 
 **A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `gh pr list --head <branch> --state merged --json number,url` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
 
 **The branch and its base.** Only when no branch for this bug exists yet (see above). Read `hotfix_base` from `kb auto status --json`. Branch at once, from the remote default branch, and never check out `main`:
 

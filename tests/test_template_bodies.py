@@ -954,12 +954,12 @@ def test_ba_ticket_author_auto_ticks_dor_box():
 BRANCH_LINES = [
     "git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD",
     "git push -u origin HEAD",
-    'gh pr create --title "<ticket-id>: <short description>" --body',
-    "gh pr checks --watch",
+    'kb pr open --title "<ticket-id>: <short description>" --body',
+    "kb pr checks --watch",
     "AUTO-RESULT: failed ci-red <pr-url>",
-    "gh pr merge --squash --delete-branch",
-    "gh pr merge --squash --admin --delete-branch",
-    "gh pr view --json state,mergedAt",
+    "kb pr merge --squash --delete-branch",
+    "kb pr merge --squash --admin --delete-branch",
+    "kb pr view --json",
     "kb-publish-request.yml",
 ]
 
@@ -1043,7 +1043,7 @@ def test_ticket_author_already_finished_uses_the_mission_next_status():
 
 def test_mission_plan_separates_done_from_no_blocker():
     text = " ".join(_auto_section("bodies/ba-mission-plan.md").split())
-    assert "gh pr list --state merged --head auto/<mission-id>" in text
+    assert "kb pr find --state merged --head auto/<mission-id>" in text
     assert "no blocker and no such PR ever" in text
 
 
@@ -1099,7 +1099,7 @@ def test_dev_handover_merges_publishes_and_names_the_admin_fallback():
     text = _dev_text("dev-handover")
     for line in DEV_BRANCH_LINES:
         assert line in text, line
-    assert "gh pr merge --squash --admin --delete-branch" in text
+    assert "kb pr merge --squash --admin --delete-branch" in text
     assert "kb publish" in text
     assert "kb svc note" in text
     assert "up to 2 rounds" in text
@@ -1109,11 +1109,11 @@ def test_dev_handover_merges_publishes_and_names_the_admin_fallback():
 
 DEV_BRANCH_LINES = [
     "git push -u origin HEAD",
-    'gh pr create --title "<ticket-id>: <short description>" --body',
-    "gh pr checks --watch",
+    'kb pr open --title "<ticket-id>: <short description>" --body',
+    "kb pr checks --watch",
     "AUTO-RESULT: failed ci-red <pr-url>",
-    "gh pr merge --squash --delete-branch",
-    "gh pr view --json state,mergedAt",
+    "kb pr merge --squash --delete-branch",
+    "kb pr view --json",
     "--base <hotfix_base>",
 ]
 
@@ -1208,9 +1208,9 @@ def test_dev_test_workflow_body_names_the_workflow_and_its_inputs():
     for needle in (
         "git fetch origin main && git switch -c auto/kb-test FETCH_HEAD",
         "git push -u origin HEAD",
-        "gh pr checks --watch",
-        "gh pr merge --squash --delete-branch",
-        "gh pr merge --squash --admin --delete-branch",
+        "kb pr checks --watch",
+        "kb pr merge --squash --delete-branch",
+        "kb pr merge --squash --admin --delete-branch",
         "AUTO-RESULT: failed ci-red <pr-url>",
     ):
         assert needle in auto, needle
@@ -1367,3 +1367,58 @@ def test_kb_auto_body_pins_its_contract(tmp_path, kind):
     ):
         assert needle in text, needle
     assert "strata-kb:include" not in text
+
+
+def test_kb_auto_body_has_cloud_path():
+    body = BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8")
+    for needle in (
+        "kb auto wait --max 6600",
+        "auto/switch",
+        "--admin",
+        "`cloud`",
+        "kb pr lint",
+        "Blocking: No",
+        "run_in_background",
+        "still running",
+        "git worktree remove --force .kb/auto/worktrees/switch",
+    ):
+        assert needle in body, needle
+
+
+def test_kb_auto_cloud_switch_is_rerunnable_and_targets_the_default_branch():
+    body = " ".join(
+        BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8").split()
+    )
+    for needle in (
+        "git branch -D auto/switch",
+        "kb pr find --head auto/switch --state open --json",
+        "close that PR and delete the remote `auto/switch` branch on GitHub",
+        "Run cleanup on every stop inside this step and after the merge",
+        "Never force-push",
+        "kb pr open --head auto/switch --base <default_branch>",
+    ):
+        assert needle in body, needle
+
+
+def test_kb_auto_cloud_switch_flips_only_the_flag_and_watcher_outlives_default_timeout():
+    body = BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8")
+    for needle in (
+        "kb auto on --kb-dir .kb/auto/worktrees/switch/.kb",
+        "git diff --no-index --quiet",
+        "`timeout: 7200000`",
+        "no `kb auto wait` line",
+    ):
+        assert needle in body, needle
+    assert "Copy `.kb/config.yaml` and `.claude/settings.json`" not in body
+
+
+def test_no_template_calls_gh_pr():
+    # GraphQL-backed `gh pr ...` fails on Claude Code cloud; skills use `kb pr` (REST).
+    call = re.compile(r"\bgh pr (list|create|checks|merge|view|edit)\b")
+    hits = [
+        name
+        for name in _templates()
+        + [f"bodies/{p.name}" for p in BASE.joinpath("bodies").iterdir()]
+        if call.search(BASE.joinpath(name).read_text(encoding="utf-8"))
+    ]
+    assert hits == []

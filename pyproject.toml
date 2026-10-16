@@ -1,6 +1,6 @@
 [project]
 name = "strata-kb"
-version = "1.29.0"
+version = "1.30.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -126,6 +126,9 @@ ignore = ["B008"]
 # S603/S607: fixed `gh` CLI argv built in code, never a shell string and
 # never user-interpolated.
 "src/strata_kb/ghio.py" = ["S603", "S607"]
+
+# S603/S607: same fixed `gh api` / `git remote get-url` argv as ghio.
+"src/strata_kb/ghrest.py" = ["S603", "S607"]
 
 # S603: cmd is built from shutil.which(name) where name is constrained to the
 # literal "claude"/"copilot" candidates (detect_runner) -- never a shell

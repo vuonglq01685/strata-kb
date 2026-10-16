@@ -11,6 +11,8 @@ from pathlib import Path
 from strata_kb import planstatus
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
+from strata_kb.hubapi import HubApi
+from strata_kb.missionnext import StoryStatus
 
 MAX_STDERR = 300
 TEST_WORKFLOW_MARK = "kb-test"
@@ -83,12 +85,21 @@ def _has_test_workflow(root: Path) -> bool:
     )
 
 
-def pick_dev(hub: HubHandle, root: Path) -> Task | None:
+def plan_next(
+    hub: HubHandle | HubApi,
+) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
+    """The hub's plan: over its API on cloud, off the cloned hub otherwise."""
+    if isinstance(hub, HubApi):
+        return hub.plan_next()
+    return planstatus.next_from_hub(hub)
+
+
+def pick_dev(hub: HubHandle | HubApi, root: Path) -> Task | None:
     """CI workflow first, then a ready bug, then a ready unparented ticket,
     then the first ready story whose dependencies are done."""
     if not _has_test_workflow(root):
         return Task("dev-test-workflow", "")
-    stories, unparented, _notes = planstatus.next_from_hub(hub)
+    stories, unparented, _notes = plan_next(hub)
     for u in unparented:
         if u.status == "ready" and u.us_id.startswith("BUG-"):
             return Task("dev-fix-bug", u.us_id)

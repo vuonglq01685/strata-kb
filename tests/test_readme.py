@@ -380,17 +380,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_29_0_everywhere():
+def test_version_is_1_30_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.29.0"
+    assert project["project"]["version"] == "1.30.0"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.29.0"]
+    assert [p["version"] for p in own] == ["1.30.0"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.29.0 — 2026-10-16")
+    assert first.startswith("1.30.0 — 2026-10-16")
     assert "guide PDFs" in first and "were not rebuilt" in first
 
 
@@ -509,3 +509,14 @@ def test_docs_describe_full_auto_mode():
             )
             assert "kb auto run" in guide, (g, lang)
             assert "branch protection" in guide, (g, lang)
+
+
+def test_readme_and_changelog_pin_the_rerunnable_cloud_switch():
+    for text in (
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+    ):
+        text = _normalised(text)
+        assert "`/kb-auto run` is re-runnable" in text
+        assert "closed and deleted on GitHub by hand" in text
+        assert "git branch -D auto/switch" not in text

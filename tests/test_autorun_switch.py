@@ -125,7 +125,14 @@ def test_status_defaults_and_empty_state_fields(tmp_path):
         "stop_reason": None,
         "running": None,
         "default_branch": None,  # no git repo under tmp_path
+        "cloud": False,
     }
+
+
+def test_status_reports_cloud(tmp_path, monkeypatch):
+    _kb(tmp_path, "kind: dev\n")
+    monkeypatch.setenv("STRATA_KB_CLOUD", "1")
+    assert status(tmp_path)["cloud"] is True
 
 
 def test_status_reports_saved_state(tmp_path):

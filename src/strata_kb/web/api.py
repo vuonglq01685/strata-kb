@@ -1,7 +1,7 @@
 """api — the read-only JSON routes under `/api/*`.
 
 `build_routes` returns the Starlette routes (health, doc list, manifest,
-section, search, questions); `hub_handle`, `list_docs` and `load_manifest` are shared
+section, search, questions, plan/next, registry/entry, resolve); `hub_handle`, `list_docs` and `load_manifest` are shared
 with the web UI. Every read goes through the federation hub cache, and a hub
 that cannot be resolved is reported as a 503 rather than an unhandled 500.
 All routes but `health` are plain `def` so Starlette runs them off the event
@@ -10,11 +10,13 @@ loop.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import sqlite3
 
 import yaml
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -31,12 +33,16 @@ from strata_kb.query import (
     stale_hub_note,
 )
 from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
+from strata_kb.web import bodycap
 
 logger = logging.getLogger("strata_kb.web.api")
 
 MAX_BUDGET = 20000
 
 QA_NEEDS_HUB_DETAIL = "Q&A needs the shared hub server"
+
+# A kb-context block is a few KB; this bounds what POST /api/resolve buffers.
+MAX_RESOLVE_BODY = 64 * 1024
 
 HUB_DOWN_DETAIL = "hub unreachable — the federation is the only read source"
 
@@ -344,6 +350,111 @@ def build_routes(config: ServerConfig) -> list[Route]:
             }
         )
 
+    def plan_next(request: Request) -> JSONResponse:
+        from strata_kb import planstatus
+
+        hub = hub_handle(config)
+        if hub is None:
+            return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
+        stories, unparented, notes = planstatus.next_from_hub(
+            hub, request.query_params.get("repo") or None
+        )
+        return JSONResponse(
+            {
+                "stories": [dataclasses.asdict(s) for s in stories],
+                "unparented": [dataclasses.asdict(s) for s in unparented],
+                "notes": notes,
+            }
+        )
+
+    def registry_entry(request: Request) -> JSONResponse:
+        # One repo's facts only: never the workflow pins or the whole registry.
+        from strata_kb import federation
+
+        repo_id = request.query_params.get("repo_id", "").strip()
+        if not repo_id:
+            return _error(
+                400, "missing_repo_id", "query parameter 'repo_id' is required"
+            )
+        hub = hub_handle(config)
+        if hub is None:
+            return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
+        try:
+            registry = federation.load_registry(hub.federation_dir)
+        except federation.RegistryError as exc:
+            # The pydantic text echoes workflow pins and other repos' keys.
+            logger.warning("hub registry unreadable: %s", exc)
+            return _error(503, "registry_invalid", "hub registry is invalid")
+        entries = [e for k in registry.repos if (e := registry.resolve(k))]
+        found = next((e for e in entries if e.repo_id == repo_id), None)
+        if found is None:
+            return _error(
+                404, "repo_not_registered", f"'{repo_id}' is not in the hub registry"
+            )
+        return JSONResponse(
+            {
+                "repo_id": found.repo_id,
+                "kind": found.kind,
+                "auto_merge": found.auto_merge,
+                "dev_repos": sum(1 for e in entries if e.kind == "dev"),
+            }
+        )
+
+    def resolve_body(text: str) -> JSONResponse:
+        from strata_kb import kbcontext, resolve
+
+        hub = hub_handle(config)
+        if hub is None:
+            return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
+        try:
+            ctx = kbcontext.parse(text)
+        except kbcontext.KBContextError as exc:
+            return _error(400, "kb_context_error", str(exc))
+        try:
+            results = resolve.resolve_refs(hub, ctx)
+        except gitio.GitError as exc:
+            logger.warning("resolve: git error: %s", exc)
+            return _error(503, "git_error", "hub git read failed — see hub log")
+        return JSONResponse(
+            {
+                "version": ctx.version,
+                "results": [
+                    {
+                        "ref": str(r.ref),
+                        "status": r.status,
+                        "citation": r.citation,
+                        "content": r.content,
+                        "tokens": r.tokens,
+                        "reason": r.reason,
+                        "pinned_rev": r.pinned_rev,
+                    }
+                    for r in results
+                ],
+            }
+        )
+
+    async def api_resolve(request: Request) -> JSONResponse:
+        # async only to read the body; the parse and the git reads run in the
+        # threadpool like every other route.
+        too_big = _error(413, "body_too_large", f"max {MAX_RESOLVE_BODY} bytes")
+        if int(request.headers.get("content-length") or 0) > MAX_RESOLVE_BODY:
+            return too_big
+        capped = Request(
+            request.scope,
+            bodycap.capped_receive(
+                request, MAX_RESOLVE_BODY, lambda: OverflowError("body too large")
+            ),
+        )
+        try:
+            raw = await capped.body()
+        except OverflowError:
+            return too_big
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return _error(400, "bad_encoding", "body must be UTF-8 text")
+        return await run_in_threadpool(resolve_body, text)
+
     return [
         Route("/api/health", health, methods=["GET"]),
         Route("/api/docs", docs, methods=["GET"]),
@@ -351,4 +462,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
         Route("/api/docs/{doc}/sections/{section}", section, methods=["GET"]),
         Route("/api/search", api_search, methods=["GET"]),
         Route("/api/questions", questions, methods=["GET"]),
+        Route("/api/plan/next", plan_next, methods=["GET"]),
+        Route("/api/registry/entry", registry_entry, methods=["GET"]),
+        Route("/api/resolve", api_resolve, methods=["POST"]),
     ]

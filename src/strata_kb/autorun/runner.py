@@ -15,7 +15,7 @@ from typing import Literal
 
 import yaml
 
-from strata_kb import gitio, planstatus
+from strata_kb import cloud, gitio, hubapi
 from strata_kb.autorun import claude, picker
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -23,7 +23,7 @@ from strata_kb.autorun.done import all_done
 from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run_lock
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import QaThread, open_question_count
-from strata_kb.autorun.switch import registry_or_reason
+from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
@@ -106,10 +106,28 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
         reasons.append(
             "`intake:` is empty in .kb/config.yaml, so a merged PR would never publish"
         )
-    registry, why = registry_or_reason(kb_dir, hub or cfg.hub)
-    if registry is None:
+    found, auto_merge, why = _registry_facts(kb_dir, cfg, hub)
+    if why:
         reasons.append(f"the hub registry could not be read: {why}")
         return reasons
+    if not found:
+        reasons.append(f"repo_id '{cfg.repo_id}' is not in the hub registry")
+    elif not auto_merge:
+        reasons.append(
+            f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
+            "so intake would not merge its publish PRs"
+        )
+    return reasons
+
+
+def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, str]:
+    """(repo is registered, its `auto_merge`, why the registry was unreadable)."""
+    if cloud.is_cloud():
+        facts, why = cloud_entry_or_reason(cfg.repo_id)
+        return facts is not None, bool(facts and facts["auto_merge"]), why
+    registry, why = registry_or_reason(kb_dir, hub or cfg.hub)
+    if registry is None:
+        return False, False, why
     entry = next(
         (
             e
@@ -118,14 +136,7 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
         ),
         None,
     )
-    if entry is None:
-        reasons.append(f"repo_id '{cfg.repo_id}' is not in the hub registry")
-    elif not entry.auto_merge:
-        reasons.append(
-            f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
-            "so intake would not merge its publish PRs"
-        )
-    return reasons
+    return entry is not None, bool(entry and entry.auto_merge), ""
 
 
 def _stop(
@@ -141,11 +152,13 @@ def _stop(
     return "stopped"
 
 
-def _check_done(cfg: KBConfig, hub: HubHandle, qa: qa_mod.QaClient) -> Outcome | None:
+def _check_done(
+    cfg: KBConfig, hub: HubHandle | hubapi.HubApi, qa: qa_mod.QaClient
+) -> Outcome | None:
     """`done` when every ticket is; `idle`/`waiting` when the hub or Q&A cannot
     answer yet (transient, never a task failure); None to carry on."""
     try:
-        stories, unparented, _notes = planstatus.next_from_hub(hub)
+        stories, unparented, _notes = picker.plan_next(hub)
     except KbError as exc:
         logger.warning("hub plan not read: %s", exc)
         return "idle"
@@ -182,7 +195,7 @@ def _task_for(
     root: Path,
     kb_dir: Path,
     cfg: KBConfig,
-    hub: HubHandle,
+    hub: HubHandle | hubapi.HubApi,
     state: autostate.AutoState,
 ) -> Task | None:
     """The stored task (a crash, a retry, an answered question), else a pick."""
@@ -258,7 +271,7 @@ def run_once(
     kb_dir: Path,
     *,
     cfg: KBConfig,
-    hub: HubHandle,
+    hub: HubHandle | hubapi.HubApi,
     qa: qa_mod.QaClient,
     run_task=claude.run_task,
     now=time.time,
@@ -304,7 +317,11 @@ def run_once(
     return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
 
 
-def _resolve_hub(cfg: KBConfig, kb_dir: Path, hub_flag: str = "") -> HubHandle:
+def _resolve_hub(
+    cfg: KBConfig, kb_dir: Path, hub_flag: str = ""
+) -> HubHandle | hubapi.HubApi:
+    if cloud.is_cloud():  # read the hub live; nothing is cloned
+        return hubapi.from_env()
     handle = resolve_hub(require_hub(hub_flag or cfg.hub, kb_dir))
     if handle is None:
         raise KbError("hub unreachable and not cached")
@@ -322,7 +339,7 @@ def resume(kb_dir: Path) -> None:
 
 def build_deps(
     kb_dir: Path, hub_flag: str = ""
-) -> tuple[KBConfig, HubHandle, qa_mod.QaClient]:
+) -> tuple[KBConfig, HubHandle | hubapi.HubApi, qa_mod.QaClient]:
     """The real config, hub and Q&A client for one `run_once` (`--once`).
     Raises KbError naming what is missing."""
     qa = qa_mod.from_env()
