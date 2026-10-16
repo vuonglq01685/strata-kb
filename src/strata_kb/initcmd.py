@@ -563,16 +563,26 @@ _SETTINGS_REL = ".claude/settings.json"
 # Auto-mode test runners per conventions language, appended to `permissions.allow`
 # for a dev repo's languages so a headless `claude -p` run can run its own tests.
 TEST_COMMANDS: dict[str, tuple[str, ...]] = {
-    "python": ("Bash(pytest *)",),
-    "ts": ("Bash(npm test*)", "Bash(npx *)"),
+    "python": ("Bash(pytest *)", "Bash(python -m pytest*)", "Bash(uv run pytest*)"),
+    "ts": (
+        "Bash(npm test*)",
+        "Bash(npm run test*)",
+        "Bash(pnpm test*)",
+        "Bash(yarn test*)",
+    ),
     "go": ("Bash(go test *)",),
     "rust": ("Bash(cargo test*)",),
-    "java": ("Bash(mvn *)", "Bash(gradle *)", "Bash(./gradlew *)"),
+    "java": (
+        "Bash(mvn test*)",
+        "Bash(mvn verify*)",
+        "Bash(gradle test*)",
+        "Bash(./gradlew test*)",
+    ),
     "dotnet": ("Bash(dotnet test*)",),
-    "php": ("Bash(composer *)", "Bash(vendor/bin/phpunit*)"),
+    "php": ("Bash(vendor/bin/phpunit*)", "Bash(php artisan test*)"),
     "dart": ("Bash(flutter test*)", "Bash(dart test*)"),
     "swift": ("Bash(swift test*)",),
-    "e2e-playwright": ("Bash(npx playwright *)",),
+    "e2e-playwright": ("Bash(npx playwright test*)",),
 }
 
 
@@ -581,13 +591,19 @@ def _union(existing: list, extra: list) -> list:
 
 
 def _hook_commands(groups: list) -> set[str]:
-    return {
-        cmd
-        for group in groups
-        if isinstance(group, dict)
-        for hook in group.get("hooks", [])
-        if isinstance(hook, dict) and isinstance(cmd := hook.get("command"), str)
-    }
+    commands: set[str] = set()
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        hooks = group.get("hooks", [])
+        if not isinstance(hooks, list):
+            raise ValueError("a hook group's `hooks` is not a list")
+        commands.update(
+            cmd
+            for hook in hooks
+            if isinstance(hook, dict) and isinstance(cmd := hook.get("command"), str)
+        )
+    return commands
 
 
 def merge_settings(existing: dict, template: dict) -> dict:
@@ -623,7 +639,7 @@ def merge_settings(existing: dict, template: dict) -> dict:
 
 
 def _dump_settings(settings: dict) -> str:
-    return json.dumps(settings, indent=2) + "\n"
+    return json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
 
 
 def _apply_settings(
@@ -646,10 +662,12 @@ def _apply_settings(
         return
     try:
         # utf-8-sig: Notepad saves JSON with a BOM, which json.loads rejects.
-        existing = json.loads(dest.read_text(encoding="utf-8-sig"))
+        current = dest.read_text(encoding="utf-8-sig")
+        existing = json.loads(current)
         if not isinstance(existing, dict):
             raise ValueError("top level is not an object")
         text = _dump_settings(merge_settings(existing, template))
+        unchanged = current == text
     except (OSError, ValueError) as err:  # JSONDecodeError is a ValueError
         report.skipped.append(_SETTINGS_REL)
         report.notes.append(
@@ -657,7 +675,7 @@ def _apply_settings(
             "permissions by hand"
         )
         return
-    if dest.read_text(encoding="utf-8-sig") == text:
+    if unchanged:
         report.skipped.append(_SETTINGS_REL)
         return
     dest.write_text(text, encoding="utf-8", newline="\n")
@@ -750,12 +768,13 @@ def init_repo(
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)
         forced = sorted(set(langs) | set(recorded))
-        settings_langs = forced
+        settings_langs = recorded
         scaffolded = conventions.scaffold_conventions(target, report, forced=forced)
         if scaffolded:
             conventions.ensure_claude_block(target, report)
         if langs:
             if record_langs(cfg_path, forced):
+                settings_langs = forced  # only langs that are now on record
                 report.updated.append(".kb/config.yaml (langs recorded)")
             elif recorded:
                 # Mirrors record_asset_store's "exists" branch below: append-

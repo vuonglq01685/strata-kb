@@ -2378,7 +2378,7 @@ def test_settings_json_is_merged_not_overwritten_by_a_second_init(tmp_path: Path
     assert ".claude/settings.json" in report.updated
     settings = json.loads(path.read_text(encoding="utf-8"))
     assert settings["mine"] is True
-    assert "Bash(kb *)" in settings["permissions"]["allow"]
+    assert "Bash(kb ticket *)" in settings["permissions"]["allow"]
 
 
 def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):
