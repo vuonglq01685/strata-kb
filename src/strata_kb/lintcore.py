@@ -565,10 +565,15 @@ def check_review_record(text: str) -> list[Issue]:
     return issues
 
 
+# a `|` not preceded by `\`: `escape_cell` writes a literal pipe in a cell as `\|`
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+
+
 def table_rows(body: str) -> list[list[str]]:
     """All '|'-delimited rows of `body` as stripped cell lists. Separator
     rows ('|---|---|') are dropped; the header row is INCLUDED as row 0 —
-    callers slice `[1:]` for data rows."""
+    callers slice `[1:]` for data rows. An escaped `\\|` inside a cell is
+    part of the cell (returned as `|`), not a separator."""
     _SEP = re.compile(r"^\|[\s:|-]+\|$")
     rows: list[list[str]] = []
     for line in body.splitlines():
@@ -577,7 +582,8 @@ def table_rows(body: str) -> list[list[str]]:
             continue
         if _SEP.match(line):
             continue
-        rows.append([c.strip() for c in line[1:-1].split("|")])
+        cells = _UNESCAPED_PIPE.split(line[1:-1])
+        rows.append([c.strip().replace("\\|", "|") for c in cells])
     return rows
 
 

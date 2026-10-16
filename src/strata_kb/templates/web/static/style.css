@@ -371,6 +371,8 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 .reg-repo { font-weight: 600; overflow-wrap: anywhere; }
 .reg-pin { font-size: 12px; overflow-wrap: anywhere; }
 .reg-grid form { margin: 0; }
+.reg-toggle { display: flex; align-items: center; gap: 8px; }
+.switch-state { font-size: 12px; color: var(--muted); }
 .reg-confirm { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 18px;
   background: var(--err-bg); border-top: 1px solid var(--err-line); }
 .reg-confirm p { margin: 0; flex: 1 1 320px; font-size: 13px; color: var(--err); }

@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from strata_kb import gitio, models, ticketcheck
 from strata_kb.codeingest import core
+from strata_kb.errors import KbError
 from strata_kb.kbcontext import KBRef
 from strata_kb.lintcore import LintReport
 from strata_kb.mdutils import slice_section
@@ -729,8 +732,19 @@ def test_directory_entries_count_as_paths(code_doc):
     assert not any("not in struct.tree" in e for e in errors(report))
 
 
+def _drop_struct_files(kb_dir: Path) -> None:
+    """Make the doc look like a pre-struct.files code-ingest."""
+    path = kb_dir / "demo-code" / "_manifest.yaml"
+    manifest = models.load_yaml_model(path, models.Manifest)
+    manifest.sections = [
+        s for s in manifest.sections if not s.id.startswith("struct.files.")
+    ]
+    models.save_yaml_model(path, manifest)
+
+
 def test_path_beyond_depth_cap_is_a_warning_not_an_error(code_doc):
     kb_dir, rev = code_doc
+    _drop_struct_files(kb_dir)
     report = run(
         ticket(grounding(rev, Files=["src/airspace/deep/deeper/x.py"])), kb_dir
     )
@@ -763,6 +777,7 @@ def test_path_after_the_line_cap_marker_is_a_warning(tmp_path: Path, run_git):
     ).revision
     raw = (kb_dir / "demo-code" / "structure.raw.md").read_text(encoding="utf-8")
     assert "more entries omitted" in raw  # precondition: the cap fired
+    _drop_struct_files(kb_dir)
     report = run(
         ticket(grounding(rev, Files=["wide/f0699.txt", "wide/f0000.txt", "aaa.txt"])),
         kb_dir,
@@ -1501,3 +1516,884 @@ def test_grounded_entries_splits_a_list_and_rejects_a_bad_entry():
     ]
     assert grounded_entries("- Grounded on: a:a-code @ 1234567, junk") == []
     assert grounded_entries("- Files: x.py") == []
+
+
+# --- struct.files.* widen the Files: check beyond struct.tree's cap ---------
+
+DEEP = "src/airspace/deep/deeper/x.py"
+
+
+def _commit_deep_file(tmp_path: Path, run_git, kb_dir: Path):
+    """A fresh ingest of the code_doc repo plus one depth-5 tracked file."""
+    root = tmp_path / "repo"
+    (root / "src/airspace/deep/deeper").mkdir(parents=True)
+    (root / DEEP).write_text("x", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "deep")
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    return models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    ).revision
+
+
+def test_files_check_accepts_path_beyond_depth_4_when_listed(
+    code_doc, tmp_path, run_git
+):
+    kb_dir, _ = code_doc
+    rev = _commit_deep_file(tmp_path, run_git, kb_dir)
+    report = run(
+        ticket(grounding(rev, Files=[DEEP, "src/airspace/deep/deeper"])), kb_dir
+    )
+    assert not any("not in struct.tree" in e for e in errors(report))
+    assert not any("cannot verify" in w for w in warnings(report))
+
+
+def test_files_under_ignored_dirs_are_cited_ok_and_not_new(code_doc, tmp_path, run_git):
+    # tracked files under bin/ and build/ are in struct.files, so a citation
+    # passes and a [NEW] claim on them is "already exists", not a false complete
+    kb_dir, _ = code_doc
+    root = tmp_path / "repo"
+    (root / "src/airspace/bin").mkdir(parents=True)
+    (root / "src/airspace/bin/run.sh").write_text("x", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "bin")
+    core.run(
+        core.CodeIngestOptions(
+            repo_root=root, kb_dir=kb_dir, doc_id="demo-code", repo_id="demo"
+        )
+    )
+    rev = models.load_yaml_model(
+        kb_dir / "demo-code" / "_manifest.yaml", models.Manifest
+    ).revision
+    ok = run(ticket(grounding(rev, Files=["src/airspace/bin/run.sh"])), kb_dir)
+    assert not any("run.sh" in e for e in errors(ok)), errors(ok)
+    new = run(
+        ticket(grounding(rev, Files=["src/airspace/bin/run.sh [NEW: tbd]"])), kb_dir
+    )
+    assert any(
+        "file 'src/airspace/bin/run.sh' already exists" in e for e in errors(new)
+    ), errors(new)
+
+
+def test_files_check_unknown_deep_path_is_error_when_struct_files_present(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=[DEEP])), kb_dir)
+    assert any(f"file '{DEEP}' not in struct.tree" in e for e in errors(report))
+    assert not any("cannot verify" in w for w in warnings(report))
+
+
+def test_structure_adds_files_sections_and_directory_prefixes(
+    code_doc, tmp_path, run_git
+):
+    kb_dir, _ = code_doc
+    _commit_deep_file(tmp_path, run_git, kb_dir)
+    doc = ticketcheck.load_doc_dir(kb_dir / "demo-code", str(kb_dir / "demo-code"))
+    union = ticketcheck._read_structure(doc).paths
+    assert {DEEP, "src/airspace/deep/deeper", "src/airspace/deep", "src"} <= union
+
+
+# --- Task 11: route/page/job/sym citations, [NEW] coverage gate -----------
+
+_COVERAGE = """\
+| Area | Scope | Framework/language | Status | Detail |
+| --- | --- | --- | --- | --- |
+| files | apps | - | complete |  |
+| jobs | apps/api | - | partial | jobs outside framework schedulers are not detectable |
+| pages | apps/web | Next.js | complete |  |
+| routes | apps/api | NestJS | partial | apps/api/src/legacy.controller.ts:4 |
+| routes | apps/media | NestJS | complete |  |
+| routes | apps/web | Next.js | complete |  |
+| schema | . | prisma | complete |  |
+| schema | apps/api | sql | partial | apps/api/db/m.sql:3 |
+| symbols | apps/api | typescript | complete |  |
+| symbols | apps/web | css | partial | apps/web/a.css:1 |
+| symbols | apps/web | tsx | complete |  |
+"""
+_MEDIA = "route.apps-media-src-media-controller"
+_API = "route.apps-api-src-x-controller"
+_PAGES = "page.apps-web"
+_JOBS = "job.apps-api-src-maintenance-service-073d57"
+_SYMS = "sym.apps-api"
+_STRUCT_RAW = (
+    "## struct.tree Repository tree\n\n```\n- apps/\n  - apps/media/\n```\n\n"
+    "## struct.files.apps Files: apps/\n\n```\napps/media/src/media.controller.ts\n```\n"
+)
+
+
+def _synth_doc(*, coverage: bool | str = True, revision: str = "abc1234"):
+    """A `demo-code` LoadedDoc built from hand-written L2 tables in the real
+    section shapes -- no tree-sitter, no ingest."""
+    blocks = {
+        _MEDIA: (
+            "routes",
+            "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+            "| GET | /media/ping | MediaController.ping | apps/media/src/media.controller.ts |  |\n"
+            "| GET | /watch/{id} | MediaController.watch | apps/media/src/media.controller.ts |  |\n",
+        ),
+        _API: (
+            "routes",
+            "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+            "| POST | /api/x | X.create | apps/api/src/x.controller.ts |  |\n",
+        ),
+        _PAGES: (
+            "pages",
+            "| Path | File | Layout/group |\n| --- | --- | --- |\n"
+            "| /admin | apps/web/src/app/(admin)/admin/page.tsx | (admin) |\n"
+            "| /watch/[id] | apps/web/src/app/watch/[id]/page.tsx |  |\n"
+            "| Middleware matcher: /admin/:path* | apps/web/src/middleware.ts |  |\n",
+        ),
+        _JOBS: (
+            "jobs",
+            "| Name | Schedule | Handler | File |\n| --- | --- | --- | --- |\n"
+            "| createPartition | 0 3 * * * | M.createPartition | apps/api/src/m.ts |\n"
+            "| nightly cleanup | 0 2 * * * | - | apps/api/src/m.ts |\n"
+            "| (anonymous) | 0 4 * * * | - | apps/api/src/m.ts |\n"
+            "| (anonymous) | 0 5 * * * | - | apps/api/src/m.ts |\n",
+        ),
+        "sym.apps-web": (
+            "symbols",
+            "| Name | Kind | File |\n| --- | --- | --- |\n"
+            "| --brand | css-variable | apps/web/src/a.css |\n",
+        ),
+        "db.Event": (
+            "db",
+            "| Column | Type |\n| --- | --- |\n| id | int |\n",
+        ),
+        _SYMS: (
+            "symbols",
+            "| Name | Kind | File |\n| --- | --- | --- |\n"
+            "| AdminController | class | apps/api/src/admin.controller.ts |\n",
+        ),
+    }
+    if coverage:
+        blocks["struct.coverage"] = (
+            "structure",
+            coverage if isinstance(coverage, str) else _COVERAGE,
+        )
+    groups: dict[str, str] = {}
+    for sid, (group, body) in blocks.items():
+        groups[group] = groups.get(group, "") + f"## {sid} title\n\n{body}\n"
+    manifest = models.Manifest(
+        id="demo-code",
+        title="demo",
+        revision=revision,
+        sections=[
+            models.SectionEntry(id=sid, title=sid, file=group)
+            for sid, (group, _) in blocks.items()
+        ]
+        + [
+            models.SectionEntry(id="struct.tree", title="t", file="structure"),
+            models.SectionEntry(id="struct.files.apps", title="f", file="structure"),
+        ],
+    )
+    return ticketcheck.LoadedDoc(
+        manifest=manifest,
+        source="synthetic",
+        read_group=groups.get,
+        read_raw=lambda g: _STRUCT_RAW if g == "structure" else None,
+    )
+
+
+def run_synth(
+    lines: list[str], *, doc=None, grounded="abc1234", **kwargs
+) -> LintReport:
+    doc = doc or _synth_doc()
+    body = "\n".join(
+        [
+            f"- Grounded on: demo:demo-code @ {grounded}",
+            "- Open decisions: none",
+            *lines,
+        ]
+    )
+    return ticketcheck.check(ticket(body), load_doc=lambda repo, d: doc, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "/watch/:id",
+        "/watch/{id}",
+        "/watch/{id:int}",
+        "/watch/<int:id>",
+        "/watch/<id>",
+        "/watch/[id]",
+        "/watch/:id/",
+    ],
+)
+def test_normalise_path_unifies_param_syntaxes(raw):
+    assert ticketcheck.normalise_path(raw) == "/watch/{}"
+
+
+def test_normalise_path_catch_all_and_root():
+    assert ticketcheck.normalise_path("/docs/[...slug]") == "/docs/{}"
+    assert ticketcheck.normalise_path("/") == "/"
+
+
+def test_route_citation_from_code_verified():
+    ok = run_synth([f"- Routes: {_MEDIA} — GET /media/ping"])
+    assert errors(ok) == [], ok.render("Grounding")
+    bad = run_synth([f"- Routes: {_MEDIA} — POST /media/ping"])
+    (msg,) = errors(bad)
+    assert f"route 'POST /media/ping' is not in {_MEDIA}" in msg
+    assert "GET /media/ping" in msg and "(line 9)" in msg
+
+
+def test_route_citation_with_an_escaped_pipe_verifies():
+    raw = "| ANY | ^api/(a\\|b)/$ | Re.view | apps/media/src/media.controller.ts |  |\n"
+    keys = ticketcheck._route_keys(
+        "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+        + raw
+    )
+    assert list(keys.values()) == ["ANY ^api/(a|b)/$"]
+
+
+def test_route_param_syntax_normalised():
+    report = run_synth([f"- Routes: {_MEDIA} — GET /watch/:id"])
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_page_job_symbol_citations_verified():
+    good = run_synth(
+        [
+            f"- Pages: {_PAGES} — /watch/:id",
+            f"- Jobs: {_JOBS} — `createPartition`",
+            f"- Symbols: {_SYMS} — AdminController (route handlers)",
+        ]
+    )
+    assert errors(good) == [], good.render("Grounding")
+    bad = run_synth(
+        [
+            f"- Pages: {_PAGES} — /nowhere",
+            f"- Jobs: {_JOBS} — nightlyExport",
+            f"- Symbols: {_SYMS} — Ghost",
+        ]
+    )
+    msgs = errors(bad)
+    assert len(msgs) == 3, msgs
+    assert "page '/nowhere' is not in page.apps-web" in msgs[0]
+    assert "/admin" in msgs[0] and "/watch/{}" not in msgs[0]
+    assert "job 'nightlyExport' is not in " + _JOBS in msgs[1]
+    assert "createPartition" in msgs[1]
+    assert "symbol 'Ghost' is not in sym.apps-api" in msgs[2]
+    assert "AdminController" in msgs[2]
+
+
+def test_middleware_matcher_row_is_not_a_page():
+    report = run_synth([f"- Pages: {_PAGES} — /admin/:path*"])
+    assert any("is not in page.apps-web" in e for e in errors(report))
+
+
+def test_ascii_double_hyphen_separator_on_a_name_cited_line():
+    ok = run_synth(
+        [
+            f"- Jobs: {_JOBS} -- createPartition",
+            f"- Symbols: {_SYMS} --- AdminController",
+        ]
+    )
+    assert errors(ok) == [], ok.render("Grounding")
+    # a CSS custom property keeps its leading `--`
+    css = run_synth(["- Symbols: sym.apps-web — --brand"])
+    assert errors(css) == [], css.render("Grounding")
+
+
+def test_placeholder_job_names_never_match():
+    report = run_synth([f"- Jobs: {_JOBS} — (anonymous)"])
+    (msg,) = errors(report)
+    assert "job '(anonymous)' is not in" in msg
+    assert "(anonymous)" not in msg.split("copy a Name")[1]
+
+
+def test_new_rejected_when_scope_partial():
+    report = run_synth(
+        ["- Routes: GET /api/new in apps/api/src/new.controller.ts [NEW: tbd]"]
+    )
+    assert (
+        "cannot claim new: coverage of apps/api (routes) is partial; "
+        "move it to Open decisions (line 9)"
+    ) in errors(report)
+
+
+def test_new_rejected_when_scope_not_scanned():
+    report = run_synth(["- Pages: /x in `apps/other/app/x/page.tsx` [NEW: tbd]"])
+    assert any(
+        "coverage of apps/other/app/x/page.tsx (pages) is not scanned" in e
+        for e in errors(report)
+    ), errors(report)
+
+
+def test_new_allowed_when_scope_complete():
+    report = run_synth(
+        ["- Routes: GET /media/fresh in apps/media/src/fresh.controller.ts [NEW: tbd]"]
+    )
+    assert errors(report) == [], report.render("Grounding")
+    assert any("GET /media/fresh" in n for n in notes(report))
+
+
+def test_new_on_jobs_always_rejected():
+    report = run_synth(["- Jobs: nightly in apps/media/src/job.ts [NEW: tbd]"])
+    assert any(
+        "cannot claim new: coverage of " in e and "(jobs) is not scanned" in e
+        for e in errors(report)
+    )
+    # a scope whose row says partial reports partial
+    partial = run_synth(["- Jobs: nightly in apps/api/src/job.ts [NEW: tbd]"])
+    assert any("coverage of apps/api (jobs) is partial" in e for e in errors(partial))
+    # even a document that carries no struct.coverage at all
+    bare = run_synth(
+        ["- Jobs: nightly in apps/media/src/job.ts [NEW: tbd]"],
+        doc=_synth_doc(coverage=False),
+    )
+    assert any(
+        "cannot claim new: coverage of" in e and "(jobs)" in e for e in errors(bare)
+    )
+
+
+_HOISTED_COVERAGE = """\
+| Area | Scope | Framework/language | Status | Detail |
+| --- | --- | --- | --- | --- |
+| files | apps | - | complete |  |
+| jobs | apps/api | - | partial | x |
+| routes | . | Express | complete |  |
+| symbols | apps/api | typescript | complete |  |
+"""
+
+
+def test_new_in_nested_scope_without_a_row_is_not_scanned_not_inherited():
+    # root declares express (hoisted); apps/api is its own scope that no
+    # routes adapter ever read -> must not inherit the root's `complete`
+    doc = _synth_doc(coverage=_HOISTED_COVERAGE)
+    nested = run_synth(
+        ["- Routes: GET /hidden in apps/api/src/app.js [NEW: tbd]"], doc=doc
+    )
+    assert any(
+        "cannot claim new: coverage of apps/api (routes) is not scanned" in e
+        for e in errors(nested)
+    ), errors(nested)
+    # a path no nested scope claims still resolves to the root scope
+    root = run_synth(["- Routes: GET /top in src/app.js [NEW: tbd]"], doc=doc)
+    assert errors(root) == [], root.render("Grounding")
+
+
+_INDEX = "  - index watch_idx (user_id) on db.Event in {path} [NEW: tbd]"
+
+
+def test_new_index_allowed_in_a_complete_schema_scope():
+    report = run_synth(["- Tables:", _INDEX.format(path="db/m.sql")])
+    assert errors(report) == [], report.render("Grounding")
+    assert any("index watch_idx" in n for n in notes(report))
+
+
+@pytest.mark.parametrize(
+    "thing",
+    [
+        "partition RANGE (created_at)",
+        "primary key (id, created_at)",
+        "index watch_idx (user_id)",
+    ],
+)
+def test_new_index_partition_primary_key_rejected_in_a_partial_schema_scope(thing):
+    report = run_synth(
+        ["- Tables:", f"  - {thing} on db.Event in apps/api/db/m.sql [NEW: tbd]"]
+    )
+    assert (
+        "cannot claim new: coverage of apps/api (schema) is partial; "
+        "move it to Open decisions (line 10)"
+    ) in errors(report), errors(report)
+
+
+def test_new_index_needs_its_migration_path():
+    report = run_synth(
+        ["- Tables:", "  - index watch_idx (user_id) on db.Event [NEW: tbd]"]
+    )
+    assert any("[NEW] in Tables must name the file" in e for e in errors(report))
+
+
+def test_new_index_decision_row_is_judged():
+    # an id-less / known-id Tables line used to skip the D-row check entirely
+    report = run_synth(
+        ["- Tables:", _INDEX.format(path="db/m.sql").replace("tbd", "D99")]
+    )
+    assert any("[NEW: D99] needs a parent mission" in e for e in errors(report)), (
+        errors(report)
+    )
+
+
+def test_new_column_or_table_on_a_tables_line_is_not_schema_gated():
+    col = run_synth(["- Tables: db.Event.extra [NEW: tbd]"])
+    assert errors(col) == [], col.render("Grounding")
+    fresh = run_synth(
+        [
+            "- Tables:",
+            "  - index i (a) on db.Fresh in apps/api/db/m.sql [NEW: tbd]",
+        ]
+    )
+    assert not any("cannot claim new" in e for e in errors(fresh)), errors(fresh)
+
+
+def test_pre_release_doc_does_not_gate_a_new_index():
+    report = run_synth(
+        ["- Tables:", _INDEX.format(path="apps/api/db/m.sql")],
+        doc=_synth_doc(coverage=False),
+    )
+    assert not any("cannot claim new" in e for e in errors(report))
+
+
+def test_new_requires_target_file():
+    report = run_synth(["- Symbols: Fresh [NEW: tbd]"])
+    assert (
+        "[NEW] in Symbols must name the file it will live in "
+        "(… in <path> [NEW: D<n>]) (line 9)"
+    ) in errors(report)
+
+
+def test_new_files_gate_uses_top_level_directory():
+    ok = run_synth(["- Files: apps/media/src/fresh.ts [NEW: tbd]"])
+    assert errors(ok) == [], ok.render("Grounding")
+    root = run_synth(["- Files: Dockerfile [NEW: tbd]"])
+    assert any("coverage of . (files) is not scanned" in e for e in errors(root))
+    other = run_synth(["- Files: tools/x.ts [NEW: tbd]"])
+    assert any("coverage of tools (files) is not scanned" in e for e in errors(other))
+
+
+def test_doc_without_struct_coverage_skips_coverage_gate():
+    report = run_synth(
+        ["- Routes: GET /api/new in apps/api/src/n.controller.ts [NEW: tbd]"],
+        doc=_synth_doc(coverage=False),
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_new_marker_decision_is_still_judged():
+    report = run_synth(
+        ["- Routes: GET /media/fresh in apps/media/src/f.ts [NEW: D9]"],
+        load_decisions=decisions_of(MISSION),
+    )
+    # no parent mission in the ticket -> the D-ref cannot be verified
+    assert any("[NEW: D9] needs a parent mission" in e for e in errors(report))
+
+
+def test_new_on_existing_route_is_error_at_same_revision():
+    report = run_synth(
+        ["- Routes: GET /watch/:id in apps/media/src/media.controller.ts [NEW: tbd]"]
+    )
+    assert (
+        f"route 'GET /watch/:id' already exists in {_MEDIA}; cite it instead (line 9)"
+    ) in errors(report)
+
+
+def test_new_on_existing_page_symbol_and_file_is_error():
+    report = run_synth(
+        [
+            "- Pages: /admin in `apps/web/x/page.tsx` [NEW: tbd]",
+            "- Symbols: AdminController in apps/api/src/admin.controller.ts [NEW: tbd]",
+            "- Files: apps/media/src/media.controller.ts [NEW: tbd]",
+        ]
+    )
+    msgs = errors(report)
+    assert any(f"already exists in {_PAGES}" in m for m in msgs)
+    assert any(f"already exists in {_SYMS}" in m for m in msgs)
+    assert any("already exists in struct.files.apps" in m for m in msgs)
+
+
+LISTED_LINE = ["- Routes: GET /media/ping in apps/media/src/p.ts [NEW: tbd]"]
+
+
+def _old_ref(content: str) -> ResolvedRef:
+    return ResolvedRef(
+        ref=KBRef(repo_id="demo", doc_id="demo-code", section_id=_MEDIA),
+        status="ok",
+        citation=f"demo-code §{_MEDIA}",
+        content=content,
+        tokens=0,
+    )
+
+
+def test_new_on_existing_thing_is_note_when_listed_only_after_grounded_rev():
+    seen: list[tuple] = []
+
+    def load_at(repo, doc_id, rev, ids):
+        seen.append((repo, doc_id, rev, ids))
+        return [_old_ref("| Method | Path |\n| --- | --- |\n| GET | /media/other |\n")]
+
+    report = run_synth(LISTED_LINE, grounded="deadbee", load_at=load_at)
+    assert seen == [("demo", "demo-code", "deadbee", [_MEDIA])]
+    assert not any("already exists" in e for e in errors(report))
+    assert any(
+        f"route 'GET /media/ping' now exists in {_MEDIA} — built since grounding" in n
+        for n in notes(report)
+    )
+
+
+def test_new_on_thing_listed_at_grounded_rev_is_error_even_when_moved():
+    body = "| Method | Path |\n| --- | --- |\n| GET | /media/ping |\n"
+    report = run_synth(
+        LISTED_LINE, grounded="deadbee", load_at=lambda *a: [_old_ref(body)]
+    )
+    assert any(
+        f"already exists in {_MEDIA}; cite it instead" in e for e in errors(report)
+    )
+
+
+@pytest.mark.parametrize("outcome", ["none", "raises", "no-loader"])
+def test_new_on_existing_thing_without_a_baseline_is_a_note(outcome):
+    def load_at(*a):
+        if outcome == "raises":
+            raise KbError("no baseline")
+        return None
+
+    report = run_synth(
+        LISTED_LINE,
+        grounded="deadbee",
+        load_at=None if outcome == "no-loader" else load_at,
+    )
+    assert not any("already exists" in e for e in errors(report))
+    assert any("now exists in" in n for n in notes(report))
+
+
+def test_files_not_found_message_names_struct_files_when_that_proved_absence(code_doc):
+    kb_dir, rev = code_doc
+    report = run(ticket(grounding(rev, Files=["src/airspace/ghost.py"])), kb_dir)
+    assert any(
+        "file 'src/airspace/ghost.py' not in struct.tree" in e and "struct.files" in e
+        for e in errors(report)
+    )
+
+
+def test_existing_ticket_fixtures_unchanged_with_real_coverage(code_doc):
+    kb_dir, rev = code_doc
+    report = run(
+        ticket(grounding(rev, Files=["src/airspace/approval.py [NEW: made here]"])),
+        kb_dir,
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+# --- Task 11 fix round 1 --------------------------------------------------
+
+
+def test_two_route_ids_on_one_line_are_checked_separately():
+    line = f"- Routes: {_MEDIA} — GET /media/ping, {_API} — POST /api/x"
+    report = run_synth([line])
+    assert errors(report) == [], report.render("Grounding")
+    swapped = run_synth([f"- Routes: {_MEDIA} — POST /api/x, {_API} — GET /media/ping"])
+    msgs = errors(swapped)
+    assert len(msgs) == 2, msgs
+    assert f"is not in {_MEDIA}" in msgs[0] and f"is not in {_API}" in msgs[1]
+
+
+@pytest.mark.parametrize(
+    "fname",
+    [
+        "users.route.ts",
+        "+page.svelte",
+        "+page.server.ts",
+        "export.job.ts",
+        "a-sym.x.ts",
+    ],
+)
+def test_file_names_are_never_read_as_section_ids(fname):
+    prose = run_synth([f"- Routes: {_MEDIA} — GET /media/ping (handled in {fname})"])
+    assert errors(prose) == [], errors(prose)
+    target = run_synth(
+        [f"- Routes: GET /media/fresh in apps/media/src/{fname} [NEW: tbd]"]
+    )
+    assert errors(target) == [], errors(target)
+    assert any(n.startswith("new: GET /media/fresh") for n in notes(target))
+
+
+def test_structure_is_read_once_per_check():
+    doc = _synth_doc()
+    reads: list[str] = []
+
+    def read_raw(group):
+        reads.append(group)
+        return doc.read_raw(group)
+
+    counted = ticketcheck.LoadedDoc(doc.manifest, doc.source, doc.read_group, read_raw)
+    run_synth(
+        [
+            "- Files:",
+            "  - apps/media/src/media.controller.ts",
+            "  - apps/media/src/fresh.ts [NEW: tbd]",
+        ],
+        doc=counted,
+    )
+    assert reads == ["structure"]
+
+
+def test_exists_label_has_no_code_span_backticks():
+    report = run_synth(
+        ["- Symbols: `AdminController` in apps/api/src/admin.controller.ts [NEW: tbd]"]
+    )
+    assert any(
+        e.startswith("symbol 'AdminController' already exists") for e in errors(report)
+    )
+
+
+def test_unscoped_target_names_the_path():
+    report = run_synth(["- Symbols: Foo in tools/gen/foo.ts [NEW: tbd]"])
+    assert any(
+        "coverage of tools/gen/foo.ts (symbols) is not scanned" in e
+        for e in errors(report)
+    )
+
+
+def test_multi_row_scope_uses_the_row_matching_the_file_language():
+    # apps/web symbols: css partial, tsx complete
+    ok = run_synth(["- Symbols: Foo in apps/web/src/foo.tsx [NEW: tbd]"])
+    assert errors(ok) == [], errors(ok)
+    bad = run_synth(["- Symbols: --x in apps/web/src/theme.css [NEW: tbd]"])
+    assert any(
+        "coverage of apps/web (symbols, css) is partial" in e for e in errors(bad)
+    ), errors(bad)
+    # language not determinable (.md): worst row of the scope decides
+    worst = run_synth(["- Symbols: Foo in apps/web/src/foo.md [NEW: tbd]"])
+    assert any(
+        "coverage of apps/web (symbols, css) is partial" in e for e in errors(worst)
+    )
+
+
+# --- Task 11 fix round 2 --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "sid", "good", "bad"),
+    [
+        ("Routes", _MEDIA, "GET /media/ping", "GET /bogus"),
+        ("Pages", _PAGES, "/admin", "/bogus"),
+        ("Jobs", _JOBS, "`createPartition`", "`nope`"),
+        ("Symbols", _SYMS, "`AdminController`", "`Ghost`"),
+    ],
+)
+def test_repeated_id_checks_every_segment(field, sid, good, bad):
+    ok = run_synth([f"- {field}: {sid} — {good}, {sid} — {good}"])
+    assert errors(ok) == [], errors(ok)
+    report = run_synth([f"- {field}: {sid} — {good}, {sid} — {bad}"])
+    (msg,) = errors(report)
+    assert f"is not in {sid}" in msg, msg
+
+
+@pytest.mark.parametrize(
+    ("field", "sid", "cite"),
+    [
+        ("Routes", _MEDIA, "GET /media/ping"),
+        ("Pages", _PAGES, "/admin"),
+        ("Jobs", _JOBS, "`createPartition`"),
+        ("Symbols", _SYMS, "`AdminController`"),
+    ],
+)
+def test_citation_before_the_first_id_is_not_attached(field, sid, cite):
+    report = run_synth([f"- {field}: {cite} via {sid}"])
+    (msg,) = errors(report)
+    assert "not attached to a section id" in msg and "(line 9)" in msg, msg
+
+
+def test_citation_before_first_id_is_judged_per_line_not_per_segment():
+    report = run_synth(
+        [f"- Routes: GET /x via {_MEDIA} — GET /media/ping, {_API} — POST /api/x"]
+    )
+    assert sum("not attached" in e for e in errors(report)) == 1
+
+
+def test_backticked_job_name_with_spaces_is_kept_whole():
+    exists = run_synth(["- Jobs: `nightly cleanup` in apps/api/src/n.ts [NEW: tbd]"])
+    assert any(
+        "job 'nightly cleanup' already exists in " + _JOBS in e for e in errors(exists)
+    ), errors(exists)
+    cited = run_synth([f"- Jobs: {_JOBS} — `nightly cleanup`"])
+    assert errors(cited) == [], errors(cited)
+
+
+def test_css_variable_keeps_its_dashes():
+    exists = run_synth(["- Symbols: --brand in apps/web/src/b.css [NEW: tbd]"])
+    assert any(
+        "symbol '--brand' already exists in sym.apps-web" in e for e in errors(exists)
+    ), errors(exists)
+    cited = run_synth(["- Symbols: sym.apps-web — --brand"])
+    assert errors(cited) == [], errors(cited)
+
+
+def test_coverage_languages_come_from_the_extractor_table():
+    from strata_kb.codeingest.extractors import _ts
+
+    assert not hasattr(ticketcheck, "_EXT_LANGUAGE")
+    assert ticketcheck.LANG_BY_SUFFIX is _ts.LANG_BY_SUFFIX
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "route.ts",
+        "page.tsx",
+        "job.ts",
+        "sym.css",
+        "db.ts",
+        "api.js",
+        "struct.md",
+        "cmd.py",
+        "int.json",
+    ],
+)
+def test_bare_framework_file_names_are_never_ids(name):
+    for tail in (f"(see {name})", f"see {name}.", f"see {name}, then"):
+        report = run_synth([f"- Routes: {_MEDIA} — GET /media/ping {tail}"])
+        assert errors(report) == [], (tail, errors(report))
+
+
+def test_ids_that_merely_start_like_an_extension_still_count():
+    report = run_synth([f"- Routes: {_MEDIA} — GET /media/ping, route.tsx-extra"])
+    assert any("unknown id 'route.tsx-extra'" in e for e in errors(report))
+    report = run_synth(["- Routes: db.json_events"])
+    assert any("unknown id 'db.json_events'" in e for e in errors(report))
+
+
+# --- Task 12: drift judges the new citations -------------------------------
+
+
+def _synth_ref(sid: str, status: str) -> ResolvedRef:
+    return _drift_ref(sid, status, "OLD\n")
+
+
+def test_moved_revision_route_citation_still_valid_is_pass_note():
+    report = run_synth(
+        [f"- Routes: {_MEDIA} — GET /watch/:id"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_MEDIA, "ok")],
+    )
+    assert errors(report) == [], report.render("Grounding")
+    assert any("still valid at @abc1234" in n for n in notes(report))
+
+
+def test_moved_revision_route_citation_gone_is_tier2():
+    report = run_synth(
+        [f"- Routes: {_MEDIA} — GET /watch/:id/gone"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_MEDIA, "ok")],
+    )
+    assert tier2("deadbee", "abc1234") in errors(report)
+
+
+def test_moved_revision_changed_page_section_warns_with_diff():
+    report = run_synth(
+        [f"- Pages: {_PAGES} — /admin"],
+        grounded="deadbee",
+        load_drift=lambda *a: [_synth_ref(_PAGES, "stale")],
+    )
+    assert errors(report) == []
+    assert any(f"§{_PAGES} changed" in w for w in warnings(report))
+
+
+def test_new_item_mixed_with_a_citation_on_one_line_is_an_error():
+    report = run_synth(
+        [
+            f"- Routes: {_MEDIA} — GET /bogus, POST /media/fresh in "
+            "apps/media/src/f.ts [NEW: tbd]"
+        ]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1, msgs
+    assert "own sub-bullet" in msgs[0]
+
+
+def test_new_item_on_its_own_sub_bullet_beside_a_citation_passes():
+    report = run_synth(
+        [
+            "- Routes:",
+            f"  - {_MEDIA} — GET /media/ping",
+            "  - POST /media/fresh in apps/media/src/f.ts [NEW: tbd]",
+        ]
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+@pytest.mark.parametrize(
+    "line, bad",
+    [
+        (f"- Symbols: {_SYMS} — AdminController, Bogus", "symbol 'Bogus'"),
+        (f"- Jobs: {_JOBS} — createPartition, bogus", "job 'bogus'"),
+    ],
+)
+def test_every_listed_name_of_a_job_or_symbol_id_is_checked(line, bad):
+    msgs = errors(run_synth([line]))
+    assert len(msgs) == 1 and bad in msgs[0], msgs
+
+
+def test_listed_names_with_backticks_and_commas_stay_whole():
+    ok = run_synth([f"- Jobs: {_JOBS} — createPartition, `nightly cleanup`"])
+    assert errors(ok) == [], ok.render("Grounding")
+
+
+def test_files_new_entry_is_its_own_path():
+    report = run_synth(
+        ["- Files:", "  - apps/media/src/x.ts in apps/media/src/x.ts [NEW: tbd]"]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1 and "a Files entry is its own path" in msgs[0], msgs
+
+
+def _api_only_doc():
+    body = (
+        "## api.media title\n\n| Method | Path | Summary |\n| --- | --- | --- |\n"
+        "| GET | /media/ping | ping |\n"
+    )
+    manifest = models.Manifest(
+        id="demo-code",
+        title="demo",
+        revision="abc1234",
+        sections=[
+            models.SectionEntry(id="api.media", title="m", file="api"),
+            models.SectionEntry(id="struct.tree", title="t", file="structure"),
+        ],
+    )
+    return ticketcheck.LoadedDoc(
+        manifest=manifest,
+        source="synthetic",
+        read_group={"api": body}.get,
+        read_raw=lambda g: (
+            "## struct.tree Repository tree\n\n```\n- apps/\n  - apps/media/\n```\n"
+            if g == "structure"
+            else None
+        ),
+    )
+
+
+def test_pre_release_doc_keeps_a_mixed_new_line_passing():
+    # grounded before struct.coverage: base passed a cited route + a [NEW] one
+    report = run_synth(
+        [
+            "- Routes: api.media — GET /media/ping, POST /media/upload [NEW: tbd]",
+        ],
+        doc=_api_only_doc(),
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_pre_release_doc_keeps_a_new_on_an_api_line_passing():
+    report = run_synth(
+        ["- Routes: api.media — POST /media/upload [NEW: tbd]"], doc=_api_only_doc()
+    )
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_mixed_line_yields_only_the_sub_bullet_error():
+    report = run_synth(
+        [
+            f"- Routes: {_MEDIA} — GET /media/ping, GET /media/ping in apps/media/src/f.ts [NEW: tbd]"
+        ]
+    )
+    msgs = errors(report)
+    assert len(msgs) == 1 and "own sub-bullet" in msgs[0], msgs
+
+
+def test_prose_after_a_listed_name_is_not_a_name():
+    for tail in (
+        "AdminController, used by the admin page",
+        "AdminController (guards, admin)",
+        "AdminController, `AdminController`",
+    ):
+        report = run_synth([f"- Symbols: {_SYMS} — {tail}"])
+        assert errors(report) == [], (tail, errors(report))

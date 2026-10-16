@@ -69,9 +69,12 @@ class TestTreeExtractor:
     def test_always_detects(self, repo):
         assert tree_ext.TreeExtractor().detect(repo) is True
 
-    def test_emits_a_single_struct_tree_section(self, repo):
+    def test_emits_struct_tree_plus_one_struct_files_per_top_dir(self, repo):
         sections = _by_id(tree_ext.TreeExtractor().extract(repo, _opts(repo)))
-        assert list(sections) == ["struct.tree"]
+        assert [i for i in sections if not i.startswith("struct.files.")] == [
+            "struct.tree"
+        ]
+        assert "struct.files.root" in sections and "struct.files.src" in sections
         assert sections["struct.tree"].group == "structure"
         assert sections["struct.tree"].summary
 
@@ -3570,8 +3573,10 @@ class TestSchemaExtractor:
         result = schema_ext.SchemaExtractor().extract(root, _opts(root))
         s = _by_id(result)["db.t"]
         assert "1 column," in s.summary
-        assert "CONSTRAINT" not in s.l2_md
-        assert any("002.sql" in w for w in result.warnings)
+        # recorded as an index, never a column; no longer a warning
+        assert "| CONSTRAINT" not in s.l2_md
+        assert "- uq_t (id) unique" in s.l2_md
+        assert not [w for w in result.warnings if "002.sql" in w]
 
     def test_re_create_table_if_not_exists_keeps_accumulated_alter_columns_and_warns(
         self, tmp_path
@@ -4462,6 +4467,1102 @@ class TestSchemaExtractor:
         assert schema_ext._dirname("") != schema_ext._dirname("root_level.sql")
 
 
+class TestSchemaStructure:
+    """Partition, primary key, indexes and Prisma table name (+ coverage)."""
+
+    @staticmethod
+    def _write(root: Path, rel: str, text: str) -> None:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _run(self, root: Path, **kw):
+        return schema_ext.SchemaExtractor().extract(root, _opts(root, **kw))
+
+    def test_prisma_and_sql_migration_merge_partition_and_index(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            """model PlaybackEvent {
+  id BigInt @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  @@id([id, createdAt])
+  @@index([createdAt])
+  @@map("playback_events")
+}""",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260101_init/migration.sql",
+            'CREATE TABLE "playback_events" ("id" BIGINT, "created_at" TIMESTAMPTZ, '
+            'PRIMARY KEY ("id","created_at")) PARTITION BY RANGE ("created_at");',
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.PlaybackEvent"]
+        assert "Table: playback_events" in sec.l2_md
+        assert 'Partition: RANGE ("created_at")' in sec.l2_md
+        assert "(unnamed) (createdAt)" in sec.l2_md
+        assert "Primary key: id, createdAt" in sec.l2_md
+        assert "[sql]" not in sec.l2_md  # same key under @map: no disagreement
+        assert "db.playback_events" not in _by_id(result)
+
+    def test_prisma_keys_and_indexes(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            """model User {
+  id Int @id
+  email String @unique
+  org String
+  slug String
+  @@unique([org, slug], name: "org_slug")
+  @@index([org], name: "user_org_idx")
+  @@map("users")
+}
+model Bare {
+  a Int
+  b Int
+  @@id([a, b])
+}""",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        user = by_id["db.User"].l2_md
+        assert "Table: users" in user
+        assert "Primary key: id" in user
+        assert "- (unnamed) (email) unique" in user
+        assert "- org_slug (org, slug) unique" in user
+        assert "- user_org_idx (org)" in user
+        assert "Partition: none" in user
+        bare = by_id["db.Bare"].l2_md
+        assert "Table: Bare" in bare
+        assert "Primary key: a, b" in bare
+        assert "Indexes: none" in bare
+
+    def test_sql_create_index_recorded_not_a_column(self, tmp_path):
+        self._write(
+            tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT, a INT, b INT);\n"
+        )
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_t_ab ON t USING btree (a, b DESC);\n"
+            'CREATE INDEX "idx_t_a" ON "t" ("a");\n',
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "3 columns" in sec.summary
+        assert "- idx_t_ab (a, b) unique" in sec.l2_md
+        assert "- idx_t_a (a)" in sec.l2_md
+        assert not [w for w in result.warnings if "002.sql" in w]
+
+    def test_sql_create_index_on_unknown_table_warns(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE INDEX i ON ghost (a);\n")
+        result = self._run(tmp_path)
+        assert any("ghost" in w and "001.sql" in w for w in result.warnings)
+
+    def test_sql_drop_index_removes_it(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT);\nCREATE INDEX i ON t (a);\n"
+            "DROP INDEX IF EXISTS i;\nCREATE INDEX j ON t (id);\n",
+        )
+        sec = _by_id(self._run(tmp_path))["db.t"]
+        assert "- i (a)" not in sec.l2_md
+        assert "- j (id)" in sec.l2_md
+
+    def test_sql_add_constraint_primary_key_and_unique(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT, a INT);\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "ALTER TABLE t ADD CONSTRAINT t_pk PRIMARY KEY (id);\n"
+            "ALTER TABLE t ADD CONSTRAINT t_a_key UNIQUE (a);\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "Primary key: id" in sec.l2_md
+        assert "- t_a_key (a) unique" in sec.l2_md
+        assert "2 columns" in sec.summary
+        assert not [w for w in result.warnings if "002.sql" in w]
+
+    def test_sql_partition_by_and_partition_of(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT, at TIMESTAMPTZ) PARTITION BY RANGE (at);\n"
+            "CREATE TABLE ev_2026 PARTITION OF ev FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"
+            "CREATE TABLE ev_2027 PARTITION OF ev FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.ev"]
+        assert "Partition: RANGE (at)" in sec.l2_md
+        assert "Partitions: ev_2026, ev_2027" in sec.l2_md
+        assert "db.ev_2026" not in _by_id(result)
+        assert not [w for w in result.warnings if "recognised only" in w]
+
+    def test_index_and_partition_expressions_never_carry_a_string_literal(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE users (id INT, email TEXT, region TEXT);\n"
+            "CREATE INDEX users_lower_idx ON users (lower(email || 'SEKRET_IDXEXPR'));\n"
+            "CREATE INDEX t_e ON users (to_tsvector('SEKRET_CFG', region), id);\n"
+            "CREATE TABLE pe (id INT, region TEXT) "
+            "PARTITION BY LIST (coalesce(region, 'SEKRET_PARTEXPR'));\n",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        blob = by_id["db.users"].l2_md + by_id["db.pe"].l2_md
+        assert "SEKRET" not in blob
+        assert "users_lower_idx (lower(email || ?))" in blob
+        assert "t_e (to_tsvector(?, region), id)" in blob
+        assert "Partition: LIST (coalesce(region, ?))" in blob
+
+    def test_per_migration_directories_share_one_table(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260101_init/migration.sql",
+            'CREATE TABLE "t" ("id" INT);\n',
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/20260102_idx/migration.sql",
+            'CREATE INDEX "t_id_idx" ON "t"("id");\n',
+        )
+        result = self._run(tmp_path)
+        assert "- t_id_idx (id)" in _by_id(result)["db.t"].l2_md
+        assert not [w for w in result.warnings if "different migration directory" in w]
+
+    def test_alter_rename_marks_schema_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE a (id INT);\n\n\nALTER TABLE a RENAME TO b;\n",
+        )
+        self._write(tmp_path, "migrations/002.sql", "CREATE TABLE c (id INT);\n")
+        result = self._run(tmp_path)
+        rows = {
+            (r.scope, r.framework): r for r in result.coverage if r.area == "schema"
+        }
+        row = rows[(".", "sql")]
+        assert row.status == "partial"
+        assert row.detail == "migrations/001.sql:4"
+
+    @pytest.mark.parametrize(
+        ("sql", "line"),
+        [
+            ("SELECT create_hypertable('m', 'ts');", 2),
+            ("SELECT partman.create_parent('public.m', 'ts', 'native', 'daily');", 2),
+            ("SELECT create_distributed_table('m', 'id');", 2),
+            ("SELECT add_dimension('m', 'region', 4);", 2),
+            ("SELECT * INTO m_copy FROM m;", 2),
+            ("SET NOCOUNT ON\nEXEC sp_rename 'm.ts', 'at', 'COLUMN'", 2),
+        ],
+    )
+    def test_statements_that_change_a_table_without_ddl_are_sites(
+        self, tmp_path, sql, line
+    ):
+        self._write(
+            tmp_path, "migrations/001.sql", f"CREATE TABLE m (id INT, ts INT);\n{sql}\n"
+        )
+        result = self._run(tmp_path)
+        row = next(r for r in result.coverage if r.area == "schema")
+        assert (row.status, row.detail) == ("partial", f"migrations/001.sql:{line}")
+
+    def test_plain_select_and_trigger_execute_stay_neutral(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE m (id INT);\nSELECT 1;\n"
+            "CREATE TRIGGER t AFTER INSERT ON m FOR EACH ROW\n"
+            "  EXECUTE FUNCTION f();\n",
+        )
+        result = self._run(tmp_path)
+        row = next(r for r in result.coverage if r.area == "schema")
+        assert row.status == "complete"
+
+    def test_prisma_fulltext_is_an_index(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            'model P {\n  id Int @id\n  title String\n  @@fulltext([title], map: "p_ft")\n}\n',
+        )
+        result = self._run(tmp_path)
+        assert "- p_ft (fulltext: title)" in _by_id(result)["db.P"].l2_md
+        row = next(r for r in result.coverage if r.framework == "prisma")
+        assert row.status == "complete"
+
+    def test_complete_coverage_row_per_scope_and_reader(self, tmp_path):
+        self._write(tmp_path, "apps/api/package.json", "{}")
+        self._write(
+            tmp_path, "apps/api/migrations/001.sql", "CREATE TABLE a (id INT);\n"
+        )
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE b (id INT);\n")
+        self._write(tmp_path, "prisma/schema.prisma", "model M {\n  id Int @id\n}\n")
+        result = self._run(tmp_path)
+        rows = sorted(
+            (r.scope, r.framework, r.status, r.detail)
+            for r in result.coverage
+            if r.area == "schema"
+        )
+        assert rows == [
+            (".", "prisma", "complete", ""),
+            (".", "sql", "complete", ""),
+            ("apps/api", "sql", "complete", ""),
+        ]
+
+    def test_sql_and_prisma_disagreement_is_shown_with_sources(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model T {\n  a Int\n  b Int\n  @@id([a])\n}\n",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/1_init/migration.sql",
+            'CREATE TABLE "T" ("a" INT, "b" INT, PRIMARY KEY ("b"));\n',
+        )
+        sec = _by_id(self._run(tmp_path))["db.T"]
+        assert "Primary key: a [prisma] / b [sql]" in sec.l2_md
+
+    def test_prisma_multiline_index_and_unparsed_attribute(self, tmp_path):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model M {\n  id Int @id\n  x Int\n  @@index([x,\n    id])\n"
+            "  @@unique(fields: x)\n}\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.M"]
+        assert "- (unnamed) (x, id)" in sec.l2_md
+        assert "2 columns" in sec.summary
+        row = next(r for r in result.coverage if r.framework == "prisma")
+        assert (row.status, row.detail) == ("partial", "prisma/schema.prisma:6")
+
+    def test_alembic_create_index(self, tmp_path):
+        # The index lives in an earlier-sorting file than the create_table:
+        # alembic revision ids are not ordered, so ops apply after all tables.
+        self._write(
+            tmp_path,
+            "alembic/versions/0001_idx.py",
+            "def upgrade():\n"
+            "    op.create_index('ix_users_email', 'users', ['email'], unique=True)\n"
+            "    op.create_index(op.f('ix_users_org'), 'users', ['org', 'slug'])\n",
+        )
+        self._write(
+            tmp_path,
+            "alembic/versions/0002_users.py",
+            "def upgrade():\n"
+            "    op.create_table('users',\n"
+            "        sa.Column('id', sa.Integer(), nullable=False),\n"
+            "        sa.Column('email', sa.String()),\n"
+            "        sa.PrimaryKeyConstraint('id'),\n"
+            "    )\n"
+            "    op.create_table('links', sa.Column('a', sa.Integer()))\n"
+            "    op.create_primary_key('links_pk', 'links', ['a'])\n",
+        )
+        by_id = _by_id(self._run(tmp_path))
+        users = by_id["db.users"].l2_md
+        assert "- ix_users_email (email) unique" in users
+        assert "- ix_users_org (org, slug)" in users
+        assert "Primary key: id" in users
+        assert "Primary key: a" in by_id["db.links"].l2_md
+
+    def test_ef_has_index_unique(self, tmp_path):
+        self._write(
+            tmp_path,
+            "Data/Migrations/20260101_Init.cs",
+            """migrationBuilder.CreateTable(
+    name: "Users",
+    columns: table => new { Id = table.Column<int>() },
+    constraints: table =>
+    {
+        table.PrimaryKey("PK_Users", x => x.Id);
+    });
+migrationBuilder.CreateIndex(
+    name: "IX_Users_Org",
+    table: "Users",
+    columns: new[] { "Org", "Slug" });
+""",
+        )
+        self._write(
+            tmp_path,
+            "Data/Migrations/AppDbContextModelSnapshot.cs",
+            """modelBuilder.Entity("App.User", b =>
+{
+    b.HasKey("Id");
+    b.HasIndex("Email").IsUnique();
+    b.HasIndex("Org", "Slug");
+    b.ToTable("Users");
+});
+""",
+        )
+        sec = _by_id(self._run(tmp_path))["db.Users"]
+        assert "Primary key: Id" in sec.l2_md
+        assert "- IX_Users_Org (Org, Slug)" in sec.l2_md
+        assert "- (unnamed) (Email) unique" in sec.l2_md
+        # the snapshot's unnamed HasIndex duplicates the named CreateIndex
+        assert "- (unnamed) (Org, Slug)" not in sec.l2_md
+        assert sec.l2_md.count("(Org, Slug)") == 1
+
+    def test_sqlite_pragma_indexes(self, tmp_path):
+        db = tmp_path / "app.db"
+        con = sqlite3.connect(db)
+        con.executescript(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT);"
+            "CREATE INDEX idx_t_a ON t(a);"
+            "CREATE UNIQUE INDEX idx_t_ab ON t(a, b);"
+        )
+        con.close()
+        sec = _by_id(self._run(tmp_path, db_paths=(db,)))["db.t"]
+        assert "- idx_t_a (a)" in sec.l2_md
+        assert "- idx_t_ab (a, b) unique" in sec.l2_md
+        assert "Primary key: id" in sec.l2_md
+
+    # ---- fix round 1: no false `complete`, duplicates, migration sets ----
+
+    def _schema_rows(self, result):
+        return {
+            (r.scope, r.framework): (r.status, r.detail)
+            for r in result.coverage
+            if r.area == "schema"
+        }
+
+    def test_unrecognised_create_index_and_create_table_mark_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT);\nCREATE INDEX i ON t;\n"
+            'CREATE TABLE "my-t" (id INT);\n',
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_unparsed_named_constraint_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT);\n"
+            "ALTER TABLE t ADD CONSTRAINT t_pk PRIMARY KEY USING INDEX t_idx;\n"
+            "ALTER TABLE t ADD CONSTRAINT u UNIQUE NULLS NOT DISTINCT (a);\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_multi_action_alter_records_every_constraint(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (id INT, a INT, b INT);\n"
+            "ALTER TABLE t ADD CONSTRAINT u1 UNIQUE (a), ADD CONSTRAINT u2 UNIQUE (b);\n"
+            "ALTER TABLE t ADD COLUMN c INT, ADD COLUMN d INT;\n"
+            "ALTER TABLE t ADD CONSTRAINT u3 UNIQUE (c), ADD CONSTRAINT u4 UNIQUE USING INDEX x;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "- u1 (a) unique" in sec.l2_md and "- u2 (b) unique" in sec.l2_md
+        assert "- u3 (c) unique" in sec.l2_md
+        assert "5 columns" in sec.summary  # id a b c d
+        assert self._schema_rows(result)[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:4",
+        )
+
+    def test_alter_index_rename_and_partition_attach_detach(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE p (id INT, a INT) PARTITION BY RANGE (id);\n"
+            "CREATE INDEX i ON p (a);\n"
+            "ALTER INDEX i RENAME TO j;\n"
+            "ALTER TABLE p ATTACH PARTITION c1 FOR VALUES FROM (1) TO (2);\n"
+            "ALTER TABLE p ATTACH PARTITION c2 FOR VALUES FROM (2) TO (3);\n"
+            "ALTER TABLE p DETACH PARTITION c1;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.p"]
+        assert "- j (a)" in sec.l2_md and "- i (a)" not in sec.l2_md
+        assert "Partitions: c2" in sec.l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_unknown_index_rename_and_partition_detach_mark_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE p (id INT);\n"
+            "ALTER INDEX ghost RENAME TO other;\n"
+            "ALTER TABLE p DETACH PARTITION nope;\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_create_table_body_records_unique_and_key_indexes(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (\n"
+            "  id INT,\n  email TEXT UNIQUE,\n  a INT,\n  b INT,\n  c INT,\n"
+            "  key VARCHAR(10),\n"
+            "  CONSTRAINT uq_ab UNIQUE (a, b),\n"
+            "  UNIQUE (c),\n"
+            "  KEY idx_a (a),\n"
+            "  UNIQUE KEY uk_b (b)\n);\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "- (unnamed) (email) unique" in sec.l2_md
+        assert "- uq_ab (a, b) unique" in sec.l2_md
+        assert "- (unnamed) (c) unique" in sec.l2_md
+        assert "- idx_a (a)" in sec.l2_md
+        assert "- uk_b (b) unique" in sec.l2_md
+        assert "| key | VARCHAR(10)" in sec.l2_md  # a column named key stays a column
+        assert "6 columns" in sec.summary
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_unparsed_body_constraint_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (\n  a INT,\n  UNIQUE NULLS NOT DISTINCT (a)\n);\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:1",
+        )
+
+    def test_alembic_unique_constraints_and_batch_ops(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('users',\n"
+            "        sa.Column('id', sa.Integer(), primary_key=True),\n"
+            "        sa.Column('email', sa.String(), unique=True),\n"
+            "        sa.Column('a', sa.String()),\n"
+            "        sa.Column('b', sa.String()),\n"
+            "        sa.UniqueConstraint('a', 'b', name='uq_users_ab'),\n"
+            "    )\n"
+            "    op.create_unique_constraint('uq_users_b', 'users', ['b'])\n"
+            "    with op.batch_alter_table('users') as batch_op:\n"
+            "        batch_op.create_index('ix_users_a', ['a'], unique=False)\n"
+            "        batch_op.create_unique_constraint('uq_users_ea', ['email', 'a'])\n",
+        )
+        result = self._run(tmp_path)
+        users = _by_id(result)["db.users"].l2_md
+        assert "- (unnamed) (email) unique" in users
+        assert "- uq_users_ab (a, b) unique" in users
+        assert "- uq_users_b (b) unique" in users
+        assert "- ix_users_a (a)" in users
+        assert "- uq_users_ea (email, a) unique" in users
+        assert not [w for w in result.warnings if "unknown table" in w]
+        assert self._schema_rows(result)[(".", "alembic")][0] == "complete"
+
+    def test_alembic_unresolvable_batch_table_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('users', sa.Column('id', sa.Integer()))\n"
+            "    with op.batch_alter_table(TABLE) as b:\n"
+            "        b.create_index('ix', ['id'])\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "alembic")]
+        assert status == "partial"
+        assert detail == "alembic/versions/0001.py:4"
+
+    def test_unparseable_file_marks_reader_partial_beside_good_tables(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT);\n")
+        bad = tmp_path / "migrations" / "002.sql"
+        bad.write_bytes(b"CREATE TABLE u (id INT);\xff\xfe\n")
+        result = self._run(tmp_path)
+        rows = self._schema_rows(result)
+        assert rows[(".", "sql")] == ("partial", "migrations/002.sql")
+        assert any("could not parse migrations/002.sql" in w for w in result.warnings)
+
+    def test_comment_strip_desync_marks_reader_partial(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (id INT);\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "/* never closed\nCREATE TABLE u (id INT);\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/002.sql" in detail
+
+    def test_named_index_replaces_unnamed_duplicate_across_prisma_and_sql(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "prisma/schema.prisma",
+            "model User {\n  id Int @id\n  email String @unique\n}\n",
+        )
+        self._write(
+            tmp_path,
+            "prisma/migrations/1_init/migration.sql",
+            'CREATE TABLE "User" ("id" INT, "email" TEXT);\n'
+            'CREATE UNIQUE INDEX "User_email_key" ON "User"("email");\n',
+        )
+        sec = _by_id(self._run(tmp_path))["db.User"]
+        rows = [ln for ln in sec.l2_md.splitlines() if ln.startswith("- ")]
+        assert rows == ["- User_email_key (email) unique"]
+
+    def test_per_migration_directory_later_add_column_applies(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/2024-01-01_a/up.sql",
+            "CREATE TABLE users (id INT);\n",
+        )
+        self._write(
+            tmp_path,
+            "migrations/2024-02-01_b/up.sql",
+            "ALTER TABLE users ADD COLUMN email TEXT;\n",
+        )
+        result = self._run(tmp_path)
+        assert "2 columns" in _by_id(result)["db.users"].summary
+        assert not [w for w in result.warnings if "different migration directory" in w]
+
+    # ---- fix round 2: unknown DDL is a coverage site by default ----
+
+    def test_multiline_drop_column_in_multi_action_alter_marks_partial(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            'CREATE TABLE "User" ("b" INT);\n'
+            'ALTER TABLE "User" ADD COLUMN "a" TEXT,\nDROP COLUMN "b";\n',
+        )
+        result = self._run(tmp_path)
+        assert "2 columns" in _by_id(result)["db.User"].summary
+        assert self._schema_rows(result)[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:2",
+        )
+
+    def test_alter_column_action_does_not_hide_a_later_unique(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "ALTER TABLE t ALTER COLUMN a SET NOT NULL, ADD CONSTRAINT u UNIQUE (a);\n",
+        )
+        result = self._run(tmp_path)
+        assert "- u (a) unique" in _by_id(result)["db.t"].l2_md
+        # SET NOT NULL changes a shown column and is not understood: partial
+        assert self._schema_rows(result)[(".", "sql")][0] == "partial"
+
+    def test_alter_actions_that_cannot_change_a_shown_fact_stay_silent(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "ALTER TABLE t OWNER TO app;\n"
+            "ALTER TABLE ONLY t ENABLE ROW LEVEL SECURITY;\n"
+            "ALTER TABLE t ALTER COLUMN a SET STATISTICS 100;\n"
+            "ALTER TABLE t SET (fillfactor = 70);\n"
+            "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES o (id);\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")][0] == "complete"
+
+    def test_pg_dump_alter_table_only_primary_key_is_recorded(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE public.t (id integer NOT NULL);\n"
+            "ALTER TABLE ONLY public.t\n    ADD CONSTRAINT t_pkey PRIMARY KEY (id);\n"
+            "ALTER TABLE ONLY public.t ADD CONSTRAINT t_u UNIQUE (id);\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.public.t"]
+        assert "Primary key: id" in sec.l2_md
+        assert "- t_u (id) unique" in sec.l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_unrecognised_alter_on_any_statement_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "ALTER TABLE t VALIDATE CONSTRAINT x;\n"
+            "ALTER INDEX i DEPENDS ON EXTENSION e;\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert detail == "migrations/001.sql:2; migrations/001.sql:3"
+
+    def test_create_table_body_index_forms_are_never_columns(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (\n  a INT,\n  INDEX idx_a USING BTREE (a),\n"
+            "  FULLTEXT KEY ft (a),\n  SPATIAL INDEX sp (a)\n);\n"
+            "CREATE TABLE u (\n  a INT,\n  EXCLUDE USING gist (a WITH =)\n);\n"
+            "CREATE TABLE v (\n  a INT,\n  LIKE other\n);\n",
+        )
+        result = self._run(tmp_path)
+        t = _by_id(result)["db.t"]
+        assert "1 column," in t.summary
+        for line in ("- idx_a (a)", "- ft (a)", "- sp (a)"):
+            assert line in t.l2_md
+        assert "1 column," in _by_id(result)["db.u"].summary
+        assert self._schema_rows(result)[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:11; migrations/001.sql:7",
+        )
+
+    def test_create_index_variants_and_qualified_names(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT, b INT);\n"
+            "CREATE FULLTEXT INDEX ft2 ON t (a);\n"
+            "CREATE UNIQUE CLUSTERED INDEX c1 ON [dbo].[t] (b);\n"
+            'CREATE INDEX i ON "public"."t" (a);\n'
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS j ON public.t USING btree (b);\n"
+            "DROP INDEX public.j;\n",
+        )
+        result = self._run(tmp_path)
+        md = _by_id(result)["db.t"].l2_md
+        assert "- ft2 (a)" in md and "- c1 (b) unique" in md and "- i (a)" in md
+        assert "- j (b)" not in md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_drop_index_naming_nothing_known_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nDROP INDEX IF EXISTS ghost;\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:2",
+        )
+
+    def test_drop_table_is_replayed(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE gone (a INT);\nCREATE TABLE kept (a INT);\n"
+            "DROP TABLE gone;\nDROP TABLE IF EXISTS never_existed;\n"
+            "CREATE TABLE again (a INT);\nDROP TABLE again;\nCREATE TABLE again (b INT);\n",
+        )
+        result = self._run(tmp_path)
+        ids = _by_id(result)
+        assert "db.gone" not in ids and "db.kept" in ids
+        assert "| b |" in ids["db.again"].l2_md and "| a |" not in ids["db.again"].l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_alembic_downgrade_is_ignored(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.create_index('ix_up', 't', ['a'])\n"
+            "\n\ndef downgrade():\n"
+            "    op.create_index('ix_down', 't', ['a'])\n"
+            "    op.create_table('old', sa.Column('a', sa.Integer()))\n",
+        )
+        result = self._run(tmp_path)
+        ids = _by_id(result)
+        assert "- ix_up (a)" in ids["db.t"].l2_md
+        assert "ix_down" not in ids["db.t"].l2_md
+        assert "db.old" not in ids
+
+    def test_alembic_drop_constraint_replays_or_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.create_unique_constraint('uq_t_a', 't', ['a'])\n"
+            "    op.drop_constraint('uq_t_a', 't', type_='unique')\n"
+            "    op.drop_constraint('mystery', 't', type_='unique')\n"
+            "    op.drop_constraint('fk_t', 't', type_='foreignkey')\n",
+        )
+        result = self._run(tmp_path)
+        assert "uq_t_a" not in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "alembic")] == (
+            "partial",
+            "alembic/versions/0001.py:5",
+        )
+
+    def test_alembic_untracked_schema_ops_and_unresolved_alias_are_sites(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.add_column('t', sa.Column('b', sa.Integer()))\n"
+            "    other.create_index('ix', ['a'])\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "alembic")]
+        assert status == "partial"
+        assert detail == "alembic/versions/0001.py:3; alembic/versions/0001.py:4"
+
+    def test_alembic_batch_with_nested_parens_resolves(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    with op.batch_alter_table('t', table_args=(sa.Index('x', 'a'),)) as b:\n"
+            "        b.create_index('ix_t_a', ['a'])\n",
+        )
+        result = self._run(tmp_path)
+        assert "- ix_t_a (a)" in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "alembic")][0] == "complete"
+
+    def test_ef_index_on_unknown_table_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "Data/Migrations/Snap.cs",
+            'modelBuilder.Entity("App.Ghost", b =>\n{\n    b.HasIndex("A");\n    b.ToTable("Ghosts");\n});\n',
+        )
+        self._write(
+            tmp_path,
+            "Data/Migrations/001_Init.cs",
+            'migrationBuilder.CreateTable(name: "Users", columns: table => new { });\n',
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "ef")]
+        assert status == "partial"
+        assert detail == "Data/Migrations/Snap.cs:1"
+
+    # ---- fix round 3: statements, execute(), order safety, schemas ----
+
+    def test_alembic_execute_calls_are_sites(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            '    op.execute("CREATE INDEX ix ON t (a)")\n'
+            "    conn = op.get_bind()\n"
+            "    conn.execute(sa.text('SELECT 1'))\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "alembic")]
+        assert status == "partial"
+        assert detail == "alembic/versions/0001.py:3; alembic/versions/0001.py:5"
+
+    def test_tsql_go_batches_split_statements(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT)\nGO\nCREATE INDEX i ON t (a)\nGO\n",
+        )
+        result = self._run(tmp_path)
+        assert "- i (a)" in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_ddl_left_inside_a_statement_span_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "CREATE INDEX i ON t (a)\nALTER TABLE t DROP COLUMN a\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/001.sql:2" in detail
+
+    def test_do_block_and_unknown_heads_are_sites(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\n"
+            "DO $$ BEGIN ALTER TABLE t ADD COLUMN b INT; END $$;\n"
+            "RENAME TABLE t TO u;\n"
+            "MERGE INTO t USING s ON 1=1 WHEN MATCHED THEN DELETE;\n",
+        )
+        status, detail = self._schema_rows(self._run(tmp_path))[(".", "sql")]
+        assert status == "partial"
+        assert "migrations/001.sql:2" in detail and "migrations/001.sql:3" in detail
+        assert "migrations/001.sql:4" in detail
+
+    def test_fact_neutral_statements_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "SET search_path = public;\nBEGIN;\nCREATE TABLE t (a INT);\n"
+            "INSERT INTO t VALUES (1);\nUPDATE t SET a = 2;\nGRANT SELECT ON t TO r;\n"
+            "COMMENT ON TABLE t IS 'x';\nCREATE OR REPLACE VIEW v AS SELECT 1;\n"
+            "CREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE SEQUENCE s;\nCOMMIT;\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")][0] == "complete"
+
+    def test_set_default_and_compression_change_a_shown_fact(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT DEFAULT 1);\n"
+            "ALTER TABLE t ALTER COLUMN a SET DEFAULT 2;\n"
+            "ALTER TABLE t ALTER COLUMN a SET COMPRESSION lz4;\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "sql")] == (
+            "partial",
+            "migrations/001.sql:2; migrations/001.sql:3",
+        )
+
+    def test_alembic_multidb_upgrade_and_helpers_are_read_downgrade_is_not(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade(engine_name):\n"
+            "    globals()['upgrade_%s' % engine_name]()\n\n\n"
+            "def upgrade_engine1():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    _idx()\n\n\n"
+            "def _idx():\n"
+            "    op.create_index('ix_up', 't', ['a'])\n\n\n"
+            "def downgrade_engine1():\n"
+            "    op.create_index('ix_down', 't', ['a'])\n",
+        )
+        md = _by_id(self._run(tmp_path))["db.t"].l2_md
+        assert "- ix_up (a)" in md and "ix_down" not in md
+
+    def test_alembic_drop_constraint_from_another_file_is_a_site_not_a_removal(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n"
+            "    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.create_unique_constraint('uq_t_a', 't', ['a'])\n",
+        )
+        self._write(
+            tmp_path,
+            "alembic/versions/0002.py",
+            "def upgrade():\n"
+            "    op.drop_constraint('uq_t_a', 't', type_='unique')\n"
+            "    op.drop_constraint('t_pkey', 't', type_='primary')\n",
+        )
+        result = self._run(tmp_path)
+        assert "uq_t_a" in _by_id(result)["db.t"].l2_md
+        assert self._schema_rows(result)[(".", "alembic")] == (
+            "partial",
+            "alembic/versions/0002.py:2; alembic/versions/0002.py:3",
+        )
+
+    def test_drop_table_of_a_partition_child_removes_it_from_the_parent(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT) PARTITION BY RANGE (id);\n"
+            "CREATE TABLE ev_1 PARTITION OF ev FOR VALUES FROM (1) TO (2);\n"
+            "CREATE TABLE ev_2 PARTITION OF ev FOR VALUES FROM (2) TO (3);\n"
+            "DROP TABLE ev_1;\n",
+        )
+        result = self._run(tmp_path)
+        assert "Partitions: ev_2" in _by_id(result)["db.ev"].l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "complete"
+
+    def test_schema_qualified_ddl_does_not_hit_another_schemas_table(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\n"
+            "ALTER TABLE audit.t ADD COLUMN x INT;\n"
+            "DROP INDEX audit.i;\n"
+            "DROP TABLE audit.t;\n"
+            "ALTER TABLE public.t ADD COLUMN y INT;\n",
+        )
+        result = self._run(tmp_path)
+        sec = _by_id(result)["db.t"]
+        assert "2 columns" in sec.summary  # a, y — not x
+        assert "- i (a)" in sec.l2_md
+        assert self._schema_rows(result)[(".", "sql")][0] == "partial"
+
+    def _sql_status(self, root: Path) -> str:
+        return self._schema_rows(self._run(root))[(".", "sql")][0]
+
+    def test_ddl_after_a_neutral_head_without_separator_is_a_site(self, tmp_path):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(
+            tmp_path,
+            "migrations/002.sql",
+            "SET XACT_ABORT ON\nBEGIN TRANSACTION\nALTER TABLE t ADD b INT\n"
+            "CREATE INDEX ix ON t (a)\nCOMMIT\nGO\n",
+        )
+        assert self._sql_status(tmp_path) == "partial"
+
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "SET NOCOUNT ON\nALTER TABLE t ADD b INT\nGO\n",
+            "INSERT INTO t VALUES (1)\nALTER TABLE t ADD b INT\nGO\n",
+        ],
+    )
+    def test_ddl_glued_to_a_neutral_statement_is_a_site(self, tmp_path, ddl):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(tmp_path, "migrations/002.sql", ddl)
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_create_word_inside_a_neutral_statement_is_not_a_missing_separator(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nGRANT CREATE ON SCHEMA public TO r;\n"
+            "GRANT\n  CREATE ON SCHEMA public TO r2;\n"
+            "COMMENT ON TABLE t IS 'ALTER TABLE x';\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "DROP EXTENSION citext CASCADE;",
+            "DROP TYPE mood CASCADE;",
+            "DROP SCHEMA app CASCADE;",
+            "DROP SCHEMA app;",
+            "DROP DATABASE app;",
+            "DROP SEQUENCE s CASCADE;",
+            "DROP FUNCTION f(int) CASCADE;",
+            "CREATE SCHEMA app CREATE TABLE u (a INT) CREATE INDEX i ON u (a);",
+            "ALTER SCHEMA x RENAME TO y;",
+            "ALTER TYPE mood RENAME TO feeling;",
+        ],
+    )
+    def test_neutral_kinds_that_change_shown_facts_are_sites(self, tmp_path, ddl):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            f"CREATE TABLE t (a INT);\n{ddl}\n",
+        )
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_plain_neutral_drops_and_creates_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nCREATE SCHEMA app;\n"
+            "CREATE SCHEMA IF NOT EXISTS audit AUTHORIZATION r;\n"
+            "DROP TYPE IF EXISTS mood;\nDROP VIEW v;\nDROP FUNCTION f();\n"
+            "DROP SEQUENCE s;\nDROP EXTENSION citext;\n"
+            "ALTER SCHEMA app OWNER TO r;\nALTER TYPE mood ADD VALUE 'x';\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    def test_drop_index_on_an_unresolved_table_strips_nothing(self, tmp_path):
+        for on in ("audit.t", "u"):
+            root = tmp_path / on.replace(".", "_")
+            self._write(
+                root,
+                "migrations/001.sql",
+                f"CREATE TABLE t (a INT);\nCREATE INDEX i ON t (a);\nDROP INDEX i ON {on};\n",
+            )
+            result = self._run(root)
+            assert "- i (a)" in _by_id(result)["db.t"].l2_md
+            assert self._schema_rows(result)[(".", "sql")][0] == "partial"
+
+    def test_alembic_helper_used_only_by_downgrade_is_not_read(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n\n\n"
+            "def downgrade():\n    _restore()\n\n\n"
+            "def _restore():\n    op.create_index('ix_old', 't', ['a'])\n",
+        )
+        result = self._run(tmp_path)
+        assert "ix_old" not in _by_id(result)["db.t"].l2_md
+
+    def test_alembic_helper_called_transitively_from_upgrade_is_read(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    _outer()\n\n\n"
+            "def _outer():\n    _inner()\n\n\n"
+            "def _inner():\n    op.create_index('ix_new', 't', ['a'])\n\n\n"
+            "def downgrade():\n    _gone()\n\n\n"
+            "def _gone():\n    op.create_index('ix_old', 't', ['a'])\n",
+        )
+        md = _by_id(self._run(tmp_path))["db.t"].l2_md
+        assert "ix_new" in md and "ix_old" not in md
+
+    def test_drop_table_in_another_schema_keeps_the_public_partition_child(
+        self, tmp_path
+    ):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE ev (id INT) PARTITION BY RANGE (id);\n"
+            "CREATE TABLE ev_1 PARTITION OF ev FOR VALUES FROM (1) TO (2);\n"
+            "DROP TABLE audit.ev_1;\n",
+        )
+        assert "Partitions: ev_1" in _by_id(self._run(tmp_path))["db.ev"].l2_md
+
+    def test_alembic_exec_driver_sql_is_a_site(self, tmp_path):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n"
+            "    op.get_bind().exec_driver_sql('ALTER TABLE t ADD COLUMN b INT')\n",
+        )
+        assert self._schema_rows(self._run(tmp_path))[(".", "alembic")] == (
+            "partial",
+            "alembic/versions/0001.py:3",
+        )
+
+    @pytest.mark.parametrize(
+        "ddl",
+        [
+            "GRANT SELECT ON t TO r\nALTER TABLE t ADD b INT\nGO\n",
+            "REVOKE SELECT ON t FROM r\nCREATE INDEX ix ON t (a)\nGO\n",
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO r\n"
+            "ALTER TABLE t ADD b INT;\n",
+            "GRANT SELECT ON t TO r\nDROP TABLE t\nGO\n",
+            "SET NOCOUNT ON ALTER TABLE t ADD b INT\nGO\n",
+        ],
+    )
+    def test_ddl_after_a_privilege_or_same_line_head_is_a_site(self, tmp_path, ddl):
+        self._write(tmp_path, "migrations/001.sql", "CREATE TABLE t (a INT)\nGO\n")
+        self._write(tmp_path, "migrations/002.sql", ddl)
+        assert self._sql_status(tmp_path) == "partial"
+
+    def test_wrapped_privilege_lists_stay_complete(self, tmp_path):
+        self._write(
+            tmp_path,
+            "migrations/001.sql",
+            "CREATE TABLE t (a INT);\nGRANT\n  CREATE ON SCHEMA public TO r;\n"
+            "GRANT SELECT,\n  ALTER, DROP ON t TO r;\n"
+            "REVOKE\n  CREATE,\n  ALTER ON SCHEMA public FROM r;\n"
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA public\n  GRANT SELECT ON TABLES TO r;\n",
+        )
+        assert self._sql_status(tmp_path) == "complete"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "def upgrade():\n    _run(_idx)\n\n\ndef _run(fn):\n    fn()\n\n\n"
+            "def _idx():\n    op.create_index('ix_cb', 't', ['a'])\n",
+            "def upgrade():\n    for f in (_idx,):\n        f()\n\n\n"
+            "def _idx():\n    op.create_index('ix_cb', 't', ['a'])\n",
+        ],
+    )
+    def test_alembic_helper_referenced_not_called_is_read(self, tmp_path, body):
+        self._write(
+            tmp_path,
+            "alembic/versions/0001.py",
+            body.replace(
+                "def upgrade():\n",
+                "def upgrade():\n    op.create_table('t', sa.Column('a', sa.Integer()))\n",
+            ),
+        )
+        assert "ix_cb" in _by_id(self._run(tmp_path))["db.t"].l2_md
+
+
 class TestIntegrationsExtractor:
     def test_detects_env_example_or_openapi_servers(self, repo, tmp_path):
         assert int_ext.IntegrationsExtractor().detect(repo) is True
@@ -5055,3 +6156,107 @@ class TestComposeFacts:
             "svc.transcoder"
         ]
         assert (a.l2_md, a.l3_md) == (b.l2_md, b.l3_md)
+
+
+# --- struct.files.<dir>: the complete, uncapped file list -------------------
+
+
+def _git_repo(tmp_path: Path, run_git, files: list[str]) -> Path:
+    root = tmp_path / "gitrepo"
+    root.mkdir()
+    for rel in files:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+    run_git(root, "init")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-m", "init")
+    return root
+
+
+def _files_sections(root: Path) -> dict[str, core.CodeSection]:
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    return {k: v for k, v in _by_id(result).items() if k.startswith("struct.files.")}
+
+
+def test_struct_files_lists_deep_paths_uncapped(tmp_path, run_git):
+    deep = "apps/web/src/app/(admin)/admin/page.tsx"
+    root = _git_repo(tmp_path, run_git, [deep, "apps/web/package.json", "README.md"])
+    sections = _files_sections(root)
+    assert deep in sections["struct.files.apps"].l3_md.splitlines()
+    assert sections["struct.files.apps"].group == "structure"
+    assert sections["struct.files.apps"].title == "Files: apps/"
+    assert "- apps/web/" in sections["struct.files.apps"].l2_md
+    assert "2 files" in sections["struct.files.apps"].l2_md
+    assert "README.md" in sections["struct.files.root"].l3_md.splitlines()
+
+
+def test_struct_files_lists_tracked_files_under_ignored_dirs(tmp_path, run_git):
+    # `files complete` promises every tracked file; the pruned dirs
+    # (bin/, build/, vendor/ ...) stay out of struct.tree only
+    tracked = [
+        "apps/api/bin/run.sh",
+        "apps/api/build/gen.ts",
+        "apps/api/src/a.ts",
+        "build/top.txt",
+        "vendor/x.go",
+    ]
+    root = _git_repo(tmp_path, run_git, tracked)
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    sections = {
+        k: v for k, v in _by_id(result).items() if k.startswith("struct.files.")
+    }
+    listed = [
+        ln for sec in sections.values() for ln in sec.l3_md.splitlines() if "/" in ln
+    ]
+    assert sorted(listed) == tracked
+    assert {"struct.files.build", "struct.files.vendor"} <= set(sections)
+    tree = _by_id(result)["struct.tree"]
+    assert "bin" not in tree.l3_md and "build" not in tree.l3_md
+
+
+def test_struct_files_still_hides_the_kb_dir(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["apps/a.txt", ".kb/note.md", "kbx/out.md"])
+    opts = core.CodeIngestOptions(
+        repo_root=root, kb_dir=root / "kbx", doc_id="demo-code", repo_id="demo"
+    )
+    result = tree_ext.TreeExtractor().extract(root, opts)
+    ids = {k for k in _by_id(result) if k.startswith("struct.files.")}
+    assert ids == {"struct.files.apps"}
+
+
+def test_struct_files_ids_fixed_per_top_dir(tmp_path, run_git):
+    names = [f"apps/web/f{n:04d}.txt" for n in range(700)] + ["README.md"]
+    root = _git_repo(tmp_path, run_git, names)
+    sections = _files_sections(root)
+    assert set(sections) == {"struct.files.apps", "struct.files.root"}
+    lines = [ln for ln in sections["struct.files.apps"].l3_md.splitlines() if "/" in ln]
+    assert lines == sorted(lines) and len(lines) == 700
+
+
+def test_struct_files_top_dir_named_root_does_not_collide(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["root/a.txt", "top.txt"])
+    ids = set(_files_sections(root))
+    assert "struct.files.root" in ids and len(ids) == 2
+
+
+def test_struct_files_coverage_complete_per_section(tmp_path, run_git):
+    root = _git_repo(tmp_path, run_git, ["apps/a.txt", "top.txt"])
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    assert sorted(
+        (r.area, r.scope, r.framework, r.status, r.detail) for r in result.coverage
+    ) == [
+        ("files", ".", "-", "complete", ""),
+        ("files", "apps", "-", "complete", ""),
+    ]
+
+
+def test_struct_files_coverage_partial_outside_git(tmp_path):
+    root = tmp_path / "plain"
+    (root / "apps").mkdir(parents=True)
+    (root / "apps" / "a.txt").write_text("x", encoding="utf-8")
+    result = tree_ext.TreeExtractor().extract(root, _opts(root))
+    assert {r.status for r in result.coverage} == {"partial"}
+    assert {r.detail for r in result.coverage} == {
+        "not a git repository — os.walk listing"
+    }

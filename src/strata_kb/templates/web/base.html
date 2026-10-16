@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title | default("Strata", true) }} — Strata</title>
-<link rel="stylesheet" href="/ui/static/style.css">
+<link rel="stylesheet" href="/ui/static/style.css?v={{ asset_v }}">
 {% block head_scripts %}{% endblock %}
-<script src="/ui/static/app.js" defer></script>
+<script src="/ui/static/app.js?v={{ asset_v }}" defer></script>
 </head>
 <body>
 <div class="shell">

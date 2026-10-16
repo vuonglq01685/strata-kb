@@ -97,6 +97,11 @@ def test_match_terms_route_path_and_column_name():
     assert "refund_id" in scan.match_terms(col)
 
 
+def test_match_terms_job_fact_names_the_job_not_its_schedule():
+    job = _item("job.x", "x", [("job", "createPartition @ 0 3 * * *")])
+    assert "createPartition" in scan.match_terms(job)
+
+
 def test_match_terms_drop_stop_words_and_short_names():
     assert set(scan.STOP_WORDS) >= {"api", "app", "web", "db", "service", "test"}
     assert scan.MIN_TERM_LEN == 4

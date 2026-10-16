@@ -649,3 +649,26 @@ def test_fed_tree_digest_has_one_home_in_federation():
 
     assert doctor._fed_tree_digest is federation._fed_tree_digest
     assert hub_checks._FED_TOP_SKIP is federation._FED_TOP_SKIP
+
+
+def test_doctor_warns_without_code_extra(monkeypatch):
+    from strata_kb.codeingest.extractors import _ts
+    from strata_kb.doctor.checks.dev import check_code_extra
+
+    monkeypatch.setattr(_ts, "available", lambda: False)
+    issues = check_code_extra()
+    assert [i.level for i in issues] == ["warning"]
+    assert "strata-kb[code] is not installed" in issues[0].message
+    assert 'pip install "strata-kb[code]"' in issues[0].message
+    # jobs stay partial and file-system pages are still scanned: not "all not scanned"
+    msg = issues[0].message
+    assert "jobs will stay 'partial'" in msg and "file-system" in msg
+    assert "routes, pages, jobs and symbols" not in msg
+
+
+def test_doctor_quiet_with_code_extra(monkeypatch):
+    from strata_kb.codeingest.extractors import _ts
+    from strata_kb.doctor.checks.dev import check_code_extra
+
+    monkeypatch.setattr(_ts, "available", lambda: True)
+    assert check_code_extra() == []

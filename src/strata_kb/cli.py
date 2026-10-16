@@ -3333,6 +3333,15 @@ def ticket_check(
         ids = ticketstale.cited_ids(text)
         return ticketstale.drift_refs(handle, repo, doc, rev, ids) if ids else []
 
+    def load_at(
+        repo: str | None, doc: str, rev: str, ids: list[str]
+    ) -> list[ResolvedRef] | None:
+        # The given sections as the hub held them at `rev`; None without a hub.
+        handle, _ = hub_handle()
+        if handle is None:
+            return None
+        return ticketstale.drift_refs(handle, repo, doc, rev, ids)
+
     def load_decisions(mission_id: str) -> ticketcheck.DecisionTable | None:
         # Local missions/ first; else the mission's plan section on the hub.
         if resolved_missions is not None:
@@ -3360,6 +3369,7 @@ def ticket_check(
         heading=heading,
         load_decisions=load_decisions,
         load_drift=load_drift,
+        load_at=load_at,
     )
     if json_output:
         typer.echo(json.dumps(report.to_json()))

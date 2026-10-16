@@ -163,3 +163,53 @@ def test_in_scope_lists_the_ids_whose_appearance_is_a_fact():
     assert not any(in_scope(s, "code") for s in ("struct.tree", "hist.1", "flow.x"))
     assert in_scope("svc.a", "svc") and in_scope("flow.a", "svc")
     assert not any(in_scope(s, "svc") for s in ("db.a", "hist.1", "struct.tree"))
+
+
+_ROUTE_L2 = (
+    "| Method | Path | Handler | File | Request type |\n| --- | --- | --- | --- | --- |\n"
+    "| get | /watch/{id} | M.watch | a.ts |  |\n"
+    "| GET | /watch/:id/ | M.watch2 | a.ts |  |\n"
+    "| POST | /media | M.up | a.ts |  |\n"
+)
+_PAGE_L2 = (
+    "| Path | File | Layout/group |\n| --- | --- | --- |\n"
+    "| /admin | a/page.tsx | (admin) |\n"
+    "| /watch/[id] | b/page.tsx |  |\n"
+    "| Middleware matcher: /admin/:path* | m.ts |  |\n"
+)
+_JOB_L2 = (
+    "| Name | Schedule | Handler | File |\n| --- | --- | --- | --- |\n"
+    "| nightly | 0 2 * * * | - | a.ts |\n"
+    "| (anonymous) | 0 4 * * * | - | a.ts |\n"
+    "| (dynamic) | 0 5 * * * | - | a.ts |\n"
+)
+
+
+def test_route_facts():
+    facts = facts_for("route.x", "code", _ROUTE_L2, "")
+    assert facts == {("route", "GET /watch/{}"), ("route", "POST /media")}
+    changed = _ROUTE_L2.replace("/media", "/media2")
+    assert facts_for("route.x", "code", changed, "") != facts
+
+
+def test_page_facts():
+    facts = facts_for("page.x", "code", _PAGE_L2, "")
+    assert facts == {("page", "/admin"), ("page", "/watch/{}")}
+
+
+def test_job_facts():
+    facts = facts_for("job.x", "code", _JOB_L2, "")
+    assert facts == {("job", "nightly @ 0 2 * * *")}
+    moved = _JOB_L2.replace("0 2 * * *", "0 3 * * *")
+    assert facts_for("job.x", "code", moved, "") != facts
+
+
+def test_sym_and_files_not_in_codesync_scope():
+    from strata_kb.codesync.facts import in_scope
+
+    assert not in_scope("sym.x", "code")
+    assert not in_scope("struct.files.x", "code")
+    assert facts_for("sym.x", "code", _JOB_L2, "") == frozenset()
+    for sid in ("route.x", "page.x", "job.x"):
+        assert in_scope(sid, "code")
+        assert not in_scope(sid, "svc")

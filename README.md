@@ -174,6 +174,7 @@ pip install strata-kb            # kb CLI + MCP server
 pip install "strata-kb[ingest]"  # + PDF ingestion (docling)
 pip install "strata-kb[embed]"   # + semantic search
 pip install "strata-kb[server]"  # + HTTP MCP/Web UI auth
+pip install "strata-kb[code]"    # + routes, pages, jobs and symbols in `kb code-ingest` (tree-sitter, about 184 MB)
 pip install "strata-kb[s3]"      # + S3 asset offloading
 ```
 
@@ -1084,11 +1085,15 @@ The agent never pushes to a tracker or opens a ticket on its own. Markdown out,
 human in the loop by design.
 
 **`sa-ticket-ground`** fills the one section the BA never touches:
-`## Technical grounding` — service, files, tables, routes, externals and the
-test command, each a section id that exists in the hub's `<repo>-code`
-document, or `[NEW: <reason>]`, or parked under `Open decisions`. It has no
-repository access and never infers: internal flow, failure modes and request
-bodies are not in the document, so they go to `Open decisions` for the Dev.
+`## Technical grounding` — service, files, tables, routes, pages, jobs, symbols,
+externals and the test command, each a section id that exists in the hub's
+`<repo>-code` document, or `[NEW: <reason>]`, or parked under `Open decisions`.
+It has no repository access and never infers: internal flow, failure modes and
+request bodies are not in the document, so they go to `Open decisions` for the
+Dev. For a route, page, job, symbol, file or a table's partition, index or
+primary key, "not in the document" means "not built" only when
+`struct.coverage` says `complete` for that area and scope (see `kb code-ingest`
+below); otherwise it goes to `Open decisions` too.
 With `--mission` it fills a mission plan's `## Services & order` from
 `svc.*` (with each record's `Depends on` cell) and the hub's architecture
 document — never `db.*` or `api.*`. The BA skills themselves no longer
@@ -1138,7 +1143,7 @@ story in `Affected`, `kb mission next` reports the ticket `draft` with reason
 |---|---|---|
 | `kb ticket lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required sections present; every `## KB context` ref resolves at its pinned commit; every inline `doc-id §section` citation is backed by a pinned ref and vice versa | `0` PASS, `1` FAIL, `2` stale |
 | `kb mission lint <file\|-> [--hub <url>] [--json] [--fail-on-stale]` | Required structure; C4 L1 + L2 diagrams present; a well-formed backlog whose ids derive from the mission id; every citation resolving at its pinned commit | `0` PASS, `1` FAIL, `2` stale |
-| `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.*` id in `## Technical grounding` exists in the hub's `<repo>-code` first (the copy the SA grounded on), then a local `--kb-dir` copy with a `(local fallback — …)` note, columns / routes / commands match its tables, `Files:` are in `struct.tree`, every `[NEW: D<n>]` names a `DECIDED` row of the parent mission's `## Technology decisions` (`--missions-dir`, default the sibling `missions/`; a mission missing there is read from the hub's plan), and `Open decisions` is empty. A `Grounded on:` revision that moved is not a failure by itself: when every cited fact still holds it is a PASS with a `[note]`, or a `[warn]` plus a unified diff of each changed cited section; when one is gone it is a FAIL (`grounding drifted since @<old> (now @<new>) and no longer holds — re-run /sa-ticket-ground`). `dev-implement-ticket` runs it right after Intake. `--heading "## Services & order"` checks a mission plan's SA section against its own decisions table | `0` PASS, `1` FAIL |
+| `kb ticket check <file\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]` | SA grounding gate: every `svc.* / db.* / api.* / int.* / cmd.* / route.* / page.* / job.* / sym.*` id in `## Technical grounding` exists in the hub's `<repo>-code` first (the copy the SA grounded on), then a local `--kb-dir` copy with a `(local fallback — …)` note, columns / routes / pages / jobs / symbols / commands match its tables, `Files:` are in `struct.tree` or a `struct.files.*` section, every `[NEW: D<n>]` names a `DECIDED` row of the parent mission's `## Technology decisions` (`--missions-dir`, default the sibling `missions/`; a mission missing there is read from the hub's plan), and `Open decisions` is empty. It also always fails any `[NEW]` on a `Jobs:` line and a `[NEW]` for something the document already lists at the revision the ticket was grounded on (`already exists in <id>; cite it instead`). With a `struct.coverage` section it further fails a `[NEW: D<n>]` on a route, page, symbol, file or partition/index/primary key whose scope is `partial` or `not scanned` (`cannot claim new: coverage of <scope> … is <status>; move it to Open decisions`), a `[NEW]` in `Routes:`, `Pages:`, `Symbols:` or a `Tables:` index/partition/primary key that does not name the file it will live in (`… in <path> [NEW: D<n>]`), and a line that cites an id and also carries `[NEW]` (put the new item on its own sub-bullet). A `Grounded on:` revision that moved is not a failure by itself: when every cited fact still holds it is a PASS with a `[note]`, or a `[warn]` plus a unified diff of each changed cited section; when one is gone it is a FAIL (`grounding drifted since @<old> (now @<new>) and no longer holds — re-run /sa-ticket-ground`). `dev-implement-ticket` runs it right after Intake. `--heading "## Services & order"` checks a mission plan's SA section against its own decisions table | `0` PASS, `1` FAIL |
 | `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]` | Read-only: every backlog story across `missions/` as `done` (its id is in a `hist.*` row of the hub's `-svc` document), `ready` (a ticket file exists under `tickets/` — flat or `tickets/<mission-id>/` — with every `## Definition of Ready` box ticked), `draft` (a ticket file with an unticked box, reason `DoR n/m ticked`, or no `## Definition of Ready` section, reason `no Definition of Ready section`), `to-draft` (no ticket, every `Depends on` done, every D-row that `Blocks` it `DECIDED`) or `blocked` (reasons named); ends with `Next: <us-id> — <title>` naming the first `to-draft` story. The `-svc` document is derived from the missions' `Grounded on:` line (a comma-separated list is read, the `-code` entry wins; `<x>-code` → `<x>-svc`, `--repo-id` overrides); `--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second; no `Grounded on:` line, an unconfigured or unreachable hub, a `-svc` not on the hub, and a missing tickets dir are each a `note:` line, never a red line | `0` after a report; `1` for a bad directory flag or a malformed `.kb/config.yaml` |
 | `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]` | Move each flat `tickets/*.md` whose `> Parent mission: M-x [@ rev N]` line is valid to `tickets/M-x/<name>`; print `moved:` per file, `conflict:` when the destination exists (nothing is overwritten), `unsorted:` for a file without a parent mission, `note:` for an unreadable file or a FILE under `--into` that is not a flat file directly under tickets/. With `--into`, move the named files into `tickets/<folder>/` instead. Idempotent; no git — commit the renames yourself | `0` after a report; `1` for a bad `--tickets-dir`, a bad `--into` name, FILES without `--into`, or `--into` without files |
 
@@ -1326,10 +1331,11 @@ LLM-free**: pure functions of the working tree, no network call. The output is a
 ordinary 4-layer document, so build, query, federation and the Web UI read it
 with zero special-casing.
 
-Not shipped: relationship sections (`rel.<name>`) and an AST extractor, both
-planned in Architecture v0.4 §14.1. The extractors read build, deploy and
-contract files — manifests, compose files, migrations, OpenAPI — never source
-syntax.
+Not shipped: relationship sections (`rel.<name>`), planned in Architecture v0.4
+§14.1. Seven extractors read build, deploy and contract files — manifests,
+compose files, migrations, OpenAPI, the file list. Four more (`routes`, `pages`, `jobs`,
+`symbols`) read **source syntax** with tree-sitter, which needs the optional
+`code` extra (see "Routes, pages, jobs and symbols" below).
 
 ```
 kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
@@ -1337,7 +1343,7 @@ kb code-ingest [--repo-root .] [--kb-dir .kb] [--repo-id <cfg>]
                [--scaffold-svc] [--json]
 ```
 
-Seven extractors, organised by **artifact kind rather than language**, because
+Eleven extractors, organised by **artifact kind rather than language**, because
 Strata is adopted across many project lines and a single-stack extractor set
 would leave most repos with nothing on day one:
 
@@ -1350,10 +1356,90 @@ would leave most repos with nothing on day one:
 | `schema` | `**/migrations/*.sql`, Flyway/Liquibase layouts, `schema.prisma`, Alembic `versions/*.py`, EF `Migrations/*.cs`, plus explicitly named `--db` SQLite files | `db.<table>` |
 | `integrations` | `.env.example`/`.sample`/`.template` **keys**, compose `environment:` **keys** | `int.<name>` |
 | `api` | `openapi*.y*ml`, `swagger*.json` | `api.<tag>` |
+| `routes` | HTTP routes declared in source code (needs `[code]`) | `route.<slug>` |
+| `pages` | UI page routes (file-system routers work without `[code]`) | `page.<slug>` |
+| `jobs` | scheduled jobs declared by framework schedulers (needs `[code]`) | `job.<slug>` |
+| `symbols` | exported names, enum and object members, CSS custom properties (needs `[code]`) | `sym.<slug>` |
 
-`tree` always finds something, so the zero-detection rule is: `kb code-ingest`
-exits `1` when **no extractor other than `tree`** found anything. A document
-holding only a folder listing is a misconfiguration, not knowledge.
+`tree` also emits `struct.files.<dir>` and every extractor reports into one
+`struct.coverage` section (below). `tree` always finds something, and the four
+source-reading extractors are not counted as evidence of a codebase either, so
+the zero-detection rule is: `kb code-ingest` exits `1` when **none of `services`, `deps`,
+`commands`, `schema`, `integrations` and `api`** found anything. A document
+holding only a folder listing and source-derived sections is a
+misconfiguration, not knowledge.
+
+#### Routes, pages, jobs and symbols — the `code` extra
+
+`pip install "strata-kb[code]"` adds `tree-sitter` and
+`tree-sitter-language-pack==0.13.0` (about 184 MB). The pin is exact and stays
+below 1.0: grammars ship inside the wheel, whereas 1.x downloads them from the
+network at run time, which would break the no-network, same-bytes contract.
+Languages: JS/TS, Java/Kotlin, C#, Python, PHP, Go, Rust, Swift and Dart (plus
+CSS/SCSS for custom properties). `kb-code.yml` installs `strata-kb[code]` in
+both jobs, and `kb doctor` in a Dev repo warns when it is missing locally.
+Without the extra, `routes` and `symbols` emit `not scanned — install
+strata-kb[code]` coverage rows and no sections. `pages` rows for Angular, Vue,
+React and Flutter read the same, but the file-system routers (Next.js, Nuxt,
+SvelteKit) still produce `page.*` sections. `jobs` rows stay `partial` (jobs are
+never complete) with the install note added to the detail, and Kubernetes
+`CronJob` manifests still produce `job.*` sections. Each affected extractor
+prints its own warning, so there can be up to four. `struct.files.*` and the
+schema rows do not need the extra.
+
+| Section | Holds |
+|---|---|
+| `route.<slug>` | One section per controller class, router file or route file. L2 table `Method \| Path \| Handler \| File \| Request type`, with every statically known prefix joined (class prefix, router mount, group prefix, global prefix); L3 adds the declared fields of a request type defined in the repo. |
+| `page.<slug>` | One section per front-end app. L2 table `Path \| File \| Layout/group`; route groups such as `(admin)` and dynamic segments (`[id]`, `:id`, `[...slug]`) are kept as written, and a Next.js `middleware` `config.matcher` shows as a `Middleware matcher` row. |
+| `job.<slug>` | One section per declaring file or manifest. L2 table `Name \| Schedule \| Handler \| File`; the schedule is the expression as written, or `hosted`, or `(dynamic)`. |
+| `sym.<slug>` | One section per package root (a directory with its own manifest), else per top-level directory. L2 table `Name \| Kind \| File`; kinds `function`, `class`, `interface`, `type`, `const`, `enum`, `member`, `css-var`. Names only, never a value. |
+| `struct.files.<dir>` | Every tracked file under one top-level directory, uncapped (`struct.files.root` for files at the repo root). `struct.tree` stays the capped overview. |
+| `db.<table>` | Gains `Table`, `Primary key`, `Partition` and `Indexes` rows (`Partitions` for child partitions). A Prisma model and the SQL migration for the same table merge into one `db.<Model>` section; where they disagree both values show, tagged with their source. |
+
+Supported frameworks. **Routes:** NestJS, Express, Next.js, Nuxt, Spring Boot,
+Quarkus, Micronaut, ASP.NET Core, FastAPI, Flask, Django, Gin, Laravel,
+Symfony, Actix Web, Axum, Rocket, Vapor. **Pages:** Next.js, Nuxt, SvelteKit,
+Angular, Vue, React (react-router), Flutter (go_router). **Jobs:** NestJS,
+Spring / Quarkus / Micronaut, Hangfire, Quartz and .NET hosted services,
+Celery, Laravel, Symfony, node-cron, BullMQ, robfig/cron,
+tokio-cron-scheduler, Kubernetes `CronJob`. Sections split by file, package or
+top-level directory — never by size — and no list is truncated, so a list can
+back a `complete` claim.
+
+**`struct.coverage` — what the scan proves.** One L2 table,
+`Area | Scope | Framework/language | Status | Detail`, with the areas `routes`,
+`pages`, `jobs`, `symbols`, `files` and `schema`. Status:
+
+| Status | Meaning |
+|---|---|
+| `complete` | Every recognised form in that scope was resolved. |
+| `partial` | Something was seen but not resolved (a dynamic route path, a file that does not parse, a re-export the reader cannot follow). Each site is named as `file:line`; it is never silently dropped. |
+| `not scanned` | Nothing was looked at, and the detail says why (extra missing, a language or framework without an adapter). |
+
+An area is only as good as the forms the adapters know: a home-made decorator
+is a known blind spot, which is why `complete` is conservative. **`jobs` is
+never `complete`**: a job can live where no adapter looks (`pg_cron` in a
+migration, a hand-written `setInterval`, a crontab), so the row is always
+`partial` with the detail `jobs outside framework schedulers are not
+detectable`. A job that exists is listed; an absent one is always a Dev
+question. A `-code` document made by an older release has no `struct.coverage`:
+the SA treats every area as `not scanned`, and the gate does not apply the coverage rules to it.
+
+The SA uses it: for a route, page, symbol, file or a table's partition, index
+or primary key, absent from a `complete` scope means new: a route, page or
+symbol is written `<thing> in <path> [NEW: D<n>]`, a new index, partition or
+primary key is a `Tables:` sub-bullet `index <name> (<cols>) | partition RANGE
+(<col>) | primary key (<cols>) on db.<table> in <path> [NEW: D<n>]` (`<path>` is
+the migration), and a new file is its own `Files:` entry, `<path> [NEW: D<n>]`.
+The scope is the longest one listed in a `struct.coverage` row other than
+`files` that prefixes the path, and it needs its own row for the area: a nested package with no row
+for it is `not scanned`, whatever its parent says. Absent from a `partial` or
+`not scanned` scope goes to `Open decisions`. Only names are emitted — the literal strings
+that appear are route and page paths, middleware matchers, cron or interval
+expressions and CSS custom-property names; env values, constant values and enum
+member values never are. The new `Pages:`, `Jobs:` and `Symbols:` lines of
+`## Technical grounding`, and the `QUICKSTART-BA.md` / `QUICKSTART-DEV.md`
+files `kb init` writes, describe the same fields.
 
 **Never a secret channel — two security properties, not conveniences.**
 
@@ -1375,7 +1461,7 @@ not implement a SQL dialect. A `CREATE TABLE` of a name already created in a
 *different* migration directory is dropped with a warning naming both files, and
 an `ADD COLUMN` applies only inside the directory of its `CREATE TABLE` — two
 independent schemas sharing a table name are never merged into one that exists
-nowhere. `RENAME`/`DROP` and `ADD CONSTRAINT`/`INDEX` warn as out of scope. A
+nowhere. Partition clauses, primary keys, `CREATE INDEX` and `ADD CONSTRAINT … PRIMARY KEY|UNIQUE` are read. A statement it does not apply (`RENAME`, an unknown `ALTER` action, an unparsed index) is a site: the `schema` coverage row of that scope and reader reads `partial` and names the `file:line`. `FOREIGN KEY` and `CHECK` constraints only warn. A
 dialect-specific trailing clause (`) ENGINE=InnoDB …;`, `) WITHOUT ROWID;`,
 `) PARTITION BY RANGE (id);`, or a final statement with no `;` at all) is handled
 correctly — the closing paren is located by depth, not by scanning for an
@@ -1388,7 +1474,7 @@ regex, not parsed as a DSL. Maven `<plugins>`, `setup.cfg` `extras_require`,
 
 **A destination this command did not write is refused.** If `.kb/<doc_id>/`
 already holds Markdown or a manifest and that manifest is missing, unreadable,
-not titled `… — code knowledge`, or lists a section id outside the seven
+not titled `… — code knowledge`, or lists a section id outside the
 generated prefixes, `kb code-ingest` exits 1 and writes nothing. There is no
 override flag — move the document or choose another `--doc-id`.
 
@@ -1434,11 +1520,17 @@ the Dev workflow and future tooling key on these, so they are stable:
 | Prefix | Document | Owner | Content |
 |---|---|---|---|
 | `struct.tree` | `-code` | extractor | package/folder layout and entry points |
+| `struct.files.<dir>` | `-code` | extractor | every tracked file under a top-level directory |
+| `struct.coverage` | `-code` | extractor | per area and scope: `complete`, `partial` or `not scanned` |
 | `svc.<name>` | `-code` | extractor | image, ports, `depends_on`, detected technology |
 | `db.<table>` | `-code` | extractor | columns, types, PK/FK, DDL |
 | `dep.<ecosystem>` | `-code` | extractor | direct dependencies and framework detection |
 | `int.<name>` | `-code` | extractor | external integrations, keys only |
 | `api.<tag>` | `-code` | extractor | endpoints from an in-repo OpenAPI contract |
+| `route.<slug>` | `-code` | extractor | HTTP routes declared in code |
+| `page.<slug>` | `-code` | extractor | UI page routes |
+| `job.<slug>` | `-code` | extractor | scheduled jobs of framework schedulers |
+| `sym.<slug>` | `-code` | extractor | exported names, enum members, CSS custom properties |
 | `cmd.<purpose>` | `-code` | extractor | how to build, test, lint and run this repo |
 | `svc.<name>` | `-svc` | human (LLM-drafted) | what this service is responsible for |
 | `flow.<name>` | `-svc` | human | a business flow and the services it crosses |

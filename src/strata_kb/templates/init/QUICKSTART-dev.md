@@ -15,9 +15,12 @@ outside itself — that happens in `child` repos, reviewed on the `hub`.
 
 ## Setup once
 
-1. **Install** — `pip install strata-kb` (or clone this repo if someone
-   already scaffolded it; otherwise `kb init --kind dev` in an empty
-   folder creates it).
+1. **Install** — `pip install "strata-kb[code]"` (or clone this repo if
+   someone already scaffolded it; otherwise `kb init --kind dev` in an empty
+   folder creates it). The `code` extra adds the parsers that read routes,
+   pages, jobs and exported symbols; without it those sections are all
+   `not scanned`, the SA cannot prove a route or page absent, and
+   `kb doctor` warns. CI (`kb-code.yml`) installs the extra for you.
 2. **Point at the hub** — fill `hub:` in `.kb/config.yaml` with the main
    hub's git URL or path. This is the only read source for `kb query` /
    `kb resolve` / `kb get` / MCP.

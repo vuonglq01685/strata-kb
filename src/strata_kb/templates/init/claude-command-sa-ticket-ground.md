@@ -22,7 +22,13 @@ of the parent mission's `## Technology decisions` (`[NEW: <reason>]`
 only when there is no parent mission), or goes under `Open decisions`;
 a thing the code does not have yet is a design decision, not missing
 data — propose it as a `## Technology decisions` row (status OPEN, a
-human owner), never park "not built yet" under `Open decisions`; in a
+human owner), never park "not built yet" under `Open decisions` — except a
+route, page, job, symbol, file or table partition/index/primary key whose
+area `struct.coverage` does not show `complete` for its scope (an absent
+job always goes to `Open decisions`; the gate rejects `[NEW: D<n>]` on a
+`Jobs:` line); a new route, page or symbol names its file
+(`… in <path> [NEW: D<n>]`, on its own sub-bullet, never on a line that also
+cites an id); a new file is its own `Files:` entry; a job is never `[NEW]`; in a
 greenfield repo the proposal cites the architecture document in the
 Decision cell so the BA can flip the row once, at mission time; you
 may APPEND rows to that table and never edit, delete or re-status an

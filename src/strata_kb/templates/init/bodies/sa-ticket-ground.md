@@ -35,13 +35,15 @@ fallback.
    discovering ids with `kb_search` (fallback: `kb query`) restricted to
    that document and to the code menu: `--kind dev --tags <repo-id>-code`
    (MCP: `kinds=["dev"]`, `tags=["<repo-id>-code"]`). For a ticket: `struct.tree` (L3 for the file list),
-   every `svc.*`, `cmd.test`, and the `db.*` / `api.*` / `int.*` sections
+   `struct.coverage` (what the scan proves complete, per area and scope),
+   every `svc.*`, `cmd.test`, and the `db.*` / `api.*` / `int.*` /
+   `route.*` / `page.*` / `job.*` / `sym.*` / `struct.files.*` sections
    whose names match the ticket's nouns. From each `svc.*` also read its
    `Volumes`, `Healthcheck` and `Devices` rows — the compose facts the
    ticket's ACs are most often wrong about. For a mission (`--mission`):
    `svc.*`, `dep.*`, `struct.tree` and the architecture document on the
-   hub — do **not** load `db.*` or `api.*`; they pull the plan down to the
-   wrong layer. Note the document's revision: `kb get` prints it in the
+   hub — do **not** load `db.*` or `api.*` (nor `route.*`, `page.*`, `job.*`,
+   `sym.*`, `struct.files.*`); they pull the plan down to the wrong layer. Note the document's revision: `kb get` prints it in the
    citation `(<revision>)` and `kb_get_section` returns it — that value
    goes on the `Grounded on:` line.
 3. **Fill** — write the section from the loaded sections and nothing
@@ -65,7 +67,40 @@ fallback.
    - `Open decisions` — only for code that EXISTS and the document
      cannot prove: internal flow, failure modes, body schemas, a
      contradiction with a BA statement. Never for a thing that is
-     simply not built yet.
+     simply not built yet — except where the coverage rule below says
+     the document cannot tell.
+
+   **Coverage rule — six areas only: a route, page, job, symbol, file,
+   or a table's partition, index or primary key.** There, "absent from
+   the document" means *not built* only when `struct.coverage` shows
+   `complete` for that area in the scope that would contain it. Then the
+   line is `[NEW: D<n>]`. When the status is `partial` or `not scanned`,
+   or `struct.coverage` has no row for that scope and area, the scan may
+   have missed it: put the item under `Open decisions`, quoting the
+   coverage row's status. The `struct.coverage` Area values are `routes`,
+   `pages`, `jobs`, `symbols`, `files` and `schema` (a table's partition,
+   index or primary key is `schema`). The scope is the longest scope
+   listed in a `struct.coverage` row for `routes`, `pages`, `jobs`,
+   `symbols` or `schema` (never a `files` row) that prefixes the path of the file the new thing will live in (for `Files:`, the
+   top-level directory; a file at the repository root has scope `.`). If
+   that scope has no row for the area, the area is `not scanned` there:
+   never fall back to a parent scope's row. When a scope has several rows
+   for one area, the row whose language matches the file extension
+   decides; with no language-matching row, the worst row decides.
+   Everything else — `svc.*`, `int.*`, volumes, devices, a whole new
+   `db.*` table — keeps the rule above unchanged: not built →
+   `[NEW: D<n>]`, never `Open decisions`.
+
+   Jobs coverage is never complete (jobs outside framework schedulers are
+   not detectable), so an absent job always goes to `Open decisions`;
+   `[NEW: D<n>]` on a `Jobs:` line is always a gate error. A `[NEW]`
+   naming something the document already lists is a gate error too
+   ("already exists in <id>; cite it instead") — cite the id. A `-code`
+   without `struct.coverage` has no rows: every route, page, job, symbol,
+   file or partition/index/primary key absent from it goes under
+   `Open decisions`
+   (status `not scanned`). The gate does not check this for old documents;
+   you must.
 
    On a `## Services & order` row a single `[NEW: D<n>]` exempts every
    unknown `svc.*` on that row, `Depends on` included. Put the marker on
@@ -79,14 +114,38 @@ fallback.
      it, never retype it). The record has no directory field — a
      directory, when needed, is a `Files:` entry.
    - `Files:` — one path per sub-bullet, spelled exactly as `struct.tree`
-     lists it. `struct.tree` stops at depth 4 and 600 lines: list the
-     deepest directory it shows rather than a path you cannot see. A
-     file the ticket will create: `<path> [NEW: D<n>]`.
+     lists it; use `struct.files.*` for paths deeper than `struct.tree`
+     shows (its L3 lists every tracked file). A file the ticket will
+     create: `<path> [NEW: D<n>]` — its own entry, no ` in `; the coverage
+     rule applies to the path itself.
    - `Tables:` — `db.<table>.<column>`, the column spelled as the table's
      `Column` cell. `none` when the ticket touches no table the document
-     knows.
+     knows. A new index, partition or primary key of an existing table:
+     `index <name> (<cols>)`, `partition RANGE (<col>)` or
+     `primary key (<cols>)`, then `on db.<table> in <migration path>
+     [NEW: D<n>]`, on its own sub-bullet (area `schema`; the coverage rule
+     applies). A whole new table or column keeps the unchanged rule.
    - `Routes:` — `api.<tag> — <METHOD> <path>` copied from the tag's
-     table. `none` when the document has no `api.*` for it.
+     table, or `route.<slug> — <METHOD> <path>` copied from a `route.*`
+     section's table (path parameters `:id`, `{id}`, `[id]`, `<int:id>`
+     are the same parameter). Several ids on one line are fine; each
+     citation follows its own id. A route the ticket creates:
+     `<METHOD> <path> in <path> [NEW: D<n>]`, naming the file it will
+     live in — on its own sub-bullet, never on a line that also cites an
+     id (the gate rejects a mixed line). `none` when the document has no
+     route for it.
+   - `Pages:` — `page.<slug> — <path>` copied from a `page.*` section's
+     `Path` column. A new page: `<path> in <path> [NEW: D<n>]` on its own
+     sub-bullet, never on a line that cites an id. `none`
+     when the ticket touches no page.
+   - `Jobs:` — `job.<slug> — <Name>` copied from a `job.*` section's
+     `Name` column (backticks around a name with spaces). A job the
+     document does not list is never `[NEW: D<n>]`: it goes under
+     `Open decisions`. `none` when the ticket touches no job.
+   - `Symbols:` — `sym.<slug> — <Name>` copied from a `sym.*` section's
+     `Name` column. A new symbol: `<Name> in <path> [NEW: D<n>]` on its own
+     sub-bullet, never on a line that cites an id. `none`
+     when the ticket touches no exported symbol.
    - `Externals:` — `int.<name>` ids, or `none`.
    - `Volumes:` — `svc.<name> — <volume>, …` copied from the record's
      `Volumes` row; `svc.<name> — none` when the row says `none`; a
@@ -195,7 +254,10 @@ fallback.
 - A thing the code does not have yet is a design decision, not missing
   data: propose it as a `## Technology decisions` row (status OPEN, a
   human owner) and reference it as [NEW: D<n>]. Never park "not built
-  yet" under Open decisions.
+  yet" under Open decisions. The one exception is the coverage rule:
+  a route, page, job, symbol, file or table partition/index/primary key
+  whose area `struct.coverage` does not show `complete` for its scope
+  (a job: always) goes under Open decisions.
 - You may APPEND rows to `## Technology decisions`; never edit or delete
   an existing row, never change a Status — only a human flips OPEN to
   DECIDED.

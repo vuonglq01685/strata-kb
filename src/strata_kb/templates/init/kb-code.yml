@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install strata-kb=={version}
+      - run: pip install "strata-kb[code]=={version}"
       - run: kb build
 
   publish:
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
         with:
           python-version: "3.12"
-      - run: pip install strata-kb=={version}
+      - run: pip install "strata-kb[code]=={version}"
       # Ingest configuration (SQLite paths, extra tags) lives in
       # .kb/config.yaml under `code_ingest:` — shared with every local
       # refresh, and safe from `kb init --kind dev`, which overwrites this

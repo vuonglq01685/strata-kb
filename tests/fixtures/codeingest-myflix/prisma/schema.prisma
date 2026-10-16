@@ -1,0 +1,7 @@
+model PlaybackEvent {
+  id BigInt @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  @@id([id, createdAt])
+  @@index([createdAt])
+  @@map("playback_events")
+}

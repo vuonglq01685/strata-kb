@@ -99,8 +99,8 @@ document, so other repos can read them from the hub.
    7. **Ground technical** — it saves the draft and invokes
       `/sa-ticket-ground` on it as a separate run (no shared context).
       That fills the SA-owned `## Technical grounding` section from the hub's
-      `<repo>-code` document (service, files, tables, routes, externals,
-      volumes, healthcheck commands and device reservations, test command —
+      `<repo>-code` document (service, files, tables, routes, pages, jobs,
+      symbols, externals, volumes, healthcheck commands and device reservations, test command —
       section ids and copied values only) and runs `kb ticket check`; a
       D-row still `OPEN` is a reported FAIL that comes back to you, not a
       blocker. You never fill that section yourself, and the SA never
@@ -110,6 +110,11 @@ document, so other repos can read them from the hub.
       `<repo>-code` svc records and checked by `kb ticket check`; a value the
       document does not carry is `[NEW: D<n>]` or an Open decision — never a
       `DECIDED` note folded into an AC.
+      For routes, pages, jobs, symbols and files, "not in the document"
+      means *not built* only where the document's `struct.coverage` shows
+      that area `complete` for the part of the repo concerned; otherwise the
+      SA parks it under Open decisions for the Dev. A job the document does
+      not list always lands there — jobs are never fully detectable.
    8. **Maturity review** — once lint reports `DoR: PASS`, it runs two
       independent reviews — as two subagents in parallel where the
       runtime supports it, otherwise two sequential passes, one role
@@ -304,7 +309,8 @@ layouts.
 Alongside domain documents, the hub holds two documents per product
 repo, published by that repo's `dev`-kind workflow: `<repo>-code`
 (generated structure — names: `svc.*`, `db.*`, `api.*`, `int.*`,
-`cmd.*`, `struct.tree`) and `<repo>-svc` (curated responsibility —
+`cmd.*`, `route.*`, `page.*`, `job.*`, `sym.*`, `struct.tree`,
+`struct.files.*`, `struct.coverage`) and `<repo>-svc` (curated responsibility —
 meaning).
 
 The BA skills do not read them. Where a ticket or mission needs a

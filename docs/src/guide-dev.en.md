@@ -30,7 +30,7 @@ what makes it safe for your CI to publish continuously.
 
 | Document | Origin | Regenerated | Needs review |
 |---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | on demand, from the working tree — never committed; CI publishes it on every push to the default branch | no |
+| `<repo_id>-code` | `kb code-ingest` — deterministic, no model | on demand, from the working tree — never committed; CI publishes it when `kb publish` pushes a `kb-publish/*` tag | no |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by you | never | always |
 
 `-code` is machine fact: service names, technologies, dependencies, commands,
@@ -46,9 +46,16 @@ description from `-svc`.
 # 2. Setup, once
 
 ```bash
-pip install strata-kb
+pip install "strata-kb[code]"
 kb init --kind dev
 ```
+
+The `code` extra (`tree-sitter` plus `tree-sitter-language-pack`, about 184 MB)
+is what lets `kb code-ingest` read routes, pages, jobs and symbols out of source
+code (§7.5). Without it, routes and symbols (and pages other than the
+file-system routers) are reported as `not scanned`, jobs stay `partial`, and the
+SA asks you about them. `kb doctor` warns when it is missing, and `kb-code.yml`
+installs it in CI.
 
 ## 2.1 Configure
 
@@ -504,8 +511,10 @@ kb code-ingest --db data/app.sqlite     # name a database explicitly
 kb code-ingest --json                   # machine-readable report
 ```
 
-Seven extractors, organised by **artefact kind rather than programming
-language**, because Strata is adopted across many project lines.
+Eleven extractors, organised by **artefact kind rather than programming
+language**, because Strata is adopted across many project lines. The first seven
+read build, deploy and contract files; the last four read source code with
+tree-sitter (§7.5).
 
 | Extractor | Section prefix | Reads |
 |---|---|---|
@@ -516,10 +525,18 @@ language**, because Strata is adopted across many project lines.
 | `schema` | `db.<table>` | SQL migrations, Prisma, Alembic, EF, and explicitly named SQLite files |
 | `integrations` | `int.<name>` | environment-variable **keys** only |
 | `api` | `api.<tag>` | in-repo OpenAPI and Swagger contracts |
+| `routes` | `route.<slug>` | HTTP routes declared in source code (needs `[code]`) |
+| `pages` | `page.<slug>` | UI page routes (file-system routers work without `[code]`) |
+| `jobs` | `job.<slug>` | scheduled jobs of framework schedulers (needs `[code]`) |
+| `symbols` | `sym.<slug>` | exported names, enum and object members, CSS custom properties (needs `[code]`) |
 
-`tree` always finds something, so the zero-detection rule is: `kb code-ingest`
-exits `1` when **no extractor other than `tree`** found anything. A document
-holding only a folder listing is a misconfiguration, not knowledge.
+`tree` also writes `struct.files.<dir>`, and every extractor reports into
+`struct.coverage` (§7.5). `tree` always finds something and the four
+source-reading extractors do not count as evidence of a codebase, so the
+zero-detection rule is: `kb code-ingest` exits `1` when **none of `services`,
+`deps`, `commands`, `schema`, `integrations` and `api`** found anything. A
+document holding only a folder listing and source-derived sections is a
+misconfiguration, not knowledge.
 
 ## 7.1 Two security properties
 
@@ -538,13 +555,18 @@ These are design properties, not conveniences.
 
 These are limits, not bugs.
 
-- `schema` recognises `CREATE TABLE` and `ALTER TABLE … ADD COLUMN` in sorted
-  filename order. It does not implement a SQL dialect.
+- `schema` replays `CREATE TABLE`, `ALTER TABLE … ADD COLUMN` and the index and
+  key statements below in sorted filename order. It does not implement a SQL
+  dialect.
 - A `CREATE TABLE` for a name already created in a *different* migration
   directory is dropped with a warning naming both files, and an `ADD COLUMN`
   applies only inside the directory of its `CREATE TABLE`. Two independent
   schemas sharing a table name are never merged into one that exists nowhere.
-- `RENAME`, `DROP`, `ADD CONSTRAINT` and `ADD INDEX` warn as out of scope.
+- Partition clauses, primary keys, `CREATE INDEX` and `ADD CONSTRAINT … PRIMARY
+  KEY|UNIQUE` are read. A statement `schema` does not apply (`RENAME`, an
+  unknown `ALTER` action) is a site: the `schema` coverage row of that scope and
+  reader reads `partial` and names the `file:line`. `FOREIGN KEY` and `CHECK`
+  constraints only warn.
 - A table name outside the recognised identifier shape is skipped **with a
   warning naming the file**. The reader counts `CREATE TABLE` keywords and
   compares against what it recognised, so a skip is never silent.
@@ -557,7 +579,7 @@ These are limits, not bugs.
 
 If `.kb/<doc_id>/` already holds Markdown or a manifest and that manifest is
 missing, unreadable, not titled `… — code knowledge`, or lists a section id
-outside the seven generated prefixes, `kb code-ingest` exits 1 and writes
+outside the generated prefixes, `kb code-ingest` exits 1 and writes
 nothing. There is no override flag — move the document or choose another
 `--doc-id`.
 
@@ -575,6 +597,78 @@ tree may hold uncommitted changes. `kb code-ingest` detects that and prints a
 Local `-code` is what CI would produce if your tracked files were committed
 now; `kb doctor` warns when your installed strata-kb differs from the version
 `kb-code.yml` pins.
+
+## 7.5 Routes, pages, jobs, symbols and coverage
+
+Four extractors read source syntax with tree-sitter and need
+`pip install "strata-kb[code]"`. The pin is exact (`tree-sitter-language-pack`
+0.13.0, never 1.x, which downloads grammars from the network at run time), so
+the same commit gives the same bytes on every machine. Languages: JS/TS,
+Java/Kotlin, C#, Python, PHP, Go, Rust, Swift and Dart, plus CSS/SCSS custom
+properties.
+
+| Section | Holds |
+|---|---|
+| `route.<slug>` | One per controller class, router file or route file. Table `Method \| Path \| Handler \| File \| Request type`, with class, router, group and global prefixes joined; L3 adds the fields of a request type defined in the repo |
+| `page.<slug>` | One per front-end app. Table `Path \| File \| Layout/group`; route groups such as `(admin)` and dynamic segments (`[id]`, `:id`, `[...slug]`) are kept as written; a Next.js `middleware` matcher is one `Middleware matcher` row |
+| `job.<slug>` | One per declaring file or manifest. Table `Name \| Schedule \| Handler \| File`; the schedule is the expression as written, `hosted`, or `(dynamic)` |
+| `sym.<slug>` | One per package root (a directory with its own manifest), else per top-level directory. Table `Name \| Kind \| File`; kinds `function`, `class`, `interface`, `type`, `const`, `enum`, `member`, `css-var` |
+| `struct.files.<dir>` | Every tracked file under one top-level directory, uncapped; `struct.tree` stays the capped overview |
+| `db.<table>` | Gains `Table`, `Primary key`, `Partition` and `Indexes` rows. A Prisma model and the SQL migration of the same table merge into one `db.<Model>` section; a disagreement shows both values with their source |
+
+Supported frameworks:
+
+- **Routes:** NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut,
+  ASP.NET Core, FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum,
+  Rocket, Vapor.
+- **Pages:** Next.js, Nuxt, SvelteKit, Angular, Vue, React (react-router),
+  Flutter (go_router).
+- **Jobs:** NestJS, Spring / Quarkus / Micronaut, Hangfire, Quartz and .NET
+  hosted services, Celery, Laravel, Symfony, node-cron, BullMQ, robfig/cron,
+  tokio-cron-scheduler, Kubernetes `CronJob`.
+
+Sections split by file, package or top-level directory, never by size, and no
+list is truncated. Only names are emitted; the literal strings are route and
+page paths, middleware matchers, cron or interval expressions and CSS
+custom-property names. Env values, constant values and enum member values never
+are.
+
+**`struct.coverage`** tells the SA how far to trust an absence. One table,
+`Area | Scope | Framework/language | Status | Detail`, areas `routes`, `pages`,
+`jobs`, `symbols`, `files` and `schema`:
+
+| Status | Meaning |
+|---|---|
+| `complete` | Every recognised form in that scope was resolved |
+| `partial` | Something was seen but not resolved: a dynamic route path, a file that does not parse, a re-export the reader cannot follow. Each site is named as `file:line` |
+| `not scanned` | Nothing was looked at; the detail says why (extra missing, a language or framework without an adapter) |
+
+A dynamic path in your code therefore makes its scope `partial`, never silently
+drops the route. **`jobs` is never `complete`:** a job can live where no adapter
+looks (`pg_cron` in a migration, a hand-written `setInterval`, a crontab), so
+its row is always `partial` with the detail `jobs outside framework schedulers
+are not detectable`. A job that exists is listed; an absent one is always a
+question for you.
+
+What it changes for you: for a route, page, symbol, file or a table's
+partition, index or primary key, the SA writes a new thing as new only when that
+scope is `complete`: `<thing> in <path> [NEW: D<n>]` for a route, page or symbol,
+`<index|partition|primary key> on db.<table> in <path> [NEW: D<n>]` as a
+`Tables:` sub-bullet for a table's index, partition or primary key (`<path>` is
+the migration), and `<path> [NEW: D<n>]` as its own `Files:` entry for a file.
+The scope is the longest one listed in a non-`files` `struct.coverage` row that
+prefixes the path,
+and it needs its own row for the area, else the area is `not scanned` there. Otherwise it is an
+`Open decisions` item, quoting the status. `kb ticket check` enforces it (see the BA guide §3.8). A
+`-code` made by an older release has no `struct.coverage`, so those areas stay
+questions for you until its repo is re-published.
+
+**Upgrading to 1.28.0:** `pip install "strata-kb[code]"` locally; re-run
+`kb init --kind dev` for the new `kb-code.yml` (it installs the extra in CI);
+then run `kb publish` to re-publish `-code` (a push to the default branch
+publishes nothing).
+Re-run `kb init --kind ba` in BA repos for the updated SA prompt and ticket
+template.
 
 ---
 
@@ -595,13 +689,15 @@ copy first — that is what the SA grounded on (§4.1).
 repos never match the hub on it); `kb publish` is what actually refreshes it
 and sends it to the hub.
 
-`kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` on every
-push to the default branch, so the hub reflects the current commit once its
-PR merges.
+`kb-code.yml` re-runs `kb code-ingest` → `kb build` → `kb ci-publish` when a
+`kb-publish/*` tag is pushed, which is what `kb publish` does. A push to the
+default branch publishes nothing (the intake accepts a publish only from that
+tag), so run `kb publish` after a merge; the hub then reflects that commit once
+its PR merges.
 
 | Trigger | Steps | Publishes |
 |---|---|---|
-| push to default branch, or manual dispatch | code-ingest → build → ci-publish | yes |
+| a `kb-publish/*` tag (pushed by `kb publish`), or manual dispatch run on such a tag | code-ingest → build → ci-publish | yes |
 | pull request | build (which regenerates `-code` from the merge ref) | **never** |
 
 `-code` has one producer, `kb code-ingest`: `kb summarize` refuses it. A hub
@@ -655,7 +751,8 @@ should look.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `kb code-ingest` exits 1: nothing detected | Only `tree` found anything | Check that your compose file, manifests or CI workflows are where the extractors look; name a `--db` if schema is the point |
+| `kb code-ingest` exits 1: nothing detected | Only `tree` and the source readers found anything | Check that your compose file, manifests or CI workflows are where the extractors look; name a `--db` if schema is the point |
+| `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing locally, so routes and symbols (and pages other than the file-system routers) would be `not scanned` and jobs would stay `partial` | `pip install "strata-kb[code]"` |
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb build` fails in CI on a `-svc` section | A `pending` section was committed | Finish the seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | A typo, or the new service's files are not tracked yet | Copy the id from `services.md`; `git add` the new files and retry |
@@ -722,7 +819,7 @@ tooling key on. Each has exactly one owner:
 
 | Prefix | Document | Owner |
 |---|---|---|
-| `struct.tree`, `svc.<name>`, `db.<table>`, `dep.<eco>`, `int.<name>`, `api.<tag>`, `cmd.<purpose>` | `-code` | extractor |
+| `struct.tree`, `struct.files.<dir>`, `struct.coverage`, `svc.<name>`, `db.<table>`, `dep.<eco>`, `int.<name>`, `api.<tag>`, `route.<slug>`, `page.<slug>`, `job.<slug>`, `sym.<slug>`, `cmd.<purpose>` | `-code` | extractor |
 | `svc.<name>` | `-svc` | you (model-drafted) |
 | `flow.<name>` | `-svc` | you |
 | `hist.<name>` | `-svc` | `kb svc note` only |

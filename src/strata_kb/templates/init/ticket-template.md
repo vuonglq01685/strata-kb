@@ -99,14 +99,24 @@ for a thing that is simply not built yet. Gate:
 starts; a D-row still OPEN is a FAIL a human resolves, not the SA.
 `Volumes:` / `Healthchecks:` / `Devices:` are copied from the svc
 records' own rows; a volume or device the ticket creates carries
-`[NEW: D<n>]`. -->
+`[NEW: D<n>]`. A new route, page, symbol, or a table's new index, partition or
+primary key, names the file it will live
+in — `… in <path> [NEW: D<n>]` — on its own sub-bullet, never on a line
+that also cites an id; a new file is its own Files entry; a job is never
+[NEW]. Allowed only where `struct.coverage` shows that area complete for
+the path's scope; otherwise it goes under Open decisions. -->
 - Grounded on: <repo-id>:<repo-id>-code @ <revision>
 - Service: svc.<name>
 - Files:
-  - <path exactly as listed in struct.tree>
+  - <path as listed in struct.tree or struct.files.*>
   - <path> [NEW: D<n>]
 - Tables: db.<table>.<column>, … — or `none`
-- Routes: api.<tag> — <METHOD> <path>, … — or `none`
+  - index <name> (<cols>) | partition RANGE (<col>) | primary key (<cols>) on db.<table> in <migration path> [NEW: D<n>]
+- Routes: api.<tag> | route.<file> — <METHOD> <path>, … — or `none`
+  - <METHOD> <path> in <path> [NEW: D<n>]
+- Pages: page.<app> — <path>, … — or `none`
+- Jobs: job.<file> — <name>, … — or `none`
+- Symbols: sym.<package> — <Name>, … — or `none`
 - Externals: int.<name>, … — or `none`
 - Volumes: svc.<name> — <volume>, …; svc.<name> — none — or `none`
 - Healthchecks: svc.<name> — `<test command>`; svc.<name> — none; svc.<name> — disabled — or `none`

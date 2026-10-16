@@ -2,14 +2,21 @@
 
 Always detects (it is the reason `core.run()`'s zero-detection rule counts
 extractors *other than* `tree`: a bare directory listing is never, on its
-own, evidence that this is a codebase). Emits exactly one section,
-`struct.tree` in the `structure` group, built by `walk_tree()` below — the
+own, evidence that this is a codebase). Emits `struct.tree` in the
+`structure` group, built by `walk_tree()` below — the
 files `git ls-files` reports under the root (so a git-ignored virtualenv,
 worktree or previous run's output never appears, and two checkouts of the
 same commit list the same tree), with `IGNORED_DIRS` (and the caller's
 `kb_dir`) pruned on top. A root that is not a git repository, or has no
 tracked file, falls back to one deterministic `os.walk` with the same
 pruning, and the section says which of the two applies.
+
+`struct.tree` is capped (depth 4, 600 lines). Beside it, one uncapped
+`struct.files.<dir>` section per top-level directory (and `struct.files.root`
+for root-level files) lists every tracked file -- also those under the
+directories the tree prunes (`bin/`, `build/`, `vendor/` ...), so a path the
+tree cut off or pruned can still be proven present or absent. The section set depends only
+on the top-level directory names, never on how many files there are.
 """
 
 from __future__ import annotations
@@ -18,8 +25,14 @@ import os
 import tomllib
 from pathlib import Path
 
+from strata_kb.codeingest.extractors._slugs import assign_slugs
 from strata_kb.codeingest.localgit import run as _git
-from strata_kb.codeingest.types import CodeIngestOptions, CodeSection, ExtractResult
+from strata_kb.codeingest.types import (
+    CodeIngestOptions,
+    CodeSection,
+    CoverageRow,
+    ExtractResult,
+)
 
 # Shared with every other tree-walking extractor (B3-B7): each of them must
 # prune these directories too, or output would depend on whether
@@ -190,38 +203,42 @@ def tracked_files(root: Path) -> list[str] | None:
     the wrong root — an empty tree would be a lie). See `_git_ls_files` for
     the dedup rationale and the `-z` note.
 
-    This has no `src/` caller — `walk_tree()` calls
-    `_walk_tree_with_git_state()`, which calls
-    `_git_ls_files()` directly (it needs `is_repo` and "has tracked
-    paths" as two separate facts, which this function's single collapsed
-    `None` can't give it) — so this function is now a test/diagnostic
-    entry point only: `tests/test_codeingest_extractors.py` calls it
-    directly to assert the merge-conflict dedup independently of the
-    rest of the tree-building pipeline. Kept rather than deleted because
-    that assertion reads more clearly against this function's own
-    simple, direct contract than against `_git_ls_files`'s two-tuple one,
-    and removing a still-tested, still-documented public function for a
-    docstring fix alone is not worth the churn."""
+    `walk_tree()` does not call this (it calls `_git_ls_files()` through
+    `_walk_tree_with_git_state()`, which needs `is_repo` and "has tracked
+    paths" as two separate facts that this function's single collapsed
+    `None` cannot give it). The one `src/` caller is the Rust route adapter
+    (`_routes_rust._bin_files`), which reads back the tracked `src/bin/`
+    files the walker prunes; `tests/test_codeingest_extractors.py` also
+    calls it to assert the merge-conflict dedup independently of the rest
+    of the tree-building pipeline."""
     is_repo, paths = _git_ls_files(root)
     if not is_repo:
         return None
     return paths or None
 
 
+# What the uncapped `struct.files.*` listing still hides: the KB never
+# describes itself. Every other tracked file is listed, `IGNORED_DIRS` or not.
+_FILES_IGNORED_DIRS = frozenset({".kb"})
+
+
 def _entries_from_tracked(
-    resolved_root: Path, tracked: list[str], resolved_kb_dir: Path | None
+    resolved_root: Path,
+    tracked: list[str],
+    resolved_kb_dir: Path | None,
+    ignored: frozenset[str] = IGNORED_DIRS,
 ) -> list[tuple[int, Path, list[str]]]:
     """The same `(depth, rel_dir, sorted_filenames)` preorder `walk_tree`'s
     os.walk branch produces, rebuilt from a tracked-file list. Git does
     not track empty directories, so none appear; every ancestor of a
     kept file does. A file is dropped when any directory component is
-    in `IGNORED_DIRS` or its directory is (or lies under) `kb_dir` —
+    in `ignored` or its directory is (or lies under) `kb_dir` —
     exactly the two prunes the os.walk branch applies."""
     files_by_dir: dict[tuple[str, ...], list[str]] = {(): []}
     for posix in tracked:
         parts = tuple(posix.split("/"))
         dir_parts, name = parts[:-1], parts[-1]
-        if any(part in IGNORED_DIRS for part in dir_parts):
+        if any(part in ignored for part in dir_parts):
             continue
         if resolved_kb_dir is not None:
             candidate = resolved_root.joinpath(*dir_parts)
@@ -262,6 +279,14 @@ def _os_walk_entries(
     return entries
 
 
+def _resolve_kb_dir(root: Path, kb_dir: Path | None) -> Path | None:
+    """`kb_dir` resolved against `root`, or None when it lies outside `root`."""
+    if kb_dir is None:
+        return None
+    candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
+    return candidate if root.resolve() in candidate.parents else None
+
+
 def _walk_tree_with_git_state(
     root: Path, kb_dir: Path | None = None
 ) -> tuple[list[tuple[int, Path, list[str]]], bool, bool]:
@@ -276,13 +301,7 @@ def _walk_tree_with_git_state(
     other extractor's own `walk_tree()` call below hits it. `walk_tree()`
     itself just discards the extra two values; every other caller is
     unaffected."""
-    resolved_kb_dir: Path | None = None
-    if kb_dir is not None:
-        resolved_root = root.resolve()
-        candidate = (kb_dir if kb_dir.is_absolute() else root / kb_dir).resolve()
-        if resolved_root in candidate.parents:
-            resolved_kb_dir = candidate
-
+    resolved_kb_dir = _resolve_kb_dir(root, kb_dir)
     is_repo, tracked_paths = _git_ls_files(root)
     if is_repo and tracked_paths:
         entries = _entries_from_tracked(root.resolve(), tracked_paths, resolved_kb_dir)
@@ -388,6 +407,61 @@ def _render_l3(root: Path, entries: list[tuple[int, Path, list[str]]]) -> str:
     return body
 
 
+_ROOT_SLUG = "root"  # struct.files.root: files directly under the repo root
+
+
+def _files_sections(
+    entries: list[tuple[int, Path, list[str]]], is_repo: bool, tracked: bool
+) -> tuple[list[CodeSection], list[CoverageRow]]:
+    """One uncapped `struct.files.<slug>` section (+ coverage row) per
+    top-level directory that holds files, plus `struct.files.root` for
+    root-level files. Paths are the full repo-relative path, sorted."""
+    files_by_top: dict[str, list[str]] = {}
+    subdirs_by_top: dict[str, list[str]] = {}
+    for depth, rel, filenames in entries:
+        top = "." if depth == 0 else rel.parts[0]
+        if depth == 2:
+            subdirs_by_top.setdefault(top, []).append(rel.as_posix())
+        paths = [(rel / name).as_posix() for name in filenames]
+        files_by_top.setdefault(top, []).extend(paths)
+    tops = sorted(t for t in files_by_top if t != "." and files_by_top[t])
+    # "root" rides along only to reserve its slug: a top-level directory
+    # literally named `root` is then suffixed instead of colliding with it.
+    slugs = dict(zip(tops, assign_slugs([*tops, _ROOT_SLUG]), strict=False))
+    if files_by_top.get("."):
+        slugs["."] = _ROOT_SLUG
+    if is_repo and tracked:
+        status, detail = "complete", ""
+    elif not is_repo:
+        status, detail = "partial", "not a git repository — os.walk listing"
+    else:
+        status, detail = "partial", "no tracked files — os.walk listing"
+    sections: list[CodeSection] = []
+    rows: list[CoverageRow] = []
+    for top in sorted(slugs):
+        paths = sorted(files_by_top[top])
+        label = "root" if top == "." else f"{top}/"
+        subdirs = sorted(subdirs_by_top.get(top, []))
+        l2 = f"{len(paths)} files\n"
+        if subdirs:
+            l2 += (
+                "\nSub-directories:\n\n" + "\n".join(f"- {d}/" for d in subdirs) + "\n"
+            )
+        sub_phrase = f" in {len(subdirs)} sub-directories" if subdirs else ""
+        sections.append(
+            CodeSection(
+                id=f"struct.files.{slugs[top]}",
+                title=f"Files: {label}",
+                summary=f"{label}: {len(paths)} files{sub_phrase}, every path listed.",
+                group="structure",
+                l2_md=l2,
+                l3_md="```\n" + "\n".join(paths) + "\n```\n",
+            )
+        )
+        rows.append(CoverageRow("files", top, "-", status, detail))
+    return sections, rows
+
+
 class TreeExtractor:
     name = "tree"
 
@@ -406,6 +480,16 @@ class TreeExtractor:
         # tracked" for the wording further down: information the
         # entries-building call already has.
         entries, is_repo, tracked = _walk_tree_with_git_state(root, opts.kb_dir)
+        file_entries = entries
+        if is_repo and tracked:
+            # complete, uncapped: tracked files under bin/, build/, vendor/ ...
+            # stay out of the tree but are listed here
+            file_entries = _entries_from_tracked(
+                root.resolve(),
+                _git_ls_files(root)[1],
+                _resolve_kb_dir(root, opts.kb_dir),
+                _FILES_IGNORED_DIRS,
+            )
         n_dirs = sum(1 for _depth, rel, _filenames in entries if rel != Path("."))
         n_files = sum(len(filenames) for _depth, _rel, filenames in entries)
         entry_points, console_scripts = _detect_entry_points(root, entries)
@@ -468,4 +552,7 @@ class TreeExtractor:
             l2_md=l2_md,
             l3_md=l3_md,
         )
-        return ExtractResult(sections=[section], warnings=warnings)
+        file_sections, coverage = _files_sections(file_entries, is_repo, tracked)
+        return ExtractResult(
+            sections=[section, *file_sections], warnings=warnings, coverage=coverage
+        )

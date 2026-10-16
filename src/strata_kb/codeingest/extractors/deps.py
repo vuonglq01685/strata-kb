@@ -133,6 +133,8 @@ def detect_frameworks(names: Iterable[str]) -> list[str]:
 # `requirements*.txt`, named by that file's repo-relative path. Every group
 # is rendered — names in L2, constraints in L3.
 Groups = dict[str, list[tuple[str, str]]]
+# One manifest's contribution: (group name, its (name, constraint) pairs).
+Entry = tuple[str, list[tuple[str, str]]]
 
 _NODE_MAX_DEPTH = 2  # package.json is only searched at depth <= 2
 _PEP508_SPLIT_RE = re.compile(r"[><=!~\[;]")
@@ -226,6 +228,85 @@ def _finish(
 # ---------------------------------------------------------------------------
 
 
+def _parse_pyproject(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return []
+    # `tomllib.loads` always returns a dict at the top level, but
+    # `project` (and `dependencies` under it) are just keys — a
+    # pyproject.toml with a scalar `project = "..."` would otherwise
+    # crash `.get("dependencies")` on a str and take the whole
+    # ecosystem down with it (every reader here must degrade a
+    # wrong-shaped manifest, not just a malformed one).
+    if not isinstance(data, dict):
+        warnings.append(f"could not parse {rel}: top-level is not a table")
+        return []
+    project = data.get("project", {})
+    if not isinstance(project, dict):
+        warnings.append(f"could not parse {rel}: 'project' is not a table")
+        return []
+    out: list[Entry] = []
+    deps = project.get("dependencies", [])
+    if isinstance(deps, list):
+        out.append(("direct", [_split_pep508(d) for d in deps if isinstance(d, str)]))
+    elif deps:
+        warnings.append(f"could not parse {rel}: 'project.dependencies' is not a list")
+
+    extras = project.get("optional-dependencies", {})
+    if isinstance(extras, dict):
+        for extra in sorted(extras, key=str):
+            specs = extras[extra]
+            if isinstance(specs, list):
+                out.append(
+                    (
+                        f"extra:{extra}",
+                        [_split_pep508(d) for d in specs if isinstance(d, str)],
+                    )
+                )
+            else:
+                warnings.append(
+                    f"could not parse {rel}: optional-dependencies "
+                    f"{extra!r} is not a list"
+                )
+    elif extras:
+        warnings.append(
+            f"could not parse {rel}: 'project.optional-dependencies' is not a table"
+        )
+    return out
+
+
+def _parse_requirements(
+    path: Path, rel: str, warnings: list[str]
+) -> list[tuple[str, str]] | None:
+    """The pairs of one `requirements*.txt`, or `None` when unreadable."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return None
+    pairs = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Any pip option line (`-r other.txt`, `-e .`,
+        # `--extra-index-url ...`, `--index-url ...`, ...) starts
+        # with `-`, not a package name — and a trailing `# comment`
+        # on an otherwise-real line must not leak into the
+        # constraint (`fastapi>=0.110  # web` is a dependency plus
+        # a comment, not a dependency whose constraint is
+        # `>=0.110  # web`).
+        if stripped.startswith("-"):
+            continue
+        code_part = stripped.split("#", 1)[0].strip()
+        if not code_part:
+            continue
+        pairs.append(_split_pep508(code_part))
+    return pairs
+
+
 def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     groups: Groups = {}
     warnings: list[str] = []
@@ -235,59 +316,8 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
     if pyproject.is_file():
         rel = relposix(root, pyproject)
         existing.append(rel)
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-        else:
-            # `tomllib.loads` always returns a dict at the top level, but
-            # `project` (and `dependencies` under it) are just keys — a
-            # pyproject.toml with a scalar `project = "..."` would otherwise
-            # crash `.get("dependencies")` on a str and take the whole
-            # ecosystem down with it (every reader here must degrade a
-            # wrong-shaped manifest, not just a malformed one).
-            if not isinstance(data, dict):
-                warnings.append(f"could not parse {rel}: top-level is not a table")
-            else:
-                project = data.get("project", {})
-                if not isinstance(project, dict):
-                    warnings.append(f"could not parse {rel}: 'project' is not a table")
-                else:
-                    deps = project.get("dependencies", [])
-                    if isinstance(deps, list):
-                        _merge(
-                            groups,
-                            "direct",
-                            [_split_pep508(d) for d in deps if isinstance(d, str)],
-                        )
-                    elif deps:
-                        warnings.append(
-                            f"could not parse {rel}: 'project.dependencies' is not a list"
-                        )
-
-                    extras = project.get("optional-dependencies", {})
-                    if isinstance(extras, dict):
-                        for extra in sorted(extras, key=str):
-                            specs = extras[extra]
-                            if isinstance(specs, list):
-                                _merge(
-                                    groups,
-                                    f"extra:{extra}",
-                                    [
-                                        _split_pep508(d)
-                                        for d in specs
-                                        if isinstance(d, str)
-                                    ],
-                                )
-                            else:
-                                warnings.append(
-                                    f"could not parse {rel}: optional-dependencies "
-                                    f"{extra!r} is not a list"
-                                )
-                    elif extras:
-                        warnings.append(
-                            f"could not parse {rel}: 'project.optional-dependencies' is not a table"
-                        )
+        for group, pairs in _parse_pyproject(pyproject, rel, warnings):
+            _merge(groups, group, pairs)
 
     setup_cfg = root / "setup.cfg"
     if setup_cfg.is_file():
@@ -310,29 +340,9 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
             path = root / reldir / name
             rel = relposix(root, path)
             existing.append(rel)
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                warnings.append(f"could not parse {rel}: {exc}")
+            pairs = _parse_requirements(path, rel, warnings)
+            if pairs is None:
                 continue
-            pairs = []
-            for line in text.splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
-                    continue
-                # Any pip option line (`-r other.txt`, `-e .`,
-                # `--extra-index-url ...`, `--index-url ...`, ...) starts
-                # with `-`, not a package name — and a trailing `# comment`
-                # on an otherwise-real line must not leak into the
-                # constraint (`fastapi>=0.110  # web` is a dependency plus
-                # a comment, not a dependency whose constraint is
-                # `>=0.110  # web`).
-                if stripped.startswith("-"):
-                    continue
-                code_part = stripped.split("#", 1)[0].strip()
-                if not code_part:
-                    continue
-                pairs.append(_split_pep508(code_part))
             # Only the root requirements.txt is the runtime set; every other
             # requirements file (a CI runner venv, a docs build) is its own
             # group so nothing is duplicated or misattributed.
@@ -346,6 +356,34 @@ def _read_python(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
 # ---------------------------------------------------------------------------
 
 
+def _load_json_object(path: Path, rel: str, warnings: list[str]) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return None
+    # JSON, unlike TOML, can legally have any type at the top level —
+    # a manifest that is `[]` or a bare string parses without error but
+    # has no `.get()`; guard it the same way a malformed file is
+    # guarded, and keep processing every other manifest the reader finds.
+    if not isinstance(data, dict):
+        warnings.append(f"could not parse {rel}: top-level is not an object")
+        return None
+    return data
+
+
+def _parse_package_json(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    data = _load_json_object(path, rel, warnings)
+    if data is None:
+        return []
+    out: list[Entry] = []
+    for key, group in (("dependencies", "direct"), ("devDependencies", "dev")):
+        section = data.get(key, {})
+        if isinstance(section, dict):
+            out.append((group, [(k, str(v)) for k, v in section.items()]))
+    return out
+
+
 def _read_node(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     groups: Groups = {}
     warnings: list[str] = []
@@ -357,25 +395,8 @@ def _read_node(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
         path = root / reldir / "package.json"
         rel = relposix(root, path)
         existing.append(rel)
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-            continue
-        # JSON, unlike TOML, can legally have any type at the top level —
-        # a package.json that is `[]` or a bare string parses without
-        # error but has no `.get()`; guard it the same way a malformed
-        # file is guarded, and keep processing every other package.json
-        # this reader finds.
-        if not isinstance(data, dict):
-            warnings.append(f"could not parse {rel}: top-level is not an object")
-            continue
-        direct = data.get("dependencies", {})
-        dev = data.get("devDependencies", {})
-        if isinstance(direct, dict):
-            _merge(groups, "direct", [(k, str(v)) for k, v in direct.items()])
-        if isinstance(dev, dict):
-            _merge(groups, "dev", [(k, str(v)) for k, v in dev.items()])
+        for group, pairs in _parse_package_json(path, rel, warnings):
+            _merge(groups, group, pairs)
 
     return _finish(groups, warnings, existing)
 
@@ -383,6 +404,40 @@ def _read_node(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 # ---------------------------------------------------------------------------
 # java — pom.xml + build.gradle(.kts)
 # ---------------------------------------------------------------------------
+
+
+def _parse_pom(path: Path, rel: str, warnings: list[str]) -> list[tuple[str, str]]:
+    try:
+        xml_tree = ET.parse(path)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
+    except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return []
+    pairs = []
+    for elem in xml_tree.getroot().iter():
+        if not elem.tag.endswith("dependency"):
+            continue
+        artifact = ""
+        version = ""
+        for child in elem:
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "artifactId" and child.text:
+                artifact = child.text.strip()
+            elif tag == "version" and child.text:
+                version = child.text.strip()
+        if artifact:
+            pairs.append((artifact, version))
+    return pairs
+
+
+def _parse_gradle(
+    path: Path, rel: str, warnings: list[str]
+) -> list[tuple[str, str]] | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return None
+    return [_split_gradle_coordinate(m.strip()) for m in _GRADLE_DEP_RE.findall(text)]
 
 
 def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
@@ -394,26 +449,7 @@ def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     if pom.is_file():
         rel = relposix(root, pom)
         existing.append(rel)
-        try:
-            xml_tree = ET.parse(pom)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
-        except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-        else:
-            pairs = []
-            for elem in xml_tree.getroot().iter():
-                if not elem.tag.endswith("dependency"):
-                    continue
-                artifact = ""
-                version = ""
-                for child in elem:
-                    tag = child.tag.rsplit("}", 1)[-1]
-                    if tag == "artifactId" and child.text:
-                        artifact = child.text.strip()
-                    elif tag == "version" and child.text:
-                        version = child.text.strip()
-                if artifact:
-                    pairs.append((artifact, version))
-            _merge(groups, "direct", pairs)
+        _merge(groups, "direct", _parse_pom(pom, rel, warnings))
 
     for _depth, reldir, filenames in walk_tree(root, opts.kb_dir):
         for name in filenames:
@@ -422,15 +458,9 @@ def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
             path = root / reldir / name
             rel = relposix(root, path)
             existing.append(rel)
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                warnings.append(f"could not parse {rel}: {exc}")
-                continue
-            matches = _GRADLE_DEP_RE.findall(text)
-            _merge(
-                groups, "direct", [_split_gradle_coordinate(m.strip()) for m in matches]
-            )
+            pairs = _parse_gradle(path, rel, warnings)
+            if pairs is not None:
+                _merge(groups, "direct", pairs)
 
     return _finish(groups, warnings, existing)
 
@@ -438,6 +468,28 @@ def _read_java(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 # ---------------------------------------------------------------------------
 # dotnet — *.csproj
 # ---------------------------------------------------------------------------
+
+
+def _parse_csproj(path: Path, rel: str, warnings: list[str]) -> list[tuple[str, str]]:
+    try:
+        xml_tree = ET.parse(path)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
+    except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return []
+    pairs = []
+    for elem in xml_tree.getroot().iter():
+        if not elem.tag.endswith("PackageReference"):
+            continue
+        pkg_name = elem.get("Include", "")
+        version = elem.get("Version", "")
+        if not version:
+            for child in elem:
+                tag = child.tag.rsplit("}", 1)[-1]
+                if tag == "Version" and child.text:
+                    version = child.text.strip()
+        if pkg_name:
+            pairs.append((pkg_name, version))
+    return pairs
 
 
 def _read_dotnet(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
@@ -452,25 +504,7 @@ def _read_dotnet(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
             path = root / reldir / name
             rel = relposix(root, path)
             existing.append(rel)
-            try:
-                xml_tree = ET.parse(path)  # noqa: S314 -- ET resolves no external entities (no XXE); expat's amplification limit refuses billion-laughs/quadratic blowup as ET.ParseError, already handled below
-            except (ET.ParseError, OSError, UnicodeDecodeError) as exc:
-                warnings.append(f"could not parse {rel}: {exc}")
-                continue
-            pairs = []
-            for elem in xml_tree.getroot().iter():
-                if not elem.tag.endswith("PackageReference"):
-                    continue
-                pkg_name = elem.get("Include", "")
-                version = elem.get("Version", "")
-                if not version:
-                    for child in elem:
-                        tag = child.tag.rsplit("}", 1)[-1]
-                        if tag == "Version" and child.text:
-                            version = child.text.strip()
-                if pkg_name:
-                    pairs.append((pkg_name, version))
-            _merge(groups, "direct", pairs)
+            _merge(groups, "direct", _parse_csproj(path, rel, warnings))
 
     return _finish(groups, warnings, existing)
 
@@ -478,6 +512,37 @@ def _read_dotnet(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]
 # ---------------------------------------------------------------------------
 # go — go.mod
 # ---------------------------------------------------------------------------
+
+
+def _parse_go_mod(path: Path, rel: str, warnings: list[str]) -> list[tuple[str, str]]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return []
+    pairs = []
+    in_block = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("require") and stripped.endswith("("):
+            in_block = True
+            continue
+        if in_block:
+            if stripped == ")":
+                in_block = False
+                continue
+            if not stripped or stripped.startswith("//"):
+                continue
+            parts = stripped.split()
+            if len(parts) >= 2:
+                pairs.append((parts[0], parts[1]))
+            continue
+        if not stripped or stripped.startswith("//"):
+            continue
+        match = _GO_REQUIRE_LINE_RE.match(stripped)
+        if match:
+            pairs.append((match.group(1), match.group(2)))
+    return pairs
 
 
 def _read_go(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
@@ -489,34 +554,7 @@ def _read_go(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     if go_mod.is_file():
         rel = relposix(root, go_mod)
         existing.append(rel)
-        try:
-            text = go_mod.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-        else:
-            pairs = []
-            in_block = False
-            for line in text.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("require") and stripped.endswith("("):
-                    in_block = True
-                    continue
-                if in_block:
-                    if stripped == ")":
-                        in_block = False
-                        continue
-                    if not stripped or stripped.startswith("//"):
-                        continue
-                    parts = stripped.split()
-                    if len(parts) >= 2:
-                        pairs.append((parts[0], parts[1]))
-                    continue
-                if not stripped or stripped.startswith("//"):
-                    continue
-                match = _GO_REQUIRE_LINE_RE.match(stripped)
-                if match:
-                    pairs.append((match.group(1), match.group(2)))
-            _merge(groups, "direct", pairs)
+        _merge(groups, "direct", _parse_go_mod(go_mod, rel, warnings))
 
     return _finish(groups, warnings, existing)
 
@@ -524,6 +562,18 @@ def _read_go(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
 # ---------------------------------------------------------------------------
 # php — composer.json
 # ---------------------------------------------------------------------------
+
+
+def _parse_composer(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    data = _load_json_object(path, rel, warnings)
+    if data is None:
+        return []
+    out: list[Entry] = []
+    for key, group in (("require", "direct"), ("require-dev", "dev")):
+        section = data.get(key, {})
+        if isinstance(section, dict):
+            out.append((group, [(k, str(v)) for k, v in section.items()]))
+    return out
 
 
 def _read_php(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
@@ -535,20 +585,8 @@ def _read_php(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     if composer.is_file():
         rel = relposix(root, composer)
         existing.append(rel)
-        try:
-            data = json.loads(composer.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-        else:
-            if not isinstance(data, dict):
-                warnings.append(f"could not parse {rel}: top-level is not an object")
-            else:
-                direct = data.get("require", {})
-                dev = data.get("require-dev", {})
-                if isinstance(direct, dict):
-                    _merge(groups, "direct", [(k, str(v)) for k, v in direct.items()])
-                if isinstance(dev, dict):
-                    _merge(groups, "dev", [(k, str(v)) for k, v in dev.items()])
+        for group, pairs in _parse_composer(composer, rel, warnings):
+            _merge(groups, group, pairs)
 
     return _finish(groups, warnings, existing)
 
@@ -585,6 +623,18 @@ _CARGO_TABLES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _load_cargo(path: Path, rel: str, warnings: list[str]) -> dict | None:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return None
+    if not isinstance(data, dict):
+        warnings.append(f"could not parse {rel}: top-level is not a table")
+        return None
+    return data
+
+
 def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     """Every `Cargo.toml` in the tree, in two passes.
 
@@ -615,13 +665,8 @@ def _read_rust(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
         path = root / reldir / "Cargo.toml"
         rel = relposix(root, path)
         existing.append(rel)
-        try:
-            data = tomllib.loads(path.read_text(encoding="utf-8"))
-        except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-            continue
-        if not isinstance(data, dict):
-            warnings.append(f"could not parse {rel}: top-level is not a table")
+        data = _load_cargo(path, rel, warnings)
+        if data is None:
             continue
         manifests.append(data)
         workspace = data.get("workspace")
@@ -757,6 +802,33 @@ def _swift_dep_name(locator: str) -> str:
     return name[: -len(".git")] if name.endswith(".git") else name
 
 
+def _parse_swift(
+    path: Path, rel: str, warnings: list[str]
+) -> list[tuple[str, str]] | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return None
+    pairs = []
+    for call in _iter_swift_package_calls(_strip_swift_comments(text)):
+        url_match = _SWIFT_URL_RE.search(call)
+        if url_match:
+            name = _swift_dep_name(url_match.group(1))
+        else:
+            name_match = _SWIFT_NAME_RE.search(call)
+            path_match = _SWIFT_PATH_RE.search(call)
+            if name_match:
+                name = name_match.group(1)
+            elif path_match:
+                name = _swift_dep_name(path_match.group(1))
+            else:
+                continue
+        version_match = _SWIFT_VERSION_RE.search(call)
+        pairs.append((name, version_match.group(1) if version_match else ""))
+    return pairs
+
+
 def _read_swift(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     groups: Groups = {}
     warnings: list[str] = []
@@ -768,28 +840,9 @@ def _read_swift(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]
         manifest = root / reldir / "Package.swift"
         rel = relposix(root, manifest)
         existing.append(rel)
-        try:
-            text = manifest.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-            continue
-        pairs = []
-        for call in _iter_swift_package_calls(_strip_swift_comments(text)):
-            url_match = _SWIFT_URL_RE.search(call)
-            if url_match:
-                name = _swift_dep_name(url_match.group(1))
-            else:
-                name_match = _SWIFT_NAME_RE.search(call)
-                path_match = _SWIFT_PATH_RE.search(call)
-                if name_match:
-                    name = name_match.group(1)
-                elif path_match:
-                    name = _swift_dep_name(path_match.group(1))
-                else:
-                    continue
-            version_match = _SWIFT_VERSION_RE.search(call)
-            pairs.append((name, version_match.group(1) if version_match else ""))
-        _merge(groups, "direct", pairs)
+        pairs = _parse_swift(manifest, rel, warnings)
+        if pairs is not None:
+            _merge(groups, "direct", pairs)
 
     return _finish(groups, warnings, existing)
 
@@ -808,6 +861,33 @@ def _dart_constraint(value: object) -> str:
     return ""
 
 
+def _parse_pubspec(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
+        warnings.append(f"could not parse {rel}: {exc}")
+        return []
+    if not isinstance(data, dict):
+        warnings.append(f"could not parse {rel}: top-level is not a mapping")
+        return []
+    # `str(k)` for the same reason `_parse_package_json` wraps its
+    # constraint: a YAML mapping key is not necessarily a string (`1.5:`
+    # parses to a float, and YAML 1.1 reads a bare `no:`/`on:` as a bool),
+    # while every shared helper downstream -- `_dedupe_sorted`'s
+    # `p[0].lower()` first -- assumes a `str` name. Without the cast that
+    # AttributeError unwinds past this reader's per-file `try` to
+    # `extract()`'s blanket handler and drops every other pubspec.yaml in
+    # the repo with it, naming no file.
+    out: list[Entry] = []
+    for key, group in (("dependencies", "direct"), ("dev_dependencies", "dev")):
+        section = data.get(key, {})
+        if isinstance(section, dict):
+            out.append(
+                (group, [(str(k), _dart_constraint(v)) for k, v in section.items()])
+            )
+    return out
+
+
 def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
     groups: Groups = {}
     warnings: list[str] = []
@@ -819,36 +899,63 @@ def _read_dart(root: Path, opts: CodeIngestOptions) -> tuple[Groups, list[str]]:
         pubspec = root / reldir / "pubspec.yaml"
         rel = relposix(root, pubspec)
         existing.append(rel)
-        try:
-            data = yaml.safe_load(pubspec.read_text(encoding="utf-8"))
-        except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
-            warnings.append(f"could not parse {rel}: {exc}")
-            continue
-        if not isinstance(data, dict):
-            warnings.append(f"could not parse {rel}: top-level is not a mapping")
-            continue
-        direct = data.get("dependencies", {})
-        dev = data.get("dev_dependencies", {})
-        # `str(k)` for the same reason `_read_node` wraps its constraint:
-        # a YAML mapping key is not necessarily a string (`1.5:` parses to
-        # a float, and YAML 1.1 reads a bare `no:`/`on:` as a bool), while
-        # every shared helper downstream -- `_dedupe_sorted`'s
-        # `p[0].lower()` first -- assumes a `str` name. Without the cast
-        # that AttributeError unwinds past this reader's per-file `try`
-        # to `extract()`'s blanket handler and drops every other
-        # pubspec.yaml in the repo with it, naming no file.
-        if isinstance(direct, dict):
-            _merge(
-                groups,
-                "direct",
-                [(str(k), _dart_constraint(v)) for k, v in direct.items()],
-            )
-        if isinstance(dev, dict):
-            _merge(
-                groups, "dev", [(str(k), _dart_constraint(v)) for k, v in dev.items()]
-            )
+        for group, pairs in _parse_pubspec(pubspec, rel, warnings):
+            _merge(groups, group, pairs)
 
     return _finish(groups, warnings, existing)
+
+
+# ---------------------------------------------------------------------------
+# one manifest -> dependency names (package scopes, framework labelling)
+# ---------------------------------------------------------------------------
+
+
+def _cargo_entries(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    data = _load_cargo(path, rel, warnings)
+    if data is None:
+        return []
+    return [
+        (group, [(name, "") for name in data[table]])
+        for table, group in _CARGO_TABLES
+        if isinstance(data.get(table), dict)
+    ]
+
+
+def _entries_for(path: Path, rel: str, warnings: list[str]) -> list[Entry]:
+    name = path.name
+    if name == "package.json":
+        return _parse_package_json(path, rel, warnings)
+    if name == "pyproject.toml":
+        return _parse_pyproject(path, rel, warnings)
+    if name == "composer.json":
+        return _parse_composer(path, rel, warnings)
+    if name == "pubspec.yaml":
+        return _parse_pubspec(path, rel, warnings)
+    if name == "Cargo.toml":
+        return _cargo_entries(path, rel, warnings)
+    if name == "pom.xml":
+        return [("direct", _parse_pom(path, rel, warnings))]
+    if name == "go.mod":
+        return [("direct", _parse_go_mod(path, rel, warnings))]
+    if name.endswith(".csproj"):
+        return [("direct", _parse_csproj(path, rel, warnings))]
+    pairs: list[tuple[str, str]] | None = None
+    if name in ("build.gradle", "build.gradle.kts"):
+        pairs = _parse_gradle(path, rel, warnings)
+    elif name == "Package.swift":
+        pairs = _parse_swift(path, rel, warnings)
+    elif fnmatch.fnmatch(name, "requirements*.txt"):
+        pairs = _parse_requirements(path, rel, warnings)
+    return [("direct", pairs)] if pairs else []
+
+
+def manifest_dep_names(path: Path) -> list[str]:
+    """Sorted, de-duplicated dependency names (every group) of ONE manifest
+    file. Unknown, missing or unparseable files give `[]` — the warnings the
+    readers raise for them are `DepsExtractor`'s to report, not this
+    function's."""
+    entries = _entries_for(path, path.name, [])
+    return sorted({name for _group, pairs in entries for name, _c in pairs})
 
 
 # ---------------------------------------------------------------------------

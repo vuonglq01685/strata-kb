@@ -18,7 +18,7 @@ from strata_kb import models
 from strata_kb.codeingest import core, localgit
 
 KB_CODE_WORKFLOW = Path(".github") / "workflows" / "kb-code.yml"
-_PIN_RE = re.compile(r"strata-kb==([^\s\"']+)")
+_PIN_RE = re.compile(r"strata-kb(?:\[[^\]]*\])?==([^\s\"']+)")
 
 
 def ci_pin(repo_root: Path) -> str | None:

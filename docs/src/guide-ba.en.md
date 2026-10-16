@@ -234,8 +234,9 @@ Ready` and `## Review record`. `## KB context`, `## Dependencies` and
 Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the
 draft and invokes `/sa-ticket-ground` on it as its own subagent. It fills the
 SA-owned `## Technical grounding` section — service, files, tables, routes,
-externals, volumes, healthcheck commands and device reservations, test
-command — each a section id from the hub's `<repo>-code` document. It never
+pages, jobs, symbols, externals, volumes, healthcheck commands and device
+reservations, test command — each a section id from the hub's `<repo>-code`
+document. It never
 edits your sections; a business statement that contradicts the code facts is
 quoted there, not corrected.
 
@@ -243,7 +244,10 @@ Code that does not exist yet is not missing data, it is a design decision.
 The SA proposes a row in the parent mission's `## Technology decisions`
 (status `OPEN`, a human owner) and writes `[NEW: D<n>]` pointing at it. Only
 code that exists and the document cannot prove — internal flow, failure
-modes, request bodies — goes under `Open decisions` for the developer.
+modes, request bodies — goes under `Open decisions` for the developer. The one
+exception is a route, page, job, symbol, file or a table's partition, index or
+primary key: there the SA first checks whether the scan was complete (see
+*Coverage* below).
 
 `kb ticket check tickets/<ticket-id>.md` gates it: PASS only when every id
 resolves, every `[NEW: D<n>]` names a `DECIDED` row, and `Open decisions` is
@@ -267,6 +271,57 @@ That revision moves with every dev commit, so a mismatch alone never fails:
 
 Open decisions and undecided `[NEW: D<k>]` rows fail as before, without that
 line: they are your call, not a re-ground.
+
+### Coverage: when "not in the document" means "not built"
+
+The `<repo>-code` document carries `struct.coverage`, a table that says, per
+area and scope, how much of the code the generator read: `complete` (every
+recognised form in that scope was resolved), `partial` (something was seen but
+not resolved; the `file:line` is named) or `not scanned` (not looked at; the
+reason is given, for instance the Dev repo has no `strata-kb[code]`). The areas
+are `routes`, `pages`, `jobs`, `symbols`, `files` and `schema` (a table's
+partition, index or primary key). The Dev guide §7.5 has the detail.
+
+The rule for those six areas only:
+
+- **Absent from a `complete` scope = not built.** A new route, page or symbol
+  is written `<what> in <path> [NEW: D<n>]` on a `Routes:`, `Pages:` or
+  `Symbols:` line, naming the file it will live in; the scope is the longest
+  scope listed in a `struct.coverage` row other than `files` that prefixes
+  that path, and
+  it needs its own row for the area: a nested package with no `routes` row is
+  `not scanned`, whatever its parent says. The new item goes on its own
+  sub-bullet, never on a line that also cites an existing id. A new index,
+  partition or primary key is a `Tables:` sub-bullet, `index <name> (<cols>) |
+  partition RANGE (<col>) | primary key (<cols>) on db.<table> in <path> [NEW:
+  D<n>]`, where `<path>` is the migration or schema file (area `schema`); a
+  whole new table or column is not gated. A new file is not written that way:
+  it is its own `Files:` entry, `<path> [NEW: D<n>]` (the scope is its
+  top-level directory).
+- **Absent from a `partial` or `not scanned` scope = unknown.** The SA cannot
+  tell "not built" from "the scan missed it", so the item goes under `Open
+  decisions`, quoting the coverage status, and the Dev answers it. The gate
+  fails a `[NEW: D<n>]` on such a scope (`cannot claim new: coverage of … is
+  partial; move it to Open decisions`).
+- **Jobs are never `complete`** (`jobs outside framework schedulers are not
+  detectable`). A job that exists is listed under `Jobs:` as `job.<slug> —
+  <name>`; an absent one always goes to `Open decisions`, and `[NEW]` on a
+  `Jobs:` line is always a gate error.
+- **A `[NEW]` for something the document already lists fails** (`already exists
+  in <id>; cite it instead`), when it was listed at the revision the ticket was
+  grounded on.
+- Everything else (`svc.*`, `int.*`, volumes, devices, a whole new table) keeps
+  the rule above: not built is a design decision, `[NEW: D<n>]`.
+- A `-code` document from before 1.28.0 has no `struct.coverage`: those six
+  areas go to `Open decisions` until the Dev repo is re-published, and the gate
+  does not judge the coverage rules on it, so older tickets keep passing.
+
+The new `## Technical grounding` lines are `Pages: page.<slug> — <path>`,
+`Jobs: job.<slug> — <name>` and `Symbols: sym.<slug> — <Name>`; `Routes:` also
+accepts `route.<slug> — <METHOD> <path>` (path parameters `:id`, `{id}`,
+`<int:id>` and `[id]` count as the same), and `Files:` may cite any path in
+`struct.tree` or a `struct.files.*` section. `kb init --kind ba` writes the
+updated SA prompt and ticket template. `QUICKSTART-BA.md` lists the fields.
 
 Run `/sa-ticket-ground` by hand only when `kb ticket check` fails with
 `re-run /sa-ticket-ground`.
@@ -650,7 +705,8 @@ inside the document.
 
 Besides domain documents, the hub holds two documents per product repository,
 published by that repository's own workflow: `<repo>-code` (generated
-structure — `svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `struct.tree`) and
+structure — `svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `route.*`, `page.*`,
+`job.*`, `sym.*`, `struct.tree`, `struct.files.*`, `struct.coverage`) and
 `<repo>-svc` (curated responsibility — what each service is actually for).
 
 The `ba-ticket-author` and `ba-mission-plan` skills do not read either

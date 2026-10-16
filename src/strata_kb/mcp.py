@@ -395,6 +395,9 @@ def create_server(config: ServerConfig) -> MCPServer:
                 heading=heading,
                 load_decisions=load_decisions,
                 load_drift=load_drift,
+                load_at=lambda r, d, rev, ids: ticketstale.drift_refs(
+                    hub, r, d, rev, ids
+                ),
             )
             return stale_hub_note(hub) + report.render("Grounding")
 

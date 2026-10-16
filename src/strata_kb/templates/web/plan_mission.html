@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_partials/status.html" import plan_status %}
-{% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js" defer></script>{% endif %}{% endblock %}
+{% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="stack-md">
   <div class="page-head">

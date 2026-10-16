@@ -250,3 +250,24 @@ def test_kb_doctor_reports_dev_sync_and_hub_lag_together(clone, tmp_path):
 
     assert "kb-code.yml passes --db" in result.output, result.output
     assert "hub lag not judged" in result.output, result.output
+
+
+def test_kb_doctor_warns_about_the_missing_code_extra_on_a_dev_repo(
+    clone, tmp_path, monkeypatch
+):
+    from strata_kb.codeingest.extractors import _ts
+    from strata_kb.federation import write_federation_index
+
+    monkeypatch.setattr(_ts, "available", lambda: False)
+    (clone / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    hub = tmp_path / "hub"
+    (hub / ".kb").mkdir(parents=True)
+    (hub / ".kb" / "index.yaml").write_text("docs: []\n", encoding="utf-8")
+    (hub / "federation").mkdir()
+    write_federation_index(hub / "federation")
+
+    result = CliRunner().invoke(
+        app, ["doctor", "--kb-dir", str(clone / ".kb"), "--hub", str(hub)]
+    )
+
+    assert "strata-kb[code] is not installed" in result.output, result.output

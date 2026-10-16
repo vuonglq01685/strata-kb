@@ -64,6 +64,25 @@ def check_dev_sync(kb_dir: Path, repo_root: Path, repo_id: str | None) -> list[I
     return issues
 
 
+def check_code_extra() -> list[Issue]:
+    """Dev repo: without the `code` extra routes and symbols (and pages other
+    than the file-system routers) are `not scanned` and jobs stay `partial`, so
+    the ticket gate can accept a [NEW] for none of them."""
+    from strata_kb.codeingest.extractors import _ts
+
+    if _ts.available():
+        return []
+    return [
+        Issue(
+            "warning",
+            "strata-kb[code] is not installed — routes and symbols (and pages "
+            "other than the Next.js/Nuxt/SvelteKit file-system routers) will be "
+            "'not scanned' and jobs will stay 'partial'; "
+            'pip install "strata-kb[code]"',
+        )
+    ]
+
+
 def check_hub_lag(
     kb_dir: Path, repo_root: Path, handle: HubHandle | None, repo_id: str | None
 ) -> list[Issue]:
