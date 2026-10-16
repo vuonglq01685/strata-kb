@@ -1033,6 +1033,56 @@ def auto_status(
         typer.echo(f"{key}: {value}")
 
 
+@auto_app.command("run")
+def auto_run(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    once: bool = typer.Option(
+        False, "--once", help="Run a single step, print its outcome and exit"
+    ),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Run full-auto mode: pick a task, run it, repeat. Logs to stderr.
+    Exit 0 done, 2 stopped, 1 refused or error, 130 interrupted."""
+    import logging
+
+    from strata_kb import gitio
+    from strata_kb.autorun import runner
+    from strata_kb.errors import KbError
+
+    try:
+        root = gitio.git_root(kb_dir.resolve().parent)
+        reasons = runner.preflight(root, kb_dir, hub)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    for reason in reasons:
+        typer.secho(reason, fg=typer.colors.RED)
+    if reasons:
+        raise typer.Exit(1)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    try:
+        if once:
+            runner.resume(kb_dir)
+            cfg, handle, qa = runner.build_deps(kb_dir, hub)
+            outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
+            typer.echo(outcome)
+            code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
+        else:
+            code = runner.run_loop(root, kb_dir, hub_flag=hub)
+    except KbError as exc:
+        typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    except KeyboardInterrupt:
+        typer.echo("stopped by user")
+        raise typer.Exit(130) from None
+    if code:
+        raise typer.Exit(code)
+
+
 @code_sync_app.command("scan")
 def code_sync_scan(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),

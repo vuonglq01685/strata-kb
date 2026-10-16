@@ -390,3 +390,57 @@ def test_run_loop_runs_qa_thread_for_ba_and_stops_it(env, monkeypatch):
 def test_run_loop_has_no_qa_thread_for_dev(env, monkeypatch):
     assert _loop_kind(env, "dev", monkeypatch) == 0
     assert SpyQaThread.events == []
+
+
+def test_build_deps_reads_config_hub_and_qa(env, monkeypatch):
+    _, kb_dir, hub, _ = env
+    _write_config(kb_dir, GOOD)
+    qa = FakeQa()
+    seen = {}
+    monkeypatch.setattr(runner_mod.qa_mod, "from_env", lambda: qa)
+    monkeypatch.setattr(
+        runner_mod, "resolve_hub", lambda url: seen.setdefault("url", url) and hub
+    )
+
+    cfg, got_hub, got_qa = runner_mod.build_deps(kb_dir, "/flag/hub")
+
+    assert cfg.repo_id == "svc" and cfg.auto.enabled
+    assert got_hub is hub and got_qa is qa
+    assert seen["url"] == "/flag/hub"  # the flag beats config
+
+
+def test_build_deps_missing_env_raises_kberror_naming_var(env, monkeypatch):
+    _, kb_dir, _, _ = env
+    _write_config(kb_dir, GOOD)
+    monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub")
+    monkeypatch.delenv("STRATA_KB_HTTP_TOKEN", raising=False)
+
+    with pytest.raises(KbError, match="STRATA_KB_HTTP_TOKEN"):
+        runner_mod.build_deps(kb_dir)
+
+
+def test_run_loop_hub_flag_overrides_config_hub(env, monkeypatch):
+    root, kb_dir, hub, tickets = env
+    tickets["stories"] = [S("US3", "done")]
+    _write_config(kb_dir, GOOD + "hub: /cfg/hub\n")
+    seen = []
+    monkeypatch.setattr(runner_mod, "resolve_hub", lambda url: seen.append(url) or hub)
+
+    code = run_loop(root, kb_dir, hub_flag="/flag/hub", qa=FakeQa(), run_task=Script())
+
+    assert code == 0 and seen == ["/flag/hub"]
+
+
+def test_preflight_passes_hub_flag_to_registry(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    _write_config(kb_dir, GOOD)
+    seen = []
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: seen.append(hub) or (None, "nope"),
+    )
+
+    preflight(root, kb_dir, "/flag/hub")
+
+    assert seen == ["/flag/hub"]

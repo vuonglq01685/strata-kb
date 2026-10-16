@@ -50,8 +50,9 @@ class Backoff:
         self._delay = BACKOFF_START
 
 
-def preflight(root: Path, kb_dir: Path) -> list[str]:
-    """Why `kb auto run` must refuse to start; empty = go."""
+def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
+    """Why `kb auto run` must refuse to start; empty = go. `hub` is the
+    `--hub` flag (empty = config)."""
     cfg = load_config(kb_dir)
     reasons: list[str] = []
     if not cfg.auto.enabled:
@@ -64,7 +65,7 @@ def preflight(root: Path, kb_dir: Path) -> list[str]:
         reasons.append(
             "`intake:` is empty in .kb/config.yaml, so a merged PR would never publish"
         )
-    registry, why = registry_or_reason(kb_dir, cfg.hub)
+    registry, why = registry_or_reason(kb_dir, hub or cfg.hub)
     if registry is None:
         reasons.append(f"the hub registry could not be read: {why}")
         return reasons
@@ -234,20 +235,38 @@ def run_once(
     return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
 
 
-def _resolve_hub(cfg: KBConfig, kb_dir: Path) -> HubHandle:
-    handle = resolve_hub(require_hub(cfg.hub, kb_dir))
+def _resolve_hub(cfg: KBConfig, kb_dir: Path, hub_flag: str = "") -> HubHandle:
+    handle = resolve_hub(require_hub(hub_flag or cfg.hub, kb_dir))
     if handle is None:
         raise KbError("hub unreachable and not cached")
     return handle
 
 
-def run_loop(root: Path, kb_dir: Path, *, sleep=time.sleep, **deps) -> int:
-    """Repeat `run_once` until done (0) or stopped (2). `deps` (hub, qa,
-    run_task, now) default to the real ones; tests inject fakes. A BA repo also
-    runs the Q&A thread (own process, own worktree) for the loop's lifetime."""
+def resume(kb_dir: Path) -> None:
+    """The owner is running again after a stop: same task, fresh attempts."""
     first = autostate.load(kb_dir)
-    if first.stop_reason:  # the owner is resuming: same task, fresh attempts
+    if first.stop_reason:
         autostate.save(kb_dir, replace(first, stop_reason=None, attempts=0))
+
+
+def build_deps(
+    kb_dir: Path, hub_flag: str = ""
+) -> tuple[KBConfig, HubHandle, qa_mod.QaClient]:
+    """The real config, hub and Q&A client for one `run_once` (`--once`).
+    Raises KbError naming what is missing."""
+    qa = qa_mod.from_env()
+    cfg = load_config(kb_dir)
+    return cfg, _resolve_hub(cfg, kb_dir, hub_flag), qa
+
+
+def run_loop(
+    root: Path, kb_dir: Path, *, sleep=time.sleep, hub_flag: str = "", **deps
+) -> int:
+    """Repeat `run_once` until done (0) or stopped (2). `deps` (hub, qa,
+    run_task, now) default to the real ones; tests inject fakes. `hub_flag` is
+    the `--hub` flag (empty = config). A BA repo also runs the Q&A thread (own
+    process, own worktree) for the loop's lifetime."""
+    resume(kb_dir)
     qa = deps.pop("qa", None) or qa_mod.from_env()
     cfg = load_config(kb_dir)
     qa_thread = None
@@ -258,13 +277,13 @@ def run_loop(root: Path, kb_dir: Path, *, sleep=time.sleep, **deps) -> int:
         )
         qa_thread.start()
     try:
-        return _repeat(root, kb_dir, sleep, qa, deps)
+        return _repeat(root, kb_dir, sleep, qa, deps, hub_flag)
     finally:
         if qa_thread is not None:
             qa_thread.stop()
 
 
-def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict) -> int:
+def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict, hub_flag: str) -> int:
     fixed_hub = deps.pop("hub", None)
     backoff = Backoff()
     while True:
@@ -272,7 +291,7 @@ def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict) -> int:
         try:
             cfg = load_config(kb_dir)
             auto = cfg.auto
-            hub = fixed_hub or _resolve_hub(cfg, kb_dir)
+            hub = fixed_hub or _resolve_hub(cfg, kb_dir, hub_flag)
             outcome = run_once(
                 root,
                 kb_dir,
