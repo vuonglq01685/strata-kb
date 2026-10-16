@@ -3430,13 +3430,17 @@ def pr_lint(
 def plan_waves(
     source: str = typer.Argument(..., help="Plan file (or '-' to read from stdin)"),
     json_output: bool = typer.Option(
-        False, "--json", help='Emit {"errors": [...], "waves": [[...]]} instead of text'
+        False,
+        "--json",
+        help='Emit {"errors": [...], "waves": [[...]], "serial": [[...]]} instead of text',
     ),
 ) -> None:
     """Dependency waves of a dev plan: wave n = tasks whose every `Depends on:`
     task sits in an earlier wave. Exit 1 on a shared file without a
-    dependency path, a cycle, an unknown task, or a missing `Depends on:`
-    line — those plans have no safe parallel order."""
+    dependency path, a cycle, an unknown task, a missing `Depends on:`
+    line, or an empty `Serial resource:` line — those plans have no safe parallel order. Tasks carrying a
+    `Serial resource:` line print after `serial:` in their wave: they run one
+    at a time, never in a parallel lane."""
     from strata_kb import planwaves
 
     if source == "-":
@@ -3454,16 +3458,16 @@ def plan_waves(
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1) from None
 
-    errors, waves = planwaves.check(
-        planwaves.parse_plan(text), unclosed=planwaves.unclosed_fence(text)
-    )
+    tasks = planwaves.parse_plan(text)
+    errors, waves = planwaves.check(tasks, unclosed=planwaves.unclosed_fence(text))
+    serial = planwaves.serial_of(tasks, waves)
     if json_output:
-        typer.echo(json.dumps(planwaves.to_json(errors, waves)))
+        typer.echo(json.dumps(planwaves.to_json(errors, waves, serial)))
     else:
         for e in errors:
             typer.echo(f"error: {e}")
         if not errors:
-            typer.echo(planwaves.render(waves))
+            typer.echo(planwaves.render(waves, serial))
     if errors:
         raise typer.Exit(1)
 

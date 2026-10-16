@@ -8,7 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
-from tests.test_planwaves import PLAN
+from tests.test_planwaves import PLAN, SERIAL_PLAN
 
 runner = CliRunner()
 
@@ -29,7 +29,11 @@ def test_plan_waves_json(tmp_path):
     path.write_text(PLAN, encoding="utf-8")
     result = runner.invoke(app, ["plan", "waves", str(path), "--json"])
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output) == {"errors": [], "waves": [[1, 3], [2], [4]]}
+    assert json.loads(result.output) == {
+        "errors": [],
+        "waves": [[1, 3], [2], [4]],
+        "serial": [[], [], []],
+    }
 
 
 def test_plan_waves_errors_exit_1(tmp_path):
@@ -78,9 +82,19 @@ def test_docs_name_the_plan_waves_command():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert (
-        "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, or a missing `Depends on:` line |"
+        "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |"
         in readme
     )
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert changelog.index("## 1.4.0") < changelog.index("## 1.3.0")
     assert "`kb plan waves`" in changelog
+
+
+def test_plan_waves_prints_serial_tasks(tmp_path):
+    path = tmp_path / "ABC-12-plan.md"
+    path.write_text(SERIAL_PLAN, encoding="utf-8")
+    result = runner.invoke(app, ["plan", "waves", str(path)])
+    assert result.exit_code == 0, result.output
+    assert "wave 2: task 5; serial: task 2, task 3, task 4" in result.output
+    result = runner.invoke(app, ["plan", "waves", str(path), "--json"])
+    assert json.loads(result.output)["serial"] == [[], [2, 3, 4], []]

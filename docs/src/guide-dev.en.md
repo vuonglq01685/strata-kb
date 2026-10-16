@@ -300,7 +300,7 @@ today. Checking only at handover would be too late.
 | `docs/impl/<id>/plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
 | `docs/impl/<id>/ticket.md` | `kb ticket fetch` | the ticket fetched from the hub; gitignored, overwritten on every fetch, never edited |
 | `docs/impl/<id>/context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
-| `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+| `docs/impl/<id>/review/` | `dev-design`, `dev-plan`, `dev-execute`, `dev-handover` | A1/A2 round reports, pre-fix copies and round diffs, per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
 
 `kb init --kind dev` and `kb impl tidy` move an old flat layout
 (`docs/impl/<id>-plan.md`, …) into these folders.
@@ -332,6 +332,13 @@ the ticket branch, at most 3 lanes at a time, merged back in task order with
 `--no-ff`, the full suite run once per wave. A merge conflict means the plan
 was wrong and goes back to `dev-plan`.
 
+A task that rebuilds or drives a shared running environment (an e2e or compose
+stack, fixed host ports) carries a `Serial resource: <name>` line next to
+`Depends on:`. It adds no dependency; `kb plan waves` prints such tasks after
+`serial:` in their wave (`wave 5: task 3; serial: task 14, task 20`), and
+`dev-execute` keeps them out of the lanes and runs them one at a time in the
+ticket worktree once the wave's lane tasks are merged and ticked.
+
 ## 4.4 Four human gates, five agent review rounds
 
 Nothing in this pipeline merges or ships without a human.
@@ -359,6 +366,16 @@ Criteria live in `docs/pr-review-rubric.md`, overridden by
 passes. A round only counts as clean once no BLOCKER and no SUGGESTED finding
 is left open — NOTE and NITS get recorded, not fixed — and a BLOCKER or
 SUGGESTED still standing after round 3 stops the flow and hands it to you.
+
+A1 and A2 are built to finish in one review round plus one verification round.
+The author runs a self-check before any reviewer sees the draft. Round 1 must
+be exhaustive: the reviewer returns a coverage matrix (every task against every question, or every AC and axis item against the design sections) and tags each gap with a defect class. The fix sweeps the whole
+artefact for every instance of each class, not only the one cited. Later rounds verify the fix against the diff instead of re-reviewing everything. A design over 8 ACs or 600 lines, or a
+plan over 12 tasks or 600 lines, is reviewed in parallel slices, and a lead
+reviewer re-checks every slice finding, looks across slice borders, and checks
+for drift from the ticket and the design. When a round finds no fewer BLOCKER
+plus SUGGESTED gaps than the round before, the loop stops early and hands you
+the trend.
 
 Where your assistant's runtime cannot dispatch subagents — the default for
 the Copilot and Cursor wrappers — the review still runs, but as a single pass
@@ -800,7 +817,7 @@ Linux (CI) is that caveat, not real drift.
 | `kb resolve <file>` | Check a ticket's citations | `0` ok, `1` broken, `2` stale |
 | `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Search and fetch | `0` |
-| `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>/plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, or missing `Depends on:` |
+| `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>/plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, missing `Depends on:`, or empty `Serial resource:` |
 | `kb impl tidy [--impl-dir]` | Move an old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; idempotent, never overwrites | `0` after a report, `1` when the dir is missing |
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
 

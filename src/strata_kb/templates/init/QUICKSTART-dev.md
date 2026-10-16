@@ -268,7 +268,11 @@ runs sequentially. `dev-execute` runs it after isolating the branch: a wave of
 one task runs as before; a wave of several runs each task in its own git
 worktree lane cut from the ticket branch, at most 3 lanes at a time, merged
 back in task order with `--no-ff`, the full suite run once per wave. A merge
-conflict means the plan was wrong and goes back to `dev-plan`.
+conflict means the plan was wrong and goes back to `dev-plan`. A task that
+drives a shared running environment (an e2e stack, fixed host ports) carries
+`Serial resource: <name>`; `kb plan waves` prints it after `serial:` in its
+wave, and `dev-execute` runs those tasks one at a time in the ticket worktree,
+never in a lane.
 
 ## The four gates, five agent review rounds
 
@@ -298,6 +302,15 @@ Criteria live in `docs/pr-review-rubric.md`, overridden by
 `docs/pr-review-rubric.local.md`. Each round allows at most 3 fix/review
 passes; a round only counts as clean once no BLOCKER and no SUGGESTED
 finding is left open — NOTE and NITS get recorded, not fixed.
+
+A1 and A2 aim for one review round plus one verification round. The author
+self-checks before review; round 1 returns a coverage matrix and tags each
+gap with a defect class; the fix sweeps the whole artefact for each class;
+later rounds verify the fix against the diff. A design over 8 ACs or 600
+lines, or a plan over 12 tasks or 600 lines, is reviewed in parallel slices
+plus a lead reviewer that re-checks the slice findings and checks drift from
+the ticket and the design. A round that finds no fewer BLOCKER plus
+SUGGESTED gaps than the one before stops the loop and hands you the trend.
 
 Where your assistant's runtime cannot dispatch subagents — the default
 for the Copilot and Cursor wrappers — the review still runs, but as a

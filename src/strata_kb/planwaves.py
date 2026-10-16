@@ -4,7 +4,11 @@ A `docs/impl/<ticket-id>/plan.md` written by `dev-plan` carries, per
 `### Task <n>` heading, a `Depends on:` line and a `**Files:**` list. Two
 tasks with no dependency path between them must be file-disjoint — that is what lets `dev-execute`
 run a wave in parallel worktree lanes and merge them back without conflict.
-This module checks that and computes the waves. Text in, errors and waves
+This module checks that and computes the waves. An optional
+`Serial resource: <name>[, <name>]` line marks a task that drives a shared
+running environment (an e2e stack, fixed host ports): it adds no dependency,
+but `serial_of` lists such tasks per wave so `dev-execute` runs them one at a
+time instead of in parallel lanes. Text in, errors and waves
 out; no filesystem, CLI or MCP imports.
 """
 
@@ -15,7 +19,10 @@ from collections import Counter
 from dataclasses import dataclass
 
 TASK_RE = re.compile(r"^#{2,4}\s+Task\s+(?P<n>\d+)\b")
-DEPENDS_RE = re.compile(r"^\*{0,2}Depends on:?\*{0,2}\s*(?P<rest>.*?)\s*$", re.I)
+DEPENDS_RE = re.compile(r"^\*{0,2}Depends on:?\*{0,2}:?\s*(?P<rest>.*?)\s*$", re.I)
+SERIAL_RE = re.compile(
+    r"^\*{0,2}Serial resources?(?::\*{0,2}|\*{0,2}:):?\s*(?P<rest>.*?)\s*$", re.I
+)
 SECTION_RE = re.compile(r"^\*\*(?P<name>Files|Interfaces|Steps):?\*\*:?\s*$")
 FILE_LINE_RE = re.compile(
     r"^\s*-\s*(?:Create|Modify|Test|Delete)\s*:\s*(?P<rest>.+?)\s*$", re.I
@@ -31,6 +38,8 @@ class Task:
     number: int
     depends_on: tuple[int, ...] | None  # None = no `Depends on:` line
     paths: tuple[str, ...]
+    # None = no `Serial resource:` line (or `none`); () = a line naming nothing
+    serial: tuple[str, ...] | None = None
 
 
 def _path_of(rest: str) -> str | None:
@@ -58,6 +67,14 @@ def _deps_of(rest: str) -> tuple[int, ...] | None:
     return tuple(dict.fromkeys(int(n) for n in re.findall(r"\d+", rest)))
 
 
+def _serial_of(rest: str) -> tuple[str, ...] | None:
+    """Resource names on a `Serial resource:` remainder, lower-cased so
+    `E2E-Stack` and `e2e-stack` are one resource; `None` for a none-word."""
+    if rest.strip().lower() in _NONE_WORDS - {""}:
+        return None
+    return tuple(dict.fromkeys(n.strip().lower() for n in rest.split(",") if n.strip()))
+
+
 def _fence_marker(line: str) -> str:
     """The fence marker opening/closing on this line, or '' if none."""
     stripped = line.lstrip()
@@ -77,13 +94,15 @@ def parse_plan(text: str) -> list[Task]:
     tasks: list[Task] = []
     number: int | None = None
     depends: tuple[int, ...] | None = None
+    serial: tuple[str, ...] | None = None
+    seen_serial = False
     paths: list[str] = []
     in_files = False
     in_fence = ""
 
     def flush() -> None:
         if number is not None:
-            tasks.append(Task(number, depends, tuple(dict.fromkeys(paths))))
+            tasks.append(Task(number, depends, tuple(dict.fromkeys(paths)), serial))
 
     for raw in text.splitlines():
         line = raw.rstrip()
@@ -99,12 +118,17 @@ def parse_plan(text: str) -> list[Task]:
         if m:
             flush()
             number, depends, paths, in_files = int(m.group("n")), None, [], False
+            serial, seen_serial = None, False
             continue
         if number is None:
             continue
         m = DEPENDS_RE.match(line.strip())
         if m and depends is None:
             depends = _deps_of(m.group("rest"))
+            continue
+        m = SERIAL_RE.match(line.strip())
+        if m and not seen_serial:
+            serial, seen_serial = _serial_of(m.group("rest")), True
             continue
         m = SECTION_RE.match(line.strip())
         if m:
@@ -215,6 +239,8 @@ def check(
     for t in tasks:
         if not t.paths:
             errors.append(f"task {t.number} lists no paths under **Files**")
+        if t.serial == ():
+            errors.append(f"task {t.number} has an empty Serial resource: line")
 
     cycle = _find_cycle(deps)
     if cycle:
@@ -248,12 +274,37 @@ def check(
     return [], waves
 
 
-def render(waves: list[list[int]]) -> str:
-    return "\n".join(
-        f"wave {i}: " + ", ".join(f"task {n}" for n in wave)
-        for i, wave in enumerate(waves, start=1)
-    )
+def serial_of(tasks: list[Task], waves: list[list[int]]) -> list[list[int]]:
+    """Per wave, the tasks that declare a serial resource -- `dev-execute`
+    runs them one at a time in this order, never in a lane.
+    shortcut: any resource serialises against every other one in the wave;
+    split by resource name if plans ever hold two independent stacks."""
+    declared = {t.number for t in tasks if t.serial}
+    return [[n for n in wave if n in declared] for wave in waves]
 
 
-def to_json(errors: list[str], waves: list[list[int]]) -> dict:
-    return {"errors": list(errors), "waves": [list(w) for w in waves]}
+def _tasks(numbers: list[int]) -> str:
+    return ", ".join(f"task {n}" for n in numbers)
+
+
+def render(waves: list[list[int]], serial: list[list[int]] | None = None) -> str:
+    serial = serial or [[] for _ in waves]
+    lines = []
+    for i, (wave, ser) in enumerate(zip(waves, serial, strict=True), start=1):
+        parts = (
+            [_tasks([n for n in wave if n not in ser])] if len(ser) < len(wave) else []
+        )
+        if ser:
+            parts.append("serial: " + _tasks(ser))
+        lines.append(f"wave {i}: " + "; ".join(parts))
+    return "\n".join(lines)
+
+
+def to_json(
+    errors: list[str], waves: list[list[int]], serial: list[list[int]] | None = None
+) -> dict:
+    return {
+        "errors": list(errors),
+        "waves": [list(w) for w in waves],
+        "serial": [list(s) for s in serial] if serial else [[] for _ in waves],
+    }

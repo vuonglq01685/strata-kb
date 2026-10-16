@@ -300,7 +300,7 @@ nay có thể đã `stale`. Chỉ kiểm tra lúc handover thì quá muộn.
 | `docs/impl/<id>/plan.md` | `dev-plan` | mỗi tiêu chí chấp nhận một task, dạng checkbox `- [ ]`, mỗi task một dòng `Depends on:` |
 | `docs/impl/<id>/ticket.md` | `kb ticket fetch` | ticket lấy từ hub; bị gitignore, bị ghi đè ở mỗi lần fetch, không bao giờ sửa |
 | `docs/impl/<id>/context.md` | `dev-implement-ticket` | cache ngữ cảnh đã phân giải; bị gitignore, sinh lại khi cần |
-| `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
+| `docs/impl/<id>/review/` | `dev-design`, `dev-plan`, `dev-execute`, `dev-handover` | báo cáo từng lượt A1/A2, bản sao trước fix và diff giữa các lượt, diff và báo cáo reviewer của từng task, diff cả nhánh, báo cáo rủi ro merge; bị gitignore, suy ra được từ git và các bảng review record dưới đây |
 
 `kb init --kind dev` và `kb impl tidy` tự dời layout phẳng cũ
 (`docs/impl/<id>-plan.md`, …) vào các folder này.
@@ -333,6 +333,13 @@ từ nhánh ticket, tối đa 3 lane cùng lúc, merge lại theo thứ tự tas
 `--no-ff`, toàn bộ test suite chạy một lần mỗi wave. Merge conflict nghĩa là kế
 hoạch sai, và được trả về `dev-plan`.
 
+Task nào build lại hoặc điều khiển một môi trường đang chạy dùng chung (stack
+e2e hay compose, port host cố định) thì có thêm dòng `Serial resource: <name>`
+cạnh `Depends on:`. Dòng này không thêm dependency; `kb plan waves` in các task
+đó sau `serial:` trong wave của chúng (`wave 5: task 3; serial: task 14, task
+20`), và `dev-execute` không cho chúng vào lane mà chạy từng task một trong
+worktree của ticket, sau khi các task lane của wave đã merge và được tick.
+
 ## 4.4 Bốn cổng người, năm vòng review agent
 
 Không gì trong quy trình này merge hay ship mà không có con người.
@@ -360,6 +367,17 @@ Tiêu chí nằm ở `docs/pr-review-rubric.md`, ghi đè bằng
 chỉ tính là sạch khi không còn BLOCKER và không còn SUGGESTED nào bỏ ngỏ —
 NOTE và NITS chỉ được ghi lại, không bị bắt sửa — và một BLOCKER hoặc SUGGESTED
 còn đứng sau lượt 3 sẽ dừng luồng và chuyển cho bạn.
+
+A1 và A2 được thiết kế để xong trong một lượt review cộng một lượt xác minh.
+Tác giả tự kiểm tra trước khi reviewer nào đọc bản nháp. Lượt 1 phải vét hết:
+reviewer trả về ma trận độ phủ (mỗi task với mỗi câu hỏi, hoặc mỗi AC và mục tiêu chí với các phần của thiết kế) và gắn mỗi gap
+một lớp lỗi. Lượt fix quét toàn bộ tài liệu để sửa mọi chỗ cùng lớp lỗi, không
+chỉ chỗ được nêu. Các lượt sau xác minh bản fix dựa trên diff thay vì review lại toàn bộ. Thiết kế quá
+8 AC hoặc 600 dòng, hay kế hoạch quá 12 task hoặc 600 dòng, được review theo
+từng phần song song, và một lead reviewer kiểm lại mọi phát hiện của các phần,
+xem các chỗ giáp ranh giữa các phần, và kiểm tra độ lệch so với ticket và thiết
+kế. Khi một lượt không tìm ra ít BLOCKER cộng SUGGESTED hơn lượt trước, vòng
+lặp dừng sớm và đưa bạn xu hướng đó.
 
 Ở nơi runtime của trợ lý không dispatch được subagent — mặc định với wrapper
 Copilot và Cursor — vòng review vẫn chạy, nhưng chỉ là một lượt đọc đúng những
@@ -797,7 +815,7 @@ thật.
 | `kb resolve <file>` | Kiểm tra trích dẫn của ticket | `0` ok, `1` hỏng, `2` cũ |
 | `kb diff <doc> --against <rev>` | Sửa đổi đã thay đổi những gì | `0` |
 | `kb query <text>` / `kb get <doc> <section>` | Tìm và lấy nội dung | `0` |
-| `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>/plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, hoặc thiếu `Depends on:` |
+| `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>/plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, thiếu `Depends on:`, hoặc `Serial resource:` rỗng |
 | `kb impl tidy [--impl-dir]` | Dời layout phẳng cũ `docs/impl/<id>-*` vào `docs/impl/<id>/`; chạy lại không đổi gì, không bao giờ ghi đè | `0` sau khi in báo cáo, `1` khi thư mục không tồn tại |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 

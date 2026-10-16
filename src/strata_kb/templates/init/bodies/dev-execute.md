@@ -56,7 +56,9 @@ hub.
   task block takes). When `kb plan waves` reports only `has no Depends
   on: line` errors, one per task, the plan predates waves and runs
   sequentially as today — say so in the Next-step block. Any other
-  error returns the plan to `dev-plan`. A wave of
+  error returns the plan to `dev-plan`. Tasks listed after `serial:` in a
+  wave are left out of its lanes and do not count toward its size (see
+  **Serial tasks** below). A wave of
   one task runs the per-task flow below unchanged. A wave of two or more
   tasks, when the runtime can dispatch subagents, runs each task in its
   own **lane**:
@@ -96,6 +98,15 @@ hub.
     fix landed, re-run the wave's `cmd.test` / `cmd.lint` before
     ticking. A3 re-review after a fix diffs `<merge-commit>^1...HEAD`
     limited to the task's paths.
+  - **Serial tasks** — a task listed after `serial:` declares a
+    `Serial resource:` (an e2e stack, fixed host ports) that a parallel lane
+    would rebuild or restart under another lane's run. It never runs in a
+    lane. Once every lane task of the wave is merged, verified and ticked, run
+    the serial
+    tasks one at a time, in the order listed, in the ticket worktree —
+    the one place the stack's gitignored `.env` and certificates must exist —
+    each with the per-task flow below, ticked after its A3 before the next
+    one starts.
   Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports
   it (sequential passes otherwise). Hand that subagent exactly three
