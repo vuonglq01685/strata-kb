@@ -1,7 +1,7 @@
 # Full-auto mode on Claude Code cloud — design
 
 Date: 2026-10-16
-Status: draft, awaiting owner approval
+Status: approved by owner (2026-10-16)
 Builds on: `2026-10-16-full-auto-mode-design.md` (1.29.0)
 
 ## 1. Intent
@@ -129,6 +129,9 @@ never asked to check it out:
   stop and report; never merge past red. Auto mode merges every ticket PR as
   admin anyway; this is the same act, on the switch. *(Isolation, lint-clean
   body, green-before-merge and squash are the designer's calls.)*
+- *(Owner's decision, 2026-10-16:)* on cloud the session itself opens and
+  admin-merges this switch PR; the owner does not have to enable the switch
+  on the default branch by hand first.
 - When the switch is already on `origin/<default>` (enabled earlier through a
   normal PR), this step is a no-op.
 - Preflight's `_switch_refusals` stays as it is: it already reads the switch
