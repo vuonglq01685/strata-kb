@@ -53,14 +53,9 @@ jobs:
     uses: ./.github/workflows/_gate.yml
     with:
       tag: ${{ github.ref_name }}
-      windows: true
-      # A release is gated on GitHub-hosted machines; PRs and main keep the
-      # self-hosted runner (ci.yml leaves this at its default).
-      linux-runner: ubuntu-latest
 
-  # docker-verify / pypi / docker-release stay GitHub-hosted on purpose: they
-  # need a Docker daemon, and the heavy [ingest] image build (torch, docling)
-  # must not compete with the hub for RAM on the self-hosted VPS.
+  # docker-verify / pypi / docker-release need a Docker daemon and the heavy
+  # [ingest] image build (torch, docling); ubuntu-latest has both.
   docker-verify:
     name: Build image + smoke (not a release tag yet)
     needs: gate

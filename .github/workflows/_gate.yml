@@ -4,12 +4,9 @@
 # step that "only runs on release", stop — that is exactly how the old pipeline
 # let bugs slip through to the very last minute. Add it here, so PRs run it too.
 #
-# One deliberate exception: the Windows rows. Linux jobs run on the self-hosted
-# runner (Hostinger VPS, no minutes); Windows needs a GitHub-hosted runner
-# (2x minutes), so it only runs when release.yml passes `windows: true`.
-# Where the Linux jobs run is not a test difference: release.yml passes
-# `linux-runner: ubuntu-latest` so a release is gated on clean GitHub-hosted
-# machines, while PRs and main keep the self-hosted runner.
+# Everything runs on GitHub-hosted runners: ubuntu-latest for every tier, plus
+# windows-latest rows on T1, T3 and T4 so a Windows-only break is caught on the
+# PR, not at release time.
 name: gate
 on:
   workflow_call:
@@ -19,21 +16,11 @@ on:
         type: string
         required: false
         default: ""
-      windows:
-        description: "Add the windows-latest rows (release only, see header)."
-        type: boolean
-        required: false
-        default: false
-      linux-runner:
-        description: "Runner label for the Linux jobs (release: ubuntu-latest, see header)."
-        type: string
-        required: false
-        default: self-hosted
 
 jobs:
   t0-lint:
     name: T0 lint (ruff, format, pyright)
-    runs-on: ${{ inputs.linux-runner }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -62,9 +49,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["${{ inputs.linux-runner }}"]
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.11"},{"os":"windows-latest","python":"3.13"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.11" }
+          - { os: windows-latest, python: "3.13" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,7 +83,7 @@ jobs:
 
   t2-package:
     name: T2 packaging
-    runs-on: ${{ inputs.linux-runner }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -133,9 +122,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["${{ inputs.linux-runner }}"]
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.12" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -177,9 +167,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["${{ inputs.linux-runner }}"]
+        os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.12" }
     steps:
       - uses: actions/checkout@v4
         with:
