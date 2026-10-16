@@ -54,6 +54,8 @@ reviews its own work, picks the best option, decides, and records why.
   hosted server. Local machine and Claude Code CLI only.
 - Using the Anthropic API or an API key. The subscription login of the local
   `claude` CLI is the only credential for the model.
+- More than one Dev repo per hub. Auto mode supports exactly one BA repo
+  and one Dev repo on a hub (§6.1 warns when the registry has more).
 - Parallel work in one repo. The BA does one main task at a time; the Dev
   does one ticket at a time. The BA's Q&A thread is the only concurrency.
 - Writing the first mission. A person writes the mission(s) (`/ba-mission-plan`)
@@ -107,8 +109,15 @@ reviews its own work, picks the best option, decides, and records why.
   ```
 
 - `kb auto on` / `kb auto off` flip `enabled` and `kb auto status` prints the
-  switch, the current task, and the last result. `kb auto on` prints one
-  plain warning that the repo will merge and publish without human review.
+  switch, the current task, and the last result (including a stop reason,
+  §6.2). `kb auto on` prints plain warnings, and only at that moment:
+  - the repo will merge (with admin rights, §6.9) and publish without human
+    review;
+  - when the hub's `federation/registry.yaml` lists more than one `dev`
+    repo: auto mode is built for one Dev per hub, and several Dev repos
+    would pick and overwrite each other's tickets. This is a warning, not a
+    refusal.
+
   *(Builder's call whether `on`/`off` also commit the config change.)*
 - **The switch is the single source of truth.** Skills read it (through
   `kb auto status --json` or the config loader) to decide whether a gate is
@@ -148,6 +157,14 @@ and repeats.
   (otherwise backs off, e.g. 15 minutes, doubling up to an hour), and
   retries the same task. A usage-limit stop is never counted as a task
   failure.
+- **Stop on repeated failure.** When a PR's CI is still red after **2 fix
+  rounds**, the runner stops the loop and waits for the owner's next action:
+  it records the ticket, the PR, the failing checks and the reason in
+  `state.json`, prints them, and exits non-zero. `kb auto status` shows the
+  same. The owner fixes or decides, then runs `kb auto run` again, which
+  resumes that ticket. *(Designer's call: the same 2-attempt rule applies to
+  any task that ends `failed`, e.g. a BA draft that still fails lint/check
+  after 2 runs.)* Usage-limit stops do not count.
 - **Stop condition.** Before each task the runner checks the hub. When every
   mission story is `done` and every unparented ticket and bug is `done`
   (§6.6), it logs a summary and exits 0. *(The BA side must also have no
@@ -158,9 +175,13 @@ and repeats.
 Each turn, the runner takes the first of these that applies
 (`kb mission next --json` supplies the statuses):
 
-1. **A story is `blocked` by an OPEN mission D-row** → run
+1. **A story is held by a mission blocker** — an OPEN D-row (whether the
+   story reads `blocked` or its ticket is already `draft`) or an unticked
+   `## Open questions` row with `blocks:` → run
    `/ba-mission-plan --amend <mission>` in auto mode: the agent decides the
-   D-row, records the reason, and flips it to `DECIDED`.
+   D-row or answers the open question, records the reason, and flips it to
+   `DECIDED` / ticks it. *(Designer's call, from the owner's rule that every
+   human step is the agent's in auto mode.)*
 2. **A story is `draft`** (ticket exists, not yet passing) → run
    `/ba-ticket-author --amend <ticket>` until it passes.
 3. **A story is `to-draft`** → run `/ba-ticket-author` for the `Next:` story.
@@ -171,7 +192,10 @@ Every task that changed the repo ends the same way: commit on a branch,
 open a PR, wait for CI, fix and push until green, merge. Merging to `main`
 already triggers `kb-publish-request.yml`, which publishes; the BA hub
 intake must have `auto_merge: true` (the runner checks this at start and
-refuses with a clear message if not). *(Whether one PR per ticket or per
+refuses with a clear message if not). The Dev repo has the same
+requirement: `intake:` set and `auto_merge: true` for it on the hub,
+otherwise no `hist` row ever lands and no story reaches `done`; the runner
+refuses to start without both. *(Designer's call.)* *(Whether one PR per ticket or per
 task is the builder's call; one per ticket is the default.)*
 
 "Amend the mission when needed" means: a D-row that blocks a story (step 1),
@@ -199,7 +223,12 @@ or a Q&A answer that changes mission scope (the Q&A thread runs
 - **One ticket at a time.** The runner picks from `kb mission next
   --from-hub --json` and the unparented list: a `ready` story or bug whose
   dependencies are done. Order: bugs first, then stories in mission order.
-  *(Designer's call; builder may refine the dependency check.)*
+  *(Designer's call; builder may refine the dependency check.)* With one Dev
+  per hub, every ticket on the hub is this Dev's.
+- **Bugs** run `/dev-fix-bug <BUG-n>`, not `/dev-implement-ticket`. In auto
+  mode it creates the branch without asking, and a `hotfix` branches from
+  and merges to `main` unless `auto.hotfix_base` in `.kb/config.yaml` names
+  a production branch. *(Designer's call.)*
 - Runs `/dev-implement-ticket <id>` in auto mode: design, plan, execute,
   handover, with GATE 1–4 decided by the agent, then PR → green CI → merge,
   then `kb publish` so the `hist` row reaches the hub and the story shows
@@ -243,6 +272,8 @@ note: what it checked, the options, what it chose and why.
 | Stale citations / `[warn]` / blocked deps: "Dev decides" | `dev-implement-ticket.md` | agent decides; a real blocker becomes a BA question |
 | GATE 3/4: human opens and merges the PR | `dev-handover.md` | agent opens the PR, fixes CI until green, merges |
 | Dev runs `kb publish` after merge | `dev-handover.md` | agent runs it |
+| Branch only "once the Dev agrees"; hotfix asks which production line | `dev-fix-bug.md` | branch at once; hotfix base from `auto.hotfix_base`, else `main` |
+| Mission `## Open questions` with `blocks:` | `ba-mission-plan.md` | agent answers and ticks, notes why |
 | Open blocking question → STOP | `dev-implement-ticket.md` | STOP and report `blocked-qa <ids>` to the runner |
 
 Off path: the text a skill shows today is unchanged.
@@ -262,6 +293,22 @@ beside the existing usage hooks:
   repo, `gh repo delete`, editing `.claude/settings.json` itself.
 - Merging an existing `.claude/settings.json` keeps the user's own entries.
   *(Exact rule list is the builder's call within this allow/deny shape.)*
+
+### 6.9 Green CI and admin merge
+
+- **Green means tests ran.** The Dev templates ship only `kb-pr-lint.yml`
+  and `kb-code.yml`, which do not run the product's tests. When the Dev
+  repo has no workflow that runs its tests, the runner's **first Dev task**
+  is to add one: the agent writes a `kb-test.yml` from the repo's languages
+  (`detect_langs`) and its conventions templates' test commands, makes it
+  pass, and merges it through the normal PR path. Every later PR must have
+  this check green. *(Designer's suggestion, accepted by the owner pending
+  review of this document.)*
+- **Admin merge.** In auto mode the agent may merge with admin rights
+  (`gh pr merge --admin`) when branch protection requires an approving
+  review it cannot give itself. Only after every required check is green;
+  never to get past a red or pending check. The allowlist (§6.8) permits
+  `gh pr merge --admin` only in auto-mode runs.
 
 ## 7. Left to the builder
 
