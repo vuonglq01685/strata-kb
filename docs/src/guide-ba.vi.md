@@ -377,6 +377,49 @@ không bao giờ tự viết thay.
 - **Xem ở đâu.** Menu **Q&A** của hub (`/ui/questions`) liệt kê mọi ticket có câu hỏi và
   trạng thái: mở, chờ publish, đã trả lời.
 
+## 3.11 Chế độ tự động hoàn toàn (tùy chọn)
+
+Một công tắc để repo BA này tự chạy, song song với repo Dev cũng bật chế độ tự động, cho đến
+khi mọi ticket trên hub đều `done`. Không bước nào chờ bạn: agent tự quyết từng D-row và
+câu hỏi mở, tự trả lời câu hỏi của Dev, tự tick Definition of Ready sau khi tự review, tự
+merge và publish. Lý do được ghi thành dòng `**Auto decision:**` ngay dưới `## Change log`.
+Chế độ này dành cho **một repo BA và một repo Dev trên mỗi hub**. Tài liệu đầy đủ: README,
+mục "Full-auto mode".
+
+**Bảo mật. Đọc trước khi bật.** Danh sách deny quyền chỉ là lớp phòng thủ bổ sung, không
+phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** và publish mà không ai review;
+ticket nào agent hiểu sai sẽ đi thẳng vào `main` và lên hub. Chủ repo phải bật branch
+protection của GitHub cho `main` (cấm force-push, cấm xóa, **áp dụng cả với administrator**)
+và giữ check CI là bắt buộc trước khi bạn bật chế độ này.
+
+**Thiết lập một lần.**
+
+1. Tự viết mission đầu tiên (`/ba-mission-plan`). Vòng lặp chỉ làm backlog được giao.
+2. Đảm bảo `intake:` đã có trong `.kb/config.yaml` và trang Registry của hub đã **bật**
+   auto-merge cho repo này (và cho repo Dev). Hub phải là bản 1.29.0 trở lên.
+3. Chạy lại `kb init --kind ba` để có danh sách quyền trong `.claude/settings.json` (được
+   gộp vào file của bạn, mục của bạn được giữ nguyên) và các phần Auto mode trong skill.
+4. Đặt biến môi trường `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` (giá trị trong
+   `.mcp.json`), và đăng nhập CLI `claude` bằng gói subscription của bạn.
+
+**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), sau đó
+`kb auto run` trong một terminal. `kb auto status` cho biết công tắc, task hiện tại và lý do
+dừng; `kb auto off` dừng vòng lặp sau task đang chạy.
+
+**Nó làm gì.** Mỗi task là một tiến trình `claude -p` mới, nên task sau không thừa hưởng
+ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở hoặc câu hỏi mở có `blocks`
+(`/ba-mission-plan --amend`), ticket `draft` (`/ba-ticket-author --amend`), story
+`to-draft` kế tiếp (`/ba-ticket-author`), còn không thì chờ `idle_interval` giây. Mỗi thay
+đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
+worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
+đang mở của Dev bằng `/ba-answer-questions`.
+
+**Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI đỏ thì dừng ngay),
+`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Chờ hết hạn mức
+sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
+mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
+Trạng thái và log nằm trong `.kb/auto/` (git bỏ qua).
+
 ---
 
 # 4. Mission plan — cho tính năng lớn

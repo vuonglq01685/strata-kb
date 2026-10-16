@@ -386,6 +386,52 @@ answers are yours; the agent never writes one for you.
 - **Where to look.** The hub's **Q&A** menu (`/ui/questions`) lists every ticket with
   questions and their state: open, waiting for publish, answered.
 
+## 3.11 Full-auto mode (optional)
+
+A switch that lets this BA repo run on its own, beside a Dev repo in full-auto mode,
+until every ticket on the hub is done. Nothing waits for you: the agent decides each
+D-row and open question, answers the Dev's questions, ticks the Definition of Ready
+after its own review, merges and publishes. It writes down why in an
+`**Auto decision:**` line under the `## Change log`. Built for **one BA repo and one
+Dev repo per hub**. Full reference: README, "Full-auto mode".
+
+**Security. Read this first.** The permission deny list is defence in depth, not a
+boundary. The run merges with **admin rights** and publishes with no human review, and a
+ticket the agent gets wrong goes straight to `main` and the hub. The repo owner must
+enable GitHub branch protection on `main` (no force-push, no deletion, **include
+administrators**) and keep the CI check required before you turn it on.
+
+**Set up once.**
+
+1. Write the first mission yourself (`/ba-mission-plan`). The loop works the backlog
+   it is given.
+2. Make sure `intake:` is set in `.kb/config.yaml` and the hub's Registry page has
+   auto-merge **on** for this repo (and for the Dev repo). The hub must be 1.29.0 or
+   later.
+3. Re-run `kb init --kind ba` to get the permission allowlist in `.claude/settings.json`
+   (merged into your file, your entries stay) and the skills' Auto mode sections.
+4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values in `.mcp.json`)
+   and have the `claude` CLI logged in with your subscription.
+
+**Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
+`.kb/config.yaml`), then `kb auto run` in a terminal. `kb auto status` shows the switch,
+the current task, and why it stopped; `kb auto off` stops the loop after the current
+task.
+
+**What it does.** One fresh `claude -p` process per task, so no task inherits the
+last one's context. In order: a story held by an open D-row or blocking open question
+(`/ba-mission-plan --amend`), a `draft` ticket (`/ba-ticket-author --amend`), the next
+`to-draft` story (`/ba-ticket-author`), otherwise it waits `idle_interval` seconds. Each
+change goes through a branch, a PR, green CI and a merge; the merge publishes. A
+second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
+questions with `/ba-answer-questions` every `qa_interval` seconds.
+
+**When it stops.** After two failed attempts at one task (a red CI stops it at once),
+`kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
+A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
+when every story and unparented ticket and bug is `done` and no question is open.
+State and logs are in `.kb/auto/` (git-ignored).
+
 ---
 
 # 4. Mission plans — for large features

@@ -448,6 +448,52 @@ raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các 
   `dev-design` và `dev-plan`, câu hỏi nghiệp vụ có `blocks: none` khi đó quay về `OPEN(BA)`;
   chỉ câu hỏi chặn mới dừng.
 
+## 4.7 Chế độ tự động hoàn toàn (tùy chọn)
+
+Một công tắc để repo Dev này tự chạy, song song với repo BA cũng bật chế độ tự động, cho đến
+khi mọi ticket trên hub đều `done`: không cổng nào chờ bạn. Agent tự duyệt GATE 1 và GATE 2
+sau khi review độc lập, tự mở PR, sửa CI đến khi xanh, merge rồi chạy `kb publish`. Mỗi quyết
+định là một dòng trong `docs/impl/<id>/auto-decisions.md`, được chép vào `## Notes` của PR.
+Chế độ này dành cho **một repo BA và một repo Dev trên mỗi hub**. Tài liệu đầy đủ: README,
+mục "Full-auto mode".
+
+**Bảo mật. Đọc trước khi bật.** Danh sách deny quyền chỉ là lớp phòng thủ bổ sung, không
+phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** (chỉ khi review là điều kiện
+duy nhất còn thiếu và mọi check đã xanh) và không ai review PR. Ticket nào agent hiểu sai sẽ
+đi thẳng vào `main` và lên hub. Chủ repo phải bật branch protection của GitHub cho `main`
+(cấm force-push, cấm xóa, **áp dụng cả với administrator**) và giữ `kb-test.yml` (hoặc
+workflow mang dấu `kb-test`) là **check bắt buộc**.
+
+**Thiết lập một lần.**
+
+1. Mission và các ticket của nó đã có trên hub (phía BA làm tay hoặc ở chế độ tự động). Hub
+   phải là bản 1.29.0 trở lên, vì runner đọc Q&A qua `GET /api/questions`.
+2. `intake:` đã có trong `.kb/config.yaml` và trang Registry của hub đã **bật** auto-merge cho
+   repo này; thiếu thì không có dòng `hist` nào đến hub và không story nào thành `done`.
+3. Chạy lại `kb init --kind dev`. Lệnh này gộp danh sách quyền, kèm các lệnh test, cài đặt,
+   lint và build của các `langs:` bạn dùng, vào `.claude/settings.json`, làm mới các skill
+   (phần Auto mode) và thêm `/dev-test-workflow`.
+4. Đặt `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`; đăng nhập `claude` bằng subscription.
+
+**Chạy.** `kb auto on`, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
+đang chờ và lý do dừng; `kb auto off` dừng sau task đang chạy.
+
+**Nó làm gì.** Mỗi ticket là một tiến trình `claude -p` mới. Trước hết, nếu chưa workflow
+nào chạy test của repo, `/dev-test-workflow` viết và merge `kb-test.yml`, để "CI xanh" thật sự
+nghĩa là test đã chạy. Sau đó bug trước (`/dev-fix-bug`; hotfix rẽ từ `main` trừ khi
+`auto.hotfix_base` chỉ tới nhánh production), rồi story `ready` đầu tiên theo thứ tự mission
+mà các dependency đều `done` (`/dev-implement-ticket`). Khi một câu hỏi nghiệp vụ chặn ticket,
+Dev hỏi BA qua Q&A của hub và chờ; khi mọi câu hỏi đã `answered`, đúng ticket đó chạy tiếp
+trong một tiến trình mới.
+
+**Khi nào dừng.** Sau hai lần thất bại ở cùng một ticket (CI vẫn đỏ sau hai vòng sửa thì dừng
+ngay); sửa xong, `kb auto run` chạy tiếp ticket đó. Công cụ ngoài danh sách cho phép làm task
+kết thúc `failed command-denied <lệnh>`: tự thêm lệnh đó vào `permissions.allow` trong
+`.claude/settings.json`. Chờ hết hạn mức sử dụng (15, 30, 60 phút) không tính là thất bại.
+Vòng lặp kết thúc, thoát mã `0`, khi mọi story, mọi ticket không thuộc mission và mọi bug đều
+`done`. Ticket không thuộc mission mà không phải bug sẽ không được chọn: hãy tự làm bằng tay.
+Nhánh mặc định phải là `main`.
+
 ---
 
 # 5. Cái gì được máy bảo đảm, cái gì chỉ là lời nhắc
@@ -820,7 +866,8 @@ thật.
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
-`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`.
+`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,
+`/dev-test-workflow` (chế độ tự động).
 
 ---
 
