@@ -2063,13 +2063,17 @@ Then:
 uv lock
 git commit -am "chore: bump to X.Y.Z"
 
-# 2. Tag. CI re-runs the whole gate plus the image build and smoke test,
-#    and publishes only when everything is green.
+# 2. Tag once CI on main is green for that commit. The release waits for
+#    that CI run, re-runs only the artifact tiers (T2-T4) plus the image
+#    build and smoke test, and publishes only when everything is green.
 git tag vX.Y.Z && git push --tags
 ```
 
-A tag runs nothing different from a pull request — `.github/workflows/_gate.yml`
-is shared by both. **If any tier is red, nothing is published.** PyPI is
+A tag runs nothing a pull request does not — `.github/workflows/_gate.yml` is
+shared by both. It runs less: the source-tree tiers (T0 lint, T1 unit tests)
+are skipped because the release first requires the full `ci.yml` gate to be
+green on the tagged commit; the artifact tiers T2-T4 run again on the artifact
+that is published. **If any tier is red, nothing is published.** PyPI is
 immutable, so `release.yml` publishes only after both the gate and the Docker
 image (built with the real `[ingest]` extra) are green, and `:latest`/`:vX.Y.Z`
 on GHCR move only after the PyPI publish succeeds. To retry a tag:

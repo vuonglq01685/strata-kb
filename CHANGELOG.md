@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.30.1 — 2026-10-16
+
+A faster release pipeline and a reader layout fix.
+
+- **Release.** A `v*` tag no longer re-runs the source-tree tiers. `release.yml` first waits for the full `ci.yml` gate to be green on the tagged commit (it refuses when that run is red, cancelled or missing — re-run `ci.yml` on the commit, or tag a newer one), then runs only the artifact tiers T2–T4 (`_gate.yml` input `artifact_only`) before the Docker image and the PyPI publish. Tag a commit once CI on `main` is green for it. PRs and pushes to `main` still run the full gate.
+- **Hub UI.** The section reader (L2/L3) and the ticket detail page fill the content column instead of stopping at 760 px with an empty band before the right rail.
+- **Docs.** README's release section describes the new release flow. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+
 ## 1.30.0 — 2026-10-16
 
 Full-auto mode on Claude Code cloud: one cloud session runs a BA or Dev repo's loop with no local machine. Local runs are unchanged.

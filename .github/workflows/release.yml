@@ -1,10 +1,12 @@
-# Release: tag v* → the full gate (identical to PR, sharing _gate.yml) → and
-# only then release/publish. Do NOT write tag-specific test logic here — see the
-# INVARIANT at the top of _gate.yml: PRs and tags must run the same gate, no
-# more and no less.
+# Release: tag v* → ci-green (the full ci.yml gate already passed on this exact
+# commit) + the artifact tiers T2-T4 of _gate.yml → and only then
+# release/publish. T0/T1 test the source tree, which is byte-identical to the
+# commit ci.yml just tested, so they are not re-run here (`artifact_only`).
+# Do NOT write tag-specific test logic here — see the INVARIANT at the top of
+# _gate.yml: a tag never runs anything a PR does not.
 #
 # Dependency graph (deliberate — it patches the L7 hole):
-#   gate → docker-verify → pypi → docker-release
+#   ci-green + gate → docker-verify → pypi → docker-release
 #
 # PyPI is immutable — once a version is published it can NEVER be deleted or
 # overwritten. Therefore: NOTHING irreversible is allowed to happen before the
@@ -49,16 +51,47 @@ permissions:
   contents: read
 
 jobs:
+  # The tag's commit must already have a green ci.yml run (normally the push to
+  # main after the merge). Still running → wait for it; red, cancelled or never
+  # run (e.g. superseded by a later push to main) → refuse: re-run ci.yml on
+  # that commit, or tag the newer one.
+  ci-green:
+    name: Full CI gate green on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      actions: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 80); do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&per_page=20" \
+              --jq '[.workflow_runs[] | {status, conclusion}]')
+            if echo "$runs" | jq -e 'any(.conclusion == "success")' >/dev/null; then
+              echo "ci.yml is green on $GITHUB_SHA"; exit 0
+            fi
+            # An empty list right after the tag push: the run may not be registered yet.
+            if [ "$runs" = "[]" ] && [ "$i" -le 5 ]; then sleep 60; continue; fi
+            if ! echo "$runs" | jq -e 'any(.status != "completed")' >/dev/null; then
+              echo "::error::no green ci.yml run on $GITHUB_SHA ($runs) — re-run ci.yml on this commit, or tag a commit whose CI is green"
+              exit 1
+            fi
+            echo "ci.yml still running on $GITHUB_SHA — waiting ($i/80)"; sleep 60
+          done
+          echo "::error::ci.yml did not finish on $GITHUB_SHA in time"; exit 1
+
   gate:
     uses: ./.github/workflows/_gate.yml
     with:
       tag: ${{ github.ref_name }}
+      artifact_only: true
 
   # docker-verify / pypi / docker-release need a Docker daemon and the heavy
   # [ingest] image build (torch, docling); ubuntu-latest has both.
   docker-verify:
     name: Build image + smoke (not a release tag yet)
-    needs: gate
+    needs: [ci-green, gate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -102,7 +135,7 @@ jobs:
 
   pypi:
     name: Publish to PyPI (irreversible — comes after EVERY gate)
-    needs: [gate, docker-verify]
+    needs: [ci-green, gate, docker-verify]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
