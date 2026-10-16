@@ -4,9 +4,9 @@
 # step that "only runs on release", stop — that is exactly how the old pipeline
 # let bugs slip through to the very last minute. Add it here, so PRs run it too.
 #
-# One deliberate exception: the Windows rows. Everything runs on GitHub-hosted
-# runners; Linux rows are ubuntu-latest (1x minutes), Windows rows cost 2x
-# minutes, so they only run when release.yml passes `windows: true`.
+# Everything runs on GitHub-hosted runners: ubuntu-latest for every tier, plus
+# windows-latest rows on T1, T3 and T4 so a Windows-only break is caught on the
+# PR, not at release time.
 name: gate
 on:
   workflow_call:
@@ -16,11 +16,6 @@ on:
         type: string
         required: false
         default: ""
-      windows:
-        description: "Add the windows-latest rows (release only, see header)."
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   t0-lint:
@@ -56,7 +51,9 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.11"},{"os":"windows-latest","python":"3.13"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.11" }
+          - { os: windows-latest, python: "3.13" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -127,7 +124,8 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.12" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -171,7 +169,8 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.11", "3.12", "3.13"]
-        include: ${{ inputs.windows && fromJSON('[{"os":"windows-latest","python":"3.12"}]') || fromJSON('[]') }}
+        include:
+          - { os: windows-latest, python: "3.12" }
     steps:
       - uses: actions/checkout@v4
         with:
