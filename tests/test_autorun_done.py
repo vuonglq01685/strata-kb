@@ -51,7 +51,14 @@ def test_all_done_dev_with_nothing_is_not_done():
 
 
 def test_all_done_ba_blocks_on_open_questions():
-    assert all_done([S("US1", "done")], [], ba=True, open_questions=1)[0] is False
+    assert all_done([S("US1", "done")], [], ba=True, open_questions=1) == (
+        False,
+        "1 open question",
+    )
+    assert all_done([S("US1", "done")], [], ba=True, open_questions=2) == (
+        False,
+        "2 open questions",
+    )
 
 
 @pytest.mark.parametrize("status", ["to-draft", "draft", "blocked"])
@@ -60,6 +67,19 @@ def test_all_done_ba_blocks_on_unfinished_story(status):
     assert (ok, why) == (False, f"US1 {status}")
 
 
-def test_all_done_ba_ok_when_ready_and_no_questions():
-    ok, _ = all_done([S("US1", "ready"), S("US2", "done")], [], ba=True)
-    assert ok is True
+def test_all_done_ba_names_story_to_write_before_a_ready_one():
+    stories = [S("US1", "ready"), S("US2", "draft")]
+    assert all_done(stories, [], ba=True) == (False, "US2 draft")
+
+
+def test_all_done_ba_waits_for_dev_work():
+    assert all_done([S("US1", "ready")], [], ba=True) == (False, "US1 ready")
+    assert all_done([S("US1", "done")], [S("BUG-1", "ready")], ba=True) == (
+        False,
+        "BUG-1 ready",
+    )
+
+
+def test_all_done_ba_true_when_everything_done_and_no_questions():
+    ok, why = all_done([S("US1", "done")], [S("BUG-1", "done")], ba=True)
+    assert (ok, why) == (True, "all 2 tickets done")
