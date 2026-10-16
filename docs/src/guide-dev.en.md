@@ -463,7 +463,10 @@ requirement and every check is green) and nobody reviews the PR. A ticket misrea
 agent goes straight to `main` and the hub. The repo owner must enable GitHub branch
 protection on `main` (no force-push, no deletion, **include administrators**) and keep
 `kb-test.yml` (or the workflow carrying the `kb-test` marker) as a **required check**
-(branch protection picks it by job name: `test-<lang>`).
+(branch protection picks it by job name: `test-<lang>`). Do **not** require approving
+reviews on `main`: the agent cannot approve its own PR, and `gh pr merge --admin` is
+refused when administrators are included. If you do require reviews, exclude
+administrators from that rule and accept that the agent can then bypass it.
 
 **Set up once.**
 
@@ -476,14 +479,18 @@ protection on `main` (no force-push, no deletion, **include administrators**) an
    the skills (Auto mode sections) and adds `/dev-test-workflow`.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; have `claude` logged in with
    your subscription.
+5. After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the default
+   branch. `kb auto run` refuses until you do: `kb publish` refuses a dirty `.kb/`, so no
+   ticket would reach `done`.
 
-**Run.** `kb auto on`, then `kb auto run`. `kb auto status` shows the task, attempts, the
+**Run.** `kb auto on`, then commit those two files, then `kb auto run`. `kb auto status` shows the task, attempts, the
 questions it waits on and the stop reason; `kb auto off` stops after the current task.
 
 **What it does.** One fresh `claude -p` process per ticket. First, if no workflow runs
 the repo's tests, `/dev-test-workflow` writes and merges `kb-test.yml`, so "green CI" means
 tests ran. Then bugs first (`/dev-fix-bug`; a hotfix branches from `main` unless
-`auto.hotfix_base` names a production branch), then the first `ready` story in mission
+`auto.hotfix_base` names a production branch), then the first `ready` ticket that has no
+mission and is not a bug (`/dev-implement-ticket`), then the first `ready` story in mission
 order whose dependencies are `done` (`/dev-implement-ticket`). When a business question
 blocks a ticket, the Dev asks the BA through hub Q&A and waits; once every question is
 `answered` the same ticket resumes in a fresh process.
@@ -493,7 +500,6 @@ stops it at once); fix it, then `kb auto run` resumes it. A tool outside the all
 the task `failed command-denied <command>`: add that command to `permissions.allow` in
 `.claude/settings.json` by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure.
 It finishes, exit `0`, when every story and every unparented ticket and bug is `done`.
-A ticket without a mission that is not a bug is not picked: implement it by hand.
 The default branch must be `main`.
 
 ---

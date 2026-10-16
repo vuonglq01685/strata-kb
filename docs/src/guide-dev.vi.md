@@ -463,6 +463,9 @@ duy nhất còn thiếu và mọi check đã xanh) và không ai review PR. Tick
 đi thẳng vào `main` và lên hub. Chủ repo phải bật branch protection của GitHub cho `main`
 (cấm force-push, cấm xóa, **áp dụng cả với administrator**) và giữ `kb-test.yml` (hoặc
 workflow mang dấu `kb-test`) là **check bắt buộc** (branch protection chọn check theo tên job: `test-<lang>`).
+Đừng yêu cầu review phê duyệt trên `main`: agent không thể tự duyệt PR của mình, và
+`gh pr merge --admin` bị từ chối khi quy tắc áp dụng cả với administrator. Nếu vẫn yêu cầu
+review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng agent khi ấy có thể vượt qua nó.
 
 **Thiết lập một lần.**
 
@@ -474,14 +477,18 @@ workflow mang dấu `kb-test`) là **check bắt buộc** (branch protection ch�
    lint và build của các `langs:` bạn dùng, vào `.claude/settings.json`, làm mới các skill
    (phần Auto mode) và thêm `/dev-test-workflow`.
 4. Đặt `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`; đăng nhập `claude` bằng subscription.
+5. Sau `kb auto on`, hãy commit `.kb/config.yaml` và `.claude/settings.json` vào nhánh mặc định.
+   `kb auto run` từ chối chạy cho đến khi bạn làm vậy: `kb publish` từ chối khi `.kb/` có thay
+   đổi chưa commit, nên không ticket nào đến được `done`.
 
-**Chạy.** `kb auto on`, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
+**Chạy.** `kb auto on`, commit hai file trên, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
 đang chờ và lý do dừng; `kb auto off` dừng sau task đang chạy.
 
 **Nó làm gì.** Mỗi ticket là một tiến trình `claude -p` mới. Trước hết, nếu chưa workflow
 nào chạy test của repo, `/dev-test-workflow` viết và merge `kb-test.yml`, để "CI xanh" thật sự
 nghĩa là test đã chạy. Sau đó bug trước (`/dev-fix-bug`; hotfix rẽ nhánh từ `main` trừ khi
-`auto.hotfix_base` chỉ tới nhánh production), rồi story `ready` đầu tiên theo thứ tự mission
+`auto.hotfix_base` chỉ tới nhánh production), rồi ticket `ready` đầu tiên không thuộc mission
+và không phải bug (`/dev-implement-ticket`), rồi story `ready` đầu tiên theo thứ tự mission
 mà các dependency đều `done` (`/dev-implement-ticket`). Khi một câu hỏi nghiệp vụ chặn ticket,
 Dev hỏi BA qua Q&A của hub và chờ; khi mọi câu hỏi đã `answered`, đúng ticket đó chạy tiếp
 trong một tiến trình mới.
@@ -491,7 +498,7 @@ ngay); sửa xong, `kb auto run` chạy tiếp ticket đó. Công cụ ngoài da
 kết thúc `failed command-denied <lệnh>`: tự thêm lệnh đó vào `permissions.allow` trong
 `.claude/settings.json`. Chờ hết hạn mức sử dụng (15, 30, 60 phút) không tính là thất bại.
 Vòng lặp kết thúc, thoát mã `0`, khi mọi story, mọi ticket không thuộc mission và mọi bug đều
-`done`. Ticket không thuộc mission mà không phải bug sẽ không được chọn: hãy tự làm bằng tay.
+`done`.
 Nhánh mặc định phải là `main`.
 
 ---

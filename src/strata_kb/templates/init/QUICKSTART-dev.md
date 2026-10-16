@@ -461,15 +461,21 @@ A ticket the agent misreads goes straight to `main` and the hub. The repo owner
 must enable GitHub branch protection on `main` (block force pushes and deletions,
 include administrators) and keep `kb-test.yml` (or the workflow with the
 `kb-test` marker) as a required check (branch protection picks it by job
-name: `test-<lang>`).
+name: `test-<lang>`). Do **not** require approving reviews on `main`: the agent
+cannot approve its own PR, and `gh pr merge --admin` is refused when
+administrators are included. If you do require reviews, exclude administrators
+from that rule and accept that the agent can then bypass it.
 
+- After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the
+  default branch; `kb auto run` refuses until you do (`kb publish` refuses a
+  dirty `.kb/`, so no ticket would reach `done`).
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must
   have auto-merge **on** for this repo. The hub must be 1.29.0 or later (the
   runner polls Q&A over `GET /api/questions`).
 - Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (as in `.mcp.json`) and log
   the `claude` CLI in with your subscription.
 - First task: `/dev-test-workflow`, if no workflow runs the repo's tests. Then bugs
-  first, then `ready` stories in mission order whose dependencies are `done`, one
+  first, then a `ready` ticket with no mission, then `ready` stories in mission order whose dependencies are `done`, one
   ticket at a time. A blocking business question makes the Dev wait for the BA's
   answer, then resume.
 - `kb auto status` shows the current task and why it stopped; after two failed

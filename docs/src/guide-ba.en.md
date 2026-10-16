@@ -400,6 +400,9 @@ boundary. The run merges with **admin rights** and publishes with no human revie
 ticket the agent gets wrong goes straight to `main` and the hub. The repo owner must
 enable GitHub branch protection on `main` (no force-push, no deletion, **include
 administrators**) and keep the ticket-lint CI check (`lint` in `kb-ticket-lint.yml`) required before you turn it on.
+Do **not** require approving reviews on `main`: the agent cannot approve its own PR, and
+`gh pr merge --admin` is refused when administrators are included. If you do require
+reviews, exclude administrators from that rule and accept that the agent can then bypass it.
 
 **Set up once.**
 
@@ -412,9 +415,12 @@ administrators**) and keep the ticket-lint CI check (`lint` in `kb-ticket-lint.y
    (merged into your file, your entries stay) and the skills' Auto mode sections.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values in `.mcp.json`)
    and have the `claude` CLI logged in with your subscription.
+5. After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the default
+   branch. `kb auto run` refuses until you do: the Q&A worktree is checked out from the
+   default branch, and `kb publish` refuses a dirty `.kb/`.
 
 **Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
-`.kb/config.yaml`), then `kb auto run` in a terminal. `kb auto status` shows the switch,
+`.kb/config.yaml`), commit the two files above, then `kb auto run` in a terminal. `kb auto status` shows the switch,
 the current task, and why it stopped; `kb auto off` stops the loop after the current
 task.
 

@@ -454,9 +454,15 @@ read this before you turn it on.
 A ticket the agent gets wrong goes straight to `main` and the hub. The repo owner
 must enable GitHub branch protection on `main` (block force pushes and deletions,
 include administrators) and keep the ticket-lint CI check (`lint` in
-`kb-ticket-lint.yml`) required.
+`kb-ticket-lint.yml`) required. Do **not** require approving reviews on `main`: the
+agent cannot approve its own PR, and `gh pr merge --admin` is refused when
+administrators are included. If you do require reviews, exclude administrators from
+that rule and accept that the agent can then bypass it.
 
 - Write the first mission yourself (`/ba-mission-plan`); the loop works the backlog.
+- After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the
+  default branch; `kb auto run` refuses until you do (the Q&A worktree is checked
+  out from the default branch, and `kb publish` refuses a dirty `.kb/`).
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must
   have auto-merge **on** for this repo and for the Dev repo. The hub must be 1.29.0
   or later.

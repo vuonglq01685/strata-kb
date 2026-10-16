@@ -1617,7 +1617,12 @@ pushes and deletions, **include administrators**, and keep the repo's CI check a
 **required status check**: in a Dev repo the `test-<lang>` job(s) of `kb-test.yml`
 (or of the workflow carrying the `kb-test` marker, see below); in a BA repo the
 `lint` job of `kb-ticket-lint.yml`. Branch protection picks checks by job name.
-Without that, "green CI" is only a convention the agent follows. The deny list
+Without that, "green CI" is only a convention the agent follows. Do **not**
+require approving reviews on `main` in an auto-mode repo: the agent cannot approve
+its own pull request, and `gh pr merge --admin` is refused when administrators
+are included in the rule. If you do require reviews, exclude administrators from
+that rule so `--admin` can merge; the owner then accepts that the agent can
+bypass that protection on `main` the same way. The deny list
 also cannot see the current branch: the agent's working tree must never sit on
 `main` with commits on it. The skills branch first; the runner does not guard this.
 
@@ -1627,6 +1632,11 @@ also cannot see the current branch: the agent's working tree must never sit on
   on. The loop works the backlog it is given; it does not invent one.
 - The hub is on **1.29.0 or later**. The runner polls ticket Q&A over the new
   `GET /api/questions` route (below), which an older hub does not have.
+- `.kb/config.yaml` (with `auto.enabled: true`) and `.claude/settings.json` are
+  **committed to the default branch** before `kb auto run`. `kb auto on` only
+  edits the file. A dirty `.kb/` makes `kb publish` refuse, so no ticket would
+  reach `done`, and the BA's Q&A worktree is checked out from the default branch,
+  where the switch would still read `false`.
 - Both repos' hub registry entries have `auto_merge: true` (the Registry page),
   and both repos have `intake:` set in `.kb/config.yaml`. Otherwise a merged
   publish PR never reaches the hub, no `hist` row lands and no story reaches
@@ -1657,8 +1667,8 @@ only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change t
 
 | Command | What it does |
 |---|---|
-| `kb auto on` | Sets `enabled: true` (comments and other keys stay). First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
-| `kb auto off` | Sets `enabled: false`. A running loop stops at the next task boundary; it never kills a task midway |
+| `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
+| `kb auto off` | Sets `enabled: false` (and prints the same commit sentence). A running loop stops at the next task boundary; it never kills a task midway |
 | `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
 | `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
 
@@ -1667,8 +1677,11 @@ also takes the auto path.
 
 **Preflight.** `kb auto run` refuses to start (exit `1`, every reason printed)
 when the switch is off, the repo kind is not `ba`/`dev`, `intake:` is empty, or
-the repo's hub registry entry is missing or lacks `auto_merge: true`. Both the BA
-repo and the Dev repo need it.
+the repo's hub registry entry is missing or lacks `auto_merge: true` (both the BA
+repo and the Dev repo need it). It also refuses when `.kb/config.yaml` or
+`.claude/settings.json` is untracked or has uncommitted changes, or when the
+default branch's copy of `.kb/config.yaml` is missing or lacks `auto.enabled: true`:
+commit the switch to the default branch first.
 
 **One task, one fresh process.** The runner holds no model context. For each task
 it starts a new `claude -p --output-format json --permission-mode acceptEdits`
@@ -1718,7 +1731,9 @@ lint and check.
 2. **Bugs first**: an unparented `BUG-n` that is ready runs `/dev-fix-bug`. A
    hotfix branches from and merges to `main` unless `auto.hotfix_base` names a
    production branch.
-3. Then the first `ready` story in mission order **whose dependencies are all
+3. Then the first `ready` unparented ticket that is not a bug (a ticket with no
+   mission): `/dev-implement-ticket <id>`.
+4. Then the first `ready` story in mission order **whose dependencies are all
    `done`**: `/dev-implement-ticket <id>`: design, plan, execute, handover with
    GATE 1 to 4 decided by the agent, then PR, green CI, merge, and `kb publish` so
    the `hist` row reaches the hub and the story shows `done`.
@@ -1737,6 +1752,13 @@ answering, in its Q&A thread.
   `kb auto status` shows `stop_reason`; the log says which ticket, PR and checks.
   Fix the problem, then `kb auto run` again: it clears the stop and **resumes the
   same task** with fresh attempts.
+- **A task that ended `done` is still picked.** The hub may not show it as `done`
+  yet (the publish PR is still merging). The runner does not run it again: it
+  waits `idle_interval` and checks again, and after 5 checks it stops with
+  `<task> ended done but is still picked after 5 checks`.
+- **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that did
+  not end `done` stop the loop with `qa thread: <reason>`. A usage-limit wait does
+  not count.
 - **Usage limit.** When `claude` reports the subscription limit, the task is
   retried after 15, then 30, then 60 minutes (and 60 from then on); the backoff
   resets after any other result. A usage-limit wait never counts as a failed
@@ -1801,7 +1823,7 @@ whole file instead. A file that is not valid JSON is left alone with a note.
 
 - **Allowed:** `git` (add, commit, status, diff, log, fetch, `pull origin`, switch
   to `auto/*`, `fix/*` and `hotfix/*`, `switch -c`, `checkout -b`, branch, worktree,
-  merge, `push -u origin HEAD`, `push origin HEAD`, bare `push`, bare `pull`), `gh pr`, `gh run` (view, watch, rerun, list), file
+  merge, `push -u origin HEAD`, `push origin HEAD`, bare `pull`), `gh pr`, `gh run` (view, watch, rerun, list), file
   `Read`, `Edit` and `Write`, the `strata-kb` MCP tools, and `kb` subcommands
   (`mission`, `ticket`, `publish`, `svc`, `impl`, `plan`, `pr`, `resolve`,
   `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto status`, `status`,
@@ -1815,8 +1837,9 @@ whole file instead. A file that is not valid JSON is left alone with a note.
   `flutter test`, `dart analyze`; `swift test`. A Dev repo with no recorded
   language gets none.
 - **Denied:** any `git push` that names `main` or `master`, force-push, `+` or `:`
-  refspecs and `--delete`; `git checkout`, `switch` and `branch` naming `main` or
-  `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`,
+  refspecs and `--delete`; `git checkout`, `switch` and `branch` forms that move
+  onto, create, rename or delete `main` or `master` (a branch id that merely
+  contains the word, like `auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`,
   `kb auto on|off|run`; `rm -rf /*`; editing or writing `.claude/settings.json`,
   `.claude/settings.local.json` and `.git/**`.
 
@@ -1837,9 +1860,6 @@ and every story and ticket carries `depends_on`.
 - A tool outside the allowlist and the per-language table is denied, and a Dev task
   ends `failed command-denied <command>`. Widen `.claude/settings.json` by hand
   (add the command to `permissions.allow`), then `kb auto run`.
-- The Dev loop picks mission stories and `BUG-n` bugs. A ticket with no mission
-  that is not a bug is not picked: the loop waits for it (it is not `done`), so
-  implement it by hand with `/dev-implement-ticket`.
 - One BA repo and one Dev repo per hub, one ticket at a time per repo. The BA's Q&A
   thread is the only concurrency.
 

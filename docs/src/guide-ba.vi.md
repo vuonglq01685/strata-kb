@@ -391,6 +391,9 @@ phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** và p
 ticket nào agent hiểu sai sẽ đi thẳng vào `main` và lên hub. Chủ repo phải bật branch
 protection của GitHub cho `main` (cấm force-push, cấm xóa, **áp dụng cả với administrator**)
 và giữ check CI ticket-lint (job `lint` trong `kb-ticket-lint.yml`) là bắt buộc trước khi bạn bật chế độ này.
+Đừng yêu cầu review phê duyệt trên `main`: agent không thể tự duyệt PR của mình, và
+`gh pr merge --admin` bị từ chối khi quy tắc áp dụng cả với administrator. Nếu vẫn yêu cầu
+review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng agent khi ấy có thể vượt qua nó.
 
 **Thiết lập một lần.**
 
@@ -401,9 +404,12 @@ và giữ check CI ticket-lint (job `lint` trong `kb-ticket-lint.yml`) là bắt
    gộp vào file của bạn, mục của bạn được giữ nguyên) và các phần Auto mode trong skill.
 4. Đặt biến môi trường `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` (giá trị trong
    `.mcp.json`), và đăng nhập CLI `claude` bằng gói subscription của bạn.
+5. Sau `kb auto on`, hãy commit `.kb/config.yaml` và `.claude/settings.json` vào nhánh mặc định.
+   `kb auto run` từ chối chạy cho đến khi bạn làm vậy: worktree Q&A được checkout từ nhánh
+   mặc định, và `kb publish` từ chối khi `.kb/` có thay đổi chưa commit.
 
-**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), sau đó
-`kb auto run` trong một terminal. `kb auto status` cho biết công tắc, task hiện tại và lý do
+**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), commit hai
+file trên, sau đó `kb auto run` trong một terminal. `kb auto status` cho biết công tắc, task hiện tại và lý do
 dừng; `kb auto off` dừng vòng lặp sau task đang chạy.
 
 **Nó làm gì.** Mỗi task là một tiến trình `claude -p` mới, nên task sau không thừa hưởng
