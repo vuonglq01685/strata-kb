@@ -34,6 +34,8 @@
 
 ### Task 0: Spike on cloud (throwaway, gate for everything else)
 
+> **Skipped by the owner (2026-10-16).** The four checks below stay unverified: session lifetime > 3 h, pushing `auto/*` branches, REST admin merge past a required review, `gh run` over REST. Implementers do not run this task; the release notes list them as known limits.
+
 No code is kept. Run in a cloud session, against a **scratch GitHub repo the owner names** (not a product repo). If the owner has not named one, stop and ask.
 
 - [ ] **Step 1:** In a cloud session on the scratch repo, start `nohup bash -c 'for i in $(seq 1 400); do date; sleep 30; done' > spike.log 2>&1 &`, then loop: a `run_in_background` Bash `sleep 6600; tail -1 spike.log` (or shorter if the tool caps lower), re-armed each time it returns. Pass = the session is still alive and `spike.log` still growing after > 3 h.
