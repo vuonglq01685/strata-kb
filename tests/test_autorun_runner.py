@@ -353,3 +353,40 @@ def test_preflight_reports_unreachable_hub(env, monkeypatch):
     _write_config(kb_dir, GOOD)
     (reason,) = preflight(root, kb_dir)
     assert "hub unreachable and not cached" in reason
+
+
+class SpyQaThread:
+    events: list[str] = []
+
+    def __init__(self, root, kb_dir, qa, interval, repo, run_task):
+        self.args = (interval, repo)
+        SpyQaThread.events = [f"init {interval} {repo}"]
+
+    def start(self):
+        SpyQaThread.events.append("start")
+
+    def stop(self):
+        SpyQaThread.events.append("stop")
+
+
+def _loop_kind(env, kind, monkeypatch):
+    root, kb_dir, hub, tickets = env
+    tickets["stories"] = [S("US3", "done")]
+    SpyQaThread.events = []
+    monkeypatch.setattr(runner_mod, "QaThread", SpyQaThread)
+    _write_config(
+        kb_dir,
+        f"kind: {kind}\nrepo_id: svc\nintake: http://i\n"
+        "auto:\n  enabled: true\n  qa_interval: 7\n",
+    )
+    return run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script())
+
+
+def test_run_loop_runs_qa_thread_for_ba_and_stops_it(env, monkeypatch):
+    assert _loop_kind(env, "ba", monkeypatch) == 0
+    assert SpyQaThread.events == ["init 7 svc", "start", "stop"]
+
+
+def test_run_loop_has_no_qa_thread_for_dev(env, monkeypatch):
+    assert _loop_kind(env, "dev", monkeypatch) == 0
+    assert SpyQaThread.events == []

@@ -19,6 +19,7 @@ from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.done import all_done
 from strata_kb.autorun.picker import Task
+from strata_kb.autorun.qathread import QaThread, open_question_count
 from strata_kb.autorun.switch import registry_or_reason
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
@@ -108,7 +109,7 @@ def _check_done(cfg: KBConfig, hub: HubHandle, qa: qa_mod.QaClient) -> Outcome |
         return "idle"
     ba = cfg.kind == "ba"
     try:
-        open_questions = len(qa.list("open", repo=cfg.repo_id)) if ba else 0
+        open_questions = open_question_count(qa, cfg.repo_id) if ba else 0
     except KbError as exc:
         logger.warning("open questions not read: %s", exc)
         return "waiting"
@@ -242,11 +243,28 @@ def _resolve_hub(cfg: KBConfig, kb_dir: Path) -> HubHandle:
 
 def run_loop(root: Path, kb_dir: Path, *, sleep=time.sleep, **deps) -> int:
     """Repeat `run_once` until done (0) or stopped (2). `deps` (hub, qa,
-    run_task, now) default to the real ones; tests inject fakes."""
+    run_task, now) default to the real ones; tests inject fakes. A BA repo also
+    runs the Q&A thread (own process, own worktree) for the loop's lifetime."""
     first = autostate.load(kb_dir)
     if first.stop_reason:  # the owner is resuming: same task, fresh attempts
         autostate.save(kb_dir, replace(first, stop_reason=None, attempts=0))
     qa = deps.pop("qa", None) or qa_mod.from_env()
+    cfg = load_config(kb_dir)
+    qa_thread = None
+    if cfg.kind == "ba":
+        run_task = deps.get("run_task", claude.run_task)
+        qa_thread = QaThread(
+            root, kb_dir, qa, cfg.auto.qa_interval, cfg.repo_id, run_task
+        )
+        qa_thread.start()
+    try:
+        return _repeat(root, kb_dir, sleep, qa, deps)
+    finally:
+        if qa_thread is not None:
+            qa_thread.stop()
+
+
+def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict) -> int:
     fixed_hub = deps.pop("hub", None)
     backoff = Backoff()
     while True:
