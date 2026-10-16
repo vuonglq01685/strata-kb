@@ -721,10 +721,12 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
     treats "no hub" as a fact to report, not a fatal error. A malformed
     operator .kb/config.yaml is still a hard exit via `_invalid_yaml_exit`:
     that is an authoring error, not a "no hub configured" fact."""
-    from strata_kb import gitio
+    from strata_kb import cloud, gitio
     from strata_kb.config import HubConfigError, require_hub
-    from strata_kb.hub import resolve_hub
+    from strata_kb.hub import CLOUD_HUB_MESSAGE, resolve_hub
 
+    if cloud.is_cloud():  # the hub is never cloned on cloud
+        return None, CLOUD_HUB_MESSAGE
     try:
         hub_ref = require_hub(hub_flag, kb_dir)
     except HubConfigError as exc:
@@ -3018,7 +3020,8 @@ def resolve(
     ),
 ) -> None:
     """Resolve a kb-context block: return sections at the pinned version + freshness."""
-    from strata_kb import kbcontext
+    from strata_kb import cloud, hubapi, kbcontext
+    from strata_kb.errors import KbError
     from strata_kb.resolve import (
         cache_problem,
         render_cache,
@@ -3043,11 +3046,15 @@ def resolve(
         except OSError as exc:
             typer.secho(f"could not read file '{source}': {exc}", fg=typer.colors.RED)
             raise typer.Exit(1) from None
-    handle = _hub_or_exit(hub, kb_dir)
     try:
-        ctx = kbcontext.parse(text)
-        results = resolve_refs(handle, ctx)
-    except kbcontext.KBContextError as exc:
+        if cloud.is_cloud():
+            ctx = kbcontext.parse(text)  # fail on a bad block before calling the hub
+            _version, results = hubapi.from_env().resolve(text)
+        else:
+            handle = _hub_or_exit(hub, kb_dir)
+            ctx = kbcontext.parse(text)
+            results = resolve_refs(handle, ctx)
+    except (kbcontext.KBContextError, KbError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     typer.echo(render_resolved(results, include_content=not status_only))
@@ -3776,18 +3783,25 @@ def mission_next(
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import missionnext, planrev, planstatus, ticketcheck
+    from strata_kb import cloud, hubapi, missionnext, planrev, planstatus, ticketcheck
+    from strata_kb.errors import KbError
 
     if repo and not from_hub:
         typer.secho("--repo needs --from-hub", fg=typer.colors.RED)
         raise typer.Exit(1)
     if from_hub:
-        handle, reason = _hub_or_reason(hub, kb_dir)
-        results, unparented, notes = (
-            planstatus.next_from_hub(handle, repo or None)
-            if handle is not None
-            else ([], [], [f"hub unavailable ({reason})"])
-        )
+        if cloud.is_cloud():
+            try:
+                results, unparented, notes = hubapi.from_env().plan_next(repo or None)
+            except KbError as exc:
+                results, unparented, notes = [], [], [f"hub unavailable ({exc})"]
+        else:
+            handle, reason = _hub_or_reason(hub, kb_dir)
+            results, unparented, notes = (
+                planstatus.next_from_hub(handle, repo or None)
+                if handle is not None
+                else ([], [], [f"hub unavailable ({reason})"])
+            )
         if json_output:
             typer.echo(json.dumps(missionnext.to_json(results, notes, unparented)))
         else:
@@ -3868,7 +3882,16 @@ def mission_next(
     else:
         rid = doc_id = None
     done: set[str] | None = None
-    if doc_id is None:
+    if cloud.is_cloud():
+        # The hub's published plan already marks each story done; no -svc doc is read.
+        try:
+            plan_stories, plan_unparented, _plan_notes = hubapi.from_env().plan_next()
+            done = {
+                s.us_id for s in (*plan_stories, *plan_unparented) if s.status == "done"
+            }
+        except KbError as exc:
+            notes.append(f"done: unknown ({exc})")
+    elif doc_id is None:
         notes.append("done: unknown (no repo id — pass --repo-id)")
     else:
         local = kb_dir / doc_id

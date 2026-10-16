@@ -221,9 +221,15 @@ def is_local_hub(hub: str) -> bool:
     return direct.is_dir() and (direct / ".kb").is_dir()
 
 
+CLOUD_HUB_MESSAGE = (
+    "on Claude Code cloud the hub is read through the strata-kb MCP tools, not the CLI"
+)
+
+
 def resolve_hub(hub: str) -> HubHandle | None:
     """Local path with a .kb/ → use it directly; otherwise clone/pull into the cache per TTL.
 
+    Raises `KbError` on Claude Code cloud (a remote hub is never cloned there).
     None = the hub is unreachable and there is no cache yet — callers must
     not read that as "continue with the local KB".
 
@@ -233,6 +239,12 @@ def resolve_hub(hub: str) -> HubHandle | None:
     """
     if is_local_hub(hub):
         return HubHandle(root=Path(hub).resolve())
+
+    from strata_kb import cloud
+    from strata_kb.errors import KbError
+
+    if cloud.is_cloud():  # nothing from the hub is copied to disk on cloud
+        raise KbError(CLOUD_HUB_MESSAGE)
 
     _, token = gitio.split_credentials(hub)
     cache = ensure_cache_base() / cache_key(hub)

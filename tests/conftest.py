@@ -58,6 +58,13 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(autouse=True)
+def _local_mode(monkeypatch):
+    """Tests run in local mode even inside a Claude Code cloud session, where
+    CLAUDE_CODE_REMOTE is set; the cloud tests switch it on themselves."""
+    monkeypatch.setenv("STRATA_KB_CLOUD", "0")
+
+
+@pytest.fixture(autouse=True)
 def _no_real_embedder(request, monkeypatch):
     """search() now resolves default_embedder() eagerly on every query — unit tests
     must be hermetic: a dev machine with fastembed must not load/download the real
