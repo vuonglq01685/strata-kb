@@ -8,7 +8,10 @@ run, like `codesync.runner`; only a stop rule, or "every ticket is done", ends i
 from __future__ import annotations
 
 import logging
+import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal
@@ -300,6 +303,42 @@ def run_once(
         result = claude.TaskResult("failed", (), f"runner error: {exc}")
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
     return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
+
+
+LOCK_NAME = "run.lock"
+
+
+def _pid_alive(pid: int) -> bool:
+    """Whether `pid` is a live process. `kill(pid, 0)` sends no signal; a
+    PermissionError means the process exists but is not ours."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+@contextmanager
+def run_lock(kb_dir: Path) -> Iterator[Path]:
+    """Hold `.kb/auto/run.lock` (this pid) for the loop's lifetime: a second
+    `kb auto run` in the same repo refuses with KbError while the first is
+    alive, and a lock left by a dead process (crash, power loss) is replaced."""
+    path = autostate.log_dir(kb_dir).parent / LOCK_NAME
+    try:
+        holder = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        holder = None
+    if holder is not None and _pid_alive(holder):
+        raise KbError(f"kb auto run is already running (pid {holder})")
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8", newline="\n")
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def _resolve_hub(cfg: KBConfig, kb_dir: Path, hub_flag: str = "") -> HubHandle:

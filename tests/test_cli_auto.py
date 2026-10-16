@@ -147,3 +147,21 @@ def test_ctrl_c_exits_130_without_traceback(repo, monkeypatch):
 
     assert result.exit_code == 130
     assert "stopped by user" in result.output
+
+
+def test_second_run_refuses_while_the_lock_is_held(repo, monkeypatch):
+    _fake_deps(monkeypatch)
+    monkeypatch.setattr(runner_mod, "run_once", lambda *a, **k: "idle")
+    with runner_mod.run_lock(repo):
+        result = cli.invoke(app, ["auto", "run", "--once"])
+    assert result.exit_code == 1
+    assert "already running" in result.output
+    assert not (repo / "auto" / "run.lock").exists()  # the outer lock released
+
+
+def test_run_releases_the_lock_on_exit(repo, monkeypatch):
+    _fake_deps(monkeypatch)
+    monkeypatch.setattr(runner_mod, "run_once", lambda *a, **k: "idle")
+    result = cli.invoke(app, ["auto", "run", "--once"])
+    assert result.exit_code == 0
+    assert not (repo / "auto" / "run.lock").exists()

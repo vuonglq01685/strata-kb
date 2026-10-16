@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -651,3 +652,43 @@ def test_preflight_refuses_a_switch_committed_but_not_pushed(git_repo, tmp_path)
 def test_preflight_without_a_remote_reads_the_local_default_branch(git_repo):
     root, kb_dir, _ = git_repo
     assert preflight(root, kb_dir) == []
+
+
+# --- run lock: one `kb auto run` per repo ---------------------------------
+
+
+def test_run_lock_writes_pid_and_releases(tmp_path):
+    kb_dir = tmp_path / ".kb"
+    with runner_mod.run_lock(kb_dir) as path:
+        assert path == kb_dir / "auto" / "run.lock"
+        assert path.read_text(encoding="utf-8").strip() == str(os.getpid())
+    assert not path.exists()
+
+
+def test_run_lock_refuses_while_a_live_runner_holds_it(tmp_path):
+    kb_dir = tmp_path / ".kb"
+    with (
+        runner_mod.run_lock(kb_dir),
+        pytest.raises(KbError, match=rf"already running \(pid {os.getpid()}\)"),
+        runner_mod.run_lock(kb_dir),
+    ):
+        pass
+
+
+def test_run_lock_replaces_a_stale_lock(tmp_path, monkeypatch):
+    kb_dir = tmp_path / ".kb"
+    lock = kb_dir / "auto" / "run.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text("424242\n", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(runner_mod, "_pid_alive", lambda pid: False)
+    with runner_mod.run_lock(kb_dir) as path:
+        assert path.read_text(encoding="utf-8").strip() == str(os.getpid())
+
+
+def test_run_lock_treats_garbage_as_stale(tmp_path):
+    kb_dir = tmp_path / ".kb"
+    lock = kb_dir / "auto" / "run.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text("not-a-pid\n", encoding="utf-8", newline="\n")
+    with runner_mod.run_lock(kb_dir):
+        assert lock.read_text(encoding="utf-8").strip() == str(os.getpid())

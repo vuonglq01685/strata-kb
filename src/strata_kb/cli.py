@@ -1073,14 +1073,15 @@ def auto_run(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     try:
-        if once:
-            cfg, handle, qa = runner.build_deps(kb_dir, hub)
-            runner.resume(kb_dir)
-            outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
-            typer.echo(outcome)
-            code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
-        else:
-            code = runner.run_loop(root, kb_dir, hub_flag=hub)
+        with runner.run_lock(kb_dir):  # one loop per repo; a nested run refuses
+            if once:
+                cfg, handle, qa = runner.build_deps(kb_dir, hub)
+                runner.resume(kb_dir)
+                outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
+                typer.echo(outcome)
+                code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
+            else:
+                code = runner.run_loop(root, kb_dir, hub_flag=hub)
     except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
         typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
         raise typer.Exit(1) from None
