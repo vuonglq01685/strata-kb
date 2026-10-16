@@ -1279,3 +1279,70 @@ def test_dev_auto_commands_are_inside_the_allowlist(template):
             seen += 1
             assert _permitted(command, allow, deny), (template, command)
     assert seen, template
+
+
+# --- Task 12 fix round 1 -------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", DEV_AUTO_ALL)
+def test_dev_auto_sections_end_the_run_on_a_denied_command(name):
+    text = _dev_text(name)
+    assert "A command the permission system denies" in text
+    assert "command-denied <command>" in text
+    assert "Never work around a denial" in text
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
+)
+def test_dev_phases_report_a_denied_command_to_the_orchestrator(name):
+    assert "report `command-denied <command>` to the orchestrator" in _dev_text(name)
+
+
+def test_dev_plan_reads_kb_test_and_picks_lint_and_build_from_the_conventions():
+    text = _dev_text("dev-plan")
+    assert "`kb-test.yml` counts" in text
+    assert "`cmd.lint` and `cmd.build` come only from commands" in text
+    assert "`docs/conventions/<lang>.md`" in text
+
+
+def test_dev_test_workflow_waits_for_the_marker_workflow_too():
+    text = _dev_text("dev-test-workflow")
+    assert (
+        "or the workflow carrying the `# kb-test:` marker) must be among them" in text
+    )
+    assert "The new `kb-test` jobs" not in text
+
+
+def test_dev_test_workflow_branches_before_it_writes_or_runs_anything():
+    text = _dev_text("dev-test-workflow")
+    assert "Before you write or run anything" in text
+    assert text.index("Branch first") < text.index("The branch rule")
+    assert text.count("git switch -c auto/kb-test FETCH_HEAD") == 1
+
+
+def test_dev_fix_bug_checks_for_finished_work_before_it_branches():
+    text = _dev_text("dev-fix-bug")
+    assert text.index("Already finished") < text.index("The branch and its base")
+    assert "A local `fix/<BUG-id>`" in text
+    assert "`git switch fix/<BUG-id>`" in text
+
+
+def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():
+    text = _dev_text("dev-handover")
+    assert "report the `Q<id>` to the orchestrator" in text
+    assert "(on a direct run, end it yourself)" in text
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-implement-ticket", "dev-handover", "dev-fix-bug"]
+)
+def test_kb_doctor_is_read_for_its_publish_advice(name):
+    text = _dev_text(name)
+    assert "when it advises `kb publish`" in text
+    assert "says the hub lags" not in text
+
+
+@pytest.mark.parametrize("name", ["dev-execute", "dev-handover"])
+def test_three_round_cap_is_called_deliberate(name):
+    assert "3-round cap stays as written here, on purpose" in _dev_text(name)

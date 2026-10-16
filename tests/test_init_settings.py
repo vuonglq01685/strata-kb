@@ -8,7 +8,7 @@ import pytest
 
 from strata_kb import conventions
 from strata_kb.initcmd import (
-    TEST_COMMANDS,
+    LANG_COMMANDS,
     expected_files,
     init_repo,
     merge_settings,
@@ -149,11 +149,45 @@ def test_recorded_lang_adds_its_test_command(tmp_path: Path):
     assert "Bash(go test *)" not in allow
 
 
+def test_python_lang_adds_install_lint_and_type_check():
+    allow = {c for c in LANG_COMMANDS["python"]}
+    assert {
+        "Bash(pip install -e .*)",
+        "Bash(pip install -r *)",
+        "Bash(uv sync*)",
+        "Bash(uv pip install *)",
+        "Bash(ruff *)",
+        "Bash(pyright*)",
+        "Bash(mypy *)",
+    } <= allow
+
+
+def test_every_lang_has_install_or_build_beyond_its_test_runner():
+    for lang, cmds in LANG_COMMANDS.items():
+        assert len(cmds) >= 2, lang
+
+
 def test_lang_flag_adds_its_test_commands(tmp_path: Path):
     init_repo(tmp_path, "dev", langs=["ts", "java"])
 
     allow = _settings(tmp_path)["permissions"]["allow"]
-    for entry in ("Bash(npm test*)", "Bash(mvn test*)", "Bash(gradle test*)"):
+    for entry in (
+        "Bash(npm test*)",
+        "Bash(mvn test*)",
+        "Bash(gradle test*)",
+        # install, lint and build ride along with the test runners
+        "Bash(npm ci*)",
+        "Bash(npm install*)",
+        "Bash(npm run lint*)",
+        "Bash(npm run build*)",
+        "Bash(npx eslint *)",
+        "Bash(npx tsc *)",
+        "Bash(pnpm install*)",
+        "Bash(yarn install*)",
+        "Bash(mvn compile*)",
+        "Bash(gradle build*)",
+        "Bash(./gradlew build*)",
+    ):
         assert entry in allow
     for broad in ("Bash(npx *)", "Bash(mvn *)", "Bash(gradle *)", "Bash(composer *)"):
         assert broad not in allow
@@ -178,8 +212,8 @@ def test_ba_gets_no_language_test_commands(tmp_path: Path):
     assert "Bash(pytest *)" not in _settings(tmp_path)["permissions"]["allow"]
 
 
-def test_test_commands_cover_every_conventions_language():
-    assert set(TEST_COMMANDS) == set(conventions.LANG_IDS)
+def test_lang_commands_cover_every_conventions_language():
+    assert set(LANG_COMMANDS) == set(conventions.LANG_IDS)
 
 
 def test_merge_settings_does_not_mutate_inputs():

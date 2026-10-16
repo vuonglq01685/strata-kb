@@ -565,29 +565,83 @@ def record_asset_store(config_path: Path, mode: str) -> str:
 
 _SETTINGS_REL = ".claude/settings.json"
 
-# Auto-mode test runners per conventions language, appended to `permissions.allow`
-# for a dev repo's languages so a headless `claude -p` run can run its own tests.
-TEST_COMMANDS: dict[str, tuple[str, ...]] = {
-    "python": ("Bash(pytest *)", "Bash(python -m pytest*)", "Bash(uv run pytest*)"),
+# Auto-mode commands per conventions language (test runners, installs, lint and
+# build), appended to `permissions.allow` for a dev repo's languages so a
+# headless `claude -p` run can run them: a command outside the list is denied.
+LANG_COMMANDS: dict[str, tuple[str, ...]] = {
+    "python": (
+        "Bash(pytest *)",
+        "Bash(python -m pytest*)",
+        "Bash(uv run pytest*)",
+        "Bash(pip install -e .*)",
+        "Bash(pip install -r *)",
+        "Bash(uv sync*)",
+        "Bash(uv pip install *)",
+        "Bash(ruff *)",
+        "Bash(pyright*)",
+        "Bash(mypy *)",
+    ),
     "ts": (
         "Bash(npm test*)",
         "Bash(npm run test*)",
         "Bash(pnpm test*)",
         "Bash(yarn test*)",
+        "Bash(npm ci*)",
+        "Bash(npm install*)",
+        "Bash(npm run lint*)",
+        "Bash(npm run build*)",
+        "Bash(npx eslint *)",
+        "Bash(npx tsc *)",
+        "Bash(pnpm install*)",
+        "Bash(yarn install*)",
     ),
-    "go": ("Bash(go test *)",),
-    "rust": ("Bash(cargo test*)",),
+    "go": (
+        "Bash(go test *)",
+        "Bash(go mod download*)",
+        "Bash(go build *)",
+        "Bash(go vet *)",
+        "Bash(golangci-lint *)",
+    ),
+    "rust": (
+        "Bash(cargo test*)",
+        "Bash(cargo build*)",
+        "Bash(cargo clippy*)",
+        "Bash(cargo fmt*)",
+    ),
     "java": (
         "Bash(mvn test*)",
         "Bash(mvn verify*)",
         "Bash(gradle test*)",
         "Bash(./gradlew test*)",
+        "Bash(mvn compile*)",
+        "Bash(gradle build*)",
+        "Bash(./gradlew build*)",
     ),
-    "dotnet": ("Bash(dotnet test*)",),
-    "php": ("Bash(vendor/bin/phpunit*)", "Bash(php artisan test*)"),
-    "dart": ("Bash(flutter test*)", "Bash(dart test*)"),
-    "swift": ("Bash(swift test*)",),
-    "e2e-playwright": ("Bash(npx playwright test*)",),
+    "dotnet": (
+        "Bash(dotnet test*)",
+        "Bash(dotnet restore*)",
+        "Bash(dotnet build*)",
+    ),
+    "php": (
+        "Bash(vendor/bin/phpunit*)",
+        "Bash(php artisan test*)",
+        "Bash(composer install*)",
+        "Bash(vendor/bin/phpstan*)",
+        "Bash(vendor/bin/pint*)",
+    ),
+    "dart": (
+        "Bash(flutter test*)",
+        "Bash(dart test*)",
+        "Bash(flutter pub get*)",
+        "Bash(dart pub get*)",
+        "Bash(dart analyze*)",
+        "Bash(flutter analyze*)",
+    ),
+    "swift": ("Bash(swift test*)", "Bash(swift build*)"),
+    "e2e-playwright": (
+        "Bash(npx playwright test*)",
+        "Bash(npx playwright install*)",
+    ),
 }
 
 
@@ -660,7 +714,7 @@ def _apply_settings(
     template = json.loads(template_text)
     template["permissions"]["allow"] = _union(
         template["permissions"]["allow"],
-        [cmd for lang in langs for cmd in TEST_COMMANDS.get(lang, ())],
+        [cmd for lang in langs for cmd in LANG_COMMANDS.get(lang, ())],
     )
     if not dest.exists() or force:
         _write_scaffold(dest, _SETTINGS_REL, _dump_settings(template), report)

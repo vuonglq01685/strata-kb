@@ -114,21 +114,24 @@ The runner starts this skill as `/dev-test-workflow` when no workflow in `.githu
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why (the languages, each command and where it came from, what was left out). Put the lines in the PR description's `## Notes`.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. A `kb-test.yml` (or a workflow carrying the `# kb-test` marker) that runs the repo's tests on `pull_request` and is on the default branch means the work is finished; `gh pr list --head auto/kb-test --state merged --json number,url` shows the merge. When the file is missing from your working tree, create the branch as in step 1 below (`FETCH_HEAD` already holds the merged file) and end `AUTO-RESULT: done`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/kb-test`, then `git pull origin auto/kb-test`, and continue at step 4 below (the CI step).
+**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
 
-- **Look first: a workflow already runs the tests** → add the marker comment, branch and PR as below with that single change, and log the workflow's name in an Auto decision line.
+**Already finished.** The runner re-runs a task after a crash, so check first. A `kb-test.yml` (or a workflow carrying the `# kb-test` marker) that runs the repo's tests on `pull_request` and is on the default branch means the work is finished; `gh pr list --head auto/kb-test --state merged --json number,url` shows the merge. When the file is missing from your working tree, create the branch as in **Branch first** below (`FETCH_HEAD` already holds the merged file) and end `AUTO-RESULT: done`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/kb-test`, then `git pull origin auto/kb-test`, and continue at step 3 of the branch rule below (the CI step).
+
+- **Look first: a workflow already runs the tests** → add the marker comment, then commit and open the PR as below with that single change, and log the workflow's name in an Auto decision line.
 - **Run the tests locally first: red because the code is wrong — "stop and report it"** → no PR is opened. End `AUTO-RESULT: failed tests-red <the failing test names>`; the runner does not go on to tickets while the suite is red.
 - **Choose the languages: no manifest and no `langs:`** → there is nothing to run. End `AUTO-RESULT: failed no-tests`.
 - **Branch and PR: "the PR is left for the human to merge"** → you open it and merge it, by the branch rule below.
 
-**The branch rule.**
+**Branch first.** Before you write or run anything, create the branch with `git fetch origin main && git switch -c auto/kb-test FETCH_HEAD`; never check out `main`. When `auto/kb-test` already exists, `git switch auto/kb-test` and bring it up to date with `git fetch origin main && git merge FETCH_HEAD`.
 
-1. Create the branch with `git fetch origin main && git switch -c auto/kb-test FETCH_HEAD`; never check out `main`. When `auto/kb-test` already exists, `git switch auto/kb-test` and bring it up to date with `git fetch origin main && git merge FETCH_HEAD`.
-2. Commit the workflow (stage it by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
-3. Open the PR with `gh pr create --title "ci: add the kb-test workflow" --body "<the description from the Branch and PR step>"`. Run `kb pr lint` on the body first when you can, so `kb-pr-lint` starts green.
-4. Wait for the checks with `gh pr checks --watch`. The new `kb-test` jobs must be among them, and green. If a check is red, read the failure (`gh run view --log-failed`), fix the workflow, commit, `git push`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
-5. Every check green: `gh pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `gh pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `gh pr view --json state,mergedAt` before you end `failed`: `gh` can report an error from a worktree after the merge went through. A merged PR is a success.
-6. The workflow lives outside `.kb/`, so there is nothing to `kb publish`.
+**The branch rule**, once the tests have run green locally.
+
+1. Commit the workflow (stage it by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
+2. Open the PR with `gh pr create --title "ci: add the kb-test workflow" --body "<the description from the Branch and PR step>"`. Run `kb pr lint` on the body first when you can, so `kb-pr-lint` starts green.
+3. Wait for the checks with `gh pr checks --watch`. The jobs of the test workflow (`kb-test.yml`, or the workflow carrying the `# kb-test:` marker) must be among them, and green. If a check is red, read the failure (`gh run view --log-failed`), fix the workflow, commit, `git push`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
+4. Every check green: `gh pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `gh pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `gh pr view --json state,mergedAt` before you end `failed`: `gh` can report an error from a worktree after the merge went through. A merged PR is a success.
+5. The workflow lives outside `.kb/`, so there is nothing to `kb publish`.
 
 ### Result line
 
@@ -136,4 +139,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done` — the workflow is merged and its check was green on its own PR, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which asks the BA nothing.
-- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `tests-red <the failing test names>`, or `no-tests`. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `tests-red <the failing test names>`, `no-tests`, or `command-denied <command>`. The reason goes on the same line.
