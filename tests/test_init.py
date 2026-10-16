@@ -2366,17 +2366,19 @@ def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
         assert ".claude/settings.json" not in expected_files(kind), kind
 
 
-def test_settings_json_is_protected_from_a_second_init(tmp_path: Path):
+def test_settings_json_is_merged_not_overwritten_by_a_second_init(tmp_path: Path):
     # initcmd overwrites any file outside PROTECTED_FILES, and a dev's own
-    # hooks live in this file.
+    # settings live in this file: ba/dev merge the template in, keeping them.
     init_repo(tmp_path, "dev")
     path = tmp_path / ".claude" / "settings.json"
     path.write_text('{"hooks": {}, "mine": true}', encoding="utf-8")
 
     report = init_repo(tmp_path, "dev")
 
-    assert ".claude/settings.json" in report.skipped
-    assert json.loads(path.read_text(encoding="utf-8"))["mine"] is True
+    assert ".claude/settings.json" in report.updated
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    assert settings["mine"] is True
+    assert "Bash(kb *)" in settings["permissions"]["allow"]
 
 
 def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):

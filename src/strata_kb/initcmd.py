@@ -10,6 +10,8 @@ once. Templates live under `strata_kb/templates/init/`.
 
 from __future__ import annotations
 
+import copy
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -107,7 +109,7 @@ BA_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-ba.yaml",
     ".mcp.json": "mcp-child.json",
-    ".claude/settings.json": "claude-settings-usage.json",
+    ".claude/settings.json": "claude-settings-auto.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     ".gitattributes": "gitattributes-child.txt",
     ".claude/skills/kb-publish/SKILL.md": "claude-skill-kb-publish.md",
@@ -233,7 +235,7 @@ DEV_TEMPLATES: dict[str, str] = {
     # exemption.
     ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-child.json",
-    ".claude/settings.json": "claude-settings-usage.json",
+    ".claude/settings.json": "claude-settings-auto.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     "docs/impl/.gitkeep": "gitkeep.txt",
     "docs/impl/.gitignore": "impl-gitignore.txt",
@@ -556,6 +558,112 @@ def record_asset_store(config_path: Path, mode: str) -> str:
     return "recorded"
 
 
+_SETTINGS_REL = ".claude/settings.json"
+
+# Auto-mode test runners per conventions language, appended to `permissions.allow`
+# for a dev repo's languages so a headless `claude -p` run can run its own tests.
+TEST_COMMANDS: dict[str, tuple[str, ...]] = {
+    "python": ("Bash(pytest *)",),
+    "ts": ("Bash(npm test*)", "Bash(npx *)"),
+    "go": ("Bash(go test *)",),
+    "rust": ("Bash(cargo test*)",),
+    "java": ("Bash(mvn *)", "Bash(gradle *)", "Bash(./gradlew *)"),
+    "dotnet": ("Bash(dotnet test*)",),
+    "php": ("Bash(composer *)", "Bash(vendor/bin/phpunit*)"),
+    "dart": ("Bash(flutter test*)", "Bash(dart test*)"),
+    "swift": ("Bash(swift test*)",),
+    "e2e-playwright": ("Bash(npx playwright *)",),
+}
+
+
+def _union(existing: list, extra: list) -> list:
+    return existing + [item for item in extra if item not in existing]
+
+
+def _hook_commands(groups: list) -> set[str]:
+    return {
+        cmd
+        for group in groups
+        if isinstance(group, dict)
+        for hook in group.get("hooks", [])
+        if isinstance(hook, dict) and isinstance(cmd := hook.get("command"), str)
+    }
+
+
+def merge_settings(existing: dict, template: dict) -> dict:
+    """Template merged into `existing`; neither input is mutated.
+
+    `permissions.allow`/`deny`: existing entries first, then template entries
+    not already there. Hooks: per event, a template group is appended only when
+    none of its commands is already registered for that event. Every other key
+    of `existing` is kept. Raises ValueError when `existing` has an unexpected
+    shape (a user file is never coerced).
+    """
+    merged = copy.deepcopy(existing)
+    permissions = merged.setdefault("permissions", {})
+    if not isinstance(permissions, dict):
+        raise ValueError("`permissions` is not an object")
+    for key, extra in template.get("permissions", {}).items():
+        current = permissions.setdefault(key, [])
+        if not isinstance(current, list):
+            raise ValueError(f"`permissions.{key}` is not a list")
+        permissions[key] = _union(current, extra)
+    hooks = merged.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ValueError("`hooks` is not an object")
+    for event, groups in template.get("hooks", {}).items():
+        current = hooks.setdefault(event, [])
+        if not isinstance(current, list):
+            raise ValueError(f"`hooks.{event}` is not a list")
+        have = _hook_commands(current)
+        for group in groups:
+            if not _hook_commands([group]) & have:
+                current.append(copy.deepcopy(group))
+    return merged
+
+
+def _dump_settings(settings: dict) -> str:
+    return json.dumps(settings, indent=2) + "\n"
+
+
+def _apply_settings(
+    dest: Path,
+    template_text: str,
+    langs: Sequence[str],
+    force: bool,
+    report: InitReport,
+) -> None:
+    """ba/dev `.claude/settings.json`: create from the template, or merge into
+    the existing file (a dev's own permissions and hooks survive). `--force`
+    replaces it outright, like every other protected file."""
+    template = json.loads(template_text)
+    template["permissions"]["allow"] = _union(
+        template["permissions"]["allow"],
+        [cmd for lang in langs for cmd in TEST_COMMANDS.get(lang, ())],
+    )
+    if not dest.exists() or force:
+        _write_scaffold(dest, _SETTINGS_REL, _dump_settings(template), report)
+        return
+    try:
+        # utf-8-sig: Notepad saves JSON with a BOM, which json.loads rejects.
+        existing = json.loads(dest.read_text(encoding="utf-8-sig"))
+        if not isinstance(existing, dict):
+            raise ValueError("top level is not an object")
+        text = _dump_settings(merge_settings(existing, template))
+    except (OSError, ValueError) as err:  # JSONDecodeError is a ValueError
+        report.skipped.append(_SETTINGS_REL)
+        report.notes.append(
+            f"{_SETTINGS_REL} left untouched ({err}); add the auto-mode "
+            "permissions by hand"
+        )
+        return
+    if dest.read_text(encoding="utf-8-sig") == text:
+        report.skipped.append(_SETTINGS_REL)
+        return
+    dest.write_text(text, encoding="utf-8", newline="\n")
+    report.updated.append(_SETTINGS_REL)
+
+
 def _write_scaffold(dest: Path, rel: str, text: str, report: InitReport) -> None:
     if dest.exists():
         if dest.read_text(encoding="utf-8") == text:
@@ -616,10 +724,13 @@ def init_repo(
         if rel == ".gitignore":
             _apply_gitignore(dest, text, report)
             continue
+        if rel == _SETTINGS_REL and kind in (KIND_BA, KIND_DEV):
+            continue  # merged by _apply_settings, once the langs are known
         if dest.exists() and rel in PROTECTED_FILES and not force:
             report.skipped.append(rel)
             continue
         _write_scaffold(dest, rel, text, report)
+    settings_langs: list[str] = []
     if _record_kind(target / ".kb" / "config.yaml", kind):
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")
@@ -639,6 +750,7 @@ def init_repo(
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)
         forced = sorted(set(langs) | set(recorded))
+        settings_langs = forced
         scaffolded = conventions.scaffold_conventions(target, report, forced=forced)
         if scaffolded:
             conventions.ensure_claude_block(target, report)
@@ -653,6 +765,18 @@ def init_repo(
                     f"langs: [{', '.join(recorded)}]; hand-edit langs: there "
                     "to change it"
                 )
+    if kind in (KIND_BA, KIND_DEV):
+        _apply_settings(
+            target / _SETTINGS_REL,
+            _render(
+                templates[_SETTINGS_REL],
+                read_template(templates[_SETTINGS_REL]),
+                repo_id,
+            ),
+            settings_langs,
+            force,
+            report,
+        )
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
         if outcome == "recorded":
