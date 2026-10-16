@@ -1,7 +1,7 @@
 """api — the read-only JSON routes under `/api/*`.
 
 `build_routes` returns the Starlette routes (health, doc list, manifest,
-section, search); `hub_handle`, `list_docs` and `load_manifest` are shared
+section, search, questions); `hub_handle`, `list_docs` and `load_manifest` are shared
 with the web UI. Every read goes through the federation hub cache, and a hub
 that cannot be resolved is reported as a 503 rather than an unhandled 500.
 All routes but `health` are plain `def` so Starlette runs them off the event
@@ -11,6 +11,7 @@ loop.
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 import yaml
 from pydantic import ValidationError
@@ -34,6 +35,8 @@ from strata_kb.serving.config import ServerConfig
 logger = logging.getLogger("strata_kb.web.api")
 
 MAX_BUDGET = 20000
+
+QA_NEEDS_HUB_DETAIL = "Q&A needs the shared hub server"
 
 HUB_DOWN_DETAIL = "hub unreachable — the federation is the only read source"
 
@@ -285,10 +288,68 @@ def build_routes(config: ServerConfig) -> list[Route]:
             body["notes"] = [note]
         return JSONResponse(body)
 
+    def questions(request: Request) -> JSONResponse:
+        # Read-only like the Q&A UI pages: a missing qa.db is an empty list,
+        # not a reason to create the store from a GET.
+        from strata_kb import ticketqa
+        from strata_kb.errors import KbError
+        from strata_kb.mcp import hub_serves_own_checkout
+
+        if not hub_serves_own_checkout(config):
+            return _error(503, "qa_needs_hub_server", QA_NEEDS_HUB_DETAIL)
+        hub = hub_handle(config)
+        if hub is None:
+            return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
+        params = request.query_params
+        status = params.get("status", "open")
+        if status not in ticketqa.STATUSES:
+            return _error(
+                400,
+                "bad_status",
+                f"status must be one of {', '.join(ticketqa.STATUSES)}, not {status!r}",
+            )
+        db = ticketqa.qa_db_path(hub.root)
+        try:
+            if db.exists():
+                rows = ticketqa.list_questions(
+                    hub,
+                    ticketqa.QaStore(db),
+                    ticket_ref=params.get("ticket", ""),
+                    repo=params.get("repo", ""),
+                    status=status,
+                )
+            else:
+                rows = []
+        except KbError as exc:  # bad status (QaError) or a malformed ticket ref
+            return _error(400, "bad_request", str(exc))
+        except (sqlite3.Error, OSError):
+            logger.exception("Q&A store error")
+            return _error(500, "qa_store_error", "see hub log")
+        return JSONResponse(
+            {
+                "questions": [
+                    {
+                        "id": q.id,
+                        "repo": q.repo,
+                        "ticket": q.ticket,
+                        "state": state,
+                        "question": q.question,
+                        "asked_by": q.asked_by,
+                        "asked_at": q.asked_at,
+                        "blocks": q.blocks,
+                        "answer": q.answer,
+                        "answer_rev": q.answer_rev,
+                    }
+                    for q, state, _rev in rows
+                ]
+            }
+        )
+
     return [
         Route("/api/health", health, methods=["GET"]),
         Route("/api/docs", docs, methods=["GET"]),
         Route("/api/docs/{doc}", doc_detail, methods=["GET"]),
         Route("/api/docs/{doc}/sections/{section}", section, methods=["GET"]),
         Route("/api/search", api_search, methods=["GET"]),
+        Route("/api/questions", questions, methods=["GET"]),
     ]
