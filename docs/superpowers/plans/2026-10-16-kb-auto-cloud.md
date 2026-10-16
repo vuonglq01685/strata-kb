@@ -4,7 +4,7 @@
 
 **Goal:** `/kb-auto run` works inside one Claude Code cloud session on its `claude/...` branch, for BA and Dev repos, with no hub clone and no GitHub GraphQL.
 
-**Architecture:** One cloud switch (`cloud.is_cloud()`) gates every cloud-only behaviour. The hub cache is filled from a new `GET /api/hub/snapshot` tarball instead of `git clone`, so every existing `resolve_hub` caller works unchanged. PR work moves from `gh pr` (GraphQL) to new `kb pr` subcommands over `gh api` REST. The session keeps itself alive by re-arming a `kb auto wait` background command while `kb auto run` runs detached.
+**Architecture:** One cloud switch (`cloud.is_cloud()`) gates every cloud-only behaviour. Nothing from the hub is copied: agents keep using the `strata-kb` MCP tools, and the non-agent code (runner, `kb resolve`, `kb mission next`) calls three new JSON routes on the same hub server; every other hub-reading CLI command refuses on cloud and points at its MCP tool. PR work moves from `gh pr` (GraphQL) to new `kb pr` subcommands over `gh api` REST. The session keeps itself alive by re-arming a `kb auto wait` background command while `kb auto run` runs detached.
 
 **Tech Stack:** Python ≥3.11, typer, starlette, pydantic, pytest; `gh api` (REST) and `git` subprocesses.
 
@@ -16,16 +16,17 @@
 - Cloud = `STRATA_KB_CLOUD` is `1` (forced on) or `0` (forced off); otherwise `CLAUDE_CODE_REMOTE` is `1` or `true` (case-insensitive). Nothing outside this switch changes local behaviour.
 - Hub over HTTP uses `STRATA_KB_HUB_URL` (`mcpsetup.HUB_URL_VAR`) and `STRATA_KB_HTTP_TOKEN` (`dockersetup.TOKEN_VAR`) only. Never log or `repr` the token.
 - Every text-mode file write passes `newline="\n"` (`tests/test_windows_hygiene.py` enforces it).
-- Tar extraction only via `extractall(..., filter="data")`; when `tarfile.data_filter` is missing (Python < 3.11.4), refuse with a clear message.
+- On cloud, no hub content is written to disk and `resolve_hub` never clones (owner's decision).
+- `/api/registry/entry` never returns the whole registry or workflow pins.
 - Never `--dangerously-skip-permissions`; never edit `.claude/settings*.json` by hand in skills; never force-push.
 - Release: version `1.30.0`, a CHANGELOG entry in the 1.29.0 style.
 - Run tests with `uv run pytest <path> -q`; full suite with `uv run pytest -q` before the last commit.
 
 ## Review Focus
 
-1. A snapshot tarball with `../` paths or a symlink pointing outside the cache → rejected, existing cache untouched (Task 3 test).
-2. A snapshot refresh that fails or returns a truncated gzip → previous cache kept, stale handle returned (Task 3 test).
-3. A crash mid-refresh leaves a `<cache>.tmp` dir → next refresh cleans it, never serves it (Task 3 test).
+1. Hub server older than 1.30.0 (route returns 404) → one refusal line naming 1.30.0, not a traceback or a silent idle loop (Task 3 test).
+2. Hub unreachable mid-loop (status 0) → runner idles like today's "hub plan not read", never counts a failed attempt (Task 3 test).
+3. `kb resolve --write-cache` on cloud writes byte-for-byte what the local path writes for the same results (Task 3 test with one fixture hub served both ways).
 4. `kb pr find --head` with a branch containing `/` (`auto/US-1`) → query `head=<owner>:auto/US-1` URL-encoded (Task 4 test).
 5. `kb pr checks --watch` while CI has not created any check run yet → keeps waiting, never reports green on zero checks (Task 4 test).
 
@@ -70,17 +71,19 @@ def test_default_branch_without_remote_is_current_branch(tmp_path):
 - [ ] **Step 4:** `uv run pytest tests/test_gitio_default_branch.py tests/test_autorun_runner.py tests/test_autorun_switch.py -q` → PASS.
 - [ ] **Step 5:** Commit `fix: default branch asks the remote when origin/HEAD is unset`.
 
-### Task 2: Cloud switch and the hub snapshot route
+### Task 2: Cloud switch and the hub JSON routes
 
 **Files:**
 - Create: `src/strata_kb/cloud.py`
-- Modify: `src/strata_kb/web/api.py` (`build_routes`, new route next to `/api/questions`)
-- Test: `tests/test_cloud.py`, `tests/test_api_snapshot.py` (create; reuse the `web_client`, `token`, `hub_with_ticket` fixtures that `tests/test_api_questions.py` uses)
+- Modify: `src/strata_kb/web/api.py` (`build_routes`, three routes next to `/api/questions`)
+- Test: `tests/test_cloud.py`, `tests/test_api_cloud_routes.py` (create; reuse the `web_client`, `token`, `hub_with_ticket` fixtures of `tests/test_api_questions.py`)
 
 **Interfaces:**
 - Produces: `cloud.is_cloud() -> bool` (rule in Global Constraints); `cloud.hub_http() -> tuple[str, str] | None` — `(url.rstrip("/"), token)` when both env vars are non-empty, else `None`.
-- Produces: `GET /api/hub/snapshot` → `200`, `media_type="application/gzip"`, body = tar.gz with members under `.kb/` and `federation/` of the served hub root, excluding any path segment `.git`, `.kb-work`, `.kb-qa`; `503 hub_unreachable` when `hub_handle(config)` is `None`. Auth comes from the existing `/api/*` token middleware.
-- Produces: module constant `api.SNAPSHOT_PATH = "/api/hub/snapshot"`.
+- Produces (all plain `def`, auth from the existing `/api/*` middleware, `503 hub_unreachable` when `hub_handle(config)` is `None`):
+  - `GET /api/plan/next[?repo=]` → `{"stories": [...], "unparented": [...], "notes": [...]}`; each item = `dataclasses.asdict(StoryStatus)` (tuples become lists).
+  - `GET /api/registry/entry?repo_id=<id>` → `{"repo_id", "kind", "auto_merge", "dev_repos"}` (`dev_repos` = number of registry entries with kind `dev`); `400` without `repo_id`, `404 repo_not_registered` when absent.
+  - `POST /api/resolve` (body: kb-context text, ≤ the existing body cap) → `{"version": ctx.version, "results": [{"ref": str(r.ref), "status", "citation", "content", "tokens", "reason", "pinned_rev"}]}`; `400 kb_context_error` on a parse error.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -90,62 +93,73 @@ def test_default_branch_without_remote_is_current_branch(tmp_path):
     ({"CLAUDE_CODE_REMOTE": "true", "STRATA_KB_CLOUD": "0"}, False), ({"STRATA_KB_CLOUD": "1"}, True),
 ])
 def test_is_cloud(monkeypatch, env, expected): ...
+def test_hub_http_needs_both_vars(monkeypatch): ...
 
-def test_hub_http_needs_both_vars(monkeypatch): ...  # url only -> None; both -> ("https://h", "t")
+@pytest.mark.parametrize("path", ["/api/plan/next", "/api/registry/entry?repo_id=x"])
+def test_routes_require_auth(web_client, path):
+    assert web_client.get(path).status_code == 401
 
-def test_snapshot_requires_auth(web_client):
-    assert web_client.get("/api/hub/snapshot").status_code == 401
-
-def test_snapshot_holds_kb_and_federation_only(web_client, hub_with_ticket, auth):
+def test_plan_next_matches_next_from_hub(web_client, hub_with_ticket, auth):
     hub = hub_with_ticket(rev=1)
-    (hub.root / ".kb-work").mkdir(exist_ok=True); (hub.root / ".kb-work" / "x").write_text("x", newline="\n")
-    resp = web_client.get("/api/hub/snapshot", headers=auth)
-    names = tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz").getnames()
-    assert resp.status_code == 200
-    assert "federation/registry.yaml" in names
-    assert not any(n.startswith((".kb-work", ".kb-qa", ".git")) for n in names)
+    stories, unparented, notes = planstatus.next_from_hub(hub)
+    body = web_client.get("/api/plan/next", headers=auth).json()
+    assert [s["us_id"] for s in body["stories"]] == [s.us_id for s in stories]
+
+def test_registry_entry_is_one_repo_without_pins(web_client, hub_with_ticket, auth):
+    body = web_client.get("/api/registry/entry?repo_id=ba-one", headers=auth).json()
+    assert set(body) == {"repo_id", "kind", "auto_merge", "dev_repos"}
+
+def test_registry_entry_unknown_is_404(...): ...
+def test_resolve_returns_results(web_client, hub_with_ticket, auth): ...   # status/citation per ref
+def test_resolve_bad_context_is_400(...): ...
 ```
 
-- [ ] **Step 2:** Run both files → FAIL (module/route missing).
-- [ ] **Step 3:** Implement `cloud.py`; route builds the archive in memory with `tarfile.open(fileobj=BytesIO(), mode="w:gz")` and `tar.add(path, arcname=..., filter=<drop excluded segments>)`, plain `def` like the other routes.
+- [ ] **Step 2:** Run both files → FAIL.
+- [ ] **Step 3:** Implement `cloud.py` and the three routes.
 - [ ] **Step 4:** Run both files → PASS.
-- [ ] **Step 5:** Commit `feat: hub snapshot route and cloud switch`.
+- [ ] **Step 5:** Commit `feat: hub JSON routes for plan, registry entry and resolve; cloud switch`.
 
-### Task 3: `resolve_hub` fills the cache from the snapshot on cloud
+### Task 3: Runner and CLI read the hub live on cloud
 
 **Files:**
-- Modify: `src/strata_kb/hub.py` (`HubHandle`, `resolve_hub`, new `_resolve_snapshot`)
-- Modify: `src/strata_kb/publish.py` (both `resolve_hub` call sites, ~1433 and ~1531) and `src/strata_kb/cli.py` (`reindex`, the push at ~2849): refuse on a snapshot handle
-- Test: `tests/test_hub_snapshot.py` (create)
+- Create: `src/strata_kb/hubapi.py`
+- Modify: `src/strata_kb/autorun/runner.py` (`_resolve_hub`, `_check_done`, `preflight`), `src/strata_kb/autorun/picker.py` (`pick_dev`), `src/strata_kb/autorun/switch.py` (`registry_or_reason`, `warnings_for_on`), `src/strata_kb/cli.py` (`resolve`, `mission_next`, `_hub_or_reason`), `src/strata_kb/hub.py` (`resolve_hub`)
+- Test: `tests/test_hubapi.py`, `tests/test_autorun_cloud.py`, `tests/test_cli_cloud_hub.py` (create)
 
 **Interfaces:**
-- Consumes: `cloud.is_cloud()`, `cloud.hub_http()`, `api.SNAPSHOT_PATH` (Task 2).
-- Produces: `HubHandle.snapshot: bool = False`.
-- Produces: `resolve_hub(hub)` — after the `is_local_hub` branch: when `is_cloud()` and `hub_http()` is set, return `_resolve_snapshot(url, token)`; otherwise unchanged.
-- Produces: `_resolve_snapshot(url: str, token: str) -> HubHandle | None` — cache dir `ensure_cache_base() / cache_key(url)`, under `_cache_lock`; same `.last-pull` marker and `_ttl()` as the git path; fresh → `HubHandle(root=cache, age_seconds=age, snapshot=True)`; refresh = `httpio.request("GET", url + SNAPSHOT_PATH, {"Authorization": f"Bearer {token}"}, timeout=120)` → extract into `<cache>.tmp` (removed first if present) with `filter="data"` → replace `cache` → touch marker. Failure (code ≠ 200, `tarfile.TarError`, `OSError`): existing cache → `HubHandle(..., stale=True, snapshot=True)`; none → `None`. Code 404 logs `"hub server has no /api/hub/snapshot — upgrade it to strata-kb 1.30.0 or later"`.
-- Produces: refusal text for writes on a snapshot handle: `"the hub is a read-only HTTP snapshot (cloud mode) — publish through intake"` raised as `KbError` (publish) / red line + exit 1 (reindex).
+- Consumes: Task 2 routes and `cloud.*`.
+- Produces (`hubapi.py`, client in the style of `autorun/qa.py`: `httpio.request`, bearer token, `KbError` on status 0 / non-2xx / bad JSON; a 404 on the route itself raises `KbError("hub server has no <route> — upgrade it to strata-kb 1.30.0 or later")`):
+  - `class HubApi(base_url: str, token: str, http=httpio.request)`
+  - `HubApi.plan_next(repo: str | None = None) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]`
+  - `HubApi.registry_entry(repo_id: str) -> dict | None` (`None` on `404 repo_not_registered`)
+  - `HubApi.resolve(text: str) -> tuple[str, list[ResolvedRef]]` (version, results; `ref` re-parsed with `kbcontext`'s ref parser)
+  - `hubapi.from_env() -> HubApi` (same env names and messages as `qa.from_env`)
+- Changes on cloud only (`cloud.is_cloud()`):
+  - Runner: the `hub` passed to `run_once` / `pick_dev` / `_check_done` is a `HubApi`; a small `plan_next(hub)` helper in `picker.py` dispatches `HubApi.plan_next()` vs `planstatus.next_from_hub(hub)` (keep calling the latter by module attribute so existing monkeypatching tests still work).
+  - `preflight` / `warnings_for_on`: registry facts from `registry_entry(cfg.repo_id)`; refusal texts unchanged.
+  - `kb resolve`: results from `HubApi.resolve`; the rest of the command (render, `--write-cache`, `--cache`, exit codes) unchanged.
+  - `kb mission next`: the done set = `us_id`s with status `done` in `HubApi.plan_next()` stories + unparented, instead of loading the `-svc` doc.
+  - `_hub_or_reason` (hence `_hub_or_exit`): returns `(None, "on Claude Code cloud the hub is read through the strata-kb MCP tools, not the CLI")`.
+  - `resolve_hub`: raises `KbError` with that same message instead of cloning (guards anything missed).
 
-- [ ] **Step 1: Write the failing tests** (set `STRATA_KB_HUB_CACHE` to `tmp_path`, env `CLAUDE_CODE_REMOTE=true`, both hub vars; monkeypatch `strata_kb.hub.httpio.request`)
+- [ ] **Step 1: Write the failing tests** (fake `http` returning the Task 2 routes' bodies from `web_client`)
 
 ```python
-def test_cloud_fills_cache_from_snapshot_and_registry_loads(...):
-    # fake http returns the bytes of GET /api/hub/snapshot from web_client (Task 2)
-    handle = resolve_hub("https://github.com/o/hub.git")
-    assert handle.snapshot and load_registry(handle.federation_dir).repos
-
-def test_fresh_snapshot_is_not_refetched_within_ttl(...): ...   # 2nd call -> 0 http calls
-def test_failed_refresh_keeps_old_cache_as_stale(...): ...       # code 0 / truncated gzip -> stale=True, files intact
-def test_unsafe_member_is_rejected_and_cache_untouched(...): ... # member "../evil" and symlink to /etc -> stale old cache, no file outside
-def test_leftover_tmp_dir_is_cleaned(...): ...                   # pre-create <cache>.tmp/junk -> gone after refresh, not served
-def test_404_returns_none_without_cache(caplog, ...): ...         # message names 1.30.0
-def test_local_mode_still_clones(monkeypatch, ...): ...          # CLAUDE_CODE_REMOTE unset, vars set -> gitio.clone called, no http
-def test_publish_refuses_on_snapshot(...): ...                   # message as in Interfaces
+def test_hubapi_plan_next_round_trips_storystatus(...): ...
+def test_hubapi_404_route_names_1_30_0(...): ...                  # Review Focus 1
+def test_cloud_runner_idles_when_hub_unreachable(...): ...        # status 0 -> outcome "idle", attempts unchanged (Review Focus 2)
+def test_cloud_preflight_refuses_without_auto_merge(...): ...     # same text as local
+def test_cloud_resolve_write_cache_matches_local(tmp_path, ...): ...  # Review Focus 3: bytes equal
+def test_cloud_mission_next_done_set_from_hub(...): ...
+def test_cloud_other_hub_commands_refuse(cli_runner, monkeypatch): ...  # e.g. `kb query x` -> exit 1, message names MCP
+def test_cloud_resolve_hub_never_clones(monkeypatch): ...          # gitio.clone not called, KbError
+def test_local_mode_unchanged(monkeypatch, ...): ...               # CLAUDE_CODE_REMOTE unset -> clone path, HubApi unused
 ```
 
-- [ ] **Step 2:** `uv run pytest tests/test_hub_snapshot.py -q` → FAIL.
-- [ ] **Step 3:** Implement per Interfaces; on Python without `tarfile.data_filter` treat as a failed refresh with message `"Python 3.11.4+ is needed for the hub snapshot"`.
-- [ ] **Step 4:** `uv run pytest tests/test_hub_snapshot.py tests/test_hub*.py tests/test_publish*.py -q` → PASS.
-- [ ] **Step 5:** Commit `feat: hub cache from an HTTP snapshot on Claude Code cloud`.
+- [ ] **Step 2:** `uv run pytest tests/test_hubapi.py tests/test_autorun_cloud.py tests/test_cli_cloud_hub.py -q` → FAIL.
+- [ ] **Step 3:** Implement per Interfaces.
+- [ ] **Step 4:** Same, plus `uv run pytest tests/test_autorun_*.py tests/test_cli_mission.py tests/test_cli.py -q` → PASS.
+- [ ] **Step 5:** Commit `feat: runner and CLI read the hub live through its API on Claude Code cloud`.
 
 ### Task 4: `kb pr` over the REST API
 
@@ -271,7 +285,7 @@ def test_kb_auto_body_has_cloud_path():
 **Files:**
 - Modify: `pyproject.toml` (`version`), `uv.lock` (the `strata-kb` version line, as commit `299128d` did), `CHANGELOG.md`, `README.md` ("Full-auto mode" section), `src/strata_kb/templates/init/QUICKSTART-ba.md`, `QUICKSTART-dev.md`
 
-- [ ] **Step 1:** Bump to `1.30.0`; CHANGELOG `## 1.30.0 — <date>` with bullets: **Cloud** (one session, `/kb-auto run` on `claude/...`, the switch PR), **Hub snapshot** (`GET /api/hub/snapshot`; upgrade the hub first; read-only, writes refuse), **`kb pr`** (REST, skills switched), **`kb auto wait`**, **Default branch** fix, **Upgrade** (hub, CLI, `kb init --kind ba|dev` again to get the skill changes; set `STRATA_KB_HUB_URL`/`STRATA_KB_HTTP_TOKEN` in the cloud environment), **Known limits** (session must stay open; snapshot is fetched whole, TTL `STRATA_KB_HUB_TTL`).
+- [ ] **Step 1:** Bump to `1.30.0`; CHANGELOG `## 1.30.0 — <date>` with bullets: **Cloud** (one session, `/kb-auto run` on `claude/...`, the switch PR), **Hub live reads** (`GET /api/plan/next`, `GET /api/registry/entry`, `POST /api/resolve`; upgrade the hub first; on cloud nothing from the hub is copied and other hub CLI commands point at the MCP tools), **`kb pr`** (REST, skills switched), **`kb auto wait`**, **Default branch** fix, **Upgrade** (hub, CLI, `kb init --kind ba|dev` again to get the skill changes; set `STRATA_KB_HUB_URL`/`STRATA_KB_HTTP_TOKEN` in the cloud environment), **Known limits** (session must stay open).
 - [ ] **Step 2:** README and both QUICKSTARTs: a short "On Claude Code cloud" subsection under full-auto mode: env vars, the hub server version, what `/kb-auto run` does there.
 - [ ] **Step 3:** `uv run pytest -q` → all PASS; `scripts/gate.sh` if the environment allows.
 - [ ] **Step 4:** Commit `feat: full-auto mode on Claude Code cloud — 1.30.0`.

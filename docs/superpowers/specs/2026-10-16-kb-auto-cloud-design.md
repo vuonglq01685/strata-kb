@@ -139,35 +139,39 @@ never asked to check it out:
 
 Local `/kb-auto run` keeps step 2 and the direct push unchanged.
 
-### 6.4 Hub over HTTP, no clone
+### 6.4 Hub read live from the hub server, nothing copied
 
-*(Revised while planning — designer's call.)* Every hub read in the runner,
-the picker and the CLI commands the skills call (`kb mission next`,
-`kb resolve --cache|--write-cache`, the `kb ticket ...` / `kb mission lint` /
-`kb query` / `kb doctor` fallbacks — 19 callers of `_hub_or_exit` /
-`_hub_or_reason` plus `runner._resolve_hub` and `switch.registry_or_reason`)
-goes through one function, `hub.resolve_hub`, which returns a `HubHandle`
-whose `root` holds `.kb/` and `federation/`. So instead of an HTTP reader per
-caller, change only how that directory is filled:
+*(Owner's decision, 2026-10-16: no hub content is copied into the repo or
+the container — no clone, no snapshot. Everything is read live from the hub
+server, on demand.)*
 
-- New hub route `GET /api/hub/snapshot` (same bearer token and rate limiter
-  as `/api/questions`): a `tar.gz` of the served hub's `.kb/` and
-  `federation/` trees (no `.git`, `.kb-work`, `.kb-qa`).
-- In `resolve_hub`, on cloud (§6.1) with `STRATA_KB_HUB_URL` and
-  `STRATA_KB_HTTP_TOKEN` set and a non-local hub ref, fetch that snapshot
-  into the usual cache directory (keyed by the hub URL) instead of
-  `git clone`/`pull`, honouring the same TTL marker and the same "stale cache
-  on a failed refresh" rule. Every caller is unchanged.
-- A 404 from the route means the hub server is too old: log it and return
-  `None` (callers already report "hub unreachable"), naming the version
-  needed.
-- The snapshot is read-only: it has no git remote, so a hub *write* through
-  it (direct-mode `kb publish`, `kb reindex` push) fails. Auto mode
-  publishes through intake, so nothing in the loop writes. Those write paths
-  must refuse with one clear line when the handle is a snapshot.
+- **Agents** (every skill, every task process) use the `strata-kb` MCP tools
+  from the repo's `.mcp.json`, as they already do MCP-first.
+- **Code that is not an agent** (the runner, and the CLI commands a skill
+  must run as CLI) cannot call MCP tools the way an agent does. It calls the
+  same hub server's JSON API with the same token (`STRATA_KB_HUB_URL`,
+  `STRATA_KB_HTTP_TOKEN`), reusing `autorun/qa.py`'s client pattern. Each
+  call returns only what that caller needs; nothing is written to disk.
 
-Q&A keeps using `/api/questions` (the Q&A store is not in the snapshot), and
-publish keeps going through intake.
+New read-only hub routes (bearer token, rate limiter, like `/api/questions`):
+
+| Route | Returns | Used by |
+|---|---|---|
+| `GET /api/plan/next[?repo=]` | `planstatus.next_from_hub` as JSON: `stories`, `unparented` (each `StoryStatus` field), `notes` | runner `_check_done`, `picker.pick_dev`; `kb mission next` on cloud takes its done set from the `done` rows |
+| `GET /api/registry/entry?repo_id=` | `{repo_id, kind, auto_merge, dev_repos}` for that one repo (404 if absent); never the whole registry or workflow pins — the full registry stays admin-only as on `/ui/registry` | runner preflight, `kb auto on` warning |
+| `POST /api/resolve` (body: kb-context text) | `resolve_refs` results as JSON (`ResolvedRef` fields, `ref` as its citation string) | `kb resolve` on cloud, which then renders, writes and checks the cache with the existing `render_resolved` / `render_cache` / `cache_problem` |
+
+On cloud (§6.1):
+- `runner._resolve_hub` / `switch.registry_or_reason` / `picker.pick_dev` /
+  `runner._check_done` use these routes instead of a `HubHandle`.
+- `kb resolve` and `kb mission next` use them instead of `_hub_or_exit` /
+  `_hub_or_reason`.
+- Every other `_hub_or_exit` / `_hub_or_reason` caller refuses with one line
+  naming the MCP tool to use instead (the skills already prefer MCP there).
+  `resolve_hub` never clones on cloud.
+
+A 404 on a route (an old hub server) is a refusal naming the version needed.
+Locally, nothing changes: the clone cache stays.
 
 ### 6.5 GitHub without GraphQL
 
