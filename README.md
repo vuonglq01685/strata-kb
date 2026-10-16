@@ -1626,6 +1626,15 @@ bypass that protection on `main` the same way. The deny list
 also cannot see the current branch: the agent's working tree must never sit on
 `main` with commits on it. The skills branch first; the runner does not guard this.
 
+**The easy path: `/kb-auto`.** `kb init --kind ba|dev` also ships a `kb-auto`
+skill (`/kb-auto on|off|status|run` in Claude Code, Copilot and Cursor). `run`
+turns the switch on if needed, commits and pushes `.kb/config.yaml` and
+`.claude/settings.json` when they are not yet on the default branch (only when
+your tree is on that branch), starts `kb auto run` detached with its output in
+`.kb/auto/run.log`, and shows the preflight reasons if it refuses. `status`
+reads `kb auto status --json` and the run lock. The prerequisites below still
+hold; the skill only does the mechanical steps for you.
+
 **Prerequisites.**
 
 - A person writes the first mission (`/ba-mission-plan`) before the switch goes
@@ -1670,7 +1679,7 @@ only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change t
 | `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
 | `kb auto off` | Sets `enabled: false` (and prints the same commit sentence). A running loop stops at the next task boundary; it never kills a task midway |
 | `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
-| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
+| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. Holds `.kb/auto/run.lock` (its pid): a second `kb auto run` in the same repo exits `1` with "already running (pid N)" while the first is alive; a lock left by a dead process is replaced. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
 
 The switch is the single source of truth. A skill run by hand with the switch on
 also takes the auto path.
@@ -1826,8 +1835,11 @@ whole file instead. A file that is not valid JSON is left alone with a note.
   merge, `push -u origin HEAD`, `push origin HEAD`, bare `pull`), `gh pr`, `gh run` (view, watch, rerun, list), file
   `Read`, `Edit` and `Write`, the `strata-kb` MCP tools, and `kb` subcommands
   (`mission`, `ticket`, `publish`, `svc`, `impl`, `plan`, `pr`, `resolve`,
-  `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto status`, `status`,
-  `diff`, `plan-ingest`).
+  `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto`, `status`,
+  `diff`, `plan-ingest`). `kb auto on|off|run` are allowed so `/kb-auto` works in
+  your own session; a task that runs `kb auto run` from inside the loop is refused
+  by the run lock, and `kb auto off` from a task only stops the loop at the next
+  task boundary.
 - **Per language (Dev repos):** test, install, lint and build commands for each
   language in `.kb/config.yaml` `langs:`, from `LANG_COMMANDS` in
   `initcmd.py`: for example `pytest`, `uv sync`, `ruff`, `pyright` for Python;
@@ -1839,8 +1851,8 @@ whole file instead. A file that is not valid JSON is left alone with a note.
 - **Denied:** any `git push` that names `main` or `master`, force-push, `+` or `:`
   refspecs and `--delete`; `git checkout`, `switch` and `branch` forms that move
   onto, create, rename or delete `main` or `master` (a branch id that merely
-  contains the word, like `auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`,
-  `kb auto on|off|run`; `rm -rf /*`; editing or writing `.claude/settings.json`,
+  contains the word, like `auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
+  `rm -rf /*`; editing or writing `.claude/settings.json`,
   `.claude/settings.local.json` and `.git/**`.
 
 **Hub side.** 1.29.0 adds `GET /api/questions` (same bearer token as the rest of

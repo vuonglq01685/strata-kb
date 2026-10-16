@@ -446,7 +446,9 @@ In a mission's `Affected` cell it writes full story ids
 ## Full-auto mode (optional)
 
 `kb auto on` lets this repo run on its own beside a Dev repo in full-auto mode,
-until every ticket on the hub is done; `kb auto run` starts the loop in a
+until every ticket on the hub is done; `/kb-auto run` from your editor commits the
+switch, pushes it and starts the loop detached (log in `.kb/auto/run.log`;
+`/kb-auto status` and `/kb-auto off` go with it), or `kb auto run` starts the loop in a
 terminal. It merges with **admin rights** and publishes with no human review, so
 read this before you turn it on.
 

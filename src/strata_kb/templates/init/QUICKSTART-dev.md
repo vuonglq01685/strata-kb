@@ -452,7 +452,9 @@ created the scaffold `kb-summarize` fills, in the Onboarding step above.
 ## Full-auto mode (optional)
 
 `kb auto on` lets this repo run on its own beside a BA repo, until every ticket on
-the hub is done; `kb auto run` starts the loop in a terminal. The agent approves
+the hub is done; `kb auto run` starts the loop in a terminal, or `/kb-auto run` from
+your editor commits the switch, pushes it and starts the loop detached (log in
+`.kb/auto/run.log`; `/kb-auto status` and `/kb-auto off` go with it). The agent approves
 GATE 1 and GATE 2 after the independent review, merges with **admin rights** and
 publishes with no human review, so read this before you turn it on.
 

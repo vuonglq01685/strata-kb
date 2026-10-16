@@ -420,7 +420,7 @@ reviews, exclude administrators from that rule and accept that the agent can the
    default branch, and `kb publish` refuses a dirty `.kb/`.
 
 **Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
-`.kb/config.yaml`), commit and push the two files above, then `kb auto run` in a terminal. `kb auto status` shows the switch,
+`.kb/config.yaml`), commit and push the two files above, then `kb auto run` in a terminal — or `/kb-auto run` from your editor, which does the commit, the push and starts the loop detached (log in `.kb/auto/run.log`). `kb auto status` shows the switch,
 the current task, and why it stopped; `kb auto off` stops the loop after the current
 task.
 

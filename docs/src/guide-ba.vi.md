@@ -409,7 +409,7 @@ review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng
    mặc định, và `kb publish` từ chối khi `.kb/` có thay đổi chưa commit.
 
 **Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), commit và push hai
-file trên, sau đó `kb auto run` trong một terminal. `kb auto status` cho biết công tắc, task hiện tại và lý do
+file trên, sau đó `kb auto run` trong một terminal — hoặc gõ `/kb-auto run` ngay trong editor: nó tự commit, push và khởi động vòng lặp chạy nền (log ở `.kb/auto/run.log`). `kb auto status` cho biết công tắc, task hiện tại và lý do
 dừng; `kb auto off` dừng vòng lặp sau task đang chạy.
 
 **Nó làm gì.** Mỗi task là một tiến trình `claude -p` mới, nên task sau không thừa hưởng

@@ -483,7 +483,7 @@ administrators from that rule and accept that the agent can then bypass it.
    branch. `kb auto run` refuses until you do: `kb publish` refuses a dirty `.kb/`, so no
    ticket would reach `done`.
 
-**Run.** `kb auto on`, then commit and push those two files, then `kb auto run`. `kb auto status` shows the task, attempts, the
+**Run.** `kb auto on`, then commit and push those two files, then `kb auto run` — or `/kb-auto run` from your editor, which does all three and starts the loop detached (log in `.kb/auto/run.log`). `kb auto status` shows the task, attempts, the
 questions it waits on and the stop reason; `kb auto off` stops after the current task.
 
 **What it does.** One fresh `claude -p` process per ticket. First, if no workflow runs

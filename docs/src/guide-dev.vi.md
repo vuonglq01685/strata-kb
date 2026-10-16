@@ -481,7 +481,7 @@ review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng
    `kb auto run` từ chối chạy cho đến khi bạn làm vậy: `kb publish` từ chối khi `.kb/` có thay
    đổi chưa commit, nên không ticket nào đến được `done`.
 
-**Chạy.** `kb auto on`, commit và push hai file trên, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
+**Chạy.** `kb auto on`, commit và push hai file trên, rồi `kb auto run` — hoặc gõ `/kb-auto run` ngay trong editor: nó làm cả ba bước và khởi động vòng lặp chạy nền (log ở `.kb/auto/run.log`). `kb auto status` hiện task, số lần thử, các câu hỏi
 đang chờ và lý do dừng; `kb auto off` dừng sau task đang chạy.
 
 **Nó làm gì.** Mỗi ticket là một tiến trình `claude -p` mới. Trước hết, nếu chưa workflow
