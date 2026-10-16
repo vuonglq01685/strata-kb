@@ -85,12 +85,15 @@ def preflight(root: Path, kb_dir: Path) -> list[str]:
     return reasons
 
 
-def _stop(kb_dir: Path, state: autostate.AutoState, reason: str) -> Outcome:
+def _stop(
+    kb_dir: Path,
+    state: autostate.AutoState,
+    reason: str,
+    hint: str = "Fix it, then run `kb auto run` to resume.",
+) -> Outcome:
     autostate.save(kb_dir, replace(state, stop_reason=reason))
     logger.error(
-        "auto mode stopped on %s: %s. Fix it, then run `kb auto run` to resume.",
-        state.task or "no task",
-        reason,
+        "auto mode stopped on %s: %s. %s", state.task or "no task", reason, hint
     )
     return "stopped"
 
@@ -173,7 +176,7 @@ def _settle(
         logger.info("blocked on questions %s", list(result.ids))
         return "waiting"
     if result.reason.startswith("ci-red"):
-        return _stop(kb_dir, state, result.reason)
+        return _stop(kb_dir, replace(state, attempts=MAX_ATTEMPTS), result.reason)
     state = replace(state, attempts=state.attempts + 1)
     autostate.save(kb_dir, state)
     logger.warning(
@@ -200,13 +203,16 @@ def run_once(
     flipped between tasks stops the loop at the boundary)."""
     state = autostate.load(kb_dir)
     if not cfg.auto.enabled:
-        return _stop(kb_dir, state, "switched off")
+        return _stop(
+            kb_dir, state, "switched off", "Run `kb auto on`, then `kb auto run`."
+        )
     finished = _check_done(cfg, hub, qa)
     if finished is not None:
         return finished
     if state.waiting_on:
         state, ready = _answered(kb_dir, state, qa)
         if not ready:
+            logger.info("waiting on questions %s", list(state.waiting_on))
             return "waiting"
     task = _task_for(root, kb_dir, cfg, hub, state)
     if task is None:
@@ -215,11 +221,14 @@ def run_once(
         state = replace(state, task=task.key, attempts=0)
         autostate.save(kb_dir, state)
     started = now()
-    result = run_task(
-        root,
-        claude.prompt_for(task.skill, task.arg, cfg.kind),
-        log_dir=autostate.log_dir(kb_dir),
-    )
+    try:
+        result = run_task(
+            root,
+            claude.prompt_for(task.skill, task.arg, cfg.kind),
+            log_dir=autostate.log_dir(kb_dir),
+        )
+    except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
+        result = claude.TaskResult("failed", (), f"runner error: {exc}")
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
     return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
 

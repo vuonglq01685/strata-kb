@@ -130,10 +130,35 @@ def test_ci_red_stops_immediately(env, caplog):
     script = Script(TaskResult("failed", (), "ci-red PR #7: unit, lint"))
     with caplog.at_level(logging.ERROR):
         assert once(env, script) == "stopped"
-    assert autostate.load(env[1]).attempts == 0
+    assert autostate.load(env[1]).attempts == 2
     assert "ci-red PR #7" in caplog.text
     assert TASK.key in caplog.text
     assert "kb auto run" in caplog.text
+
+
+def test_runner_exception_counts_as_failed_attempt(env):
+    def broken(root, prompt, *, log_dir):
+        raise OSError("disk full")
+
+    assert once(env, broken) == "ran"
+    assert autostate.load(env[1]).attempts == 1
+    assert once(env, broken) == "stopped"
+    state = autostate.load(env[1])
+    assert (state.attempts, state.stop_reason) == (2, "runner error: disk full")
+
+
+def test_switch_off_hint_says_kb_auto_on(env, caplog):
+    off = KBConfig(kind="dev", auto=AutoConfig(enabled=False))
+    with caplog.at_level(logging.ERROR):
+        once(env, Script(), cfg=off)
+    assert "kb auto on" in caplog.text
+
+
+def test_waiting_logs_pending_question_ids(env, caplog):
+    autostate.save(env[1], autostate.AutoState(TASK.key, 0, (12,), None, ""))
+    with caplog.at_level(logging.INFO):
+        once(env, Script(), qa=FakeQa({12: "waiting"}))
+    assert "[12]" in caplog.text
 
 
 def test_usage_limit_backoff_sequence(env):
@@ -197,6 +222,23 @@ def _loop(env, script, sleep=lambda s: None):
         newline="\n",
     )
     return run_loop(root, kb_dir, sleep=sleep, hub=hub, qa=FakeQa(), run_task=script)
+
+
+def test_run_loop_rereads_config_so_switch_off_stops(env):
+    root, kb_dir, _, _ = env
+    script = Script(TaskResult("done"), TaskResult("done"))
+
+    def run_then_switch_off(root_, prompt, *, log_dir):
+        (kb_dir / "config.yaml").write_text(
+            "kind: dev\nrepo_id: svc\nauto:\n  enabled: false\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        return script(root_, prompt, log_dir=log_dir)
+
+    assert _loop(env, run_then_switch_off) == 2
+    assert autostate.load(kb_dir).stop_reason == "switched off"
+    assert len(script.prompts) == 1
 
 
 def test_run_loop_exits_2_when_stopped(env):
