@@ -65,9 +65,8 @@ class PlanRepo:
     repo: str
     doc: str
     missions: list[PlanMission]
-    unparented: list[
-        tuple[str, str]
-    ]  # (section id, title) of tickets without a mission
+    # tickets without a mission: `done` when in the Dev repo's hist, else `ready`
+    unparented: list[missionnext.StoryStatus]
 
 
 @dataclass(frozen=True)
@@ -155,7 +154,9 @@ def _plan_repo(
     titles: dict[str, tuple[str, str]] = {}  # mission id -> (title, summary)
     drafted: dict[str, tuple[int, int]] = {}
     tickets_of: dict[str, set[str]] = {}
-    unparented: list[tuple[str, str]] = []
+    loose: list[
+        tuple[str, str]
+    ] = []  # (section id, title) of tickets without a mission
     for s in manifest.sections:
         if s.id == s.file:  # the mission is the section named like its group file
             section = _l3_section(fed, manifest.id, s)
@@ -165,7 +166,7 @@ def _plan_repo(
             continue
         drafted[s.id] = _PUBLISHED
         if s.file == TICKETS_GROUP:
-            unparented.append((s.id, s.title))
+            loose.append((s.id, s.title))
         else:
             tickets_of.setdefault(s.file, set()).add(s.id)
 
@@ -178,6 +179,16 @@ def _plan_repo(
     if note:
         notes.append(note)
     results = missionnext.statuses(parsed, drafted, done)
+    unparented = [
+        missionnext.StoryStatus(
+            tid,
+            "",
+            title,
+            "done" if done and tid in done else "ready",
+            ("done: unknown",) if done is None else (),
+        )
+        for tid, title in loose
+    ]
     missions = [
         PlanMission(
             repo=fed.meta.repo_id,
@@ -211,9 +222,10 @@ FROM_HUB_LABELS = {"to-draft": "not ready (no published ticket)"}
 
 def next_from_hub(
     hub: HubHandle, repo: str | None = None
-) -> tuple[list[missionnext.StoryStatus], list[str]]:
-    """Every story of the plans published on the hub (of `repo`, when given),
-    and the notes; `kb mission next --from-hub` and MCP kb_mission_next."""
+) -> tuple[list[missionnext.StoryStatus], list[missionnext.StoryStatus], list[str]]:
+    """(stories, unparented tickets, notes) of the plans published on the hub
+    (of `repo`, when given); `kb mission next --from-hub`, MCP
+    kb_mission_next and the auto runner."""
     plans, notes = hub_plans(hub, repo)
     if not plans:
         notes.append(
@@ -221,7 +233,11 @@ def next_from_hub(
             if repo
             else "no <repo>-plan document on the hub"
         )
-    return [s for r in plans for m in r.missions for s in m.stories], notes
+    return (
+        [s for r in plans for m in r.missions for s in m.stories],
+        [u for r in plans for u in r.unparented],
+        notes,
+    )
 
 
 def mission_holders(

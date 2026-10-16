@@ -365,7 +365,8 @@ def test_to_json_shape():
     parsed = [missionnext.parse_mission(PLATFORM)]
     results = missionnext.statuses(parsed, {}, set())
     data = missionnext.to_json(results, ["n1"])
-    assert set(data) == {"notes", "stories", "next"}
+    assert set(data) == {"notes", "stories", "unparented", "next"}
+    assert data["unparented"] == []
     assert data["notes"] == ["n1"]
     assert data["next"] == "M-platform-US1"
     assert data["stories"][0] == {

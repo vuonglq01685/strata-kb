@@ -820,6 +820,21 @@ def test_mission_next_from_hub_json_keeps_raw_status(plan_hub, tmp_path, monkeyp
     ]
     assert data["next"] == US[2]
     assert data["notes"] == []
+    assert [(u["us_id"], u["mission_id"], u["status"]) for u in data["unparented"]] == [
+        ("TAL-1580", "", "ready")
+    ]
+
+
+def test_mission_next_from_hub_lists_unparented(plan_hub, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["mission", "next", "--from-hub", "--hub", str(plan_hub.root)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Unparented:" in result.output
+    assert "- TAL-1580 — TAL-1580 — Show restrictive airspace details: ready" in (
+        result.output
+    )
 
 
 def test_mission_next_from_hub_repo_filter_and_unknown_repo(

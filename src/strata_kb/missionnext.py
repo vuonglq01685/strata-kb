@@ -13,6 +13,7 @@ and `missionlint.py` keep.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
 from strata_kb import lintcore, mission
@@ -378,9 +379,11 @@ def render(
     results: list[StoryStatus],
     notes: list[str],
     labels: dict[str, str] | None = None,
+    unparented: Sequence[StoryStatus] = (),
 ) -> str:
     """`labels` renames a status in the table only (the `Next:` line still
-    keys on the raw status)."""
+    keys on the raw status). `unparented` (tickets without a mission) get
+    their own block above the `Next:` line (which stays last)."""
     labels = labels or {}
     lines = [f"note: {n}" for n in notes]
     if lines:
@@ -391,14 +394,30 @@ def render(
             f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)} | "
             f"{'; '.join(r.reasons)} |"
         )
+    if unparented:
+        lines += ["", "Unparented:"]
+        lines += [
+            f"- {u.us_id} — {u.title}: {u.status}"
+            + (f" ({'; '.join(u.reasons)})" if u.reasons else "")
+            for u in unparented
+        ]
     lines += ["", _next_line(results)]
     return "\n".join(lines)
 
 
-def to_json(results: list[StoryStatus], notes: list[str]) -> dict:
+def _story_json(r: StoryStatus) -> dict:
+    return {**asdict(r), "reasons": list(r.reasons)}
+
+
+def to_json(
+    results: list[StoryStatus],
+    notes: list[str],
+    unparented: Sequence[StoryStatus] = (),
+) -> dict:
     nxt = next_story(results)
     return {
         "notes": list(notes),
-        "stories": [{**asdict(r), "reasons": list(r.reasons)} for r in results],
+        "stories": [_story_json(r) for r in results],
+        "unparented": [_story_json(u) for u in unparented],
         "next": nxt.us_id if nxt is not None else None,
     }

@@ -620,9 +620,9 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            results, notes = planstatus.next_from_hub(hub, repo or None)
+            results, unparented, notes = planstatus.next_from_hub(hub, repo or None)
             return stale_hub_note(hub) + missionnext.render(
-                results, notes, planstatus.FROM_HUB_LABELS
+                results, notes, planstatus.FROM_HUB_LABELS, unparented
             )
 
         return await anyio.to_thread.run_sync(_run)
