@@ -84,14 +84,17 @@ def _has_test_workflow(root: Path) -> bool:
 
 
 def pick_dev(hub: HubHandle, root: Path) -> Task | None:
-    """CI workflow first, then a ready bug, then the first ready story whose
-    dependencies are done."""
+    """CI workflow first, then a ready bug, then a ready unparented ticket,
+    then the first ready story whose dependencies are done."""
     if not _has_test_workflow(root):
         return Task("dev-test-workflow", "")
     stories, unparented, _notes = planstatus.next_from_hub(hub)
     for u in unparented:
         if u.status == "ready" and u.us_id.startswith("BUG-"):
             return Task("dev-fix-bug", u.us_id)
+    for u in unparented:
+        if u.status == "ready" and not u.us_id.startswith("BUG-"):
+            return Task("dev-implement-ticket", u.us_id)
     done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
     for s in stories:
         if s.status == "ready" and all(d in done for d in s.depends_on):

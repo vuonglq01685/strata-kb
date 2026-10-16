@@ -76,6 +76,10 @@ GOOD = {
         {"waiting_on": "12"},
         {"waiting_on": [True]},
         {"updated_at": None},
+        {"last_done": 5},
+        {"same_pick": -1},
+        {"same_pick": True},
+        {"same_pick": "2"},
     ],
 )
 def test_load_rejects_wrong_typed_fields(tmp_path, caplog, bad):
@@ -95,6 +99,13 @@ def test_load_accepts_well_typed_file(tmp_path):
     (tmp_path / "auto" / "state.json").write_text(json.dumps(GOOD), encoding="utf-8")
 
     assert load(tmp_path) == AutoState("a:b", 1, (2,), None, "t")
+
+
+def test_last_done_and_same_pick_round_trip_and_default(tmp_path):
+    save(tmp_path, AutoState(None, 0, (), None, "", "a:b", 3))
+    got = load(tmp_path)
+    assert (got.last_done, got.same_pick) == ("a:b", 3)
+    assert (EMPTY.last_done, EMPTY.same_pick) == (None, 0)
 
 
 def test_save_failure_removes_temp_file(tmp_path, monkeypatch):

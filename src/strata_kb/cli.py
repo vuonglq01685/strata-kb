@@ -973,6 +973,12 @@ def _code_sync_root(kb_dir: Path, command: str) -> Path:
     return gitio.git_root(kb_dir.resolve().parent)
 
 
+_AUTO_COMMIT_HINT = (
+    "Commit .kb/config.yaml (and .claude/settings.json) to the default branch "
+    "before `kb auto run`."
+)
+
+
 @auto_app.command("on")
 def auto_on(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -999,6 +1005,7 @@ def auto_on(
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         _invalid_yaml_exit(path, exc)
     typer.echo("auto: on")
+    typer.echo(_AUTO_COMMIT_HINT)
 
 
 @auto_app.command("off")
@@ -1012,6 +1019,7 @@ def auto_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> N
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         _invalid_yaml_exit(path, exc)
     typer.echo("auto: off")
+    typer.echo(_AUTO_COMMIT_HINT)
 
 
 @auto_app.command("status")
@@ -1066,14 +1074,14 @@ def auto_run(
     )
     try:
         if once:
-            runner.resume(kb_dir)
             cfg, handle, qa = runner.build_deps(kb_dir, hub)
+            runner.resume(kb_dir)
             outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
             typer.echo(outcome)
             code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
         else:
             code = runner.run_loop(root, kb_dir, hub_flag=hub)
-    except KbError as exc:
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
         typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     except KeyboardInterrupt:

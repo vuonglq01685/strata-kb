@@ -143,6 +143,21 @@ def test_non_usage_limit_error_is_failed(fake_claude, tmp_path):
     assert run_task(tmp_path, "/x", log_dir=tmp_path / "logs").kind == "failed"
 
 
+@pytest.mark.parametrize(
+    ("message", "kind"),
+    [
+        ("You've hit your usage limit", "usage-limit"),
+        ("You've hit your limit \u00b7 resets 3pm", "usage-limit"),
+        ("Weekly limit reached, resets Monday", "usage-limit"),
+        ("Context limit reached", "failed"),
+        ("file size limit", "failed"),
+    ],
+)
+def test_usage_limit_wording(fake_claude, tmp_path, message, kind):
+    fake_claude.script({"is_error": True, "result": message})
+    assert run_task(tmp_path, "/x", log_dir=tmp_path / "logs").kind == kind
+
+
 def test_other_error_is_failed_and_capped(fake_claude, tmp_path):
     fake_claude.script({"is_error": True, "result": "boom " * 400})
     result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")

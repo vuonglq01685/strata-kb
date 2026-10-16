@@ -26,6 +26,8 @@ class AutoState:
     waiting_on: tuple[int, ...]
     stop_reason: str | None
     updated_at: str
+    last_done: str | None = None  # key of the task that last ended `done`
+    same_pick: int = 0  # consecutive picks equal to `last_done`
 
 
 def _empty() -> AutoState:
@@ -57,7 +59,12 @@ def _parse(raw: object) -> AutoState:
         raise ValueError("waiting_on must be a list of integers")
     if not isinstance(stamp, str):
         raise ValueError("updated_at must be a string")
-    return AutoState(task, attempts, tuple(waiting), stop, stamp)
+    last_done, same_pick = raw.get("last_done"), raw.get("same_pick", 0)
+    if last_done is not None and not isinstance(last_done, str):
+        raise ValueError("last_done must be a string or null")
+    if not _is_int(same_pick) or same_pick < 0:
+        raise ValueError("same_pick must be a non-negative integer")
+    return AutoState(task, attempts, tuple(waiting), stop, stamp, last_done, same_pick)
 
 
 def load(kb_dir: Path) -> AutoState:

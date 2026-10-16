@@ -95,7 +95,7 @@ def _write_log(
 # Narrow on purpose: "context limit" or "file size limit" is a hard failure,
 # and calling it usage-limit would make the loop back off and retry forever.
 _USAGE_LIMIT = re.compile(
-    r"usage limit|rate limit|limit (reached|exceeded)|resets? at|try again (at|in)",
+    r"(usage|rate|5-hour|weekly|session) limit|hit your limit|limit reached.*reset",
     re.I,
 )
 

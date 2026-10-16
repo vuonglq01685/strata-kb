@@ -13,7 +13,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
-from strata_kb import planstatus
+import yaml
+
+from strata_kb import gitio, planstatus
 from strata_kb.autorun import claude, picker
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -30,6 +32,7 @@ logger = logging.getLogger("strata_kb.autorun.runner")
 Outcome = Literal["ran", "idle", "waiting", "stopped", "done"]
 
 MAX_ATTEMPTS = 2  # a task that ends `failed` twice stops the loop
+MAX_SAME_PICK = 5  # picks of the task that just ended `done` before the loop stops
 BACKOFF_START = 900
 BACKOFF_MAX = 3600
 EXIT_DONE = 0
@@ -50,6 +53,37 @@ class Backoff:
         self._delay = BACKOFF_START
 
 
+SWITCH_FILES = (".kb/config.yaml", ".claude/settings.json")
+
+
+def _switch_refusals(root: Path) -> list[str]:
+    """The switch and the permissions must be committed: Dev's `kb publish`
+    refuses a dirty `.kb/`, and the BA's Q&A worktree reads the default branch."""
+    reasons = []
+    for rel in SWITCH_FILES:
+        if not gitio.is_tracked(root, rel):
+            reasons.append(f"{rel} is not tracked by git -- commit it")
+        elif gitio.is_dirty(root, root / rel):
+            reasons.append(f"{rel} has uncommitted changes -- commit it")
+    branch = "the default branch"
+    enabled = False
+    try:
+        branch = gitio.default_branch(root)
+        committed = yaml.safe_load(
+            gitio.read_at(root, branch, root / SWITCH_FILES[0]) or ""
+        )
+        auto = committed.get("auto") if isinstance(committed, dict) else None
+        enabled = isinstance(auto, dict) and auto.get("enabled") is True
+    except (gitio.GitError, yaml.YAMLError) as exc:
+        logger.debug("committed config not read: %s", exc)
+    if not enabled:
+        reasons.append(
+            f"{SWITCH_FILES[0]} on {branch} lacks `auto.enabled: true` -- "
+            f"commit it to {branch}"
+        )
+    return reasons
+
+
 def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
     """Why `kb auto run` must refuse to start; empty = go. `hub` is the
     `--hub` flag (empty = config)."""
@@ -57,6 +91,8 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
     reasons: list[str] = []
     if not cfg.auto.enabled:
         reasons.append("auto mode is switched off -- run `kb auto on`")
+    if cfg.auto.enabled:
+        reasons.extend(_switch_refusals(root))
     if cfg.kind not in ("ba", "dev"):
         reasons.append(
             f"repo kind is '{cfg.kind or 'unset'}', auto mode needs 'ba' or 'dev'"
@@ -171,7 +207,15 @@ def _settle(
         return "ran"
     backoff.reset()
     if result.kind == "done":
-        autostate.save(kb_dir, replace(state, task=None, attempts=0, waiting_on=()))
+        done = replace(
+            state,
+            task=None,
+            attempts=0,
+            waiting_on=(),
+            last_done=state.task,
+            same_pick=0,
+        )
+        autostate.save(kb_dir, done)
         return "ran"
     if result.kind == "blocked-qa":
         autostate.save(kb_dir, replace(state, waiting_on=result.ids))
@@ -189,6 +233,21 @@ def _settle(
     return "ran"
 
 
+def _repicked(kb_dir: Path, state: autostate.AutoState, task: Task) -> Outcome:
+    """The task that just ended `done` is still picked: the hub has not caught up
+    with its publish yet. Wait instead of re-running it; stop after a few checks."""
+    state = replace(state, same_pick=state.same_pick + 1)
+    if state.same_pick >= MAX_SAME_PICK:
+        return _stop(
+            kb_dir,
+            state,
+            f"{task.key} ended done but is still picked after {MAX_SAME_PICK} checks",
+        )
+    autostate.save(kb_dir, state)
+    logger.info("%s ended done but is still picked; waiting for the hub", task.key)
+    return "idle"
+
+
 def run_once(
     root: Path,
     kb_dir: Path,
@@ -200,10 +259,13 @@ def run_once(
     now=time.time,
     sleep=time.sleep,
     backoff: Backoff | None = None,
+    qa_thread: QaThread | None = None,
 ) -> Outcome:
     """One step of the loop. `cfg` is the config as just read (rule 1: a switch
     flipped between tasks stops the loop at the boundary)."""
     state = autostate.load(kb_dir)
+    if qa_thread is not None and qa_thread.failed_twice:
+        return _stop(kb_dir, state, f"qa thread: {qa_thread.stop_reason}")
     if not cfg.auto.enabled:
         return _stop(
             kb_dir, state, "switched off", "Run `kb auto on`, then `kb auto run`."
@@ -219,8 +281,10 @@ def run_once(
     task = _task_for(root, kb_dir, cfg, hub, state)
     if task is None:
         return "idle"
-    if state.task != task.key:
-        state = replace(state, task=task.key, attempts=0)
+    if task.key == state.last_done:
+        return _repicked(kb_dir, state, task)
+    if state.task != task.key or state.last_done or state.same_pick:
+        state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
     started = now()
     try:
@@ -246,7 +310,9 @@ def resume(kb_dir: Path) -> None:
     """The owner is running again after a stop: same task, fresh attempts."""
     first = autostate.load(kb_dir)
     if first.stop_reason:
-        autostate.save(kb_dir, replace(first, stop_reason=None, attempts=0))
+        autostate.save(
+            kb_dir, replace(first, stop_reason=None, attempts=0, same_pick=0)
+        )
 
 
 def build_deps(
@@ -277,13 +343,15 @@ def run_loop(
         )
         qa_thread.start()
     try:
-        return _repeat(root, kb_dir, sleep, qa, deps, hub_flag)
+        return _repeat(root, kb_dir, sleep, qa, deps, hub_flag, qa_thread)
     finally:
         if qa_thread is not None:
             qa_thread.stop()
 
 
-def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict, hub_flag: str) -> int:
+def _repeat(
+    root: Path, kb_dir: Path, sleep, qa, deps: dict, hub_flag: str, qa_thread=None
+) -> int:
     fixed_hub = deps.pop("hub", None)
     backoff = Backoff()
     while True:
@@ -300,6 +368,7 @@ def _repeat(root: Path, kb_dir: Path, sleep, qa, deps: dict, hub_flag: str) -> i
                 qa=qa,
                 sleep=sleep,
                 backoff=backoff,
+                qa_thread=qa_thread,
                 **deps,
             )
         except Exception as exc:  # noqa: BLE001 -- the loop must outlive any one run

@@ -95,6 +95,25 @@ def test_missing_token_is_one_red_line_not_a_traceback(repo, monkeypatch, flags)
     assert not isinstance(result.exception, KeyError | AttributeError)
 
 
+@pytest.mark.parametrize("error", [OSError("disk gone"), ValueError("bad yaml")])
+def test_once_config_or_os_error_is_one_red_line(repo, monkeypatch, error):
+    from strata_kb.autorun import state as autostate
+
+    autostate.save(repo, autostate.AutoState(None, 2, (), "old", ""))
+
+    def boom(kb, hub=""):
+        raise error
+
+    monkeypatch.setattr(runner_mod, "build_deps", boom)
+
+    result = cli.invoke(app, ["auto", "run", "--once"])
+
+    assert result.exit_code == 1
+    assert str(error) in result.output and "Traceback" not in result.output
+    assert not isinstance(result.exception, OSError | ValueError)
+    assert autostate.load(repo).stop_reason == "old"  # resume ran only after build_deps
+
+
 def test_loop_exit_code_passes_through(repo, monkeypatch):
     monkeypatch.setattr(runner_mod, "run_loop", lambda *a, **kw: 2)
 

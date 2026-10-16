@@ -161,6 +161,99 @@ def test_usage_limit_skips_one_tick(repo, caplog):
     settle(qt)
 
 
+def _tick_and_settle(qt: QaThread) -> bool:
+    launched = qt.tick()
+    if launched:
+        settle(qt)
+    return launched
+
+
+def test_two_failed_answers_in_a_row_set_failed_twice(repo):
+    runner = Runner(TaskResult("failed", (), "lint broke"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    assert _tick_and_settle(qt) and not qt.failed_twice
+    assert _tick_and_settle(qt) and qt.failed_twice
+    assert qt.stop_reason == "lint broke"
+    assert qt.tick() is False  # a failed thread launches nothing more
+    assert len(runner.calls) == 2
+
+
+def test_done_answer_resets_the_failure_count(repo):
+    runner = Runner(TaskResult("failed", (), "x"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    _tick_and_settle(qt)
+    runner.result = TaskResult("done")
+    _tick_and_settle(qt)
+    runner.result = TaskResult("failed", (), "y")
+    _tick_and_settle(qt)
+    assert not qt.failed_twice
+
+
+def test_crashed_answers_count_as_failures(repo):
+    def explode(root, prompt, *, log_dir):
+        raise RuntimeError("claude missing")
+
+    qt, _, _ = make(repo, runner=explode)
+    _tick_and_settle(qt)
+    _tick_and_settle(qt)
+    assert qt.failed_twice and "claude missing" in qt.stop_reason
+
+
+def test_usage_limit_is_not_a_failure(repo):
+    runner = Runner(TaskResult("usage-limit", (), "limit hit"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    for _ in range(4):
+        qt.tick()
+        if qt._proc_thread is not None:
+            settle(qt)
+    assert not qt.failed_twice
+
+
+def test_loop_survives_a_tick_exception(repo, caplog):
+    qt, _, _ = make(repo, interval=0)
+    seen = threading.Event()
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        seen.set()
+        return False
+
+    qt.tick = flaky  # type: ignore[method-assign]
+    with caplog.at_level(logging.WARNING):
+        qt.start()
+        assert seen.wait(WAIT)
+        qt.stop()
+    assert "boom" in caplog.text
+
+
+def test_worktree_bases_on_fetched_origin_when_remote_exists(repo, run_git, tmp_path):
+    root, kb_dir = repo
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(root, "remote", "add", "origin", str(origin))
+    run_git(root, "push", "-u", "origin", "main")
+    clone = tmp_path / "clone"
+    run_git(tmp_path, "clone", str(origin), str(clone))
+    run_git(clone, "checkout", "-B", "main", "origin/main")
+    (clone / "new.txt").write_text("n\n", encoding="utf-8", newline="\n")
+    run_git(clone, "add", "new.txt")
+    run_git(clone, "commit", "-m", "ahead")
+    run_git(clone, "push", "origin", "main")  # origin/main now ahead of root's main
+    runner = Runner()
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+
+    assert _tick_and_settle(qt)
+
+    assert (kb_dir / "auto" / "worktrees" / "qa" / "new.txt").exists()
+
+
 def test_start_ticks_then_stop_joins_loop(repo):
     runner = Runner()
     runner.release.set()

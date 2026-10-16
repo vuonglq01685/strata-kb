@@ -206,6 +206,55 @@ def test_qa_error_is_waiting_not_failure(env):
     assert (state.attempts, state.stop_reason) == (0, None)
 
 
+def test_done_task_picked_again_idles_without_running(env, caplog):
+    script = Script(TaskResult("done"), TaskResult("done"))
+    assert once(env, script) == "ran"
+    assert autostate.load(env[1]).last_done == TASK.key
+
+    with caplog.at_level(logging.INFO):
+        assert once(env, script) == "idle"
+
+    assert len(script.prompts) == 1  # the second pick never ran
+    assert f"{TASK.key} ended done but is still picked; waiting for the hub" in (
+        caplog.text
+    )
+    assert autostate.load(env[1]).same_pick == 1
+
+
+def test_fifth_repick_of_done_task_stops(env):
+    script = Script(TaskResult("done"))
+    once(env, script)
+    for _ in range(4):
+        assert once(env, script) == "idle"
+    assert once(env, script) == "stopped"
+    state = autostate.load(env[1])
+    assert (
+        state.stop_reason == f"{TASK.key} ended done but is still picked after 5 checks"
+    )
+    assert len(script.prompts) == 1
+
+
+def test_different_pick_resets_the_repick_guard(env, monkeypatch):
+    script = Script(TaskResult("done"), TaskResult("done"))
+    once(env, script)
+    assert once(env, script) == "idle"
+    other = Task("dev-implement-ticket", "M-x-US4")
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root: other)
+
+    assert once(env, script) == "ran"
+
+    state = autostate.load(env[1])
+    assert (state.last_done, state.same_pick) == (other.key, 0)
+    assert script.prompts[1].startswith("/dev-implement-ticket M-x-US4")
+
+
+def test_resume_resets_repick_count_but_keeps_last_done(env):
+    autostate.save(env[1], autostate.AutoState(None, 0, (), "stuck", "", TASK.key, 4))
+    runner_mod.resume(env[1])
+    state = autostate.load(env[1])
+    assert (state.stop_reason, state.same_pick, state.last_done) == (None, 0, TASK.key)
+
+
 def test_crash_resumes_stored_task(env, monkeypatch):
     autostate.save(env[1], autostate.AutoState("dev-fix-bug:BUG-2", 1, (), None, ""))
     script = Script(TaskResult("done"))
@@ -299,6 +348,13 @@ def _write_config(kb_dir: Path, text: str) -> None:
 GOOD = "kind: dev\nrepo_id: svc\nintake: http://i\nauto:\n  enabled: true\n"
 
 
+@pytest.fixture
+def no_switch_check(monkeypatch):
+    """These preflight tests run in a plain directory, not a git repo."""
+    monkeypatch.setattr(runner_mod, "_switch_refusals", lambda root: [])
+
+
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_refuses_without_auto_merge(env, monkeypatch):
     root, kb_dir, _, _ = env
     monkeypatch.setattr(
@@ -328,6 +384,7 @@ def test_preflight_refuses_without_auto_merge(env, monkeypatch):
         ("kind: dev\nrepo_id: svc\nauto:\n  enabled: true\n", "intake"),
     ],
 )
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_names_each_refusal(env, monkeypatch, text, needle):
     root, kb_dir, _, _ = env
     monkeypatch.setattr(
@@ -343,6 +400,7 @@ def test_preflight_names_each_refusal(env, monkeypatch, text, needle):
     assert len(reasons) == 1 and needle in reasons[0]
 
 
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_reports_unreachable_hub(env, monkeypatch):
     root, kb_dir, _, _ = env
     monkeypatch.setattr(
@@ -357,6 +415,9 @@ def test_preflight_reports_unreachable_hub(env, monkeypatch):
 
 class SpyQaThread:
     events: list[str] = []
+
+    failed_twice = False
+    stop_reason = ""
 
     def __init__(self, root, kb_dir, qa, interval, repo, run_task):
         self.args = (interval, repo)
@@ -431,6 +492,7 @@ def test_run_loop_hub_flag_overrides_config_hub(env, monkeypatch):
     assert code == 0 and seen == ["/flag/hub"]
 
 
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_passes_hub_flag_to_registry(env, monkeypatch):
     root, kb_dir, _, _ = env
     _write_config(kb_dir, GOOD)
@@ -444,3 +506,117 @@ def test_preflight_passes_hub_flag_to_registry(env, monkeypatch):
     preflight(root, kb_dir, "/flag/hub")
 
     assert seen == ["/flag/hub"]
+
+
+class FailedQaThread:
+    failed_twice = True
+    stop_reason = "lint broke"
+
+
+def test_failed_qa_thread_stops_the_ba_run_without_running_a_task(env):
+    script = Script(TaskResult("done"))
+    outcome = once(env, script, cfg=cfg_of("ba"), qa_thread=FailedQaThread())
+    assert outcome == "stopped"
+    assert autostate.load(env[1]).stop_reason == "qa thread: lint broke"
+    assert script.prompts == []
+
+
+def test_run_loop_hands_the_qa_thread_to_run_once(env, monkeypatch):
+    root, kb_dir, hub, _ = env
+    monkeypatch.setattr(runner_mod, "QaThread", lambda *a: FailedQaThread_())
+    (kb_dir / "config.yaml").write_text(
+        GOOD.replace("kind: dev", "kind: ba"), encoding="utf-8", newline="\n"
+    )
+    code = run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script())
+    assert code == 2
+    assert autostate.load(kb_dir).stop_reason == "qa thread: lint broke"
+
+
+class FailedQaThread_(FailedQaThread):
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+@pytest.fixture
+def git_repo(env, monkeypatch, run_git):
+    """A real repo with the switch and the permissions committed on `main`."""
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    _write_config(kb_dir, GOOD)
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text(
+        "{}\n", encoding="utf-8", newline="\n"
+    )
+    run_git(root, "init", "-b", "main")
+    run_git(root, "add", ".kb/config.yaml", ".claude/settings.json")
+    run_git(root, "commit", "-m", "switch on")
+    return root, kb_dir, run_git
+
+
+def test_preflight_passes_when_switch_and_settings_are_committed(git_repo):
+    root, kb_dir, _ = git_repo
+    assert preflight(root, kb_dir) == []
+
+
+def test_preflight_refuses_untracked_settings(git_repo):
+    root, kb_dir, run_git = git_repo
+    run_git(root, "rm", "--cached", "-q", ".claude/settings.json")
+    (reason,) = preflight(root, kb_dir)
+    assert ".claude/settings.json" in reason and "not tracked" in reason
+
+
+def test_preflight_refuses_untracked_config(git_repo):
+    root, kb_dir, run_git = git_repo
+    run_git(root, "rm", "--cached", "-q", ".kb/config.yaml")
+    reasons = preflight(root, kb_dir)
+    assert any(".kb/config.yaml" in r and "not tracked" in r for r in reasons)
+
+
+@pytest.mark.parametrize("rel", [".kb/config.yaml", ".claude/settings.json"])
+def test_preflight_refuses_modified_file(git_repo, rel):
+    root, kb_dir, _ = git_repo
+    with (root / rel).open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write("# edited\n" if rel.endswith("yaml") else " \n")
+    (reason,) = preflight(root, kb_dir)
+    assert rel in reason and "uncommitted" in reason
+
+
+def _default_branch_is_main_and_head_is_work(root, run_git, tmp_path):
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(root, "remote", "add", "origin", str(origin))
+    run_git(root, "push", "-u", "origin", "main")
+    run_git(root, "remote", "set-head", "origin", "main")
+    run_git(root, "switch", "-c", "work")
+
+
+def test_preflight_refuses_when_default_branch_has_switch_off(git_repo, tmp_path):
+    root, kb_dir, run_git = git_repo
+    _write_config(kb_dir, GOOD.replace("true", "false"))
+    run_git(root, "commit", "-a", "-m", "off")
+    _default_branch_is_main_and_head_is_work(root, run_git, tmp_path)
+    _write_config(kb_dir, GOOD)
+    run_git(root, "commit", "-a", "-m", "on, on a branch only")
+    (reason,) = preflight(root, kb_dir)
+    assert "on main" in reason and "auto.enabled: true" in reason
+
+
+def test_preflight_refuses_when_default_branch_lacks_the_config(git_repo, tmp_path):
+    root, kb_dir, run_git = git_repo
+    run_git(root, "rm", "-q", "--cached", ".kb/config.yaml")
+    run_git(root, "commit", "-m", "no config on main")
+    _default_branch_is_main_and_head_is_work(root, run_git, tmp_path)
+    run_git(root, "add", ".kb/config.yaml")
+    run_git(root, "commit", "-m", "config on a branch only")
+    (reason,) = preflight(root, kb_dir)
+    assert "on main" in reason and "auto.enabled: true" in reason

@@ -168,12 +168,14 @@ def test_cli_auto_on_then_off(tmp_path, fed_hub):
     on = runner.invoke(app, ["auto", "on", "--hub", str(fed_hub), "--kb-dir", str(kb)])
     assert on.exit_code == 0, on.output
     assert "admin" in on.output
-    assert on.output.rstrip().endswith("auto: on")
+    assert "auto: on" in on.output.splitlines()
+    assert "Commit .kb/config.yaml" in on.output and "kb auto run" in on.output
     assert load_config(kb).auto.enabled is True
 
     off = runner.invoke(app, ["auto", "off", "--kb-dir", str(kb)])
     assert off.exit_code == 0, off.output
     assert "auto: off" in off.output
+    assert "Commit .kb/config.yaml" in off.output
     assert load_config(kb).auto.enabled is False
 
 

@@ -172,6 +172,30 @@ def test_dev_skips_unready_bug(tmp_path: Path, monkeypatch):
     assert pick_dev(None, tmp_path) == Task("dev-implement-ticket", "US2")  # type: ignore[arg-type]
 
 
+def test_dev_ready_unparented_ticket_beats_mission_story(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(
+        monkeypatch,
+        [_status("US1", "ready")],
+        [
+            _status("TAL-1", "blocked", ""),
+            _status("TAL-2", "ready", ""),
+            _status("BUG-9", "done", ""),
+        ],
+    )
+    assert pick_dev(None, tmp_path) == Task("dev-implement-ticket", "TAL-2")  # type: ignore[arg-type]
+
+
+def test_dev_ready_bug_beats_ready_unparented_ticket(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(
+        monkeypatch,
+        [],
+        [_status("TAL-1", "ready", ""), _status("BUG-2", "ready", "")],
+    )
+    assert pick_dev(None, tmp_path) == Task("dev-fix-bug", "BUG-2")  # type: ignore[arg-type]
+
+
 def test_dev_nothing_to_do(tmp_path: Path, monkeypatch):
     _workflow(tmp_path)
     _hub(monkeypatch, [_status("US1", "done")], [_status("BUG-1", "done", "")])
