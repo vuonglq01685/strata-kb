@@ -462,7 +462,7 @@ phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** (ch�
 duy nhất còn thiếu và mọi check đã xanh) và không ai review PR. Ticket nào agent hiểu sai sẽ
 đi thẳng vào `main` và lên hub. Chủ repo phải bật branch protection của GitHub cho `main`
 (cấm force-push, cấm xóa, **áp dụng cả với administrator**) và giữ `kb-test.yml` (hoặc
-workflow mang dấu `kb-test`) là **check bắt buộc**.
+workflow mang dấu `kb-test`) là **check bắt buộc** (branch protection chọn check theo tên job: `test-<lang>`).
 
 **Thiết lập một lần.**
 
@@ -480,7 +480,7 @@ workflow mang dấu `kb-test`) là **check bắt buộc**.
 
 **Nó làm gì.** Mỗi ticket là một tiến trình `claude -p` mới. Trước hết, nếu chưa workflow
 nào chạy test của repo, `/dev-test-workflow` viết và merge `kb-test.yml`, để "CI xanh" thật sự
-nghĩa là test đã chạy. Sau đó bug trước (`/dev-fix-bug`; hotfix rẽ từ `main` trừ khi
+nghĩa là test đã chạy. Sau đó bug trước (`/dev-fix-bug`; hotfix rẽ nhánh từ `main` trừ khi
 `auto.hotfix_base` chỉ tới nhánh production), rồi story `ready` đầu tiên theo thứ tự mission
 mà các dependency đều `done` (`/dev-implement-ticket`). Khi một câu hỏi nghiệp vụ chặn ticket,
 Dev hỏi BA qua Q&A của hub và chờ; khi mọi câu hỏi đã `answered`, đúng ticket đó chạy tiếp
@@ -864,6 +864,7 @@ thật.
 | `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>/plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, thiếu `Depends on:`, hoặc `Serial resource:` rỗng |
 | `kb impl tidy [--impl-dir]` | Dời layout phẳng cũ `docs/impl/<id>-*` vào `docs/impl/<id>/`; chạy lại không đổi gì, không bao giờ ghi đè | `0` sau khi in báo cáo, `1` khi thư mục không tồn tại |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
 `/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,

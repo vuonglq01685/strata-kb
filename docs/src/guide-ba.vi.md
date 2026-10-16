@@ -390,7 +390,7 @@ mục "Full-auto mode".
 phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** và publish mà không ai review;
 ticket nào agent hiểu sai sẽ đi thẳng vào `main` và lên hub. Chủ repo phải bật branch
 protection của GitHub cho `main` (cấm force-push, cấm xóa, **áp dụng cả với administrator**)
-và giữ check CI là bắt buộc trước khi bạn bật chế độ này.
+và giữ check CI ticket-lint (job `lint` trong `kb-ticket-lint.yml`) là bắt buộc trước khi bạn bật chế độ này.
 
 **Thiết lập một lần.**
 
@@ -414,7 +414,7 @@ ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở
 worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
 đang mở của Dev bằng `/ba-answer-questions`.
 
-**Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI đỏ thì dừng ngay),
+**Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
 `kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Chờ hết hạn mức
 sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
 mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
@@ -934,6 +934,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
@@ -949,11 +950,12 @@ kb init --kind ba
 Lệnh này **chỉ đụng tới file dựng khung** — các CI workflow (gồm
 `kb-publish.yml`), các skill, file bọc command và prompt, `.gitattributes`, và
 template dưới `docs/` — và chỉ ghi đè khi nội dung khác với template mới. Nó cũng
-nối `.kb/*-plan/` và `.kb/index.yaml` vào `.gitignore` nếu còn thiếu, và không bao
-giờ xoá dòng nào.
+nối `.kb/*-plan/`, `.kb/index.yaml` và `.kb/auto/` vào `.gitignore` nếu còn thiếu, và
+không bao giờ xoá dòng nào.
 
-`.kb/config.yaml`, `.kb/index.yaml` và `.claude/settings.json` không bao giờ bị
-`kb init` thường đụng tới. Điều đó gồm cả key `intake:` của `config.yaml`: repo tạo
+`kb init` thường không bao giờ đụng tới `.kb/config.yaml` và `.kb/index.yaml`, còn
+`.claude/settings.json` chỉ được hợp nhất thêm vào: hook theo dõi usage và danh sách quyền
+của chế độ tự động được thêm, mọi mục của bạn được giữ nguyên. Với `config.yaml`, điều đó gồm cả key `intake:` của `config.yaml`: repo tạo
 trước khi có publish plan không có key này, nên hãy thêm `intake: <url>` bằng tay
 (2.5).
 

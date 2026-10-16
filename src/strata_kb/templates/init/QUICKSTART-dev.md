@@ -460,7 +460,8 @@ publishes with no human review, so read this before you turn it on.
 A ticket the agent misreads goes straight to `main` and the hub. The repo owner
 must enable GitHub branch protection on `main` (block force pushes and deletions,
 include administrators) and keep `kb-test.yml` (or the workflow with the
-`kb-test` marker) as a required check.
+`kb-test` marker) as a required check (branch protection picks it by job
+name: `test-<lang>`).
 
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must
   have auto-merge **on** for this repo. The hub must be 1.29.0 or later (the

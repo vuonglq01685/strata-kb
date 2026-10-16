@@ -135,8 +135,9 @@ refuses a repo whose kind is not recorded in `.kb/config.yaml` (run
 before it sends anything.
 
 Re-running `kb init` refreshes scaffold files (skills, templates, workflows) and
-preserves `.kb/index.yaml`, `.kb/config.yaml` and `.claude/settings.json` unless
-`--force`. `--lang <id>` (dev, repeatable) forces a conventions pack whose
+preserves `.kb/index.yaml` and `.kb/config.yaml` unless `--force`, and merges
+`.claude/settings.json` in `ba` and `dev` repos (your entries stay; `--force`
+replaces it; hub and child repos have none). `--lang <id>` (dev, repeatable) forces a conventions pack whose
 manifest is not detectable; `--assets none|s3` (hub) records the asset store.
 
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and
@@ -1612,9 +1613,13 @@ branch protection asks for a review the agent cannot give, and only after every
 required check is green) and publishes to the hub, with no human review. A ticket
 the agent misreads goes straight to `main` and to the hub. Before you run it,
 the repo owner **must** enable GitHub branch protection on `main`: block force
-pushes and deletions, **include administrators**, and keep `kb-test.yml` (or the
-workflow carrying the `kb-test` marker, see below) as a **required status
-check**. Without that, "green CI" is only a convention the agent follows.
+pushes and deletions, **include administrators**, and keep the repo's CI check as a
+**required status check**: in a Dev repo the `test-<lang>` job(s) of `kb-test.yml`
+(or of the workflow carrying the `kb-test` marker, see below); in a BA repo the
+`lint` job of `kb-ticket-lint.yml`. Branch protection picks checks by job name.
+Without that, "green CI" is only a convention the agent follows. The deny list
+also cannot see the current branch: the agent's working tree must never sit on
+`main` with commits on it. The skills branch first; the runner does not guard this.
 
 **Prerequisites.**
 
@@ -1646,12 +1651,16 @@ auto:
   hotfix_base: ""      # branch a hotfix starts from and merges to; empty = main
 ```
 
+An existing repo's `config.yaml` has no live `auto:` block (`kb init` only adds
+it, commented, to a new one). `kb auto on` appends `auto:` with `enabled: true`
+only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change them.
+
 | Command | What it does |
 |---|---|
-| `kb auto on` | Sets `enabled: true` (comments and other keys stay). First prints the plain warnings: the repo will merge with admin rights and publish without human review; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
+| `kb auto on` | Sets `enabled: true` (comments and other keys stay). First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
 | `kb auto off` | Sets `enabled: false`. A running loop stops at the next task boundary; it never kills a task midway |
 | `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
-| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits. Exit `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
+| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
 
 The switch is the single source of truth. A skill run by hand with the switch on
 also takes the auto path.
@@ -1792,7 +1801,7 @@ whole file instead. A file that is not valid JSON is left alone with a note.
 
 - **Allowed:** `git` (add, commit, status, diff, log, fetch, `pull origin`, switch
   to `auto/*`, `fix/*` and `hotfix/*`, `switch -c`, `checkout -b`, branch, worktree,
-  merge, `push -u origin HEAD`), `gh pr`, `gh run` (view, watch, rerun, list), file
+  merge, `push -u origin HEAD`, `push origin HEAD`, bare `push`, bare `pull`), `gh pr`, `gh run` (view, watch, rerun, list), file
   `Read`, `Edit` and `Write`, the `strata-kb` MCP tools, and `kb` subcommands
   (`mission`, `ticket`, `publish`, `svc`, `impl`, `plan`, `pr`, `resolve`,
   `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto status`, `status`,
@@ -1825,7 +1834,7 @@ and every story and ticket carries `depends_on`.
   message is not parsed.
 - The skills run `git fetch origin main`: the default branch must
   be `main`.
-- A tool outside the allowlist and the per-language table is denied, and the task
+- A tool outside the allowlist and the per-language table is denied, and a Dev task
   ends `failed command-denied <command>`. Widen `.claude/settings.json` by hand
   (add the command to `permissions.allow`), then `kb auto run`.
 - The Dev loop picks mission stories and `BUG-n` bugs. A ticket with no mission

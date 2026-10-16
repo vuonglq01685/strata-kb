@@ -399,7 +399,7 @@ Dev repo per hub**. Full reference: README, "Full-auto mode".
 boundary. The run merges with **admin rights** and publishes with no human review, and a
 ticket the agent gets wrong goes straight to `main` and the hub. The repo owner must
 enable GitHub branch protection on `main` (no force-push, no deletion, **include
-administrators**) and keep the CI check required before you turn it on.
+administrators**) and keep the ticket-lint CI check (`lint` in `kb-ticket-lint.yml`) required before you turn it on.
 
 **Set up once.**
 
@@ -426,7 +426,7 @@ change goes through a branch, a PR, green CI and a merge; the merge publishes. A
 second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
 questions with `/ba-answer-questions` every `qa_interval` seconds.
 
-**When it stops.** After two failed attempts at one task (a red CI stops it at once),
+**When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
 `kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
 A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
 when every story and unparented ticket and bug is `done` and no question is open.
@@ -952,6 +952,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
 **Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
@@ -967,12 +968,13 @@ kb init --kind ba
 This touches **scaffold files only** — the CI workflows (including
 `kb-publish.yml`), the skills, command and prompt wrappers, `.gitattributes`, and
 the templates under `docs/` — and overwrites one only when its content differs
-from the new template. It also appends `.kb/*-plan/` and `.kb/index.yaml` to
-`.gitignore` if they are missing, and never removes a line.
+from the new template. It also appends `.kb/*-plan/`, `.kb/index.yaml` and
+`.kb/auto/` to `.gitignore` if they are missing, and never removes a line.
 
-`.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json` are never touched
-by a plain `kb init`. That includes `config.yaml`'s `intake:` key: a repo created
-before plan publishing has none, so add `intake: <url>` by hand (2.5).
+`.kb/config.yaml` and `.kb/index.yaml` are never touched by a plain `kb init`, and
+`.claude/settings.json` is only merged into: the usage hooks and the auto-mode
+permission lists are added, and every entry of yours stays. For `config.yaml` that
+includes its `intake:` key: a repo created before plan publishing has none, so add `intake: <url>` by hand (2.5).
 
 > **`--force` replaces all three outright**, unmerged: your hand-edited
 > `.kb/config.yaml` including `kind`, `repo_id` and `asset_store`;

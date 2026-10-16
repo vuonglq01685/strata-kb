@@ -453,7 +453,8 @@ read this before you turn it on.
 **Security.** The deny list in `.claude/settings.json` is defence in depth only.
 A ticket the agent gets wrong goes straight to `main` and the hub. The repo owner
 must enable GitHub branch protection on `main` (block force pushes and deletions,
-include administrators) and keep the CI check required.
+include administrators) and keep the ticket-lint CI check (`lint` in
+`kb-ticket-lint.yml`) required.
 
 - Write the first mission yourself (`/ba-mission-plan`); the loop works the backlog.
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must
