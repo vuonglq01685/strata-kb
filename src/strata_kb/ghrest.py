@@ -100,6 +100,8 @@ def _pr_json(raw: dict) -> dict:
         "body": raw.get("body") or "",
         "headRefName": raw["head"]["ref"],
         "headRefOid": raw["head"].get("sha", ""),
+        # null for a deleted fork
+        "headRepoFullName": (raw["head"].get("repo") or {}).get("full_name") or "",
     }
 
 
@@ -223,7 +225,9 @@ def merge_pr(
             f"PR #{pr['number']} not merged: {(res or {}).get('message', 'unknown reason')}"
         )
     merged = view_pr(root, str(pr["number"]))
-    if delete_branch:
+    # A fork PR's head branch lives in the fork; deleting it by name here would
+    # hit origin's own branch of that name (gh skips the delete too).
+    if delete_branch and merged["headRepoFullName"].lower() == slug.lower():
         api(
             root,
             "DELETE",

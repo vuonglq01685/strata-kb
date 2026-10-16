@@ -52,6 +52,7 @@ def rest_pr(
     sha="abc123",
     title="T",
     body="B",
+    head_repo="o/r",
 ) -> dict:
     return {
         "number": number,
@@ -60,7 +61,11 @@ def rest_pr(
         "merged_at": merged_at,
         "title": title,
         "body": body,
-        "head": {"ref": head, "sha": sha},
+        "head": {
+            "ref": head,
+            "sha": sha,
+            "repo": {"full_name": head_repo} if head_repo else None,
+        },
     }
 
 

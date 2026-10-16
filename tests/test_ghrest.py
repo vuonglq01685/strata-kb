@@ -270,6 +270,21 @@ def test_merge_deletes_branch_when_asked(root, fake_gh):
     assert pr["state"] == "MERGED"
 
 
+@pytest.mark.parametrize(
+    ("head_repo", "deleted"),
+    [("o/r", True), ("O/R", True), ("fork/r", False), (None, False)],
+)
+def test_merge_delete_branch_only_for_same_repo_heads(
+    root, fake_gh, head_repo, deleted
+):
+    fake_gh.on("GET", "pulls/7", rest_pr(head="dev", head_repo=head_repo))
+    fake_gh.on("PUT", "pulls/7/merge", {"merged": True})
+    fake_gh.on("DELETE", "git/refs/heads/", None)
+    ghrest.merge_pr(root, "7", delete_branch=True)
+    deletes = [c.path for c in fake_gh.calls if c.method == "DELETE"]
+    assert deletes == (["repos/o/r/git/refs/heads/dev"] if deleted else [])
+
+
 def test_merge_keeps_branch_by_default(root, fake_gh):
     fake_gh.on("GET", "pulls/7", rest_pr())
     fake_gh.on("PUT", "pulls/7/merge", {"merged": True})
