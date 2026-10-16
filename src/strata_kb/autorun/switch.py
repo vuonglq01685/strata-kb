@@ -9,13 +9,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from strata_kb.config import load_config
+import yaml
+
+from strata_kb.config import KBConfig, load_config
 from strata_kb.federation import RegistryError, load_registry
 
 _AUTO_LINE = re.compile(r"^auto:[ \t]*(#.*)?$", re.MULTILINE)
 _AUTO_ANY = re.compile(r"^auto:", re.MULTILINE)
-_NEXT_TOP_KEY = re.compile(r"^\S", re.MULTILINE)
-_ENABLED_LINE = re.compile(r"^([ \t]+)enabled:.*$", re.MULTILINE)
+_NEXT_TOP_KEY = re.compile(r"^[^\s#]", re.MULTILINE)
+_ENABLED_LINE = re.compile(
+    r"^([ \t]+)enabled:[ \t]*[^\s#]*([ \t]+#.*)?[ \t]*$", re.MULTILINE
+)
 
 ADMIN_WARNING = (
     "Auto mode merges pull requests as admin, with no review. "
@@ -38,10 +42,15 @@ def set_enabled(config_path: Path, on: bool) -> None:
         end = nxt.start() if nxt else len(text)
         block = text[head.end() : end]
         if _ENABLED_LINE.search(block):
-            block = _ENABLED_LINE.sub(rf"\1enabled: {flag}", block, count=1)
+            block = _ENABLED_LINE.sub(rf"\1enabled: {flag}\2", block, count=1)
         else:
             block = f"\n  enabled: {flag}" + block
         out = text[: head.end()] + block + text[end:]
+    parsed = yaml.safe_load(out) or {}
+    if KBConfig.model_validate(parsed).auto.enabled is not on:
+        raise ValueError(
+            f"could not set auto.enabled in {config_path} -- edit it by hand"
+        )
     config_path.write_text(out, encoding="utf-8", newline="\n")
 
 

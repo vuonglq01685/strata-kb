@@ -156,3 +156,32 @@ def test_cli_auto_on_then_off(tmp_path, fed_hub):
     assert off.exit_code == 0, off.output
     assert "auto: off" in off.output
     assert load_config(kb).auto.enabled is False
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_set_enabled_survives_column0_comment_in_block(tmp_path, on):
+    kb = _kb(tmp_path, f"auto:\n# note\n  enabled: {str(not on).lower()}\n")
+
+    set_enabled(kb / "config.yaml", on)
+
+    text = (kb / "config.yaml").read_text()
+    assert text.count("enabled:") == 1 and "# note" in text
+    assert load_config(kb).auto.enabled is on
+
+
+def test_set_enabled_keeps_inline_comment_on_flag_line(tmp_path):
+    kb = _kb(tmp_path, "auto:\n  enabled: false  # keep\n  qa_interval: 5\n")
+
+    set_enabled(kb / "config.yaml", True)
+
+    assert "  enabled: true  # keep\n" in (kb / "config.yaml").read_text()
+
+
+def test_set_enabled_refuses_when_flag_would_not_stick(tmp_path):
+    original = "auto:\n  enabled: false\nauto:\n  enabled: false\n"
+    kb = _kb(tmp_path, original)
+
+    with pytest.raises(ValueError):
+        set_enabled(kb / "config.yaml", True)
+
+    assert (kb / "config.yaml").read_text() == original
