@@ -52,6 +52,7 @@ def test_ba_runs_mission_next_in_root(tmp_path: Path):
     assert kwargs["cwd"] == tmp_path
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
+    assert kwargs["encoding"] == "utf-8"
 
 
 def test_ba_blocker_beats_draft_and_to_draft(tmp_path: Path):

@@ -35,6 +35,7 @@ def _mission_next(root: Path, run) -> dict:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if proc.returncode != 0:
         raise KbError(f"kb mission next failed: {proc.stderr[:MAX_STDERR]}")
