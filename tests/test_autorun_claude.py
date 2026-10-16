@@ -110,6 +110,7 @@ def test_run_task_fresh_process_and_log(fake_claude, tmp_path):
     ]
     assert Path(calls[0]["cwd"]).resolve() == root.resolve()
     assert calls[0]["stdin"] == prompt
+    assert calls[0]["auto_task"] == "1"  # kb auto on|off|run refuse under it
     # Same-second runs get a -2 suffix, which sorts before ".log"; so match
     # by content, not by order.
     texts = [

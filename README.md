@@ -143,9 +143,9 @@ manifest is not detectable; `--assets none|s3` (hub) records the asset store.
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and
 Cursor**: `/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`,
 `/kb-docker-setup` on hub and child repos; `/ba-ticket-author`,
-`/ba-mission-plan`, `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`
-and `/kb-publish` (it publishes the plan) on a `ba` repo; the five
-dev-workflow commands, `/dev-fix-bug`, `/dev-sa` and `/dev-test-workflow` on a `dev` repo. MCP client wiring ships as
+`/ba-mission-plan`, `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`,
+`/kb-publish` (it publishes the plan) and `/kb-auto` on a `ba` repo; the five
+dev-workflow commands, `/dev-fix-bug`, `/dev-sa`, `/dev-test-workflow` and `/kb-auto` on a `dev` repo. MCP client wiring ships as
 `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
 stdio on the hub, HTTP-with-env-vars everywhere else.
 
@@ -1632,7 +1632,8 @@ turns the switch on if needed, commits and pushes `.kb/config.yaml` and
 `.claude/settings.json` when they are not yet on the default branch (only when
 your tree is on that branch), starts `kb auto run` detached with its output in
 `.kb/auto/run.log`, and shows the preflight reasons if it refuses. `status`
-reads `kb auto status --json` and the run lock. The prerequisites below still
+reads `kb auto status --json`, whose `running` (pid or `null`) and
+`default_branch` fields exist for it. The prerequisites below still
 hold; the skill only does the mechanical steps for you.
 
 **Prerequisites.**
@@ -1657,7 +1658,7 @@ hold; the skill only does the mechanical steps for you.
   runner never uses an API key and inherits whatever login `claude` has.
 - Re-run `kb init --kind ba` or `kb init --kind dev` after upgrading the CLI: it
   writes the permission allowlist and refreshes the skills with their **Auto mode**
-  sections, and a Dev repo gets the new `dev-test-workflow` skill.
+  sections and `/kb-auto`, and a Dev repo gets the new `dev-test-workflow` skill.
 
 **The switch.** `.kb/config.yaml` of a `ba` or `dev` repo carries an `auto:`
 block, off by default:
@@ -1679,7 +1680,7 @@ only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change t
 | `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
 | `kb auto off` | Sets `enabled: false` (and prints the same commit sentence). A running loop stops at the next task boundary; it never kills a task midway |
 | `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
-| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. Holds `.kb/auto/run.lock` (its pid): a second `kb auto run` in the same repo exits `1` with "already running (pid N)" while the first is alive; a lock left by a dead process is replaced. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
+| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. Holds an OS lock on `.kb/auto/run.lock` (pid inside) for its lifetime: a second `kb auto run` in the same repo exits `1` with "already running (pid N)" while the first is alive; the OS drops the lock when the holder dies, so a file left by a crash is never stale. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
 
 The switch is the single source of truth. A skill run by hand with the switch on
 also takes the auto path.
@@ -1837,9 +1838,10 @@ whole file instead. A file that is not valid JSON is left alone with a note.
   (`mission`, `ticket`, `publish`, `svc`, `impl`, `plan`, `pr`, `resolve`,
   `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto`, `status`,
   `diff`, `plan-ingest`). `kb auto on|off|run` are allowed so `/kb-auto` works in
-  your own session; a task that runs `kb auto run` from inside the loop is refused
-  by the run lock, and `kb auto off` from a task only stops the loop at the next
-  task boundary.
+  your own session. A task process the loop starts carries `STRATA_KB_AUTO_TASK=1`,
+  under which `kb auto on`, `off` and `run` refuse (`status` still works), so a task
+  can neither flip the switch nor start a second loop — in the main tree or in the
+  BA Q&A worktree.
 - **Per language (Dev repos):** test, install, lint and build commands for each
   language in `.kb/config.yaml` `langs:`, from `LANG_COMMANDS` in
   `initcmd.py`: for example `pytest`, `uv sync`, `ruff`, `pyright` for Python;

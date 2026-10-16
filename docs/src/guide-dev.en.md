@@ -89,7 +89,7 @@ already wired to the hub's MCP tools, but through placeholders —
 `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that nothing has set
 yet.
 
-Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`). It asks for the
+Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`; `/kb-auto` is the matching wrapper for full-auto mode, §4.7). It asks for the
 hub's HTTP base URL and token, writes both into `.env`, makes sure git
 ignores that file, and then verifies them against the hub, so a wrong URL
 and a rejected token come back as different errors:

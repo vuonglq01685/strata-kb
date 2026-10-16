@@ -72,7 +72,7 @@ phải khớp với mục của repo bạn trong registry của hub (2.5).
 nối tới các công cụ tìm kiếm và trích dẫn của hub — nhưng qua hai placeholder,
 `${STRATA_KB_HUB_URL}` và `${STRATA_KB_HTTP_TOKEN}`, mà chưa ai điền giá trị.
 
-Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`). Lệnh này hỏi URL HTTP cơ
+Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`; `/kb-auto` là wrapper tương ứng cho chế độ full-auto, §3.11). Lệnh này hỏi URL HTTP cơ
 sở và token của hub — xin token từ người quản trị hub — ghi cả hai vào `.env`,
 đảm bảo git bỏ qua file đó, rồi xác minh chúng với hub, để một URL sai và một
 token bị từ chối trả về hai lỗi khác nhau:

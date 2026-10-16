@@ -86,7 +86,7 @@ code_ingest:
 nối tới các công cụ MCP của hub — nhưng qua placeholder,
 `${STRATA_KB_HUB_URL}` và `${STRATA_KB_HTTP_TOKEN}`, mà chưa ai điền giá trị.
 
-Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`). Lệnh này hỏi URL HTTP cơ
+Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`; `/kb-auto` là wrapper tương ứng cho chế độ full-auto, §4.7). Lệnh này hỏi URL HTTP cơ
 sở và token của hub, ghi cả hai vào `.env`, đảm bảo git bỏ qua file đó, rồi
 xác minh chúng với hub, để một URL sai và một token bị từ chối trả về hai lỗi
 khác nhau:

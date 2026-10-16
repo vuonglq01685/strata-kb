@@ -7,6 +7,7 @@ reads the closing `AUTO-RESULT:` line. The command never skips permissions:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ from strata_kb.llm import RunnerError, _extract_reply
 Kind = Literal["done", "blocked-qa", "failed", "usage-limit"]
 
 RESULT_PREFIX = "AUTO-RESULT: "
+AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
 DEFAULT_TIMEOUT = 4 * 3600
 MAX_REASON = 500
 MAX_SLUG = 60
@@ -132,6 +134,9 @@ def run_task(
             errors="replace",
             timeout=timeout,
             cwd=root,
+            # Marks a task process: `kb auto on|off|run` refuse under it, so a
+            # task can never flip the switch or start a second loop.
+            env={**os.environ, AUTO_TASK_ENV: "1"},
         )
     except subprocess.TimeoutExpired:
         _write_log(log_dir, prompt, "", "", "timeout", time.monotonic() - start)

@@ -14,7 +14,16 @@ calls_path = Path(str(replies_path) + ".calls")
 
 stdin = sys.stdin.read()
 with calls_path.open("a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "stdin": stdin}))
+    fh.write(
+        json.dumps(
+            {
+                "argv": sys.argv[1:],
+                "cwd": os.getcwd(),
+                "stdin": stdin,
+                "auto_task": os.environ.get("STRATA_KB_AUTO_TASK"),
+            }
+        )
+    )
     fh.write("\n")
 
 replies = json.loads(replies_path.read_text(encoding="utf-8"))

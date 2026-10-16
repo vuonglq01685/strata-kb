@@ -1797,7 +1797,8 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
     # + 4 (1.27.0: dev-sa's own four-way wrappers)
     # + 4 (1.29.0: dev-test-workflow's own four-way wrappers)
-    # = 67.
+    # + 4 (1.29.0: kb-auto's four-way wrappers)
+    # = 71.
     assert len(expected_files("dev")) == 71
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from strata_kb.autorun import lock as lock_mod
 from strata_kb.autorun import runner as runner_mod
 from strata_kb.cli import app
 from strata_kb.config import KBConfig
@@ -152,11 +153,11 @@ def test_ctrl_c_exits_130_without_traceback(repo, monkeypatch):
 def test_second_run_refuses_while_the_lock_is_held(repo, monkeypatch):
     _fake_deps(monkeypatch)
     monkeypatch.setattr(runner_mod, "run_once", lambda *a, **k: "idle")
-    with runner_mod.run_lock(repo):
+    with lock_mod.run_lock(repo):
         result = cli.invoke(app, ["auto", "run", "--once"])
     assert result.exit_code == 1
     assert "already running" in result.output
-    assert not (repo / "auto" / "run.lock").exists()  # the outer lock released
+    assert lock_mod.running_pid(repo) is None  # the outer lock released
 
 
 def test_run_releases_the_lock_on_exit(repo, monkeypatch):
@@ -164,4 +165,19 @@ def test_run_releases_the_lock_on_exit(repo, monkeypatch):
     monkeypatch.setattr(runner_mod, "run_once", lambda *a, **k: "idle")
     result = cli.invoke(app, ["auto", "run", "--once"])
     assert result.exit_code == 0
-    assert not (repo / "auto" / "run.lock").exists()
+    assert lock_mod.running_pid(repo) is None
+
+
+@pytest.mark.parametrize("action", ["on", "off", "run"])
+def test_auto_on_off_run_refuse_inside_an_auto_task(repo, monkeypatch, action):
+    monkeypatch.setenv(runner_mod.AUTO_TASK_ENV, "1")
+    result = cli.invoke(app, ["auto", action])
+    assert result.exit_code == 1
+    assert "refused inside an auto-mode task" in result.output
+    assert "enabled: true" in (repo / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_auto_status_still_works_inside_an_auto_task(repo, monkeypatch):
+    monkeypatch.setenv(runner_mod.AUTO_TASK_ENV, "1")
+    result = cli.invoke(app, ["auto", "status", "--json"])
+    assert result.exit_code == 0

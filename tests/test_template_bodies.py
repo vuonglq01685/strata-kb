@@ -1346,3 +1346,24 @@ def test_kb_doctor_is_read_for_its_publish_advice(name):
 @pytest.mark.parametrize("name", ["dev-execute", "dev-handover"])
 def test_three_round_cap_is_called_deliberate(name):
     assert "3-round cap stays as written here, on purpose" in _dev_text(name)
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_kb_auto_body_pins_its_contract(tmp_path, kind):
+    init_repo(tmp_path, kind)
+    text = (tmp_path / ".claude" / "skills" / "kb-auto" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    for needle in (
+        "kb auto status --json",
+        "`running`",
+        "`default_branch`",
+        "git branch --show-current",
+        "-- .kb/config.yaml .claude/settings.json",
+        "nohup kb auto run > .kb/auto/run.log 2>&1 &",
+        "mkdir -p .kb/auto",
+        "STRATA_KB_AUTO_TASK=1",
+        "Never pass `--dangerously-skip-permissions`",
+    ):
+        assert needle in text, needle
+    assert "strata-kb:include" not in text

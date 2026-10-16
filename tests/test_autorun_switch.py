@@ -123,6 +123,8 @@ def test_status_defaults_and_empty_state_fields(tmp_path):
         "attempts": 0,
         "waiting_on": [],
         "stop_reason": None,
+        "running": None,
+        "default_branch": None,  # no git repo under tmp_path
     }
 
 
@@ -206,3 +208,28 @@ def test_set_enabled_refuses_when_flag_would_not_stick(tmp_path):
         set_enabled(kb / "config.yaml", True)
 
     assert (kb / "config.yaml").read_text() == original
+
+
+def test_status_reports_running_pid_and_default_branch(tmp_path):
+    import os
+    import subprocess
+
+    from strata_kb.autorun.lock import run_lock
+
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "init"],
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@x",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@x",
+        },
+    )
+    kb = _kb(tmp_path, "kind: dev\n")
+    with run_lock(kb):
+        got = status(kb)
+    assert got["running"] == os.getpid() and got["default_branch"] == "main"
+    assert status(kb)["running"] is None

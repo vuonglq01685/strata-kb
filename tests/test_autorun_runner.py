@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from strata_kb import planstatus
+from strata_kb.autorun import lock as lock_mod
 from strata_kb.autorun import picker
 from strata_kb.autorun import runner as runner_mod
 from strata_kb.autorun import state as autostate
@@ -657,38 +658,46 @@ def test_preflight_without_a_remote_reads_the_local_default_branch(git_repo):
 # --- run lock: one `kb auto run` per repo ---------------------------------
 
 
-def test_run_lock_writes_pid_and_releases(tmp_path):
+def test_run_lock_writes_pid_and_reports_running(tmp_path):
     kb_dir = tmp_path / ".kb"
-    with runner_mod.run_lock(kb_dir) as path:
+    with lock_mod.run_lock(kb_dir) as path:
         assert path == kb_dir / "auto" / "run.lock"
         assert path.read_text(encoding="utf-8").strip() == str(os.getpid())
-    assert not path.exists()
+        assert lock_mod.running_pid(kb_dir) == os.getpid()
+    assert lock_mod.running_pid(kb_dir) is None  # file may stay, lock is gone
 
 
-def test_run_lock_refuses_while_a_live_runner_holds_it(tmp_path):
+def test_run_lock_refuses_while_the_lock_is_held(tmp_path):
     kb_dir = tmp_path / ".kb"
     with (
-        runner_mod.run_lock(kb_dir),
+        lock_mod.run_lock(kb_dir),
         pytest.raises(KbError, match=rf"already running \(pid {os.getpid()}\)"),
-        runner_mod.run_lock(kb_dir),
+        lock_mod.run_lock(kb_dir),
     ):
         pass
 
 
-def test_run_lock_replaces_a_stale_lock(tmp_path, monkeypatch):
+def test_run_lock_ignores_a_file_left_by_a_dead_process(tmp_path):
     kb_dir = tmp_path / ".kb"
     lock = kb_dir / "auto" / "run.lock"
     lock.parent.mkdir(parents=True)
-    lock.write_text("424242\n", encoding="utf-8", newline="\n")
-    monkeypatch.setattr(runner_mod, "_pid_alive", lambda pid: False)
-    with runner_mod.run_lock(kb_dir) as path:
-        assert path.read_text(encoding="utf-8").strip() == str(os.getpid())
+    lock.write_text("424242\n", encoding="utf-8", newline="\n")  # no OS lock held
+    assert lock_mod.running_pid(kb_dir) is None
+    with lock_mod.run_lock(kb_dir):
+        assert lock.read_text(encoding="utf-8").strip() == str(os.getpid())
 
 
-def test_run_lock_treats_garbage_as_stale(tmp_path):
+def test_run_lock_survives_garbage_content(tmp_path):
     kb_dir = tmp_path / ".kb"
     lock = kb_dir / "auto" / "run.lock"
     lock.parent.mkdir(parents=True)
     lock.write_text("not-a-pid\n", encoding="utf-8", newline="\n")
-    with runner_mod.run_lock(kb_dir):
+    with lock_mod.run_lock(kb_dir):
         assert lock.read_text(encoding="utf-8").strip() == str(os.getpid())
+
+
+def test_run_lock_is_released_after_an_exception(tmp_path):
+    kb_dir = tmp_path / ".kb"
+    with pytest.raises(RuntimeError), lock_mod.run_lock(kb_dir):
+        raise RuntimeError("boom")
+    assert lock_mod.running_pid(kb_dir) is None

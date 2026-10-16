@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from strata_kb import gitio
 from strata_kb.autorun import state as autostate
+from strata_kb.autorun.lock import running_pid
 from strata_kb.config import HubConfigError, KBConfig, load_config, require_hub
 from strata_kb.federation import RegistryError, load_registry
 from strata_kb.hub import resolve_hub
@@ -111,4 +112,19 @@ def status(kb_dir: Path) -> dict:
         "attempts": state.attempts,
         "waiting_on": list(state.waiting_on),
         "stop_reason": state.stop_reason,
+        # For /kb-auto: is a loop alive (OS lock probe), and which branch the
+        # switch must be pushed to.
+        "running": _running_pid(kb_dir),
+        "default_branch": _default_branch(kb_dir),
     }
+
+
+def _running_pid(kb_dir: Path) -> int | None:
+    return running_pid(kb_dir)
+
+
+def _default_branch(kb_dir: Path) -> str | None:
+    try:
+        return gitio.default_branch(gitio.git_root(kb_dir.resolve()))
+    except (gitio.GitError, OSError, ValueError):
+        return None

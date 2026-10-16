@@ -979,6 +979,23 @@ _AUTO_COMMIT_HINT = (
 )
 
 
+def _refuse_inside_auto_task(action: str) -> None:
+    """`kb auto on|off|run` are the owner's: a task process the loop started
+    (marked by STRATA_KB_AUTO_TASK) must not flip the switch or start a
+    second loop. `status` stays allowed."""
+    import os
+
+    from strata_kb.autorun.runner import AUTO_TASK_ENV
+
+    if os.environ.get(AUTO_TASK_ENV):
+        typer.secho(
+            f"kb auto {action} is refused inside an auto-mode task "
+            f"({AUTO_TASK_ENV} is set); only the repo owner runs it",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+
 @auto_app.command("on")
 def auto_on(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
@@ -988,6 +1005,8 @@ def auto_on(
 ) -> None:
     """Turn full-auto mode on (ba/dev repos only). Prints the risks first."""
     from strata_kb.autorun import switch
+
+    _refuse_inside_auto_task("on")
     from strata_kb.config import load_config
 
     path = kb_dir / "config.yaml"
@@ -1012,6 +1031,8 @@ def auto_on(
 def auto_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
     """Turn full-auto mode off."""
     from strata_kb.autorun import switch
+
+    _refuse_inside_auto_task("off")
 
     path = kb_dir / "config.yaml"
     try:
@@ -1059,6 +1080,7 @@ def auto_run(
     from strata_kb.autorun import runner
     from strata_kb.errors import KbError
 
+    _refuse_inside_auto_task("run")
     try:
         root = gitio.git_root(kb_dir.resolve().parent)
         reasons = runner.preflight(root, kb_dir, hub)
