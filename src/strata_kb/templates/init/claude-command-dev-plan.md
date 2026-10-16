@@ -166,7 +166,7 @@ a formatter re-wrapped is re-read. It returns the checklist result with the
 draft.
 
 Dispatch a `plan-reviewer` subagent with a fresh context — or slice reviewers,
-as **Size check** below decides. Hand it exactly: the
+as **Size check** below decides. Hand each exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
 `docs/pr-review-rubric.local.md`. It answers six questions and nothing else:

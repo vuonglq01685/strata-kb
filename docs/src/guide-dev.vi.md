@@ -338,7 +338,7 @@ e2e hay compose, port host cố định) thì có thêm dòng `Serial resource: 
 cạnh `Depends on:`. Dòng này không thêm dependency; `kb plan waves` in các task
 đó sau `serial:` trong wave của chúng (`wave 5: task 3; serial: task 14, task
 20`), và `dev-execute` không cho chúng vào lane mà chạy từng task một trong
-worktree của ticket, sau khi các lane của wave đã merge.
+worktree của ticket, sau khi các task lane của wave đã merge và được tick.
 
 ## 4.4 Bốn cổng người, năm vòng review agent
 

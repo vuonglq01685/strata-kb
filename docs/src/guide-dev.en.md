@@ -337,7 +337,7 @@ stack, fixed host ports) carries a `Serial resource: <name>` line next to
 `Depends on:`. It adds no dependency; `kb plan waves` prints such tasks after
 `serial:` in their wave (`wave 5: task 3; serial: task 14, task 20`), and
 `dev-execute` keeps them out of the lanes and runs them one at a time in the
-ticket worktree once the wave's lanes are merged.
+ticket worktree once the wave's lane tasks are merged and ticked.
 
 ## 4.4 Four human gates, five agent review rounds
 

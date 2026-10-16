@@ -137,7 +137,7 @@ re-wrapped is re-read. It returns the checklist result with the draft.
 
 That design is a draft until a reviewer that never saw it being written
 says otherwise. Dispatch a `design-reviewer` subagent — or slice reviewers, as
-**Size check** below decides — and hand it exactly these things: the path
+**Size check** below decides — and hand each exactly these things: the path
 `docs/impl/<ticket-id>/design.md`, the resolved context cache path, the
 ticket's
 acceptance criteria, and the `## Pre-code axes` of `docs/pr-review-rubric.md`
