@@ -56,7 +56,8 @@ The first attempt on cloud refused before anything ran:
 ## 4. Anti-goals (works, but still a failure)
 
 - Local behaviour changes. A local `kb auto run` with a hub URL/path in
-  config must behave exactly as 1.29.0 (clone cache, `gh pr`, `nohup`).
+  config must give the same results as 1.29.0 (clone cache, `nohup`, same
+  PRs and merges; §6.5 may route PR calls through `kb pr`).
 - The loop silently runs on a guessed default branch, or merges into the
   wrong base.
 - The session's own context fills up with ticket output (each ticket's log
@@ -118,12 +119,16 @@ So the switch must still reach the default branch, but on cloud the owner is
 never asked to check it out:
 
 - `/kb-auto run` on cloud drops the "must stand on the default branch" step.
-- When the switch is not yet on `origin/<default>`, the skill commits
-  `.kb/config.yaml` and `.claude/settings.json` on the session branch, pushes
-  that branch, opens a PR into the default branch through REST, and — after
-  telling the owner and showing the admin-merge warning verbatim — merges it
-  through REST. Auto mode merges every ticket PR as admin anyway; this is the
-  same act, on the switch.
+- When the switch is not yet on `origin/<default>`, the skill cuts a fresh
+  branch `auto/switch` from `origin/<default>` holding **only**
+  `.kb/config.yaml` and `.claude/settings.json` (never the session branch,
+  which may carry other unreviewed commits), pushes it, opens a PR into the
+  default branch through REST with a body that passes `kb-pr-lint`, waits for
+  its checks to go green, and — after telling the owner and showing the
+  admin-merge warning verbatim — squash-merges it through REST. Red checks →
+  stop and report; never merge past red. Auto mode merges every ticket PR as
+  admin anyway; this is the same act, on the switch. *(Isolation, lint-clean
+  body, green-before-merge and squash are the designer's calls.)*
 - When the switch is already on `origin/<default>` (enabled earlier through a
   normal PR), this step is a no-op.
 - Preflight's `_switch_refusals` stays as it is: it already reads the switch
@@ -162,9 +167,30 @@ The hub server must be upgraded to the release that has these endpoints.
 Preflight on the HTTP path calls them first; a 404 means "hub server too old"
 and is a refusal saying which version is needed.
 
-BA side needs nothing more: `pick_ba` reads the repo's own `.kb/` via
-`kb mission next`, Q&A already uses `/api/questions`, and publish goes
-through intake (a tag the repo's CI uploads), so no hub clone there either.
+Q&A already uses `/api/questions`, and publish goes through intake (a tag
+the repo's CI uploads), so neither needs a clone.
+
+**The task processes too.** The owner wants *every* hub read on cloud to go
+over HTTP/MCP, not only the runner's. The skills are already MCP-first for
+most hub reads; the CLI commands they call that still reach the hub through
+`_hub_or_exit` / `_hub_or_reason` (a clone) need an HTTP path on cloud:
+
+- `kb mission next` — when the Dev's `<x>-svc` document is not in the local
+  `.kb/`, it loads it from the hub to work out which stories are done
+  (`cli.py` ~3882). `pick_ba` and every BA "Already finished" check depend on
+  it. Needs an endpoint returning a published doc dir as `ticketcheck`
+  expects (or reuse `/api/docs/{doc}` if it carries enough).
+- `kb resolve --status-only --cache` / `--write-cache` — CLI-first in
+  `dev-implement-ticket` (no MCP path). Needs an HTTP path.
+- The MCP-first commands whose CLI is only a fallback (`kb ticket check|lint|
+  stale`, `kb mission lint`, `kb context new`, `kb query`, `kb get`,
+  `kb doctor`): on cloud the fallback must not clone; it fails with one line
+  saying to use the `strata-kb` MCP tool. *(Builder's call: give a fallback
+  an HTTP path instead when it is cheap.)*
+
+The rule for the builder: on cloud, `_hub_or_exit` / `_hub_or_reason` never
+clone. They return the HTTP reader where a command supports it, otherwise a
+clear refusal. Grep every caller and classify it.
 
 ### 6.5 GitHub without GraphQL
 
@@ -183,7 +209,23 @@ and cloud alike, so there is one code path in the skills):
   `GET /repos/{o}/{r}/commits/{sha}/check-runs` (+ combined status).
 - `kb pr edit <n> --body-file ...` — `PATCH /repos/{o}/{r}/pulls/{n}`.
 
-`ghio.py` switches its `gh pr view` / `gh pr create` to the same REST calls.
+*(Designer's call:)* the skills use `kb pr` on local too, so there is one
+code path; "local behaviour unchanged" (§4) means the same outcome, not the
+same `gh` subcommand. `kb pr` calls `gh api` with the host taken from
+`origin`, so GitHub Enterprise keeps working; a non-GitHub remote gets the
+same "gh unavailable" handling the skills have today.
+
+`--admin` today: `gh pr merge --squash --delete-branch`, falling back to
+`--admin` when a required review blocks it (`dev-handover.md:245`,
+`ba-ticket-author.md:380`). REST `PUT .../merge` has no flag; an admin's
+merge bypasses branch protection only when the rule allows admin bypass.
+`kb pr merge --admin` keeps the flag for the skills' wording and the spike
+(§6.6) checks it actually merges past a required review on cloud. Branch
+delete after merge: `DELETE /repos/{o}/{r}/git/refs/heads/<branch>`.
+
+`ghio.py` is used only by hub-to-hub publish (`publish.py`), outside the auto
+loop: leave it on `gh` (including `gh repo view` / `gh issue list`) unless a
+cloud caller turns up. *(Designer's call.)*
 `claude-settings-auto.json` already allows `Bash(kb pr *)`; keep `gh pr *`
 allowed for local use, and add `Bash(gh api *)` only if a skill still calls
 it directly (prefer not). `gh run view|list|watch|rerun` stay if they are
@@ -212,12 +254,25 @@ idle. Design:
 - `/kb-auto off` and a stop rule end the loop as today; the watcher's next
   line says so and the session stops re-arming.
 
-Unverified: that a session whose only activity is a background command
-re-arming every ≤2 h is never reclaimed. The first build step is a spike
-that runs this watcher pattern for > 3 h on cloud with a dummy loop. If the
-container is reclaimed anyway, stop and come back to the owner before
-building the rest — the alternative (runner driven one `--once` step per
-tool call) cannot hold a 4 h ticket.
+**Checkout.** The runner and its tasks share the session's checkout, as
+locally: tasks switch the tree to `auto/...` branches and the session never
+needs to return to its `claude/...` branch while the loop runs (`.kb/auto/`
+is already gitignored by `kb init`, so logs leave the tree clean). The
+session pushes nothing of its own during the loop. *(Designer's call.)*
+
+**Spike first.** These are unverified and the rest of the plan rests on
+them, so the first build step is a throwaway spike on cloud that checks:
+
+1. A session whose only activity is a background `kb auto wait`-style
+   command re-armed every ≤2 h survives > 3 h with a dummy loop.
+2. Pushing a branch other than the session's (`auto/spike`) succeeds.
+3. REST create PR, `PUT .../merge` into a protected default branch with and
+   without a required review, and REST branch delete all succeed.
+4. `gh run list|view` works over REST on cloud.
+
+Any check failing → stop and come back to the owner before building the
+rest; the per-ticket-branch model or the long-session model would need
+redesign.
 
 ### 6.7 `/kb-auto` skill (`templates/init/bodies/kb-auto.md`)
 
@@ -226,8 +281,9 @@ Add a cloud path to `run`, chosen when `CLAUDE_CODE_REMOTE` is set:
 1. `kb auto status --json`; `running` is a pid → say so and stop.
 2. Skip the "must be on the default branch" check.
 3. `kb auto on` if needed, warnings verbatim.
-4. Switch not on `origin/<default>` → §6.3 (commit on session branch, push,
-   REST PR, tell owner, REST merge).
+4. Switch not on `origin/<default>` → §6.3 (`auto/switch` from
+   `origin/<default>` with only the two files, REST PR, green checks, tell
+   owner, REST squash-merge).
 5. `mkdir -p .kb/auto`, start detached (§6.6), poll for the pid or a refusal
    as today.
 6. Arm the watcher (§6.6) and keep re-arming it until `done` or `stopped`.
