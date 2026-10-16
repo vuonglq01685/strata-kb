@@ -216,3 +216,37 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+`/dev-implement-ticket <us-id>` or `/dev-fix-bug <BUG-id>` runs this skill as its last phase, on the ticket branch it created (`auto/<ticket-id>` for a story, `fix/<BUG-id>` or `hotfix/<BUG-id>` for a bug). Nobody answers questions during the run: a step above that says "the Dev opens", "the Dev merges" or "tell the Dev" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). Copy every line in that file into the PR description's `## Notes`.
+
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `gh pr list --head <branch> --state merged --json number,url`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it says the hub lags, run `kb publish` once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>` (a bug: `fix/<BUG-id>` or `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at step 3 of the branch rule below (the CI step).
+
+- **Re-check freshness: `stale` — "humans decide"** → decide as `dev-implement-ticket` does in its Auto mode: when the difference changes no AC this story implements, continue and report it under `## Notes`. Otherwise ask the BA with `kb_question_ask` and end `AUTO-RESULT: blocked-qa Q<id>`.
+- **Review contract: a finding that contradicts the design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
+- **Review contract: "round 3 stops the flow and goes to the Dev", and A5 "stop at once and hand the Dev the trend"** → a BLOCKER or SUGGESTED finding of A5 still standing after round 3 ends `AUTO-RESULT: failed merge-risk <ticket-id>`. The PR is not opened.
+- **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+- **Record service history: "tell the Dev to run `kb publish`"** → run `kb publish` yourself, after the merge, as the last step of the branch rule. The `hist` row has to reach the hub, or the story never shows `done`.
+- **GATE 3 — "the Dev opens the PR"; GATE 4 — "the Dev merges. The agent does neither"** → the branch rule below, once A5 comes back clean.
+- **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans"** → you merge, under the branch rule only. The rest of the rule stands: no work on `main`, no push to `main`, no DoD or AC box ticked.
+
+**The branch rule.** The ticket branch already exists. Check with `git branch --show-current` that you are on it and not on `main`.
+
+1. Commit the remaining files (stage them by name, including `docs/impl/<ticket-id>/` and the `kb svc note` rows) with a message `<type>: <description>`, then `git push -u origin HEAD`.
+2. Open the PR with `gh pr create --title "<ticket-id>: <short description>" --body "<the assembled PR description>"`. For a `hotfix` whose `hotfix_base` in `kb auto status --json` is not empty, add `--base <hotfix_base>`; for every other ticket the PR targets the default branch.
+3. Wait for the checks with `gh pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`) and fix it, commit, `git push`, and watch again: up to 2 rounds in all. A red `kb-pr-lint` caused by the PR text is fixed with `gh pr edit` and costs no round. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
+4. Every check green: `gh pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `gh pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `gh pr view --json state,mergedAt` before you end `failed`: `gh` can report an error from a worktree after the merge went through. A merged PR is a success.
+5. After the merge, run `kb publish` once. It mirrors `.kb/`, so the `hist` row reaches the hub. When it prints a hub PR URL, name it in the reply. When it fails, end `AUTO-RESULT: failed publish <reason>`.
+
+### Result line
+
+You run as the last phase of `/dev-implement-ticket` or `/dev-fix-bug`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-handover <ticket-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a stale citation changes an AC and the BA must settle it.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `merge-risk <ticket-id>`, `publish <reason>`, or `merged-without-history <pr-url>`. The reason goes on the same line.

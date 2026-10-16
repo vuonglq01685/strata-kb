@@ -280,3 +280,27 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+`/dev-implement-ticket <us-id>` runs this skill as phase 3, on the ticket branch it created. Nobody answers questions during the run: a step above that says "stop and send it back", "return to `dev-design`" or "let the Dev choose" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). `dev-handover` copies the lines into the PR's `## Notes`.
+
+- **Isolate: "a dedicated branch", named from the ticket id** → the branch is `auto/<ticket-id>`, and `dev-implement-ticket` has already created it. Check with `git branch --show-current` and stay on it. When you were started alone and are on the default branch, create it with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. A worktree for a lane stays optional, and a lane's branch is cut from the ticket branch as written.
+- **Plan incomplete — "stop and send it back to `dev-plan`"; a task with no test and no `Exempt:` line — "stop and return the task to `dev-plan`"; a merge conflict between lanes is "a plan defect: stop, do not resolve"** → repair it yourself: run `dev-plan` on the plan, which fixes it and re-approves it under its own Auto mode, then resume at the first unticked task. A task goes back to `dev-plan` at most 2 times; after that, end `AUTO-RESULT: failed plan-defect task <n>`.
+- **An AC that is not implementable as written — "stop that task, return to `dev-design`"** → still do not decide the ambiguity yourself. Run `dev-design`, which asks the BA through hub Q&A, and report its blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`.
+- **A test that fails unexpectedly** → no human gate, but a limit: diagnose the cause and fix it. A task that stays red after 3 distinct fix attempts, each logged, ends `AUTO-RESULT: failed tests-red task <n>`. Never edit a test to make it green.
+- **Review contract: "round 3 stops the flow and goes to the Dev"** → a BLOCKER or SUGGESTED finding of A3 or A4 still standing after round 3 ends `AUTO-RESULT: failed task-review <ticket-id>`, naming the task or `A4`.
+- **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
+- **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+
+### Result line
+
+You run as a phase of `/dev-implement-ticket`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-execute <us-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — every task is ticked and A4 came back clean. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs the task once the questions are answered.
+- `AUTO-RESULT: failed <reason>` — anything else: `tests-red task <n>`, `plan-defect task <n>`, or `task-review <ticket-id>`. The reason goes on the same line.

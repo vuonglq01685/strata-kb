@@ -208,3 +208,37 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+The runner starts this skill as `/dev-implement-ticket <us-id>`. Nobody answers questions during the run: you run design, plan, execute and handover yourself, in that order, each under its own Auto mode section, and a step above that says "let the Dev decide", "ask before" or "offer" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions`; it is committed with the ticket's other files). `dev-handover` copies the lines into the PR's `## Notes`.
+
+**A real blocker is a BA question.** A blocker is something only the BA can settle: a broken citation, a ticket with no `kb-context`, a failed grounding check, a stale citation that changes an AC, or an unmerged dependency this story needs. Call `kb_question_ask(ticket, question, asked_by, context, blocks)`: `asked_by` is `kb-auto`; `blocks` names the AC ids the blocker touches (every AC when it stops the whole ticket). Skip the call when `kb_question_list` already shows the same question. Then end `AUTO-RESULT: blocked-qa Q<id>`, with every other blocking id from `kb_question_list`. When Q&A is unavailable, end `AUTO-RESULT: failed qa-unavailable` instead.
+
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `gh pr list --head auto/<ticket-id> --state merged --json number,url`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it says the hub lags, run `kb publish` once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>`, then `git pull origin auto/<ticket-id>`, check what the branch already holds, and continue at the CI step of `dev-handover`'s branch rule.
+
+- **Intake: "if this story is blocked by something unmerged, say so and let the Dev decide"** → decide. Read the blocker's status (`kb mission next --from-hub --json`) and look for its deliverable in the codebase. Proceed when the blocker is `done`, when its code is already here, or when this story does not touch it, and log an Auto decision line. A blocker whose code this story needs and the codebase lacks is a real blocker.
+- **Intake: no `kb-context` block — "No `kb-context` block" means stop, the ticket is not Ready** → a real blocker: ask the BA.
+- **Questions: an `open` blocking question — "do not continue past the gate" and give the Dev the hub Q&A link** → stop. End `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` with every blocking question that is `open` or `waiting`, written as `Q<id>` and comma-separated. The runner re-runs this task once they are all `answered`. Run no phase and leave the working tree as it is; the hub link is not needed. A question that blocks no AC does not stop you; it shows in the state line.
+- **Questions: "STOP and tell the Dev" when Q&A is unavailable and a `Q<id>` line lacks `— answered rev N`** → end `AUTO-RESULT: failed qa-unavailable`; the state of that question cannot be known.
+- **Check the grounding: `[warn]` lines — "the Dev decides"** → read each `[warn]` (a diff, or facts that could not be verified) against the code, decide whether it touches an AC, and continue. Log the decision.
+- **Check the grounding: FAIL with "re-run /sa-ticket-ground", or any other FAIL — a blocker for the BA** → a real blocker: ask the BA, and put the errors in `context`.
+- **Freshness and Resolve: `broken` is a STOP; `stale` shows both versions and "humans decide"** → `broken` is a real blocker. For `stale`, read the pinned text and the hub's current text. When the difference changes no AC this story implements, continue on the pinned version and log both sides in an Auto decision line. Otherwise it is a real blocker.
+- **Run the phases: "after the Dev approves it"** → each phase approves itself under its own Auto mode. Run `dev-design`, `dev-plan`, `dev-execute`, `dev-handover` in order; a phase that stops tells you why, and you end with the result line below.
+- **Re-entry: `plan ⚠ missing, N commits on branch` — "ask before running `dev-plan`"** → read `git log --oneline <default>..HEAD`. When the commits belong to this ticket, run `dev-plan` for the work still missing and tick the tasks the commits already complete, after checking each against its test. Log the decision.
+- **Re-entry: `PR ❌ closed` — "re-handover or reopen"** → re-handover: `dev-handover` opens a new PR.
+- **Re-entry: no branch, on the default branch — "offer `git switch -c <ticket-id>`"** → branch at once with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. Do this before the first phase.
+- **Re-entry: the current branch names a different ticket — "two tickets in flight; switch branches first"** → when `git status` is clean, create this ticket's branch the same way and leave the other branch alone. A dirty tree ends `AUTO-RESULT: failed two-tickets-in-flight`.
+- **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans"** → `dev-handover` opens the PR and merges it under its own Auto mode. The rest of the rule stands: no work on `main`, no push to `main`, no DoD or AC box ticked.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs this task once the questions are answered.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `design-review`, `plan-review`, `tests-red task <n>`, `plan-defect task <n>`, `qa-unavailable`, `merged-without-history <pr-url>`, or `two-tickets-in-flight`. The reason goes on the same line.

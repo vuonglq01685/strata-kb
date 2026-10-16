@@ -1796,8 +1796,9 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
     # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
     # + 4 (1.27.0: dev-sa's own four-way wrappers)
-    # = 63.
-    assert len(expected_files("dev")) == 63
+    # + 4 (1.29.0: dev-test-workflow's own four-way wrappers)
+    # = 67.
+    assert len(expected_files("dev")) == 67
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -2004,6 +2005,7 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         "dev-handover",
         "dev-fix-bug",
         "dev-sa",
+        "dev-test-workflow",
     ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill

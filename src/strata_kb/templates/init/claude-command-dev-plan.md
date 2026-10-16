@@ -330,3 +330,29 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+`/dev-implement-ticket <us-id>` runs this skill as phase 2, on the ticket branch it created. Nobody answers questions during the run: a step above that says "the Dev approves", "ask the Dev" or "let the Dev choose" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). `dev-handover` copies the lines into the PR's `## Notes`.
+
+- **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER and no SUGGESTED gap open), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps through the fix subagent and re-review, at most 2 fix rounds (not 3). A plan that is still not clean after that stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
+- **No `-code` document yet — "ask the Dev once for the build/test/lint commands"** → never ask; read them from the repo, in this order: the `run:` lines of `.github/workflows/*.yml` (the `kb-*.yml` files strata-kb scaffolds do not count), `docs/conventions/<lang>.md` and its `testing.md`, then the package manifests and task files (`package.json` scripts, `pyproject.toml`, `Makefile`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Package.swift`). Record the commands in the `cmd.test:` / `cmd.lint:` header lines and log where each came from. A repo with no test command at all gets `AUTO-RESULT: failed no-test-command`.
+- **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
+- **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.
+- **Class-wide fix: an instance whose fix would change the design "goes to the Dev, unfixed"** → decide: when the finding is right, fix the design file, re-run `dev-design`'s A1 review, flip the design to `status: approved` again, then fix the plan. When the finding is wrong, leave the plan and record why. Either way, log an Auto decision line.
+- **Stop rule: "hand the Dev the trend"** → a round whose BLOCKER plus SUGGESTED count is not lower than the round before is treated as not clean: stop spending rounds and end `AUTO-RESULT: failed plan-review`, with the trend and the open classes in the reply.
+- **Review contract: "round 3 stops the flow and goes to the Dev"** → the cap is 2 fix rounds here, and what is left ends `AUTO-RESULT: failed plan-review`.
+- **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
+- **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+
+### Result line
+
+You run as a phase of `/dev-implement-ticket`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-plan <us-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — the plan is `status: approved`. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs the task once the questions are answered.
+- `AUTO-RESULT: failed <reason>` — anything else: `plan-review`, `design-review`, `no-test-command`, or `qa-unavailable`. The reason goes on the same line.

@@ -295,3 +295,27 @@ Rules:
 - A blocker takes option 1 instead and says so, e.g.
   `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
   Flow order never hides a blocker.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+`/dev-implement-ticket <us-id>` runs this skill as phase 1, on the ticket branch it created. Nobody answers questions during the run: a step above that says "the Dev approves", "tell the Dev" or "let the Dev choose" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). `dev-handover` copies the lines into the PR's `## Notes`.
+
+- **GATE 1 — Dev approval before any plan is written** → the A1 review, run by a `design-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A1 comes back clean (no BLOCKER and no SUGGESTED gap open), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-plan` in the same turn; the "same turn" ban belongs to the Dev. A spike's design is flipped the same way. Otherwise send the gaps through the fix subagent and re-review, at most 2 fix rounds (not 3). A design that is still not clean after that stays `draft`: end `AUTO-RESULT: failed design-review`, and name the open classes in the reply.
+- **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
+- **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.
+- **Stop rule: "stop at once and hand the Dev the trend"** → a round whose BLOCKER plus SUGGESTED count is not lower than the round before is treated as not clean: stop spending rounds and end `AUTO-RESULT: failed design-review`, with the trend and the open classes in the reply.
+- **Review contract: "round 3 stops the flow and goes to the Dev"** → the cap is 2 fix rounds here, and what is left ends `AUTO-RESULT: failed design-review`.
+- **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
+- **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+
+### Result line
+
+You run as a phase of `/dev-implement-ticket`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-design <us-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — the design is `status: approved`. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs the task once the questions are answered.
+- `AUTO-RESULT: failed <reason>` — anything else: `design-review`, or `qa-unavailable`. The reason goes on the same line.

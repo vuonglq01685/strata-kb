@@ -272,6 +272,11 @@ DEV_TEMPLATES: dict[str, str] = {
             # Not a phase of the ticket workflow, so it stays out of the
             # tests' DEV_WORKFLOW_SKILLS canon and has its own pins.
             "dev-sa",
+            # Adds .github/workflows/kb-test.yml, the CI check that runs the
+            # repo's own tests. Auto mode's first Dev task, but a human can run
+            # it too. Not a ticket phase, so it stays out of the tests'
+            # DEV_WORKFLOW_SKILLS canon.
+            "dev-test-workflow",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
