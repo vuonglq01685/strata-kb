@@ -101,9 +101,10 @@ hub.
   - **Serial tasks** — a task listed after `serial:` declares a
     `Serial resource:` (an e2e stack, fixed host ports) that a parallel lane
     would rebuild or restart under another lane's run. It never runs in a
-    lane. Once the wave's lanes are merged and verified, run the serial
+    lane. Once every lane task of the wave is merged, verified and ticked, run
+    the serial
     tasks one at a time, in the order listed, in the ticket worktree —
-    where the stack's gitignored `.env` and certificates already live —
+    the one place the stack's gitignored `.env` and certificates must exist —
     each with the per-task flow below, ticked after its A3 before the next
     one starts.
   Without subagents: sequential in wave order, today's fallback.

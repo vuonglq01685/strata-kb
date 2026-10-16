@@ -86,9 +86,10 @@ branch after the merge, a re-review after a fix diffing
 `cmd.test` / `cmd.lint` re-run when a fix landed. A task listed after
 `serial:` declares a `Serial resource:` (an e2e stack, fixed host ports)
 that a parallel lane would rebuild or restart under another lane's run, so
-it never runs in a lane: once the wave's lanes are merged and verified, the
+it never runs in a lane: once every lane task of the wave is merged, verified
+and ticked, the
 serial tasks run one at a time, in the order listed, in the ticket worktree
-— where the stack's gitignored `.env` and certificates already live — each
+— the one place the stack's gitignored `.env` and certificates must exist — each
 with the per-task flow, ticked after its A3 before the next one starts. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**

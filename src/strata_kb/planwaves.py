@@ -20,7 +20,9 @@ from dataclasses import dataclass
 
 TASK_RE = re.compile(r"^#{2,4}\s+Task\s+(?P<n>\d+)\b")
 DEPENDS_RE = re.compile(r"^\*{0,2}Depends on:?\*{0,2}\s*(?P<rest>.*?)\s*$", re.I)
-SERIAL_RE = re.compile(r"^\*{0,2}Serial resources?:\*{0,2}:?\s*(?P<rest>.*?)\s*$", re.I)
+SERIAL_RE = re.compile(
+    r"^\*{0,2}Serial resources?(?::\*{0,2}|\*{0,2}:)\s*(?P<rest>.*?)\s*$", re.I
+)
 SECTION_RE = re.compile(r"^\*\*(?P<name>Files|Interfaces|Steps):?\*\*:?\s*$")
 FILE_LINE_RE = re.compile(
     r"^\s*-\s*(?:Create|Modify|Test|Delete)\s*:\s*(?P<rest>.+?)\s*$", re.I

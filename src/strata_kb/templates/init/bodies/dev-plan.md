@@ -170,8 +170,9 @@ that suffix (the line keeps `— answered rev N`). A line with
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
 it gets the design file path, the ticket's acceptance criteria, the
 `cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
-— the one-task-per-AC shape, the three per-task headings, the `Exempt:` line
-format, the ordering rules, and the Questions rule and preservation rule
+— the one-task-per-AC shape, the three per-task headings, the `Depends on:`
+and `Serial resource:` lines, the `Exempt:` line format, the ordering rules,
+the author self-check below, and the Questions rule and preservation rule
 above (it lists what it could not decide under `## Questions raised`, tags
 each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
 the hub or asks the BA itself, and keeps `## Technical decisions` and
@@ -181,14 +182,17 @@ with a different context.
 
 **Author self-check.** Before any reviewer sees a draft, the author — and
 every fix round after it — runs this checklist and fixes what it finds: every
-consumed Interface names the task that produces it; every task a task cites
+consumed Interface names the task that produces it, and that task's
+**Interfaces** lists it as produced under the same name and type; every task a
+task cites
 is the task that holds what it cites; every standard value cites a section of
 `docs/impl/<ticket-id>/context.md`; every task that drives a shared running
 environment declares `Serial resource:`; `kb plan waves` exits 0; every block
 a formatter re-wrapped is re-read. It returns the checklist result with the
 draft.
 
-Dispatch a `plan-reviewer` subagent with a fresh context. Hand it exactly: the
+Dispatch a `plan-reviewer` subagent with a fresh context — or slice reviewers,
+as **Size check** below decides. Hand it exactly: the
 path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 `## Pre-code axes` of `docs/pr-review-rubric.md` plus
 `docs/pr-review-rubric.local.md`. It answers six questions and nothing else:
@@ -215,15 +219,18 @@ path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
 coverage matrix — every task against the six questions, each cell PASS, FAIL
 or not-checked — and a gap list in which every gap names its task, its
 severity, a defect class (a short name such as `interface not
-self-sufficient` or `mutation masking`) and a proposed fix. A not-checked
-cell sends a reviewer back to exactly those cells before anything is fixed:
+self-sufficient` or `mutation masking`) and a proposed fix. A not-checked cell
+sends a fresh reviewer back to exactly those cells, appending to the same
+report, before anything is fixed:
 round 1 finds every gap, not the first few.
 
 **Size check.** Before round 1, count the plan's tasks and lines. Up to 12
 tasks and 600 lines, one `plan-reviewer` reviews the whole plan. Above
 either, split the review into slices of at most 8 tasks, cut at wave
 boundaries where possible, and dispatch one `plan-reviewer` per slice in
-parallel (report `a2-r<n>-<slice>.md`). Then dispatch one
+parallel, each handed the inputs above plus its slice's task numbers and
+filling the matrix for those tasks only (report `a2-r<n>-<slice>.md`). Then
+dispatch one
 `plan-lead-reviewer` with a fresh context, handing it the plan, the ticket's
 acceptance criteria, the approved design and every slice report. It writes
 the consolidated report `a2-r<n>.md`:
@@ -244,13 +251,17 @@ this size.
 
 **Class-wide fix.** Copy the plan to
 `docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
-with the gap list. For every gap it fixes the cited instance, sweeps the
-whole plan for the same defect class, and lists each further instance it
-fixed; then it re-runs the author self-check. The fix subagent gets the same
+with the report's BLOCKER and SUGGESTED gaps. For every gap it fixes the cited
+instance, sweeps the
+whole plan for the same defect class, and writes each further instance it
+fixed to `review/a2-r<n>-sweep.md`; then it re-runs the author self-check. An
+instance whose fix would change what the approved design mandates goes to the
+Dev, unfixed. The fix subagent gets the same
 Questions rule and preservation rule as the author.
 
 **Verification rounds.** Round 2 and later are not a fresh full review. A
-`plan-reviewer` with a fresh context gets the previous gap list with its
+`plan-reviewer` with a fresh context gets the round-1 inputs, the previous gap
+list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
 fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the

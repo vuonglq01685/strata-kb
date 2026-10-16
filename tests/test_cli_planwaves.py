@@ -82,7 +82,7 @@ def test_docs_name_the_plan_waves_command():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert (
-        "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, or a missing `Depends on:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |"
+        "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |"
         in readme
     )
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")

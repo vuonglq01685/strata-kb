@@ -264,6 +264,14 @@ def test_parse_plan_reads_serial_resources():
     ]
 
 
+def test_parse_plan_reads_a_bold_label_with_the_colon_outside():
+    text = (
+        "### Task 1: a\nDepends on: none\n**Serial resource**: e2e-stack\n"
+        "**Files:**\n- Create: `a.py`\n"
+    )
+    assert planwaves.parse_plan(text)[0].serial == ("e2e-stack",)
+
+
 def test_serial_resource_adds_no_dependency_and_marks_the_wave():
     tasks = planwaves.parse_plan(SERIAL_PLAN)
     errors, waves = planwaves.check(tasks)

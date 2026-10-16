@@ -3430,13 +3430,15 @@ def pr_lint(
 def plan_waves(
     source: str = typer.Argument(..., help="Plan file (or '-' to read from stdin)"),
     json_output: bool = typer.Option(
-        False, "--json", help='Emit {"errors": [...], "waves": [[...]]} instead of text'
+        False,
+        "--json",
+        help='Emit {"errors": [...], "waves": [[...]], "serial": [[...]]} instead of text',
     ),
 ) -> None:
     """Dependency waves of a dev plan: wave n = tasks whose every `Depends on:`
     task sits in an earlier wave. Exit 1 on a shared file without a
-    dependency path, a cycle, an unknown task, or a missing `Depends on:`
-    line — those plans have no safe parallel order. Tasks carrying a
+    dependency path, a cycle, an unknown task, a missing `Depends on:`
+    line, or an empty `Serial resource:` line — those plans have no safe parallel order. Tasks carrying a
     `Serial resource:` line print after `serial:` in their wave: they run one
     at a time, never in a parallel lane."""
     from strata_kb import planwaves

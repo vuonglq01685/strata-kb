@@ -300,7 +300,7 @@ today. Checking only at handover would be too late.
 | `docs/impl/<id>/plan.md` | `dev-plan` | one task per acceptance criterion, `- [ ]` checkboxes, a `Depends on:` line per task |
 | `docs/impl/<id>/ticket.md` | `kb ticket fetch` | the ticket fetched from the hub; gitignored, overwritten on every fetch, never edited |
 | `docs/impl/<id>/context.md` | `dev-implement-ticket` | resolved-context cache; gitignored, regenerated on demand |
-| `docs/impl/<id>/review/` | `dev-execute`, `dev-handover` | per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
+| `docs/impl/<id>/review/` | `dev-design`, `dev-plan`, `dev-execute`, `dev-handover` | A1/A2 round reports, pre-fix copies and round diffs, per-task diffs and reviewer reports, the branch diff, the merge-risk report; gitignored, derivable from git and the review records below |
 
 `kb init --kind dev` and `kb impl tidy` move an old flat layout
 (`docs/impl/<id>-plan.md`, …) into these folders.
@@ -369,10 +369,8 @@ SUGGESTED still standing after round 3 stops the flow and hands it to you.
 
 A1 and A2 are built to finish in one review round plus one verification round.
 The author runs a self-check before any reviewer sees the draft. Round 1 must
-be exhaustive: the reviewer returns a coverage matrix (every AC or task against
-every question) and tags each gap with a defect class. The fix sweeps the whole
-artefact for every instance of each class, not only the one cited. Later rounds
-only verify the fix against the diff. A design over 8 ACs or 600 lines, or a
+be exhaustive: the reviewer returns a coverage matrix (every task against every question, or every AC and axis item against the design sections) and tags each gap with a defect class. The fix sweeps the whole
+artefact for every instance of each class, not only the one cited. Later rounds verify the fix against the diff instead of re-reviewing everything. A design over 8 ACs or 600 lines, or a
 plan over 12 tasks or 600 lines, is reviewed in parallel slices, and a lead
 reviewer re-checks every slice finding, looks across slice borders, and checks
 for drift from the ticket and the design. When a round finds no fewer BLOCKER
