@@ -376,7 +376,7 @@ The runner starts this skill as `/ba-ticket-author <us-id>` (a new ticket) or `/
 1. Create the branch with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. (`auto/<mission-id>` for a mission amend; the Q&A run is already on `auto/qa`.)
 2. Commit the changed files (stage them by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
 3. Open the PR with `gh pr create --title "<ticket-id>: <short description>" --body "<what changed and why>"`.
-4. Wait for the checks with `gh pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`), fix it, commit, `git push`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
+4. Wait for the checks with `gh pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`), fix it, commit, `git push origin HEAD`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
 5. Every check green: `gh pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `gh pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `gh pr view --json state,mergedAt` before you end `failed`: `gh` can report an error from a worktree after the merge went through. A merged PR is a success.
 6. After the merge, `kb-publish-request.yml` on `main` publishes the change: do not run `kb publish` by hand. If the repo has no `.github/workflows/kb-publish-request.yml`, run `kb publish` once.
 
