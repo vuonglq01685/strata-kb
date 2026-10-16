@@ -4,6 +4,11 @@
 # step that "only runs on release", stop — that is exactly how the old pipeline
 # let bugs slip through to the very last minute. Add it here, so PRs run it too.
 #
+# A tag runs LESS, never more: with `artifact_only: true` (release.yml) the
+# source-tree tiers T0 and T1 are skipped, because release.yml first requires
+# the full gate from ci.yml to be green on the very commit being tagged. The
+# artifact tiers T2-T4 still run, on the artifact that is about to be published.
+#
 # Everything runs on GitHub-hosted runners: ubuntu-latest for every tier, plus
 # windows-latest rows on T1, T3 and T4 so a Windows-only break is caught on the
 # PR, not at release time.
@@ -16,10 +21,16 @@ on:
         type: string
         required: false
         default: ""
+      artifact_only:
+        description: "Skip T0/T1 (release: ci.yml already ran them on this SHA)."
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   t0-lint:
     name: T0 lint (ruff, format, pyright)
+    if: ${{ !inputs.artifact_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +56,7 @@ jobs:
 
   t1-tests:
     name: T1 unit/integration (${{ matrix.os }}, py${{ matrix.python }})
+    if: ${{ !inputs.artifact_only }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
