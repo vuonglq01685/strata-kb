@@ -13,7 +13,8 @@ and `missionlint.py` keep.
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, replace
 
 from strata_kb import lintcore, mission
 from strata_kb.mdmask import _blank_invisible
@@ -54,6 +55,7 @@ class StoryStatus:
     title: str
     status: str  # done | ready | draft | to-draft | blocked
     reasons: tuple[str, ...]  # blocked / draft
+    depends_on: tuple[str, ...] = ()  # full US ids; empty for unparented items
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]
@@ -318,7 +320,8 @@ def statuses(
             out.append(
                 StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
             )
-    return out
+    deps = {s.us_id: s.depends_on for _m, stories, _d in missions for s in stories}
+    return [replace(r, depends_on=deps[r.us_id]) for r in out]
 
 
 def _blocking(
@@ -378,9 +381,11 @@ def render(
     results: list[StoryStatus],
     notes: list[str],
     labels: dict[str, str] | None = None,
+    unparented: Sequence[StoryStatus] = (),
 ) -> str:
     """`labels` renames a status in the table only (the `Next:` line still
-    keys on the raw status)."""
+    keys on the raw status). `unparented` (tickets without a mission) get
+    their own block above the `Next:` line (which stays last)."""
     labels = labels or {}
     lines = [f"note: {n}" for n in notes]
     if lines:
@@ -391,14 +396,34 @@ def render(
             f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)} | "
             f"{'; '.join(r.reasons)} |"
         )
+    if unparented:
+        lines += ["", "Unparented:"]
+        lines += [
+            f"- {u.us_id} — {u.title}: {u.status}"
+            + (f" ({'; '.join(u.reasons)})" if u.reasons else "")
+            for u in unparented
+        ]
     lines += ["", _next_line(results)]
     return "\n".join(lines)
 
 
-def to_json(results: list[StoryStatus], notes: list[str]) -> dict:
+def _story_json(r: StoryStatus) -> dict:
+    return {
+        **asdict(r),
+        "reasons": list(r.reasons),
+        "depends_on": list(r.depends_on),
+    }
+
+
+def to_json(
+    results: list[StoryStatus],
+    notes: list[str],
+    unparented: Sequence[StoryStatus] = (),
+) -> dict:
     nxt = next_story(results)
     return {
         "notes": list(notes),
-        "stories": [{**asdict(r), "reasons": list(r.reasons)} for r in results],
+        "stories": [_story_json(r) for r in results],
+        "unparented": [_story_json(u) for u in unparented],
         "next": nxt.us_id if nxt is not None else None,
     }

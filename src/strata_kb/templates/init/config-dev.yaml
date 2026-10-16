@@ -19,3 +19,10 @@ repo_id: "{repo_id}"
 #         (zero secrets in this repo). This repo must also be allowlisted in
 #         the hub's federation/registry.yaml before publishing works.
 intake: ""
+# auto: full-auto mode. Switch with `kb auto on|off|status` (it appends a live
+#       `auto:` block below), then `kb auto run`. Intervals are seconds.
+# auto:
+#   enabled: false
+#   qa_interval: 300     # poll the hub for open questions
+#   idle_interval: 600   # wait between rounds when there is no task
+#   hotfix_base: ""      # branch hotfixes start from; empty = default branch

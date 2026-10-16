@@ -445,6 +445,14 @@ def has_remote(root: Path) -> bool:
     return _run(root, "remote", "get-url", "origin").returncode == 0
 
 
+def fetch_branch(root: Path, branch: str, *, timeout: float = 120.0) -> None:
+    """`git fetch origin <branch>` for an unattended caller: it fails instead of
+    prompting for a credential."""
+    proc = _run_network(root, {}, "fetch", "fetch", "origin", branch, timeout=timeout)
+    if proc.returncode != 0:
+        raise GitError(redact_url(f"fetch of '{branch}' failed: {proc.stderr.strip()}"))
+
+
 def remote_url(root: Path) -> str:
     proc = _run(root, "remote", "get-url", "origin")
     return proc.stdout.strip() if proc.returncode == 0 else ""

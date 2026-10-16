@@ -72,7 +72,7 @@ phải khớp với mục của repo bạn trong registry của hub (2.5).
 nối tới các công cụ tìm kiếm và trích dẫn của hub — nhưng qua hai placeholder,
 `${STRATA_KB_HUB_URL}` và `${STRATA_KB_HTTP_TOKEN}`, mà chưa ai điền giá trị.
 
-Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`). Lệnh này hỏi URL HTTP cơ
+Chạy `kb mcp-setup` (trong trợ lý: `/kb-mcp-setup`; `/kb-auto` là wrapper tương ứng cho chế độ full-auto, §3.11). Lệnh này hỏi URL HTTP cơ
 sở và token của hub — xin token từ người quản trị hub — ghi cả hai vào `.env`,
 đảm bảo git bỏ qua file đó, rồi xác minh chúng với hub, để một URL sai và một
 token bị từ chối trả về hai lỗi khác nhau:
@@ -376,6 +376,55 @@ không bao giờ tự viết thay.
   ngay.
 - **Xem ở đâu.** Menu **Q&A** của hub (`/ui/questions`) liệt kê mọi ticket có câu hỏi và
   trạng thái: mở, chờ publish, đã trả lời.
+
+## 3.11 Chế độ tự động hoàn toàn (tùy chọn)
+
+Một công tắc để repo BA này tự chạy, song song với repo Dev cũng bật chế độ tự động, cho đến
+khi mọi ticket trên hub đều `done`. Không bước nào chờ bạn: agent tự quyết từng D-row và
+câu hỏi mở, tự trả lời câu hỏi của Dev, tự tick Definition of Ready sau khi tự review, tự
+merge và publish. Lý do được ghi thành dòng `**Auto decision:**` ngay dưới `## Change log`.
+Chế độ này dành cho **một repo BA và một repo Dev trên mỗi hub**. Tài liệu đầy đủ: README,
+mục "Full-auto mode".
+
+**Bảo mật. Đọc trước khi bật.** Danh sách deny quyền chỉ là lớp phòng thủ bổ sung, không
+phải ranh giới an toàn. Lượt chạy merge bằng **quyền admin** và publish mà không ai review;
+ticket nào agent hiểu sai sẽ đi thẳng vào `main` và lên hub. Chủ repo phải bật branch
+protection của GitHub cho `main` (cấm force-push, cấm xóa, **áp dụng cả với administrator**)
+và giữ check CI ticket-lint (job `lint` trong `kb-ticket-lint.yml`) là bắt buộc trước khi bạn bật chế độ này.
+Đừng yêu cầu review phê duyệt trên `main`: agent không thể tự duyệt PR của mình, và
+`gh pr merge --admin` bị từ chối khi quy tắc áp dụng cả với administrator. Nếu vẫn yêu cầu
+review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng agent khi ấy có thể vượt qua nó.
+
+**Thiết lập một lần.**
+
+1. Tự viết mission đầu tiên (`/ba-mission-plan`). Vòng lặp chỉ làm backlog được giao.
+2. Đảm bảo `intake:` đã có trong `.kb/config.yaml` và trang Registry của hub đã **bật**
+   auto-merge cho repo này (và cho repo Dev). Hub phải là bản 1.29.0 trở lên.
+3. Chạy lại `kb init --kind ba` để có danh sách quyền trong `.claude/settings.json` (được
+   gộp vào file của bạn, mục của bạn được giữ nguyên) và các phần Auto mode trong skill.
+4. Đặt biến môi trường `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` (giá trị trong
+   `.mcp.json`), và đăng nhập CLI `claude` bằng gói subscription của bạn.
+5. Sau `kb auto on`, hãy commit và push `.kb/config.yaml` và `.claude/settings.json` lên nhánh mặc định.
+   `kb auto run` từ chối chạy cho đến khi bạn làm vậy: worktree Q&A được checkout từ nhánh
+   mặc định, và `kb publish` từ chối khi `.kb/` có thay đổi chưa commit.
+
+**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), commit và push hai
+file trên, sau đó `kb auto run` trong một terminal — hoặc gõ `/kb-auto run` ngay trong editor: nó tự commit, push và khởi động vòng lặp chạy nền (log ở `.kb/auto/run.log`). `kb auto status` cho biết công tắc, task hiện tại và lý do
+dừng; `kb auto off` dừng vòng lặp sau task đang chạy.
+
+**Nó làm gì.** Mỗi task là một tiến trình `claude -p` mới, nên task sau không thừa hưởng
+ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở hoặc câu hỏi mở có `blocks`
+(`/ba-mission-plan --amend`), ticket `draft` (`/ba-ticket-author --amend`), story
+`to-draft` kế tiếp (`/ba-ticket-author`), còn không thì chờ `idle_interval` giây. Mỗi thay
+đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
+worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
+đang mở của Dev bằng `/ba-answer-questions`.
+
+**Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
+`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Chờ hết hạn mức
+sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
+mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
+Trạng thái và log nằm trong `.kb/auto/` (git bỏ qua).
 
 ---
 
@@ -891,6 +940,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
@@ -906,11 +956,12 @@ kb init --kind ba
 Lệnh này **chỉ đụng tới file dựng khung** — các CI workflow (gồm
 `kb-publish.yml`), các skill, file bọc command và prompt, `.gitattributes`, và
 template dưới `docs/` — và chỉ ghi đè khi nội dung khác với template mới. Nó cũng
-nối `.kb/*-plan/` và `.kb/index.yaml` vào `.gitignore` nếu còn thiếu, và không bao
-giờ xoá dòng nào.
+nối `.kb/*-plan/`, `.kb/index.yaml` và `.kb/auto/` vào `.gitignore` nếu còn thiếu, và
+không bao giờ xoá dòng nào.
 
-`.kb/config.yaml`, `.kb/index.yaml` và `.claude/settings.json` không bao giờ bị
-`kb init` thường đụng tới. Điều đó gồm cả key `intake:` của `config.yaml`: repo tạo
+`kb init` thường không bao giờ đụng tới `.kb/config.yaml` và `.kb/index.yaml`, còn
+`.claude/settings.json` chỉ được hợp nhất thêm vào: hook theo dõi usage và danh sách quyền
+của chế độ tự động được thêm, mọi mục của bạn được giữ nguyên. Với `config.yaml`, điều đó gồm cả key `intake:` của `config.yaml`: repo tạo
 trước khi có publish plan không có key này, nên hãy thêm `intake: <url>` bằng tay
 (2.5).
 

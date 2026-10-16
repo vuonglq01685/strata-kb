@@ -204,3 +204,39 @@ Rules:
   `→ 1. Send back to the BA — cannot reproduce on 2.4.1, steps 3-4 unclear`.
   Flow order never hides a blocker. Three failed hypotheses make option 1
   "Question the architecture with the Dev".
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers questions during the run: a step above that says "once the Dev agrees", "ask the Dev" or "question the architecture with the Dev" is yours to carry out, under the rules below. Every step and every hard rule not named here stays as written.
+
+**Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<BUG-id>/auto-decisions.md` (create the file with the heading `# Auto decisions`; it is committed with the bug's other files). `dev-handover` copies the lines into the PR's `## Notes`.
+
+**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `gh pr list --head <branch> --state merged --json number,url` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
+
+**The branch and its base.** Only when no branch for this bug exists yet (see above). Read `hotfix_base` from `kb auto status --json`. Branch at once, from the remote default branch, and never check out `main`:
+
+- a `bug`: `git fetch origin main && git switch -c fix/<BUG-id> FETCH_HEAD`;
+- a `hotfix` with an empty `hotfix_base`: `git fetch origin main && git switch -c hotfix/<BUG-id> FETCH_HEAD`;
+- a `hotfix` with a `hotfix_base`: `git fetch origin <hotfix_base> && git switch -c hotfix/<BUG-id> FETCH_HEAD`, and `dev-handover` opens the PR with `--base <hotfix_base>`.
+
+**A real blocker is a BA question.** A blocker is something only the BA can settle: a bug that cannot be reproduced, a broken pinned citation, or a failed `kb ticket check`. Call `kb_question_ask(ticket, question, asked_by, context, blocks)`: `asked_by` is `kb-auto`; a bug has no ACs, so `blocks` is empty; `context` says what was tried. Skip the call when `kb_question_list` already shows the same question. Then end `AUTO-RESULT: blocked-qa Q<id>`. When Q&A is unavailable, end `AUTO-RESULT: failed qa-unavailable` instead.
+
+- **Intake: "create the branch once the Dev agrees"; a hotfix — "ask the Dev which production line to branch from"** → branch at once, from the base above. The production line is `hotfix_base`, or `main` when it is empty.
+- **Intake: a stale pinned citation — "the Dev decides"; a `broken` one is a STOP, a blocker for the BA** → `broken` and a failed `kb ticket check` are real blockers. For `stale`, read both versions: when the difference does not touch the bug's Expected result, continue on the pinned text and log both sides in an Auto decision line; otherwise it is a real blocker.
+- **Reproduce: "Report to the BA what was tried and what is missing; ask for a sharper bug"** → ask through a BA question that says what was tried and what is missing. No fix is written for a bug you cannot reproduce.
+- **Fix: three failed hypotheses — "question the architecture with the Dev"** → there is no Dev to ask. Record in `docs/impl/<BUG-id>/rootcause.md` what each attempt revealed and what looks shared, coupled or stateful, make no fourth attempt, and end `AUTO-RESULT: failed architecture <BUG-id>`.
+- **Handover: "The Dev opens the PR and merges"** → `dev-handover` does both under its own Auto mode, with these bug rules unchanged. For a `hotfix`, rule (d)'s production line is the `hotfix_base` above, `main` when it is empty.
+- **Re-entry: a hotfix with no branch — "ask the Dev for it first"** → the production line comes from `hotfix_base`; never ask.
+- **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD checkboxes for humans"** → `dev-handover` opens the PR and merges it under its own Auto mode. The rest of the rule stands: no work on `main`, no push to `main`, no DoD box ticked.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+
+- `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
+- `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks the fix: the bug did not reproduce, or a pinned citation is broken. The runner re-runs this task once the questions are answered.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `architecture <BUG-id>`, `qa-unavailable`, `tests-red`, `merged-without-history <pr-url>`, or `command-denied <command>`. The reason goes on the same line.

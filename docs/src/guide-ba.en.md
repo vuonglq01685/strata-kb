@@ -72,7 +72,7 @@ already wired to the hub's search and citation tools, but through two
 placeholders — `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that
 nothing has set yet.
 
-Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`). It asks for the hub's
+Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`; `/kb-auto` is the matching wrapper for full-auto mode, §3.11). It asks for the hub's
 HTTP base URL and token — ask your hub maintainer for the token — writes both
 into `.env`, makes sure git ignores that file, and then verifies them against
 the hub, so a wrong URL and a rejected token come back as different errors:
@@ -385,6 +385,58 @@ answers are yours; the agent never writes one for you.
   is no longer needed) is recorded as answered at once.
 - **Where to look.** The hub's **Q&A** menu (`/ui/questions`) lists every ticket with
   questions and their state: open, waiting for publish, answered.
+
+## 3.11 Full-auto mode (optional)
+
+A switch that lets this BA repo run on its own, beside a Dev repo in full-auto mode,
+until every ticket on the hub is done. Nothing waits for you: the agent decides each
+D-row and open question, answers the Dev's questions, ticks the Definition of Ready
+after its own review, merges and publishes. It writes down why in an
+`**Auto decision:**` line under the `## Change log`. Built for **one BA repo and one
+Dev repo per hub**. Full reference: README, "Full-auto mode".
+
+**Security. Read this first.** The permission deny list is defence in depth, not a
+boundary. The run merges with **admin rights** and publishes with no human review, and a
+ticket the agent gets wrong goes straight to `main` and the hub. The repo owner must
+enable GitHub branch protection on `main` (no force-push, no deletion, **include
+administrators**) and keep the ticket-lint CI check (`lint` in `kb-ticket-lint.yml`) required before you turn it on.
+Do **not** require approving reviews on `main`: the agent cannot approve its own PR, and
+`gh pr merge --admin` is refused when administrators are included. If you do require
+reviews, exclude administrators from that rule and accept that the agent can then bypass it.
+
+**Set up once.**
+
+1. Write the first mission yourself (`/ba-mission-plan`). The loop works the backlog
+   it is given.
+2. Make sure `intake:` is set in `.kb/config.yaml` and the hub's Registry page has
+   auto-merge **on** for this repo (and for the Dev repo). The hub must be 1.29.0 or
+   later.
+3. Re-run `kb init --kind ba` to get the permission allowlist in `.claude/settings.json`
+   (merged into your file, your entries stay) and the skills' Auto mode sections.
+4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values in `.mcp.json`)
+   and have the `claude` CLI logged in with your subscription.
+5. After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the default
+   branch. `kb auto run` refuses until you do: the Q&A worktree is checked out from the
+   default branch, and `kb publish` refuses a dirty `.kb/`.
+
+**Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
+`.kb/config.yaml`), commit and push the two files above, then `kb auto run` in a terminal — or `/kb-auto run` from your editor, which does the commit, the push and starts the loop detached (log in `.kb/auto/run.log`). `kb auto status` shows the switch,
+the current task, and why it stopped; `kb auto off` stops the loop after the current
+task.
+
+**What it does.** One fresh `claude -p` process per task, so no task inherits the
+last one's context. In order: a story held by an open D-row or blocking open question
+(`/ba-mission-plan --amend`), a `draft` ticket (`/ba-ticket-author --amend`), the next
+`to-draft` story (`/ba-ticket-author`), otherwise it waits `idle_interval` seconds. Each
+change goes through a branch, a PR, green CI and a merge; the merge publishes. A
+second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
+questions with `/ba-answer-questions` every `qa_interval` seconds.
+
+**When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
+`kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
+A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
+when every story and unparented ticket and bug is `done` and no question is open.
+State and logs are in `.kb/auto/` (git-ignored).
 
 ---
 
@@ -906,6 +958,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
 **Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
@@ -921,12 +974,13 @@ kb init --kind ba
 This touches **scaffold files only** — the CI workflows (including
 `kb-publish.yml`), the skills, command and prompt wrappers, `.gitattributes`, and
 the templates under `docs/` — and overwrites one only when its content differs
-from the new template. It also appends `.kb/*-plan/` and `.kb/index.yaml` to
-`.gitignore` if they are missing, and never removes a line.
+from the new template. It also appends `.kb/*-plan/`, `.kb/index.yaml` and
+`.kb/auto/` to `.gitignore` if they are missing, and never removes a line.
 
-`.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json` are never touched
-by a plain `kb init`. That includes `config.yaml`'s `intake:` key: a repo created
-before plan publishing has none, so add `intake: <url>` by hand (2.5).
+`.kb/config.yaml` and `.kb/index.yaml` are never touched by a plain `kb init`, and
+`.claude/settings.json` is only merged into: the usage hooks and the auto-mode
+permission lists are added, and every entry of yours stays. For `config.yaml` that
+includes its `intake:` key: a repo created before plan publishing has none, so add `intake: <url>` by hand (2.5).
 
 > **`--force` replaces all three outright**, unmerged: your hand-edited
 > `.kb/config.yaml` including `kind`, `repo_id` and `asset_store`;

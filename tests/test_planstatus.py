@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import planingest, planstatus
+from strata_kb import missionnext, planingest, planstatus
 from strata_kb.hub import HubHandle
 from tests.conftest import make_fed_entry
 from tests.test_missionlint import MISSION_ID
@@ -138,8 +138,32 @@ def test_hub_plans_statuses(plan_hub):
 def test_hub_plans_unparented_tickets(plan_hub):
     (repo,), _ = planstatus.hub_plans(plan_hub)
     assert repo.unparented == [
-        ("TAL-1580", "TAL-1580 — Show restrictive airspace details")
+        missionnext.StoryStatus(
+            "TAL-1580", "", "TAL-1580 — Show restrictive airspace details", "ready", ()
+        )
     ]
+
+
+def test_unparented_ticket_is_done_when_in_hist(plan_hub):
+    svc = plan_hub.root / "federation" / "dev-one" / "dev-svc" / "history.md"
+    svc.write_text(HISTORY + "| TAL-1580 | Bug | |\n", encoding="utf-8")
+    _, unparented, _ = planstatus.next_from_hub(plan_hub)
+    assert {u.us_id: (u.mission_id, u.status) for u in unparented} == {
+        "TAL-1580": ("", "done")
+    }
+
+
+def test_unparented_ticket_is_ready_when_not_in_hist(plan_hub):
+    stories, unparented, notes = planstatus.next_from_hub(plan_hub)
+    assert {u.us_id: u.status for u in unparented} == {"TAL-1580": "ready"}
+    assert len(stories) == 4 and notes == []
+
+
+def test_unparented_ticket_without_svc_is_ready_with_unknown_reason(fed_hub, tmp_path):
+    publish_ba(fed_hub, tmp_path / "ba-one", context_block(fed_hub))
+    _, (u,), notes = planstatus.next_from_hub(HubHandle(root=fed_hub))
+    assert (u.status, u.reasons) == ("ready", ("done: unknown",))
+    assert len(notes) == 1
 
 
 def test_hub_plans_missing_svc_is_a_note(fed_hub, tmp_path):

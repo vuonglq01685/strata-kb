@@ -936,6 +936,9 @@ def test_every_dev_workflow_wrapper_ends_on_the_next_step_block():
     for skill in DEV_WORKFLOW_SKILLS:
         for name in _dev_wrapper_names(skill):
             text = _read_init_template(name)
+            # The auto-mode section is an addendum after the off path; the
+            # block must be the last thing of the text before it.
+            text = text.split("\n## Auto mode\n")[0].rstrip("\n") + "\n"
             assert text.endswith("  Flow order never hides a blocker.\n"), name
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
@@ -678,3 +679,691 @@ def test_dev_sa_returns_text_only_and_names_the_business_reading():
     command = " ".join(read_template("claude-command-dev-sa.md").split())
     assert "plus what the AC could mean either way" in command
     assert "It returns text only" in command
+
+
+# --- full auto mode: BA skills take the auto path (Task 11) --------------------
+
+AUTO_HEADING = "\n## Auto mode\n"
+AUTO_OPENING = (
+    "Run `kb auto status --json`. When `enabled` is false, this section does not "
+    "apply. When true, the rules below replace the human gates named in them."
+)
+PRE_AUTO = Path(__file__).parent / "fixtures" / "bodies-pre-auto"
+
+BA_AUTO_BODIES = ["ba-ticket-author", "ba-mission-plan", "ba-answer-questions"]
+DEV_AUTO_BODIES = [
+    "dev-implement-ticket",
+    "dev-design",
+    "dev-plan",
+    "dev-execute",
+    "dev-handover",
+    "dev-fix-bug",
+]
+# The Dev claude skill/command files that are full copies of a body, not stubs
+# over it: each carries the same section as its body.
+DEV_FULL_COPIES = {
+    "claude-skill-dev-implement-ticket.md": "dev-implement-ticket",
+    "claude-command-dev-implement-ticket.md": "dev-implement-ticket",
+    "claude-command-dev-design.md": "dev-design",
+    "claude-command-dev-plan.md": "dev-plan",
+    "claude-command-dev-execute.md": "dev-execute",
+    "claude-command-dev-handover.md": "dev-handover",
+}
+KB_PUBLISH_COPIES = [
+    "claude-skill-kb-publish.md",
+    "copilot-kb-publish.prompt.md",
+    "cursor-kb-publish.md",
+]
+# Template file -> fixture holding its text before this task. The Claude
+# ba-ticket-author skill and ba-mission-plan command are full copies, not stubs
+# over the shared body, and kb-publish is three separate files; each gets the
+# same section appended.
+AUTO_FILES = {
+    **{f"bodies/{n}.md": f"{n}.md" for n in BA_AUTO_BODIES},
+    "claude-skill-ba-ticket-author.md": "claude-skill-ba-ticket-author.md",
+    "claude-command-ba-mission-plan.md": "claude-command-ba-mission-plan.md",
+    **{n: n for n in KB_PUBLISH_COPIES},
+    **{f"bodies/{n}.md": f"{n}.md" for n in DEV_AUTO_BODIES},
+    **{n: n for n in DEV_FULL_COPIES},
+}
+# dev-test-workflow is new: it has no pre-auto text to snapshot.
+NEW_AUTO_BODY = "bodies/dev-test-workflow.md"
+ALL_AUTO_FILES = sorted([*AUTO_FILES, NEW_AUTO_BODY])
+
+
+def _raw(template: str) -> str:
+    return BASE.joinpath(template).read_text(encoding="utf-8")
+
+
+def _auto_section(template: str) -> str:
+    text = _raw(template)
+    assert text.count(AUTO_HEADING) == 1, template
+    return text[text.index(AUTO_HEADING) + 1 :]
+
+
+def _bullets(section: str) -> list[str]:
+    """Each top-level `- ` bullet of the section as one whitespace-joined line."""
+    out: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("- "):
+            out.append(line[2:])
+        elif out and line.startswith("  ") and line.strip():
+            out[-1] += " " + line.strip()
+        elif not line.strip() or line.startswith("#"):
+            continue
+        elif out and not line.startswith(("    ", "|")):
+            out.append("")  # a paragraph ends the bullet run
+    return [" ".join(b.split()) for b in out if b]
+
+
+@pytest.mark.parametrize("name", BA_AUTO_BODIES)
+def test_ba_body_has_auto_mode_section(name):
+    section = _auto_section(f"bodies/{name}.md")
+    text = " ".join(section.split())
+    assert "AUTO-RESULT:" in text
+    assert text.startswith(f"## Auto mode {AUTO_OPENING}")
+    assert "**Auto decision:**" in text
+    assert "### Result line" in section
+
+
+@pytest.mark.parametrize("template", ALL_AUTO_FILES)
+def test_auto_mode_is_the_last_h2_and_ends_with_the_result_line_subsection(template):
+    section = _auto_section(template)
+    assert section.index("### Result line") > section.index(AUTO_OPENING), template
+    assert "\n## " not in section, template
+
+
+@pytest.mark.parametrize("template", sorted(AUTO_FILES))
+def test_off_path_text_is_unchanged(template):
+    # Rule: everything before the `## Auto mode` heading, trailing blank lines
+    # trimmed, equals the file as it stood before its Auto section (the fixture, same trim).
+    before = _raw(template)
+    before = before[: before.index(AUTO_HEADING)].rstrip("\n") + "\n"
+    pre = (PRE_AUTO / AUTO_FILES[template]).read_text(encoding="utf-8")
+    assert before == pre.rstrip("\n") + "\n", template
+
+
+@pytest.mark.parametrize(
+    "name", ["copilot-ba-ticket-author.prompt.md", "cursor-ba-ticket-author.md"]
+)
+def test_shared_ba_ticket_author_stubs_render_the_auto_section(name):
+    assert read_template(name).endswith(_auto_section("bodies/ba-ticket-author.md"))
+
+
+def test_claude_ba_ticket_author_skill_carries_the_same_auto_section():
+    assert _auto_section("claude-skill-ba-ticket-author.md") == _auto_section(
+        "bodies/ba-ticket-author.md"
+    )
+
+
+def test_claude_mission_plan_command_carries_the_same_auto_section():
+    # The four ba-mission-plan wrappers are byte-identical from `## Workflow`.
+    assert _auto_section("claude-command-ba-mission-plan.md") == _auto_section(
+        "bodies/ba-mission-plan.md"
+    )
+
+
+def test_kb_publish_copies_carry_one_identical_auto_section():
+    sections = {n: _auto_section(n) for n in KB_PUBLISH_COPIES}
+    assert len(set(sections.values())) == 1, sections.keys()
+    assert " ".join(sections[KB_PUBLISH_COPIES[0]].split()).startswith(
+        f"## Auto mode {AUTO_OPENING}"
+    )
+
+
+def _gates(template: str) -> list[str]:
+    return [b for b in _bullets(_auto_section(template)) if b.startswith("**")]
+
+
+# Every gate of spec 6.7 that a BA skill names, as the body names it.
+_BA_GATES = {
+    "bodies/ba-ticket-author.md": [
+        "Ask, don't guess",  # intake
+        "never auto-pick",  # KB-ref pick
+        "confirms which sections apply",  # pin
+        "Every AC is Given/When/Then",  # the BA-only DoR box
+        "Ask the BA for the trigger",  # amend trigger
+        "never commits or pushes",  # runner-driven PR
+    ],
+    "bodies/ba-mission-plan.md": [
+        "never auto-pick",
+        "Ask the BA for the trigger",
+        "You never flip a status",  # D-row OPEN -> DECIDED
+        "never tick an open-question checkbox",  # open question with blocks:
+        "never commits or pushes",
+    ],
+    "bodies/ba-answer-questions.md": [
+        "never answer a question yourself",
+        "ask them to re-check and re-tick",
+        "never commits, pushes or publishes",
+    ],
+    **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
+}
+
+
+# The Dev gates of spec 6.7, as the body names them (whitespace-normalised).
+# Each fragment must also appear in the off path, so the Auto bullet quotes a
+# gate that really exists there.
+_DEV_GATES = {
+    "bodies/dev-implement-ticket.md": [
+        "blocked by something unmerged",
+        "No `kb-context` block",
+        "do not continue past the gate",
+        "STOP and tell the Dev",
+        "the Dev decides",
+        "re-run /sa-ticket-ground",
+        "humans decide",
+        "after the Dev approves it",
+        "ask before running `dev-plan`",
+        "re-handover or reopen",
+        "offer `git switch -c <ticket-id>`",
+        "two tickets in flight",
+        "never merge",
+    ],
+    "bodies/dev-design.md": [
+        "GATE 1 — Dev approval before any plan is written",
+        "ask the Dev for a name once",
+        "stop and tell the Dev",
+        "hand the Dev the trend",
+        "goes to the Dev",
+        "let the Dev choose",
+        "the Dev's explicit go-ahead",
+    ],
+    "bodies/dev-plan.md": [
+        "GATE 2",
+        "ask the Dev once for the build/test/lint commands",
+        "ask the Dev for a name once",
+        "stop and tell the Dev",
+        "hand the Dev the trend",
+        "goes to the Dev, unfixed",
+        "stops the flow and goes to the Dev",
+        "let the Dev choose",
+        "the Dev's explicit go-ahead",
+    ],
+    "bodies/dev-execute.md": [
+        "a dedicated branch",
+        "stop and send it back to `dev-plan`",
+        "stop and return the task to `dev-plan`",
+        "a plan defect: stop, do not resolve",
+        "stop that task, return to `dev-design`",
+        "goes to the Dev",
+        "let the Dev choose",
+        "the Dev's explicit go-ahead",
+    ],
+    "bodies/dev-handover.md": [
+        "GATE 3",
+        "humans decide",
+        "tell the Dev to run `kb publish`",
+        "goes to the Dev",
+        "let the Dev choose",
+        "the Dev's explicit go-ahead",
+        "never merge",
+    ],
+    "bodies/dev-fix-bug.md": [
+        "once the Dev agrees",
+        "ask the Dev which production line",
+        "the Dev decides",
+        "Report to the BA what was tried",
+        "question the architecture with the Dev",
+        "The Dev opens the PR and merges",
+        "ask the Dev for it first",
+        "never merge",
+    ],
+}
+_ALL_GATES = {**_BA_GATES, **_DEV_GATES}
+
+
+def _normal(text: str) -> str:
+    return " ".join(text.split())
+
+
+@pytest.mark.parametrize("template", sorted(_DEV_GATES))
+def test_every_dev_gate_fragment_is_in_the_off_path_text(template):
+    raw = _raw(template)
+    off = _normal(raw[: raw.index(AUTO_HEADING)])
+    for fragment in _DEV_GATES[template]:
+        assert fragment in off, (template, fragment)
+
+
+@pytest.mark.parametrize("template", sorted(_ALL_GATES))
+def test_every_replaced_gate_is_a_bullet_with_its_auto_rule(template):
+    gates = _gates(template)
+    for fragment in _ALL_GATES[template]:
+        matching = [g for g in gates if fragment in g.split(" → ")[0]]
+        assert matching, (template, fragment)
+        assert all(" → " in g for g in matching), (template, fragment)
+
+
+def test_ba_ticket_author_auto_ticks_dor_box():
+    body = _body("ba-ticket-author.md")
+    # the off path keeps the row, and points nowhere: a human ticks it
+    assert (
+        "| Every AC is Given/When/Then and acceptance-testable … | never — the BA's judgement |"
+        in body
+    )
+    (gate,) = [
+        g
+        for g in _gates("bodies/ba-ticket-author.md")
+        if "Every AC is Given/When/Then" in g
+    ]
+    for phrase in ("fresh-context", "tick", "docs/ac-quality.md", "rewrite"):
+        assert phrase in gate, phrase
+    assert "never — the BA's judgement" in gate
+
+
+BRANCH_LINES = [
+    "git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD",
+    "git push -u origin HEAD",
+    'gh pr create --title "<ticket-id>: <short description>" --body',
+    "gh pr checks --watch",
+    "AUTO-RESULT: failed ci-red <pr-url>",
+    "gh pr merge --squash --delete-branch",
+    "gh pr merge --squash --admin --delete-branch",
+    "gh pr view --json state,mergedAt",
+    "kb-publish-request.yml",
+]
+
+
+def test_branch_rule_is_written_once_in_ba_ticket_author():
+    text = " ".join(_auto_section("bodies/ba-ticket-author.md").split())
+    for line in BRANCH_LINES:
+        assert line in text, line
+    assert "up to 2 rounds" in text
+    assert "never check out `main`" in text
+    for name in ("ba-mission-plan.md", "ba-answer-questions.md"):
+        other = " ".join(_auto_section(f"bodies/{name}").split())
+        assert "the branch rule in ba-ticket-author's Auto mode" in other, name
+        assert "git switch -c" not in other, name
+    assert "auto/<mission-id>" in " ".join(
+        _auto_section("bodies/ba-mission-plan.md").split()
+    )
+    assert "`auto/qa`" in " ".join(
+        _auto_section("bodies/ba-answer-questions.md").split()
+    )
+
+
+@pytest.mark.parametrize("template", ALL_AUTO_FILES)
+def test_result_line_contract_matches_parse_result(template):
+    from strata_kb.autorun.claude import parse_result
+
+    section = _auto_section(template)
+    text = " ".join(section.split())
+    assert "AUTO-RESULT: done" in text
+    assert "AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]" in text
+    assert "AUTO-RESULT: failed <reason>" in text
+    assert "last line" in text
+    assert parse_result("x\nAUTO-RESULT: done").kind == "done"
+    assert parse_result("x\nAUTO-RESULT: failed ci-red https://h/pr/1").kind == "failed"
+    assert parse_result("x\nAUTO-RESULT: blocked-qa Q1,Q2").ids == (1, 2)
+    # `done` takes no text after it, and `failed` needs a reason
+    assert "no text after `done`" in text
+    assert "always give a reason" in text
+
+
+def test_ba_skills_are_idempotent_on_finished_work():
+    for template in (
+        "bodies/ba-ticket-author.md",
+        "bodies/ba-mission-plan.md",
+        "bodies/ba-answer-questions.md",
+        *KB_PUBLISH_COPIES,
+    ):
+        text = " ".join(_auto_section(template).split())
+        assert "already finished" in text, template
+        assert "AUTO-RESULT: done" in text, template
+
+
+def test_kb_publish_auto_replaces_the_hard_rule_with_a_diff_review():
+    text = " ".join(_auto_section("claude-skill-kb-publish.md").split())
+    assert "NEVER run `kb publish` until the user has explicitly confirmed" in " ".join(
+        _raw("claude-skill-kb-publish.md").split()
+    )
+    for phrase in ("reviews the diff", "kb doctor", "kb diff", "proceed"):
+        assert phrase in text, phrase
+
+
+def test_auto_sections_name_no_model_id():
+    for template in ALL_AUTO_FILES:
+        assert "claude-" not in _auto_section(template), template
+
+
+@pytest.mark.parametrize("template", ALL_AUTO_FILES)
+def test_no_auto_section_names_origin_main_in_a_branch_switching_command(template):
+    # The deny list blocks `git switch|checkout|branch *main*`; deny beats allow.
+    for line in _auto_section(template).splitlines():
+        if re.search(r"git (switch|checkout|branch)", line):
+            assert "origin/main" not in line, (template, line)
+    assert "origin/main" not in _auto_section(template), template
+
+
+def test_ticket_author_already_finished_uses_the_mission_next_status():
+    text = " ".join(_auto_section("bodies/ba-ticket-author.md").split())
+    assert "`ready` or `done` (not `draft` or `to-draft`)" in text
+    assert "on `origin/main` with `DoR: PASS`" not in text
+
+
+def test_mission_plan_separates_done_from_no_blocker():
+    text = " ".join(_auto_section("bodies/ba-mission-plan.md").split())
+    assert "gh pr list --state merged --head auto/<mission-id>" in text
+    assert "no blocker and no such PR ever" in text
+
+
+def test_answer_questions_resumes_a_crashed_run_from_the_remote_branch():
+    text = " ".join(_auto_section("bodies/ba-answer-questions.md").split())
+    assert "git fetch origin && git pull origin auto/qa" in text
+    assert "git push -u origin HEAD" in text
+    assert "answers still go through the PR and the merge" in text
+
+
+def test_kb_publish_auto_leaves_publishing_to_the_merge_when_the_workflow_exists():
+    text = " ".join(_auto_section("claude-skill-kb-publish.md").split())
+    assert ".github/workflows/kb-publish-request.yml" in text
+    assert "do not run `kb publish` by hand" in text
+    assert "the merged PR that triggered it" in text
+
+
+# --- Task 12: Dev skills take the auto path; dev-test-workflow ----------------
+
+DEV_AUTO_ALL = [*DEV_AUTO_BODIES, "dev-test-workflow"]
+
+
+@pytest.mark.parametrize("name", DEV_AUTO_ALL)
+def test_dev_body_has_auto_mode_section(name):
+    section = _auto_section(f"bodies/{name}.md")
+    text = _normal(section)
+    assert "AUTO-RESULT:" in text
+    assert text.startswith(f"## Auto mode {AUTO_OPENING}")
+    assert "**Auto decision:**" in text
+    assert "### Result line" in section
+
+
+@pytest.mark.parametrize("copy,body", sorted(DEV_FULL_COPIES.items()))
+def test_dev_full_copies_carry_the_same_auto_section_as_their_body(copy, body):
+    assert _auto_section(copy) == _auto_section(f"bodies/{body}.md")
+
+
+def test_dev_stubs_render_their_auto_section():
+    checked = 0
+    for stub, body in _stubs().items():
+        name = body.removeprefix("bodies/").removesuffix(".md")
+        if name in DEV_AUTO_ALL:
+            assert read_template(stub).endswith(_auto_section(body)), stub
+            checked += 1
+    assert checked >= len(DEV_AUTO_ALL)
+
+
+def _dev_text(name: str) -> str:
+    return _normal(_auto_section(f"bodies/{name}.md"))
+
+
+def test_dev_handover_merges_publishes_and_names_the_admin_fallback():
+    text = _dev_text("dev-handover")
+    for line in DEV_BRANCH_LINES:
+        assert line in text, line
+    assert "gh pr merge --squash --admin --delete-branch" in text
+    assert "kb publish" in text
+    assert "kb svc note" in text
+    assert "up to 2 rounds" in text
+    assert "never merge on red or pending checks" in text.lower()
+    assert "never check out `main`" not in text  # handover never creates a branch
+
+
+DEV_BRANCH_LINES = [
+    "git push -u origin HEAD",
+    'gh pr create --title "<ticket-id>: <short description>" --body',
+    "gh pr checks --watch",
+    "AUTO-RESULT: failed ci-red <pr-url>",
+    "gh pr merge --squash --delete-branch",
+    "gh pr view --json state,mergedAt",
+    "--base <hotfix_base>",
+]
+
+
+def test_dev_implement_ticket_branches_at_once_and_ends_blocked_qa():
+    text = _dev_text("dev-implement-ticket")
+    assert "git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD" in text
+    assert "never check out `main`" in text
+    assert "AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]" in text
+    assert "kb_question_ask(" in text
+    assert "kb_question_list" in text
+    assert "git fetch origin && git switch auto/<ticket-id>" in text
+    assert "git pull origin auto/<ticket-id>" in text
+
+
+def test_dev_fix_bug_branches_at_once_and_reads_the_hotfix_base():
+    text = _dev_text("dev-fix-bug")
+    assert "hotfix_base" in text
+    assert "kb auto status --json" in text
+    assert "git fetch origin main && git switch -c fix/<BUG-id> FETCH_HEAD" in text
+    assert "git fetch origin main && git switch -c hotfix/<BUG-id> FETCH_HEAD" in text
+    assert (
+        "git fetch origin <hotfix_base> && git switch -c hotfix/<BUG-id> FETCH_HEAD"
+        in text
+    )
+    assert "--base <hotfix_base>" in text
+    assert "blocked-qa" in text
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-implement-ticket", "dev-handover", "dev-fix-bug", "dev-test-workflow"]
+)
+def test_dev_tasks_are_idempotent_on_finished_work(name):
+    text = _dev_text(name)
+    assert "already finished" in text.lower()
+    assert "AUTO-RESULT: done" in text
+
+
+def test_dev_resume_of_an_open_pr_pulls_the_remote_branch():
+    for name in ("dev-implement-ticket", "dev-handover", "dev-fix-bug"):
+        text = _dev_text(name)
+        assert "git fetch origin &&" in text, name
+        assert "git pull origin" in text, name
+        assert "CI step" in text, name
+
+
+def test_dev_phases_decide_review_gates_with_two_fix_rounds():
+    for name, reason in (("dev-design", "design-review"), ("dev-plan", "plan-review")):
+        text = _dev_text(name)
+        assert "`status: approved`" in text, name
+        assert "at most 2" in text, name
+        assert f"AUTO-RESULT: failed {reason}" in text, name
+        assert "fresh-context" in text or "fresh context" in text, name
+        assert "blocked-qa" in text, name
+
+
+def test_dev_plan_reads_commands_from_the_repo_never_asks():
+    text = _dev_text("dev-plan")
+    for source in (".github/workflows", "docs/conventions", "package.json"):
+        assert source in text, source
+    assert "never ask" in text.lower()
+
+
+def test_dev_phases_only_report_to_the_orchestrator():
+    for name in ("dev-design", "dev-plan", "dev-execute", "dev-handover"):
+        text = _dev_text(name)
+        assert "/dev-implement-ticket" in text, name
+        assert "started you directly" in text, name
+
+
+DEV_TEST_WORKFLOW_STUBS = [
+    "claude-skill-dev-test-workflow.md",
+    "claude-command-dev-test-workflow.md",
+    "copilot-dev-test-workflow.prompt.md",
+    "cursor-dev-test-workflow.md",
+]
+
+
+def test_dev_test_workflow_body_names_the_workflow_and_its_inputs():
+    text = _normal(_raw("bodies/dev-test-workflow.md"))
+    for needle in (
+        ".github/workflows/kb-test.yml",
+        "pull_request",
+        "push",
+        "langs:",
+        "docs/conventions/<lang>/testing.md",
+        "name: kb-test",
+        "Run the tests locally first",
+    ):
+        assert needle in text, needle
+    auto = _dev_text("dev-test-workflow")
+    for needle in (
+        "git fetch origin main && git switch -c auto/kb-test FETCH_HEAD",
+        "git push -u origin HEAD",
+        "gh pr checks --watch",
+        "gh pr merge --squash --delete-branch",
+        "gh pr merge --squash --admin --delete-branch",
+        "AUTO-RESULT: failed ci-red <pr-url>",
+    ):
+        assert needle in auto, needle
+    assert "origin/main" not in auto
+    # off path: a human asked for it, the PR is left for the human to merge
+    off = text[: text.index("## Auto mode")]
+    assert "left for the human to merge" in off
+
+
+@pytest.mark.parametrize("name", DEV_TEST_WORKFLOW_STUBS)
+def test_dev_test_workflow_stubs_render_the_body(name):
+    rendered = read_template(name)
+    assert "strata-kb:include" not in rendered
+    assert rendered.endswith(_raw("bodies/dev-test-workflow.md"))
+    assert "kb-test.yml" in rendered
+
+
+def test_kb_init_dev_writes_the_dev_test_workflow_wrappers_only_for_dev(tmp_path):
+    for kind in ("dev", "ba"):
+        target = tmp_path / kind
+        target.mkdir()
+        init_repo(target, kind)
+        wrappers = [
+            target / ".claude/skills/dev-test-workflow/SKILL.md",
+            target / ".claude/commands/dev-test-workflow.md",
+            target / ".github/prompts/dev-test-workflow.prompt.md",
+            target / ".cursor/commands/dev-test-workflow.md",
+        ]
+        for path in wrappers:
+            assert path.is_file() == (kind == "dev"), path
+            if kind == "dev":
+                text = path.read_text(encoding="utf-8")
+                assert "kb-test.yml" in text and "strata-kb:include" not in text
+
+
+def _allow_deny() -> tuple[list[str], list[str]]:
+    import json
+
+    perms = json.loads(_raw("claude-settings-auto.json"))["permissions"]
+
+    def patterns(rules: list[str]) -> list[str]:
+        return [r[len("Bash(") : -1] for r in rules if r.startswith("Bash(")]
+
+    return patterns(perms["allow"]), patterns(perms["deny"])
+
+
+def _permitted(command: str, allow: list[str], deny: list[str]) -> bool:
+    from fnmatch import fnmatchcase
+
+    ok = any(fnmatchcase(command, p) for p in allow)
+    return ok and not any(fnmatchcase(command, p) for p in deny)
+
+
+@pytest.mark.parametrize("template", ALL_AUTO_FILES)
+def test_dev_auto_commands_are_inside_the_allowlist(template):
+    if "dev-" not in template:
+        pytest.skip("BA section")
+    allow, deny = _allow_deny()
+    section = _auto_section(template)
+    seen = 0
+    for span in re.findall(r"`([^`\n]+)`", section):
+        for command in span.split(" && "):
+            command = command.strip()
+            if not re.match(r"(git|gh|kb) ", command):
+                continue
+            seen += 1
+            assert _permitted(command, allow, deny), (template, command)
+    assert seen, template
+
+
+# --- Task 12 fix round 1 -------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", DEV_AUTO_ALL)
+def test_dev_auto_sections_end_the_run_on_a_denied_command(name):
+    text = _dev_text(name)
+    assert "A command the permission system denies" in text
+    assert "command-denied <command>" in text
+    assert "Never work around a denial" in text
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
+)
+def test_dev_phases_report_a_denied_command_to_the_orchestrator(name):
+    assert "report `command-denied <command>` to the orchestrator" in _dev_text(name)
+
+
+def test_dev_plan_reads_kb_test_and_picks_lint_and_build_from_the_conventions():
+    text = _dev_text("dev-plan")
+    assert "`kb-test.yml` counts" in text
+    assert "`cmd.lint` and `cmd.build` come only from commands" in text
+    assert "`docs/conventions/<lang>.md`" in text
+
+
+def test_dev_test_workflow_waits_for_the_marker_workflow_too():
+    text = _dev_text("dev-test-workflow")
+    assert (
+        "or the workflow carrying the `# kb-test:` marker) must be among them" in text
+    )
+    assert "The new `kb-test` jobs" not in text
+
+
+def test_dev_test_workflow_branches_before_it_writes_or_runs_anything():
+    text = _dev_text("dev-test-workflow")
+    assert "Before you write or run anything" in text
+    assert text.index("Branch first") < text.index("The branch rule")
+    assert text.count("git switch -c auto/kb-test FETCH_HEAD") == 1
+
+
+def test_dev_fix_bug_checks_for_finished_work_before_it_branches():
+    text = _dev_text("dev-fix-bug")
+    assert text.index("Already finished") < text.index("The branch and its base")
+    assert "A local `fix/<BUG-id>`" in text
+    assert "`git switch fix/<BUG-id>`" in text
+
+
+def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():
+    text = _dev_text("dev-handover")
+    assert "report the `Q<id>` to the orchestrator" in text
+    assert "(on a direct run, end it yourself)" in text
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-implement-ticket", "dev-handover", "dev-fix-bug"]
+)
+def test_kb_doctor_is_read_for_its_publish_advice(name):
+    text = _dev_text(name)
+    assert "when it advises `kb publish`" in text
+    assert "says the hub lags" not in text
+
+
+@pytest.mark.parametrize("name", ["dev-execute", "dev-handover"])
+def test_three_round_cap_is_called_deliberate(name):
+    assert "3-round cap stays as written here, on purpose" in _dev_text(name)
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_kb_auto_body_pins_its_contract(tmp_path, kind):
+    init_repo(tmp_path, kind)
+    text = (tmp_path / ".claude" / "skills" / "kb-auto" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    for needle in (
+        "kb auto status --json",
+        "`running`",
+        "`default_branch`",
+        "git branch --show-current",
+        "-- .kb/config.yaml .claude/settings.json",
+        "nohup kb auto run > .kb/auto/run.log 2>&1 &",
+        "mkdir -p .kb/auto",
+        "STRATA_KB_AUTO_TASK=1",
+        "Never pass `--dangerously-skip-permissions`",
+    ):
+        assert needle in text, needle
+    assert "strata-kb:include" not in text

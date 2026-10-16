@@ -1,6 +1,6 @@
 [project]
 name = "strata-kb"
-version = "1.28.1"
+version = "1.29.0"
 description = "Knowledge Base as Code for large reference documents — 4 layers L0-L3, MCP server + web UI"
 readme = "README.md"
 license = "Apache-2.0"
@@ -131,6 +131,10 @@ ignore = ["B008"]
 # literal "claude"/"copilot" candidates (detect_runner) -- never a shell
 # string, never user-interpolated.
 "src/strata_kb/llm.py" = ["S603"]
+
+# S603: fixed `claude -p` argv, prompt on stdin -- never a shell string, and
+# the executable is the literal "claude" (or a test stub path).
+"src/strata_kb/autorun/claude.py" = ["S603"]
 
 # S607: fixed `docker`/`docker compose` argv built in code, never a shell
 # string and never user-interpolated.

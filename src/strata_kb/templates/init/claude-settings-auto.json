@@ -1,0 +1,121 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git fetch *)",
+      "Bash(git pull)",
+      "Bash(git pull origin *)",
+      "Bash(git switch -c *)",
+      "Bash(git switch auto/*)",
+      "Bash(git switch fix/*)",
+      "Bash(git switch hotfix/*)",
+      "Bash(git checkout -b *)",
+      "Bash(git branch *)",
+      "Bash(git worktree *)",
+      "Bash(git merge *)",
+      "Bash(git push -u origin HEAD)",
+      "Bash(git push origin HEAD)",
+      "Bash(gh pr *)",
+      "Bash(gh run view*)",
+      "Bash(gh run watch*)",
+      "Bash(gh run rerun*)",
+      "Bash(gh run list*)",
+      "Edit",
+      "Write",
+      "Read",
+      "mcp__strata-kb__*",
+      "Bash(kb mission *)",
+      "Bash(kb ticket *)",
+      "Bash(kb publish*)",
+      "Bash(kb svc *)",
+      "Bash(kb impl *)",
+      "Bash(kb plan *)",
+      "Bash(kb pr *)",
+      "Bash(kb resolve *)",
+      "Bash(kb context *)",
+      "Bash(kb query *)",
+      "Bash(kb doctor*)",
+      "Bash(kb code-ingest*)",
+      "Bash(kb usage *)",
+      "Bash(kb auto *)",
+      "Bash(kb status*)",
+      "Bash(kb diff *)",
+      "Bash(kb plan-ingest*)"
+    ],
+    "deny": [
+      "Bash(git push *main*)",
+      "Bash(git push *master*)",
+      "Bash(git push *--force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push -f*)",
+      "Bash(git push *:*)",
+      "Bash(git push *+*)",
+      "Bash(git push *--delete*)",
+      "Bash(git switch main)",
+      "Bash(git switch main *)",
+      "Bash(git switch -c main*)",
+      "Bash(git checkout main)",
+      "Bash(git checkout main *)",
+      "Bash(git checkout -b main*)",
+      "Bash(git branch -M main*)",
+      "Bash(git branch -m * main*)",
+      "Bash(git branch -D main*)",
+      "Bash(git branch -d main*)",
+      "Bash(git branch -f main*)",
+      "Bash(git branch main*)",
+      "Bash(git switch master)",
+      "Bash(git switch master *)",
+      "Bash(git switch -c master*)",
+      "Bash(git checkout master)",
+      "Bash(git checkout master *)",
+      "Bash(git checkout -b master*)",
+      "Bash(git branch -M master*)",
+      "Bash(git branch -m * master*)",
+      "Bash(git branch -D master*)",
+      "Bash(git branch -d master*)",
+      "Bash(git branch -f master*)",
+      "Bash(git branch master*)",
+      "Bash(git reset --hard*)",
+      "Bash(gh repo delete *)",
+      "Bash(gh run delete*)",
+      "Bash(kb init*)",
+      "Bash(rm -rf /*)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Write(.claude/settings.json)",
+      "Write(.claude/settings.local.json)",
+      "Edit(.git/**)",
+      "Write(.git/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "kb usage ingest-transcript --hook-stdin",
+            "timeout": 30,
+            "statusMessage": "Recording token usage..."
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "kb usage ingest-transcript --hook-stdin",
+            "timeout": 30,
+            "statusMessage": "Recording token usage..."
+          }
+        ]
+      }
+    ]
+  }
+}

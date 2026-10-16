@@ -380,17 +380,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_28_1_everywhere():
+def test_version_is_1_29_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.28.1"
+    assert project["project"]["version"] == "1.29.0"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.28.1"]
+    assert [p["version"] for p in own] == ["1.29.0"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.28.1 — 2026-10-16")
+    assert first.startswith("1.29.0 — 2026-10-16")
     assert "guide PDFs" in first and "were not rebuilt" in first
 
 
@@ -476,3 +476,36 @@ def test_docs_get_the_publish_flow_and_new_forms_right():
     ):
         text = _normalised(texts[name].read_text(encoding="utf-8"))
         assert "`<path> [NEW: D<n>]`" in text, name
+
+
+def test_docs_describe_full_auto_mode():
+    """1.29.0: README, the QUICKSTARTs and the guides carry the security note
+    and the facts a runner's owner must set up."""
+    readme = _normalised(_section(_readme_text(), "### Full-auto mode"))
+    for phrase in (
+        "merges pull requests with admin rights",
+        "branch protection on `main`",
+        "include administrators",
+        "required status check",
+        "`GET /api/questions`",
+        "AUTO-RESULT: done",
+        "`failed command-denied <command>`",
+        "`auto_merge: true`",
+        "`STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`",
+    ):
+        assert phrase in readme, phrase
+    init = REPO_ROOT / "src" / "strata_kb" / "templates" / "init"
+    for name in ("QUICKSTART-ba.md", "QUICKSTART-dev.md"):
+        text = _normalised((init / name).read_text(encoding="utf-8"))
+        assert "left it alone" not in text, name
+        assert "## Full-auto mode (optional)" in text, name
+        assert "branch protection on `main`" in text, name
+    for g in ("ba", "dev"):
+        for lang in ("en", "vi"):
+            guide = _normalised(
+                (REPO_ROOT / f"docs/src/guide-{g}.{lang}.md").read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert "kb auto run" in guide, (g, lang)
+            assert "branch protection" in guide, (g, lang)

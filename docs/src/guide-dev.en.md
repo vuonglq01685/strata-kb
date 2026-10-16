@@ -89,7 +89,7 @@ already wired to the hub's MCP tools, but through placeholders —
 `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that nothing has set
 yet.
 
-Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`). It asks for the
+Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`; `/kb-auto` is the matching wrapper for full-auto mode, §4.7). It asks for the
 hub's HTTP base URL and token, writes both into `.env`, makes sure git
 ignores that file, and then verifies them against the hub, so a wrong URL
 and a rejected token come back as different errors:
@@ -447,6 +447,60 @@ skill sorts them:
   it, it stops, because it cannot know the state. In `dev-design` and `dev-plan` a
   business question with `blocks: none` then falls back to `OPEN(BA)`; only a blocking
   one stops.
+
+## 4.7 Full-auto mode (optional)
+
+A switch that lets this Dev repo run on its own, beside a BA repo in full-auto mode,
+until every ticket on the hub is done: no gate waits for you. The agent approves GATE 1
+and GATE 2 after the independent review, opens the PR, fixes CI until it is green,
+merges, and runs `kb publish`. Every decision is a line in
+`docs/impl/<id>/auto-decisions.md`, copied into the PR's `## Notes`. Built for **one BA
+repo and one Dev repo per hub**. Full reference: README, "Full-auto mode".
+
+**Security. Read this first.** The permission deny list is defence in depth, not a
+boundary. The run merges with **admin rights** (only when review is the one missing
+requirement and every check is green) and nobody reviews the PR. A ticket misread by the
+agent goes straight to `main` and the hub. The repo owner must enable GitHub branch
+protection on `main` (no force-push, no deletion, **include administrators**) and keep
+`kb-test.yml` (or the workflow carrying the `kb-test` marker) as a **required check**
+(branch protection picks it by job name: `test-<lang>`). Do **not** require approving
+reviews on `main`: the agent cannot approve its own PR, and `gh pr merge --admin` is
+refused when administrators are included. If you do require reviews, exclude
+administrators from that rule and accept that the agent can then bypass it.
+
+**Set up once.**
+
+1. A mission and its tickets are on the hub (the BA side, by hand or in auto mode). The
+   hub must be 1.29.0 or later, because the runner polls Q&A over `GET /api/questions`.
+2. `intake:` is set in `.kb/config.yaml` and the hub's Registry page has auto-merge **on**
+   for this repo; without it no `hist` row lands and no story reaches `done`.
+3. Re-run `kb init --kind dev`. It merges the permission allowlist, with the test, install,
+   lint and build commands of your `langs:`, into `.claude/settings.json`, and refreshes
+   the skills (Auto mode sections) and adds `/dev-test-workflow`.
+4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; have `claude` logged in with
+   your subscription.
+5. After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the default
+   branch. `kb auto run` refuses until you do: `kb publish` refuses a dirty `.kb/`, so no
+   ticket would reach `done`.
+
+**Run.** `kb auto on`, then commit and push those two files, then `kb auto run` — or `/kb-auto run` from your editor, which does all three and starts the loop detached (log in `.kb/auto/run.log`). `kb auto status` shows the task, attempts, the
+questions it waits on and the stop reason; `kb auto off` stops after the current task.
+
+**What it does.** One fresh `claude -p` process per ticket. First, if no workflow runs
+the repo's tests, `/dev-test-workflow` writes and merges `kb-test.yml`, so "green CI" means
+tests ran. Then bugs first (`/dev-fix-bug`; a hotfix branches from `main` unless
+`auto.hotfix_base` names a production branch), then the first `ready` ticket that has no
+mission and is not a bug (`/dev-implement-ticket`), then the first `ready` story in mission
+order whose dependencies are `done` (`/dev-implement-ticket`). When a business question
+blocks a ticket, the Dev asks the BA through hub Q&A and waits; once every question is
+`answered` the same ticket resumes in a fresh process.
+
+**When it stops.** After two failed attempts at one ticket (a red CI after two fix rounds
+stops it at once); fix it, then `kb auto run` resumes it. A tool outside the allowlist ends
+the task `failed command-denied <command>`: add that command to `permissions.allow` in
+`.claude/settings.json` by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure.
+It finishes, exit `0`, when every story and every unparented ticket and bug is `done`.
+The default branch must be `main`.
 
 ---
 
@@ -820,9 +874,11 @@ Linux (CI) is that caveat, not real drift.
 | `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>/plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, missing `Depends on:`, or empty `Serial resource:` |
 | `kb impl tidy [--impl-dir]` | Move an old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; idempotent, never overwrites | `0` after a report, `1` when the dir is missing |
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
 
 **Slash commands:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
-`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`.
+`/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,
+`/dev-test-workflow` (full-auto mode).
 
 ---
 

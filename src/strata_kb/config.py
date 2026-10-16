@@ -51,6 +51,16 @@ class CodeIngestConfig(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class AutoConfig(BaseModel):
+    """`auto:` — the full-auto mode switch and its poll intervals (seconds).
+    `hotfix_base` empty = the repo's default branch."""
+
+    enabled: bool = False
+    qa_interval: int = 300
+    idle_interval: int = 600
+    hotfix_base: str = ""
+
+
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
@@ -59,6 +69,7 @@ class KBConfig(BaseModel):
     asset_store: AssetStoreConfig = Field(default_factory=AssetStoreConfig)
     langs: list[str] = Field(default_factory=list)
     code_ingest: CodeIngestConfig = Field(default_factory=CodeIngestConfig)
+    auto: AutoConfig = Field(default_factory=AutoConfig)
 
 
 def load_config(kb_dir: Path) -> KBConfig:

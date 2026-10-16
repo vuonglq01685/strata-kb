@@ -1,0 +1,358 @@
+
+You are phase 2 of the ticket-implementation pipeline, invoked after the
+Dev has approved the design at GATE 1. Your job: turn that design into
+`docs/impl/<ticket-id>/plan.md`, a resumable checkbox file that phase 3
+(`dev-execute`) reads and ticks task by task.
+
+*Counterpart in the superpowers plugin: `superpowers:writing-plans`.*
+
+**Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
+tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
+`kb_ticket_lint`, `kb_ticket_fetch`) whenever your client exposes them; fall back to the
+matching CLI command only when it does not, or the MCP server cannot be
+reached. `kb ticket fetch` runs as `kb_ticket_fetch`: save the text it returns
+as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb plan waves`, `kb pr lint`, `kb svc note` and the cache-writing `kb resolve --status-only --cache` /
+`--write-cache` stay CLI-first; where a step below names an MCP path for
+one, it is only the no-CLI fallback.
+
+## Freshness re-check (run this FIRST, every time)
+
+Cheap check first: `kb resolve --status-only --cache
+docs/impl/<ticket-id>/context.md <ticket-file>` (no CLI → `kb_resolve`;
+check the cache `version:` yourself). Exit 0 → use the cache, do NOT
+re-pull pinned content. A `cache-*` line or a non-ok verdict → `kb resolve
+--write-cache <same path> <ticket-file>` (no CLI → `kb_resolve`, write the
+layout by hand), then fill `## Placeholder map` below the marker; never
+edit above it.
+
+- **broken** → STOP. Blocker: the BA must re-pin. Never implement around a
+  citation that no longer resolves.
+- **stale** → show BOTH versions, humans decide: the resolve gives the
+  pinned content and the reason, `kb_get_section` (else `kb get …
+  --level l3`) the hub's version. Do NOT use `kb diff` — it compares
+  the local `.kb/` worktree to a local git rev, not this repo to the hub.
+- **ok** → continue.
+
+`<ticket-file>` may be `docs/impl/<ticket-id>/ticket.md`, the file
+`kb_ticket_fetch` (CLI: `kb ticket fetch <ticket-id>`) fetched from the
+hub.
+
+## Steps
+
+- **Read the design** — read `docs/impl/<ticket-id>/design.md`. Its
+  header must say `status: approved`; a `draft` design means GATE 1 has
+  not passed — say so in one line and stop. A `path: spike` design has
+  no plan: say so and point at `dev-handover`.
+- **Write the plan** — write `docs/impl/<ticket-id>/plan.md` with one
+  task per AC, or several tasks for a large AC, and every task names the
+  test that proves it. Per task, give exactly three headings: **Files**
+  (create / modify / test, by path); **Interfaces** (what this task
+  consumes from earlier tasks and what it produces for later ones —
+  exact names and types, because a task's implementer sees only their
+  own task); and **Steps** as `- [ ]` checkboxes, step 1 always being
+  the failing test.
+  Every task heading is `### Task <n>: <title>`, and the line directly
+  under it is `Depends on: none` or `Depends on: task 2, task 5` —
+  derived, never chosen: task B depends on task A when B consumes an
+  Interface A produces, **or** B and A share a path under **Files**, the
+  later task depending on the earlier. Two
+  tasks with no dependency path are therefore file-disjoint, which is
+  what lets `dev-execute` run them in parallel lanes. A task that
+  rebuilds, restarts or drives a shared running environment (an e2e or
+  compose stack, a shared database, fixed host ports) carries
+  `Serial resource: <name>` on the next line — one or more names,
+  comma-separated, the same name on every task that uses that environment.
+  It is a declaration, not a dependency: it adds no `Depends on:` edge, and
+  `kb plan waves` lists such tasks after `serial:` in their wave so
+  `dev-execute` runs them one at a time. The closing
+  verification task depends on every other task. Run
+  `kb plan waves docs/impl/<ticket-id>/plan.md` before offering GATE 2:
+  it prints the waves and fails on a shared path without a dependency,
+  a cycle, an unknown task, or a missing line.
+  The file opens with three header lines under its
+  title: `cmd.test: <command>`, `cmd.lint: <command>` (from `-code
+  §cmd.*`, or the Dev's answer) and `status: draft` — `kb pr lint` reads
+  `cmd.test:` from this file and requires it inside a `##
+  Testing` fence of the PR.
+- **A task with no test declares its exemption.** Every task's first
+  step is a failing test, with exactly four exceptions — config, CI,
+  docs and style changes, defined in `docs/tdd-exemptions.md`. A task
+  in one of those classes carries one line instead, and no other shape
+  is accepted: `Exempt: <config|ci|docs|style> — verified by <what>`.
+  The slug comes from that document; a change that fits none of the
+  four is not exempt, and a change that alters behaviour an AC can see
+  is never exempt whatever its file extension.
+- **Order and close** — order tasks so each one leaves the repo green, and
+  end the plan with one closing task for cross-cutting verification (full
+  suite + lint) that names the commands it will run — `cmd.test` and
+  `cmd.lint` from `-code §cmd.*`.
+- **No `-code` document yet** — when `-code §cmd.*` has no entry (this
+  repo has not run `/dev-code-seed` yet, or code-ingest found no such
+  command), ask the Dev once for the build/test/lint commands and record
+  them in the `cmd.test:` /
+  `cmd.lint:` header lines, so this closing task, `dev-execute`, and
+  `dev-handover` all have something to run.
+- **No linter in the repo** — when there is no linter at all to record as
+  `cmd.lint`, make setting one up the plan's first task, from the
+  *Linting* section of `docs/conventions/<lang>.md` (plus
+  `docs/conventions/<lang>.local.md` overrides), and record the command
+  it establishes as `cmd.lint`. Its red step is running that command and
+  watching it fail because no linter is configured. Whether the preset
+  applies at full strength or is narrowed so it passes on the current
+  tree is decided by the *Linting* section of
+  `docs/conventions/<lang>.md` — follow it, and carry every narrowed
+  rule into the PR's `## Notes`.
+- **GATE 2** — offered only after A2 comes back clean. The Dev approves
+  the plan before any code is written; once approved, flip the plan
+  header to `status: approved` and option 1 in the Next-step block below
+  is `/dev-execute <ticket-id>`. The checkbox file is also the resume
+  point, so it must be complete enough for a different session to pick up
+  cold.
+
+## Questions the plan cannot settle
+
+The `plan-author` subagent never calls the hub, and it cannot dispatch
+subagents. What it could not decide goes into a `## Questions raised`
+section of its draft: one item per question, tagged `business` or
+`technical`, each with `blocks: <AC ids|none>` — the ACs the answer would
+change. You, the orchestrator, handle every raised question; the author
+does not:
+
+- **technical** → dispatch `dev-sa` as a subagent (fresh context; the
+  question, `docs/impl/<ticket-id>/ticket.md` and the draft passed as file
+  paths; model named — the standard tier, as for authors), write its
+  decision into the draft's `## Technical decisions` as
+  `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author (or
+  the fix round) with those decisions.
+- **business** → call `kb_question_ask(ticket, question, asked_by, context,
+  blocks)` (`asked_by` = `git config user.name`, and when that is empty ask
+  the Dev for a name once and reuse it; `context` = where in the
+  plan it came up; `blocks` = the AC ids, or empty) and move the item to
+  the draft's `## Open questions` as
+  `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
+  `business question:`, treat the item as business and handle it the same
+  way.
+
+**Preservation rule.** Remove each handled item from `## Questions raised`.
+Every author and fix round keeps `## Technical decisions` and
+`## Open questions` verbatim and never re-raises a question already listed
+there. Before `kb_question_ask`, skip any item already in
+`## Open questions`.
+
+`kb_question_ask` has no CLI twin and works only against the shared hub
+server. Any other MCP target answers `Q&A needs the shared hub server —
+point MCP at it (kb mcp-setup)`; the hub can also answer
+`hub unreachable — queries need the hub federation` (the `HUB_DOWN` text) or
+`Q&A store error — see hub log`; treat each as Q&A unavailable, and so is a
+client that does not expose the tool. When Q&A is unavailable, a `business`
+item with `blocks: none` falls back to the pre-1.27 behaviour —
+`OPEN(BA)` in the draft and a note in the PR description — and the work
+continues; only a blocking one stops. For that one, stop and tell the Dev;
+this is a stop, never "no questions". The hub link for the Dev to share with the BA is
+`STRATA_KB_HUB_URL` (from the process env, or the `.env` that `kb mcp-setup`
+wrote; read only that line and never show `STRATA_KB_HTTP_TOKEN`) followed
+by the path `kb_question_ask` returned; if it is unset, give the path only.
+
+**Gate.** A blocking open BA question stops the gate: a plan whose
+`## Open questions` holds a question line without `— answered rev N`
+whose `blocks:` names an AC cannot pass GATE 2. Stop and give the Dev the
+hub Q&A link. A non-blocking open BA question does not stop the gate
+(`blocks: none`); it stays listed, and the A2 reviewer reads it as a known
+open item, not a defect (the rubric's Pre-code axis says so). The answer is
+picked up by `dev-implement-ticket` on its next entry, which marks a newly
+answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
+`— re-draft`, re-dispatch the `plan-author` with the re-fetched ticket, then strip
+that suffix (the line keeps `— answered rev N`). A line with
+`— answered rev N` and no `— re-draft` is already handled.
+
+## A2 — independent plan review (before GATE 2)
+
+Dispatch a `plan-author` subagent to turn the approved design into the plan —
+it gets the design file path, the ticket's acceptance criteria, the
+`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+— the one-task-per-AC shape, the three per-task headings, the `Depends on:`
+and `Serial resource:` lines, the `Exempt:` line format, the ordering rules,
+the author self-check below, and the Questions rule and preservation rule
+above (it lists what it could not decide under `## Questions raised`, tags
+each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
+the hub or asks the BA itself, and keeps `## Technical decisions` and
+`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle
+its `## Questions raised` before the reviewer is dispatched. Then review it
+with a different context.
+
+**Author self-check.** Before any reviewer sees a draft, the author — and
+every fix round after it — runs this checklist and fixes what it finds: every
+consumed Interface names the task that produces it, and that task's
+**Interfaces** lists it as produced under the same name and type; every task a
+task cites
+is the task that holds what it cites; every standard value cites a section of
+`docs/impl/<ticket-id>/context.md`; every task that drives a shared running
+environment declares `Serial resource:`; `kb plan waves` exits 0; every block
+a formatter re-wrapped is re-read. It returns the checklist result with the
+draft.
+
+Dispatch a `plan-reviewer` subagent with a fresh context — or slice reviewers,
+as **Size check** below decides. Hand each exactly: the
+path `docs/impl/<ticket-id>/plan.md`, the ticket's acceptance criteria, and the
+`## Pre-code axes` of `docs/pr-review-rubric.md` plus
+`docs/pr-review-rubric.local.md`. It answers six questions and nothing else:
+
+- Is there exactly one task per AC — none missing, none invented?
+- Does every task state its failing test before its implementation?
+- Is each task's **Interfaces** entry complete enough that its implementer
+  never has to read outside its own task block? An incomplete entry is a
+  BLOCKER: it is what forces an implementer to read wider and guess.
+- Does every task with no test declare `Exempt: <config|ci|docs|style>` and
+  name its verification?
+- Is every `Depends on:` line consistent with Files and Interfaces — no
+  two tasks without a dependency path share a path, every consumed
+  interface names its producer, no cycle? A miss is a BLOCKER. The
+  reviewer also runs `kb plan waves` and quotes its output; an error
+  there is a BLOCKER on its own.
+- Does every task that rebuilds, restarts or drives a shared running
+  environment (an e2e or compose stack, a shared database, fixed host
+  ports) declare `Serial resource:`? A missing line is a BLOCKER: two such
+  tasks in one wave would run in parallel lanes against the same stack.
+
+**Round 1 is exhaustive.** The reviewer writes its report to
+`docs/impl/<ticket-id>/review/a2-r<n>.md` (`mkdir -p` the folder first): a
+coverage matrix — every task against the six questions, each cell PASS, FAIL
+or not-checked — and a gap list in which every gap names its task, its
+severity, a defect class (a short name such as `interface not
+self-sufficient` or `mutation masking`) and a proposed fix. A not-checked cell
+sends a fresh reviewer back to exactly those cells, appending to the same
+report, before anything is fixed:
+round 1 finds every gap, not the first few.
+
+**Size check.** Before round 1, count the plan's tasks and lines. Up to 12
+tasks and 600 lines, one `plan-reviewer` reviews the whole plan. Above
+either, split the review into slices of at most 8 tasks, cut at wave
+boundaries where possible, and dispatch one `plan-reviewer` per slice in
+parallel, each handed the inputs above plus its slice's task numbers and
+filling the matrix for those tasks only (report `a2-r<n>-<slice>.md`). Then
+dispatch one
+`plan-lead-reviewer` with a fresh context, handing it the plan, the ticket's
+acceptance criteria, the approved design and every slice report. It writes
+the consolidated report `a2-r<n>.md`:
+
+- what no slice can see — `Depends on:` and Interfaces across slice borders,
+  every AC traced to a task across the whole plan, and the `kb plan waves`
+  output;
+- every slice finding re-checked against the plan text: a finding that does
+  not hold is dropped with the reason, duplicates are merged, and one defect
+  class gets one severity across slices;
+- drift — work no AC asks for, an AC weakened or left out, a design decision
+  changed without a `## Technical decisions` entry — in the plan or in a
+  proposed fix;
+- the slices' coverage matrices together cover every cell.
+
+A plan that needed slices adds a NOTE suggesting the BA split tickets of
+this size.
+
+**Class-wide fix.** Copy the plan to
+`docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
+with the report's BLOCKER and SUGGESTED gaps. For every gap it fixes the cited
+instance, sweeps the
+whole plan for the same defect class, and writes each further instance it
+fixed to `review/a2-r<n>-sweep.md`; then it re-runs the author self-check. An
+instance whose fix would change what the approved design mandates goes to the
+Dev, unfixed. The fix subagent gets the same
+Questions rule and preservation rule as the author.
+
+**Verification rounds.** Round 2 and later are not a fresh full review. A
+`plan-reviewer` with a fresh context gets the round-1 inputs, the previous gap
+list with its
+classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
+fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
+previous gap is closed, spot-checks instances of each class outside the
+sweep list, and checks the diff for regressions; it still reports any other
+defect it sees, and still runs `kb plan waves`. A full review runs again
+only for not-checked cells or a slice the diff mostly rewrote.
+
+**Stop.** Record each round in the plan file's `## Review record` table,
+same shape as the design file's: the verdict counts, coverage (checked cells
+over all cells) and the defect classes found. A gap a verification round
+finds outside the diff is recorded as `round-1 coverage miss`. The target is
+one review round plus one verification round. When a round's BLOCKER plus
+SUGGESTED count is not lower than the round before, stop at once and hand the
+Dev the trend and the open classes instead of spending the rounds left;
+otherwise the cap of 3 rounds holds. GATE 2 is offered
+only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
+left open; NOTE and NITS are recorded, not fixed.
+
+## Review dispatch contract (every review in this flow)
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  draft, the diff, the report. Whatever you paste stays in your context for
+  the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  implementers, the most capable one available for reviewers. Never inherit
+  the session default silently.
+- Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
+  standing after round 3 stops the flow and goes to the Dev.
+- A finding that contradicts the approved design or plan is never auto-fixed:
+  show the finding beside the text that mandates it and let the Dev choose.
+- Criteria come from the source that matches the review: the rubric's
+  `## Pre-code axes` for A1 and A2, its `## Merge-risk axes` for A5, and
+  `docs/conventions/<lang>.md` — plus the five pack files it links under
+  `docs/conventions/<lang>/` and `docs/conventions/common/` — for A3 and A4.
+  Each one's own `.local.md` override wins over its base file. Severity is
+  always BLOCKER / SUGGESTED / NOTE / NITS.
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers from
+  drafting, and write up its findings the same way — then STOP and hand the
+  result to the Dev. The phase does not advance on a fallback pass: one
+  context reviewing itself is a weaker substitute, not an equivalent — only
+  the Dev's explicit go-ahead advances it, recorded in the tick itself, e.g.
+  `Review: ✅ r<n> (fallback, Dev-approved)`.
+
+## Hard rules
+
+- A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.
+- Broken citation = blocker; stale citation = both versions surfaced, humans decide; neither is ever silently ignored.
+- No production code without a failing test observed first. No exception for small tickets, deadlines, or "obvious" changes.
+- Never claim done without showing the verification output.
+- Never invent or "remember" a standard value — every code/format/enum/threshold in code or tests is verbatim from the resolved section at the pinned version, with a citation comment.
+- `<repo>-svc` is for locating and cross-checking work only. It is never a source for an AC or a standard value.
+- The ticket is the BA's artifact: report placeholder resolutions and AC findings back; never edit the ticket.
+- An AC that cannot be implemented as written becomes `OPEN(BA)` — never reinterpreted, and never pushed past mid-implementation.
+- Never edit a test to make it pass; diagnose the cause.
+- Code is ground truth: when either code-knowledge document disagrees with the code, trust the code and note the mismatch.
+- Never modify a `reviewed` section of `-svc`; propose an amend.
+- `hist.*` entries are appended only by `kb svc note`, never hand-edited.
+- Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans.
+- KB feedback items found during implementation go in the PR description — dropping them silently violates DoD.
+
+`BA-Q:` comes from the local `## Open questions` lines of `design.md` /
+`plan.md`, not from the hub: `none` when no `Q<id>` line lacks
+`— answered rev N`, otherwise `open Q<ids>`; `dev-implement-ticket` refines
+open and waiting from `kb_question_list`. A mixed state is written
+`open Q1; waiting Q2`, and `unknown (Q&A unavailable)` is
+`dev-implement-ticket`'s when the Q&A tools are refused.
+
+## Next step — ALWAYS end your response with this block
+
+Close every response with a state line and an ordered list of next steps.
+Include it even when you stopped early or hit an error — especially then.
+
+    ## Next step
+
+    → 1. <next step in flow> — <what it does>   (next in flow)
+      2. <revise the current phase> — <how>
+      3. <stop/park> — <where the work is saved>
+
+    State: design <✅ approved|📝 draft|⬜ not written> · plan <✅ approved|📝 draft|⬜ not written|⚠ missing, N commits|n/a (spike)> · tasks <n>/<m> · PR <✅ opened|✅ merged|❌ closed|⬜ not opened|? unknown> · BA-Q: none | open Q<ids> | waiting Q<ids>
+
+Rules:
+- Option 1 is ALWAYS the next step in flow order: design → plan → execute → handover.
+- Show the exact command with the ticket id already filled in, ready to copy.
+- The `State:` line always shows all five markers, even the ones not yet reached.
+- A blocker takes option 1 instead and says so, e.g.
+  `→ 1. Send back to the BA — ref ATM-STD §5.3 is broken, re-pin needed`.
+  Flow order never hides a blocker.

@@ -135,16 +135,17 @@ refuses a repo whose kind is not recorded in `.kb/config.yaml` (run
 before it sends anything.
 
 Re-running `kb init` refreshes scaffold files (skills, templates, workflows) and
-preserves `.kb/index.yaml`, `.kb/config.yaml` and `.claude/settings.json` unless
-`--force`. `--lang <id>` (dev, repeatable) forces a conventions pack whose
+preserves `.kb/index.yaml` and `.kb/config.yaml` unless `--force`, and merges
+`.claude/settings.json` in `ba` and `dev` repos (your entries stay; `--force`
+replaces it; hub and child repos have none). `--lang <id>` (dev, repeatable) forces a conventions pack whose
 manifest is not detectable; `--assets none|s3` (hub) records the asset store.
 
 Slash commands are scaffolded for **Claude Code, GitHub Copilot and
 Cursor**: `/kb-ingest`, `/kb-summarize`, `/kb-approve`, `/kb-publish`,
 `/kb-docker-setup` on hub and child repos; `/ba-ticket-author`,
-`/ba-mission-plan`, `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`
-and `/kb-publish` (it publishes the plan) on a `ba` repo; the five
-dev-workflow commands, `/dev-fix-bug` and `/dev-sa` on a `dev` repo. MCP client wiring ships as
+`/ba-mission-plan`, `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`,
+`/kb-publish` (it publishes the plan) and `/kb-auto` on a `ba` repo; the five
+dev-workflow commands, `/dev-fix-bug`, `/dev-sa`, `/dev-test-workflow` and `/kb-auto` on a `dev` repo. MCP client wiring ships as
 `.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) on every kind —
 stdio on the hub, HTTP-with-env-vars everywhere else.
 
@@ -303,6 +304,7 @@ that follows it.
 | `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
+| `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL]` runs the loop (exit `0` done, `2` stopped, `1` refused). See [Full-auto mode](#full-auto-mode) |
 
 `kb usage` records what each ticket cost from Claude Code's own transcripts,
 subagents included (`Stop` + `SubagentStop` hooks, scaffolded by
@@ -1595,6 +1597,286 @@ nothing: the intake accepts a publish only from a `kb-publish/*` tag, so a dev
 repo publishes with `kb publish` after a merge, like a `ba` repo. `--scaffold-svc` is deliberately never passed in CI — CI
 must never create `pending` content, since that would fail its own build step.
 
+### Full-auto mode
+
+A switch per `ba` and `dev` repo that lets the two repos run on their own, on
+your machine, until every ticket on the hub is done. In this mode no step waits
+for a person: the agent reviews its own work, picks the best option, decides,
+writes down why, merges and publishes. It is built for **one BA repo and one Dev
+repo per hub**. Nothing changes while the switch is off: every skill shows the
+text it always showed.
+
+**Security note. Read before turning it on.** The permission deny list that
+`kb init` writes (below) is defence in depth, not a boundary. An unattended run
+**merges pull requests with admin rights** (`gh pr merge --admin`, only when
+branch protection asks for a review the agent cannot give, and only after every
+required check is green) and publishes to the hub, with no human review. A ticket
+the agent misreads goes straight to `main` and to the hub. Before you run it,
+the repo owner **must** enable GitHub branch protection on `main`: block force
+pushes and deletions, **include administrators**, and keep the repo's CI check as a
+**required status check**: in a Dev repo the `test-<lang>` job(s) of `kb-test.yml`
+(or of the workflow carrying the `kb-test` marker, see below); in a BA repo the
+`lint` job of `kb-ticket-lint.yml`. Branch protection picks checks by job name.
+Without that, "green CI" is only a convention the agent follows. Do **not**
+require approving reviews on `main` in an auto-mode repo: the agent cannot approve
+its own pull request, and `gh pr merge --admin` is refused when administrators
+are included in the rule. If you do require reviews, exclude administrators from
+that rule so `--admin` can merge; the owner then accepts that the agent can
+bypass that protection on `main` the same way. The deny list
+also cannot see the current branch: the agent's working tree must never sit on
+`main` with commits on it. The skills branch first; the runner does not guard this.
+
+**The easy path: `/kb-auto`.** `kb init --kind ba|dev` also ships a `kb-auto`
+skill (`/kb-auto on|off|status|run` in Claude Code, Copilot and Cursor). `run`
+turns the switch on if needed, commits and pushes `.kb/config.yaml` and
+`.claude/settings.json` when they are not yet on the default branch (only when
+your tree is on that branch), starts `kb auto run` detached with its output in
+`.kb/auto/run.log`, and shows the preflight reasons if it refuses. `status`
+reads `kb auto status --json`, whose `running` (pid or `null`) and
+`default_branch` fields exist for it. The prerequisites below still
+hold; the skill only does the mechanical steps for you.
+
+**Prerequisites.**
+
+- A person writes the first mission (`/ba-mission-plan`) before the switch goes
+  on. The loop works the backlog it is given; it does not invent one.
+- The hub is on **1.29.0 or later**. The runner polls ticket Q&A over the new
+  `GET /api/questions` route (below), which an older hub does not have.
+- `.kb/config.yaml` (with `auto.enabled: true`) and `.claude/settings.json` are
+  **committed and pushed to the default branch** before `kb auto run`. `kb auto on` only
+  edits the file. A dirty `.kb/` makes `kb publish` refuse, so no ticket would
+  reach `done`, and the BA's Q&A worktree is checked out from the default branch,
+  where the switch would still read `false`.
+- Both repos' hub registry entries have `auto_merge: true` (the Registry page),
+  and both repos have `intake:` set in `.kb/config.yaml`. Otherwise a merged
+  publish PR never reaches the hub, no `hist` row lands and no story reaches
+  `done`.
+- `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` in the environment of the
+  terminal that runs the loop (the same values `kb mcp-setup` wrote to `.env`
+  and `.mcp.json` uses).
+- The `claude` CLI on the `PATH`, **logged in with a Claude subscription**. The
+  runner never uses an API key and inherits whatever login `claude` has.
+- Re-run `kb init --kind ba` or `kb init --kind dev` after upgrading the CLI: it
+  writes the permission allowlist and refreshes the skills with their **Auto mode**
+  sections and `/kb-auto`, and a Dev repo gets the new `dev-test-workflow` skill.
+
+**The switch.** `.kb/config.yaml` of a `ba` or `dev` repo carries an `auto:`
+block, off by default:
+
+```yaml
+auto:
+  enabled: false
+  qa_interval: 300     # seconds between Q&A checks
+  idle_interval: 600   # seconds to wait when there is no work yet
+  hotfix_base: ""      # branch a hotfix starts from and merges to; empty = main
+```
+
+An existing repo's `config.yaml` has no live `auto:` block (`kb init` only adds
+it, commented, to a new one). `kb auto on` appends `auto:` with `enabled: true`
+only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change them.
+
+| Command | What it does |
+|---|---|
+| `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
+| `kb auto off` | Sets `enabled: false` (and prints the same commit sentence). A running loop stops at the next task boundary; it never kills a task midway |
+| `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
+| `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. Holds an OS lock on `.kb/auto/run.lock` (pid inside) for its lifetime: a second `kb auto run` in the same repo exits `1` with "already running (pid N)" while the first is alive; the OS drops the lock when the holder dies, so a file left by a crash is never stale. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
+
+The switch is the single source of truth. A skill run by hand with the switch on
+also takes the auto path.
+
+**Preflight.** `kb auto run` refuses to start (exit `1`, every reason printed)
+when the switch is off, the repo kind is not `ba`/`dev`, `intake:` is empty, or
+the repo's hub registry entry is missing or lacks `auto_merge: true` (both the BA
+repo and the Dev repo need it). It also refuses when `.kb/config.yaml` or
+`.claude/settings.json` is untracked or has uncommitted changes, or when the
+default branch's copy of `.kb/config.yaml` is missing or lacks `auto.enabled: true`:
+commit and push the switch to the default branch first (the check reads `origin/<default>` after a fetch, because the skills and the Q&A worktree work from origin).
+
+**One task, one fresh process.** The runner holds no model context. For each task
+it starts a new `claude -p --output-format json --permission-mode acceptEdits`
+process from the repo root (so `CLAUDE.md` and `.claude/settings.json` apply),
+sends a prompt naming the skill and its argument (`/dev-implement-ticket
+M-x-US3`), and reads the result when the process exits. The context is gone
+before the next task starts. It never uses `--dangerously-skip-permissions` or
+`bypassPermissions`. A task has a ceiling of 4 hours; past it the attempt counts
+as failed.
+
+**The BA loop.** Each turn the first of these that applies, from
+`kb mission next --json`:
+
+1. A story held by a **mission blocker** (an open D-row, or an unticked `## Open
+   questions` row with `blocks:`): `/ba-mission-plan --amend <mission>`. The agent
+   decides the D-row or answers the question, records why, and flips it to
+   `DECIDED` or ticks it.
+2. A story that is `draft`: `/ba-ticket-author --amend <ticket>`, until it passes.
+3. The `Next:` story that is `to-draft`: `/ba-ticket-author <story>`.
+4. Nothing to do: sleep `idle_interval`. The BA does not stop while Dev work is
+   open.
+
+Every task that changes the repo ends the same way: a branch, a PR, wait for CI,
+fix and push until it is green, squash-merge. The merge to `main` triggers
+`kb-publish-request.yml`, which publishes.
+
+**The BA Q&A thread.** While the BA loop runs, a background thread checks the hub
+every `qa_interval` for **open** questions on this repo's tickets. When there are
+any and no answer is in progress, it runs `/ba-answer-questions` in a **separate
+`claude -p` process in its own git worktree** (`.kb/auto/worktrees/qa`, branch
+`auto/qa`), beside the main task: own context, own files. It answers from the
+mission, the ticket and the KB, amends the ticket when the answer changes it,
+re-ticks the Definition of Ready after a fresh-context check, and goes through the
+same PR, green CI, merge, publish path. One answer at a time; new questions wait
+for the next check. Whichever side merges second merges `main` in and re-runs
+lint and check.
+
+**The Dev loop.** One ticket at a time, from `kb mission next --from-hub --json`:
+
+1. No workflow in `.github/workflows/` runs the repo's tests (none contains the
+   marker `kb-test`): `/dev-test-workflow`, once. The agent writes `kb-test.yml`
+   from the repo's languages and conventions, makes it pass and merges it. The
+   Dev templates only ship `kb-pr-lint.yml` and `kb-code.yml`, which do not run
+   the product's tests; "green" must mean tests ran. If your repo already has a
+   workflow that runs its tests, the skill puts a `# kb-test:` comment in it
+   instead of adding a second one.
+2. **Bugs first**: an unparented `BUG-n` that is ready runs `/dev-fix-bug`. A
+   hotfix branches from and merges to `main` unless `auto.hotfix_base` names a
+   production branch.
+3. Then the first `ready` unparented ticket that is not a bug (a ticket with no
+   mission): `/dev-implement-ticket <id>`.
+4. Then the first `ready` story in mission order **whose dependencies are all
+   `done`**: `/dev-implement-ticket <id>`: design, plan, execute, handover with
+   GATE 1 to 4 decided by the agent, then PR, green CI, merge, and `kb publish` so
+   the `hist` row reaches the hub and the story shows `done`.
+
+**Waiting on Q&A.** When a business question blocks a ticket the task ends
+`blocked-qa Q<ids>`. The Dev does not start another ticket; the loop sleeps
+`qa_interval`, checks those questions, and when **all** are `answered` (not just
+`waiting`: the amended ticket must be on the hub) re-runs the same task in a fresh
+process, which picks up the answers as it always does. The BA side does the
+answering, in its Q&A thread.
+
+**Stop rules.**
+
+- **Two failed attempts stop the loop.** A task that ends `failed` twice stops it.
+  A red CI that two fix rounds did not turn green (`ci-red`) stops it at once.
+  `kb auto status` shows `stop_reason`; the log says which ticket, PR and checks.
+  Fix the problem, then `kb auto run` again: it clears the stop and **resumes the
+  same task** with fresh attempts.
+- **A task that ended `done` is still picked.** The hub may not show it as `done`
+  yet (the publish PR is still merging). The runner does not run it again: it
+  waits `idle_interval` and checks again, and after 5 checks it stops with
+  `<task> ended done but is still picked after 5 checks`.
+- **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that did
+  not end `done` stop the loop with `qa thread: <reason>`. A usage-limit wait does
+  not count.
+- **Usage limit.** When `claude` reports the subscription limit, the task is
+  retried after 15, then 30, then 60 minutes (and 60 from then on); the backoff
+  resets after any other result. A usage-limit wait never counts as a failed
+  attempt.
+- **`kb auto off`** stops the loop at the next task boundary (`stop_reason:
+  switched off`).
+- **Done.** Before each task the runner checks the hub. When every mission story
+  and every unparented ticket and bug is `done` it logs a summary and exits `0`.
+  The BA side also needs no open question. A ticket without a mission or a bug is
+  `done` when its id appears in a `hist.*` row of the Dev repo's `-svc` document,
+  which `/dev-handover` writes only after the work, and which reaches the hub
+  only after the PR merged and the Dev published.
+- A crash or restart re-reads the state and re-runs the same task; the skills
+  resume from `docs/impl/<id>/`, the branch and the open PR.
+
+**State and logs.** `.kb/auto/` (git-ignored by `kb init`): `state.json` (current
+task, attempts, the question ids it waits on, the stop reason), `logs/` (one file
+per task: prompt, output, exit code, duration) and `worktrees/qa`.
+
+**What the agent decides.** Each human gate has an auto path. The agent first
+self-reviews, with a fresh-context reviewer subagent for anything the skill
+already reviews, and writes down what it checked and why it chose.
+
+| Gate (human today) | Skill | In auto mode |
+|---|---|---|
+| Pick the KB references ("never auto-pick") | `ba-ticket-author` | Picks the best-matching ones, notes why |
+| DoR box "Every AC is Given/When/Then" | `ba-ticket-author` | Reviews every AC; ticks only if all pass, else rewrites first (two rounds, then `failed ac-quality`) |
+| Amend asks the BA for the trigger | `ba-ticket-author` | The trigger comes from the runner (D-row, Q&A, failing check) |
+| D-row `OPEN` to `DECIDED`; mission open question with `blocks:` | `ba-mission-plan` | Decides or answers with reasons in the change log; ticks it |
+| "Never answer a question yourself" | `ba-answer-questions` | Answers from mission, ticket and KB; amends and re-ticks the DoR |
+| BA skills never commit, push or publish | BA skills | Branch, PR, green CI, merge, publish |
+| `/kb-publish` go/no-go | `kb-publish` | Reviews the diff and proceeds, or ends `failed publish-review` |
+| GATE 1 design approval, GATE 2 plan approval | `dev-design`, `dev-plan` | The independent review is the approval; a clean review flips `status: approved`; two fix rounds, then `failed design-review` / `failed plan-review` |
+| Build and test commands | `dev-plan` | Read from the repo (CI config, conventions, manifests); none found ends `failed no-test-command` |
+| "Let the Dev choose" on findings; stale citations, `[warn]`, unmerged dependencies | Dev skills | The agent chooses and notes why; a real blocker becomes a BA question |
+| GATE 3/4: a human opens and merges the PR | `dev-handover` | Opens the PR, fixes CI until green, merges, then `kb publish` |
+| Branch only once the Dev agrees; hotfix asks which line | `dev-fix-bug` | Branches at once; base from `auto.hotfix_base`, else `main` |
+| Open blocking question stops the ticket | `dev-implement-ticket` | Stops and reports `blocked-qa <ids>` to the runner |
+
+Every decision leaves an **`**Auto decision:**`** line: in the BA's `## Change
+log` (under the table), in the Dev's `docs/impl/<id>/auto-decisions.md` (copied
+into the PR's `## Notes`), or in the reply of `kb-publish`.
+
+**The `AUTO-RESULT:` contract.** The runner's prompt asks for one last line of
+the reply, in one of three forms. A skill you write yourself and want the runner
+to drive must end the same way:
+
+```
+AUTO-RESULT: done
+AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]
+AUTO-RESULT: failed <reason>
+```
+
+No text may follow it. A missing or malformed line counts as a failed attempt
+(`no result line`, `bad result line`).
+
+**Permission allowlist.** `kb init --kind ba|dev` writes `.claude/settings.json`
+(beside the usage hooks) so a headless run does not stop on a permission prompt.
+It is **merged** into an existing file: your own entries stay, only what is
+missing is added, and an unchanged file is not rewritten. `--force` replaces the
+whole file instead. A file that is not valid JSON is left alone with a note.
+
+- **Allowed:** `git` (add, commit, status, diff, log, fetch, `pull origin`, switch
+  to `auto/*`, `fix/*` and `hotfix/*`, `switch -c`, `checkout -b`, branch, worktree,
+  merge, `push -u origin HEAD`, `push origin HEAD`, bare `pull`), `gh pr`, `gh run` (view, watch, rerun, list), file
+  `Read`, `Edit` and `Write`, the `strata-kb` MCP tools, and `kb` subcommands
+  (`mission`, `ticket`, `publish`, `svc`, `impl`, `plan`, `pr`, `resolve`,
+  `context`, `query`, `doctor`, `code-ingest`, `usage`, `auto`, `status`,
+  `diff`, `plan-ingest`). `kb auto on|off|run` are allowed so `/kb-auto` works in
+  your own session. A task process the loop starts carries `STRATA_KB_AUTO_TASK=1`,
+  under which `kb auto on`, `off` and `run` refuse (`status` still works), so a task
+  can neither flip the switch nor start a second loop — in the main tree or in the
+  BA Q&A worktree.
+- **Per language (Dev repos):** test, install, lint and build commands for each
+  language in `.kb/config.yaml` `langs:`, from `LANG_COMMANDS` in
+  `initcmd.py`: for example `pytest`, `uv sync`, `ruff`, `pyright` for Python;
+  `npm test`, `npm ci`, `npm run lint`, `npm run build`, `npx tsc` for TypeScript;
+  `go test`, `go build`, `go vet`; `cargo test`, `cargo clippy`; `mvn test`,
+  `./gradlew test`; `dotnet test`; `composer install`, `vendor/bin/phpunit`;
+  `flutter test`, `dart analyze`; `swift test`. A Dev repo with no recorded
+  language gets none.
+- **Denied:** any `git push` that names `main` or `master`, force-push, `+` or `:`
+  refspecs and `--delete`; `git checkout`, `switch` and `branch` forms that move
+  onto, create, rename or delete `main` or `master` (a branch id that merely
+  contains the word, like `auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
+  `rm -rf /*`; editing or writing `.claude/settings.json`,
+  `.claude/settings.local.json` and `.git/**`.
+
+**Hub side.** 1.29.0 adds `GET /api/questions` (same bearer token as the rest of
+`/api`; params `repo`, `ticket`, `status` = `open` (default), `waiting`,
+`answered` or `all`). It is read-only JSON, `{"questions": [...]}`, and the
+runner uses it instead of MCP. **Upgrade the hub to 1.29.0 before a runner polls
+Q&A.** `kb mission next --from-hub --json` (and the MCP tool `kb_mission_next`)
+gain `unparented`, the tickets and bugs without a mission with their statuses,
+and every story and ticket carries `depends_on`.
+
+**Known limits.**
+
+- Usage-limit waits follow the 15 / 30 / 60 minute ladder; a reset time in the
+  message is not parsed.
+- The skills run `git fetch origin main`: the default branch must
+  be `main`.
+- A tool outside the allowlist and the per-language table is denied, and a Dev task
+  ends `failed command-denied <command>`. Widen `.claude/settings.json` by hand
+  (add the command to `permissions.allow`), then `kb auto run`.
+- One BA repo and one Dev repo per hub, one ticket at a time per repo. The BA's Q&A
+  thread is the only concurrency.
+
 ---
 
 ## 14. Reviewing content
@@ -1634,6 +1916,7 @@ second PR *there*, and merging that one is what makes it live.
 | `repo_id` | This repo's entry id under `federation/` |
 | `intake` | Intake service URL for `kb ci-publish` (child, `dev` and `ba` repos; http(s) only) |
 | `asset_store` | `{mode: none}` (default) or `{mode: s3, bucket: …}` |
+| `auto` | `ba` and `dev` repos: `{enabled: false, qa_interval: 300, idle_interval: 600, hotfix_base: ""}` — the full-auto switch and its poll intervals in seconds; see [Full-auto mode](#full-auto-mode) |
 
 ### Environment variables
 

@@ -36,7 +36,7 @@ from strata_kb.resolve import render_resolved, resolve_refs
 from strata_kb.serving.auth import (
     TokenAuthMiddleware as BearerAuthMiddleware,  # noqa: F401 — re-export
 )
-from strata_kb.serving.config import ServerConfig
+from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
 from strata_kb.ticketlint import lint as lint_ticket
 
 logger = logging.getLogger("strata_kb.mcp")
@@ -102,18 +102,6 @@ HUB_DOWN = (
 
 
 QA_NEEDS_HUB_SERVER = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
-
-
-def hub_serves_own_checkout(config: ServerConfig) -> bool:
-    """True when this server runs inside the hub's own checkout (the HTTP
-    server, or stdio with `--kb <hub>/.kb`) -- the only place the Q&A store is
-    the one shared copy. A dev repo pointing at a local hub path is refused."""
-    from strata_kb import hub as hub_mod
-
-    return (
-        hub_mod.is_local_hub(config.hub)
-        and Path(config.hub).resolve() == config.kb_dir.resolve().parent
-    )
 
 
 def _canonical_docstring(fn):
@@ -620,9 +608,9 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            results, notes = planstatus.next_from_hub(hub, repo or None)
+            results, unparented, notes = planstatus.next_from_hub(hub, repo or None)
             return stale_hub_note(hub) + missionnext.render(
-                results, notes, planstatus.FROM_HUB_LABELS
+                results, notes, planstatus.FROM_HUB_LABELS, unparented
             )
 
         return await anyio.to_thread.run_sync(_run)

@@ -116,3 +116,16 @@ def test_asset_store_rejects_unknown_mode(tmp_path):
     )
     with pytest.raises(pydantic.ValidationError, match="ftp"):
         load_config(tmp_path)
+
+
+def test_auto_config_block_parses(tmp_path):
+    kb = _kb(
+        tmp_path, "auto:\n  enabled: true\n  idle_interval: 30\n  hotfix_base: main\n"
+    )
+    auto = load_config(kb).auto
+    assert (auto.enabled, auto.qa_interval, auto.idle_interval, auto.hotfix_base) == (
+        True,
+        300,
+        30,
+        "main",
+    )

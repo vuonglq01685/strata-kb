@@ -1796,8 +1796,10 @@ def test_init_kind_dev_scaffolds_exactly_the_stage_a_set(tmp_path: Path):
     # + 1 (1.16.0: kb-doctor.yml, the scheduled stale-citation sweep)
     # + 4 (1.25.0: dev-fix-bug's own four-way wrappers)
     # + 4 (1.27.0: dev-sa's own four-way wrappers)
-    # = 63.
-    assert len(expected_files("dev")) == 63
+    # + 4 (1.29.0: dev-test-workflow's own four-way wrappers)
+    # + 4 (1.29.0: kb-auto's four-way wrappers)
+    # = 71.
+    assert len(expected_files("dev")) == 71
     assert sorted(report.created) == sorted(
         expected_files("dev") + list(initcmd.DEV_LOCAL_OVERRIDES) + [".gitignore"]
     )
@@ -1819,6 +1821,7 @@ def test_init_dev_appends_to_an_existing_gitignore_once(tmp_path: Path):
     lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert lines[0] == "node_modules/"
     assert lines.count(".kb/*-code/") == 1
+    assert lines.count(".kb/auto/") == 1
 
 
 def test_init_ba_writes_publish_workflow(tmp_path: Path):
@@ -1841,6 +1844,7 @@ def test_init_ba_gitignores_generated_kb_files(tmp_path: Path):
     # the first `kb publish` refuse on a dirty `.kb/`.
     assert lines.count(".kb/*-plan/") == 1
     assert lines.count(".kb/index.yaml") == 1
+    assert lines.count(".kb/auto/") == 1
     assert ".kb/*-code/" not in lines
 
 
@@ -2002,6 +2006,7 @@ def test_init_kind_dev_has_all_four_wrappers_per_workflow_skill(tmp_path: Path):
         "dev-handover",
         "dev-fix-bug",
         "dev-sa",
+        "dev-test-workflow",
     ):
         assert (tmp_path / ".claude" / "skills" / skill / "SKILL.md").is_file(), skill
         assert (tmp_path / ".claude" / "commands" / f"{skill}.md").is_file(), skill
@@ -2364,17 +2369,19 @@ def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
         assert ".claude/settings.json" not in expected_files(kind), kind
 
 
-def test_settings_json_is_protected_from_a_second_init(tmp_path: Path):
+def test_settings_json_is_merged_not_overwritten_by_a_second_init(tmp_path: Path):
     # initcmd overwrites any file outside PROTECTED_FILES, and a dev's own
-    # hooks live in this file.
+    # settings live in this file: ba/dev merge the template in, keeping them.
     init_repo(tmp_path, "dev")
     path = tmp_path / ".claude" / "settings.json"
     path.write_text('{"hooks": {}, "mine": true}', encoding="utf-8")
 
     report = init_repo(tmp_path, "dev")
 
-    assert ".claude/settings.json" in report.skipped
-    assert json.loads(path.read_text(encoding="utf-8"))["mine"] is True
+    assert ".claude/settings.json" in report.updated
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    assert settings["mine"] is True
+    assert "Bash(kb ticket *)" in settings["permissions"]["allow"]
 
 
 def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):

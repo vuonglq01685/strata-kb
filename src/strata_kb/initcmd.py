@@ -10,6 +10,8 @@ once. Templates live under `strata_kb/templates/init/`.
 
 from __future__ import annotations
 
+import copy
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -107,7 +109,7 @@ BA_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-ba.yaml",
     ".mcp.json": "mcp-child.json",
-    ".claude/settings.json": "claude-settings-usage.json",
+    ".claude/settings.json": "claude-settings-auto.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
     ".gitattributes": "gitattributes-child.txt",
     ".claude/skills/kb-publish/SKILL.md": "claude-skill-kb-publish.md",
@@ -115,6 +117,10 @@ BA_TEMPLATES: dict[str, str] = {
     ".cursor/commands/kb-publish.md": "cursor-kb-publish.md",
     ".github/workflows/kb-publish.yml": "kb-publish-ba.yml",
     ".github/workflows/kb-publish-request.yml": "kb-publish-request.yml",
+    ".claude/skills/kb-auto/SKILL.md": "claude-skill-kb-auto.md",
+    ".claude/commands/kb-auto.md": "claude-command-kb-auto.md",
+    ".github/prompts/kb-auto.prompt.md": "copilot-kb-auto.prompt.md",
+    ".cursor/commands/kb-auto.md": "cursor-kb-auto.md",
     ".claude/skills/ba-ticket-author/SKILL.md": "claude-skill-ba-ticket-author.md",
     ".claude/commands/ba-ticket-author.md": "claude-command-ba-ticket-author.md",
     ".github/prompts/ba-ticket-author.prompt.md": "copilot-ba-ticket-author.prompt.md",
@@ -233,8 +239,12 @@ DEV_TEMPLATES: dict[str, str] = {
     # exemption.
     ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-child.json",
-    ".claude/settings.json": "claude-settings-usage.json",
+    ".claude/settings.json": "claude-settings-auto.json",
     ".cursor/mcp.json": "cursor-mcp-child.json",
+    ".claude/skills/kb-auto/SKILL.md": "claude-skill-kb-auto.md",
+    ".claude/commands/kb-auto.md": "claude-command-kb-auto.md",
+    ".github/prompts/kb-auto.prompt.md": "copilot-kb-auto.prompt.md",
+    ".cursor/commands/kb-auto.md": "cursor-kb-auto.md",
     "docs/impl/.gitkeep": "gitkeep.txt",
     "docs/impl/.gitignore": "impl-gitignore.txt",
     "QUICKSTART-DEV.md": "QUICKSTART-dev.md",
@@ -270,6 +280,11 @@ DEV_TEMPLATES: dict[str, str] = {
             # Not a phase of the ticket workflow, so it stays out of the
             # tests' DEV_WORKFLOW_SKILLS canon and has its own pins.
             "dev-sa",
+            # Adds .github/workflows/kb-test.yml, the CI check that runs the
+            # repo's own tests. Auto mode's first Dev task, but a human can run
+            # it too. Not a ticket phase, so it stays out of the tests'
+            # DEV_WORKFLOW_SKILLS canon.
+            "dev-test-workflow",
         )
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
@@ -379,6 +394,8 @@ _PLAN_DOC_LINE = ".kb/*-plan/"
 # the first `kb publish` refuse on a dirty `.kb/`. `kb ci-publish` walks the
 # tree, so ignored files still upload.
 _BA_INDEX_LINE = ".kb/index.yaml"
+# Full-auto runner state and logs: local to the machine running it.
+_AUTO_DIR_LINE = ".kb/auto/"
 
 
 def _ensure_kb_doc_ignored(target: Path, line: str, report: InitReport) -> None:
@@ -554,6 +571,184 @@ def record_asset_store(config_path: Path, mode: str) -> str:
     return "recorded"
 
 
+_SETTINGS_REL = ".claude/settings.json"
+
+# Auto-mode commands per conventions language (test runners, installs, lint and
+# build), appended to `permissions.allow` for a dev repo's languages so a
+# headless `claude -p` run can run them: a command outside the list is denied.
+LANG_COMMANDS: dict[str, tuple[str, ...]] = {
+    "python": (
+        "Bash(pytest *)",
+        "Bash(python -m pytest*)",
+        "Bash(uv run pytest*)",
+        "Bash(pip install -e .*)",
+        "Bash(pip install -r *)",
+        "Bash(uv sync*)",
+        "Bash(uv pip install *)",
+        "Bash(ruff *)",
+        "Bash(pyright*)",
+        "Bash(mypy *)",
+    ),
+    "ts": (
+        "Bash(npm test*)",
+        "Bash(npm run test*)",
+        "Bash(pnpm test*)",
+        "Bash(yarn test*)",
+        "Bash(npm ci*)",
+        "Bash(npm install*)",
+        "Bash(npm run lint*)",
+        "Bash(npm run build*)",
+        "Bash(npx eslint *)",
+        "Bash(npx tsc *)",
+        "Bash(pnpm install*)",
+        "Bash(yarn install*)",
+    ),
+    "go": (
+        "Bash(go test *)",
+        "Bash(go mod download*)",
+        "Bash(go build *)",
+        "Bash(go vet *)",
+        "Bash(golangci-lint *)",
+    ),
+    "rust": (
+        "Bash(cargo test*)",
+        "Bash(cargo build*)",
+        "Bash(cargo clippy*)",
+        "Bash(cargo fmt*)",
+    ),
+    "java": (
+        "Bash(mvn test*)",
+        "Bash(mvn verify*)",
+        "Bash(gradle test*)",
+        "Bash(./gradlew test*)",
+        "Bash(mvn compile*)",
+        "Bash(gradle build*)",
+        "Bash(./gradlew build*)",
+    ),
+    "dotnet": (
+        "Bash(dotnet test*)",
+        "Bash(dotnet restore*)",
+        "Bash(dotnet build*)",
+    ),
+    "php": (
+        "Bash(vendor/bin/phpunit*)",
+        "Bash(php artisan test*)",
+        "Bash(composer install*)",
+        "Bash(vendor/bin/phpstan*)",
+        "Bash(vendor/bin/pint*)",
+    ),
+    "dart": (
+        "Bash(flutter test*)",
+        "Bash(dart test*)",
+        "Bash(flutter pub get*)",
+        "Bash(dart pub get*)",
+        "Bash(dart analyze*)",
+        "Bash(flutter analyze*)",
+    ),
+    "swift": ("Bash(swift test*)", "Bash(swift build*)"),
+    "e2e-playwright": (
+        "Bash(npx playwright test*)",
+        "Bash(npx playwright install*)",
+    ),
+}
+
+
+def _union(existing: list, extra: list) -> list:
+    return existing + [item for item in extra if item not in existing]
+
+
+def _hook_commands(groups: list) -> set[str]:
+    commands: set[str] = set()
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        hooks = group.get("hooks", [])
+        if not isinstance(hooks, list):
+            raise ValueError("a hook group's `hooks` is not a list")
+        commands.update(
+            cmd
+            for hook in hooks
+            if isinstance(hook, dict) and isinstance(cmd := hook.get("command"), str)
+        )
+    return commands
+
+
+def merge_settings(existing: dict, template: dict) -> dict:
+    """Template merged into `existing`; neither input is mutated.
+
+    `permissions.allow`/`deny`: existing entries first, then template entries
+    not already there. Hooks: per event, a template group is appended only when
+    none of its commands is already registered for that event. Every other key
+    of `existing` is kept. Raises ValueError when `existing` has an unexpected
+    shape (a user file is never coerced).
+    """
+    merged = copy.deepcopy(existing)
+    permissions = merged.setdefault("permissions", {})
+    if not isinstance(permissions, dict):
+        raise ValueError("`permissions` is not an object")
+    for key, extra in template.get("permissions", {}).items():
+        current = permissions.setdefault(key, [])
+        if not isinstance(current, list):
+            raise ValueError(f"`permissions.{key}` is not a list")
+        permissions[key] = _union(current, extra)
+    hooks = merged.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        raise ValueError("`hooks` is not an object")
+    for event, groups in template.get("hooks", {}).items():
+        current = hooks.setdefault(event, [])
+        if not isinstance(current, list):
+            raise ValueError(f"`hooks.{event}` is not a list")
+        have = _hook_commands(current)
+        for group in groups:
+            if not _hook_commands([group]) & have:
+                current.append(copy.deepcopy(group))
+    return merged
+
+
+def _dump_settings(settings: dict) -> str:
+    return json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
+
+
+def _apply_settings(
+    dest: Path,
+    template_text: str,
+    langs: Sequence[str],
+    force: bool,
+    report: InitReport,
+) -> None:
+    """ba/dev `.claude/settings.json`: create from the template, or merge into
+    the existing file (a dev's own permissions and hooks survive). `--force`
+    replaces it outright, like every other protected file."""
+    template = json.loads(template_text)
+    template["permissions"]["allow"] = _union(
+        template["permissions"]["allow"],
+        [cmd for lang in langs for cmd in LANG_COMMANDS.get(lang, ())],
+    )
+    if not dest.exists() or force:
+        _write_scaffold(dest, _SETTINGS_REL, _dump_settings(template), report)
+        return
+    try:
+        # utf-8-sig: Notepad saves JSON with a BOM, which json.loads rejects.
+        current = dest.read_text(encoding="utf-8-sig")
+        existing = json.loads(current)
+        if not isinstance(existing, dict):
+            raise ValueError("top level is not an object")
+        text = _dump_settings(merge_settings(existing, template))
+        unchanged = current == text
+    except (OSError, ValueError) as err:  # JSONDecodeError is a ValueError
+        report.skipped.append(_SETTINGS_REL)
+        report.notes.append(
+            f"{_SETTINGS_REL} left untouched ({err}); add the auto-mode "
+            "permissions by hand"
+        )
+        return
+    if unchanged:
+        report.skipped.append(_SETTINGS_REL)
+        return
+    dest.write_text(text, encoding="utf-8", newline="\n")
+    report.updated.append(_SETTINGS_REL)
+
+
 def _write_scaffold(dest: Path, rel: str, text: str, report: InitReport) -> None:
     if dest.exists():
         if dest.read_text(encoding="utf-8") == text:
@@ -614,10 +809,13 @@ def init_repo(
         if rel == ".gitignore":
             _apply_gitignore(dest, text, report)
             continue
+        if rel == _SETTINGS_REL and kind in (KIND_BA, KIND_DEV):
+            continue  # merged by _apply_settings, once the langs are known
         if dest.exists() and rel in PROTECTED_FILES and not force:
             report.skipped.append(rel)
             continue
         _write_scaffold(dest, rel, text, report)
+    settings_langs: list[str] = []
     if _record_kind(target / ".kb" / "config.yaml", kind):
         if ".kb/config.yaml" in report.skipped:
             report.skipped.remove(".kb/config.yaml")
@@ -625,9 +823,11 @@ def init_repo(
     if kind == KIND_BA:
         _ensure_kb_doc_ignored(target, _PLAN_DOC_LINE, report)
         _ensure_kb_doc_ignored(target, _BA_INDEX_LINE, report)
+        _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
         _ensure_kb_doc_ignored(target, _CODE_DOC_LINE, report)
+        _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
         scaffold_dev_local_overrides(target, report)
         done, conflicts = impltidy.tidy(target / "docs" / "impl")
         report.notes.extend(f"moved: {s} → {d}" for s, d in done)
@@ -635,11 +835,13 @@ def init_repo(
         cfg_path = target / ".kb" / "config.yaml"
         recorded = _recorded_langs(cfg_path, report)
         forced = sorted(set(langs) | set(recorded))
+        settings_langs = recorded
         scaffolded = conventions.scaffold_conventions(target, report, forced=forced)
         if scaffolded:
             conventions.ensure_claude_block(target, report)
         if langs:
             if record_langs(cfg_path, forced):
+                settings_langs = forced  # only langs that are now on record
                 report.updated.append(".kb/config.yaml (langs recorded)")
             elif recorded:
                 # Mirrors record_asset_store's "exists" branch below: append-
@@ -649,6 +851,18 @@ def init_repo(
                     f"langs: [{', '.join(recorded)}]; hand-edit langs: there "
                     "to change it"
                 )
+    if kind in (KIND_BA, KIND_DEV):
+        _apply_settings(
+            target / _SETTINGS_REL,
+            _render(
+                templates[_SETTINGS_REL],
+                read_template(templates[_SETTINGS_REL]),
+                repo_id,
+            ),
+            settings_langs,
+            force,
+            report,
+        )
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)
         if outcome == "recorded":

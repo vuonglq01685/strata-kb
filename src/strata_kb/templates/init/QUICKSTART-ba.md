@@ -443,14 +443,51 @@ In a mission's `Affected` cell it writes full story ids
   commits or pushes: you review the diff, tick what is left and commit.
   The next `kb publish` ships it.
 
+## Full-auto mode (optional)
+
+`kb auto on` lets this repo run on its own beside a Dev repo in full-auto mode,
+until every ticket on the hub is done; `/kb-auto run` from your editor commits the
+switch, pushes it and starts the loop detached (log in `.kb/auto/run.log`;
+`/kb-auto status` and `/kb-auto off` go with it), or `kb auto run` starts the loop in a
+terminal. It merges with **admin rights** and publishes with no human review, so
+read this before you turn it on.
+
+**Security.** The deny list in `.claude/settings.json` is defence in depth only.
+A ticket the agent gets wrong goes straight to `main` and the hub. The repo owner
+must enable GitHub branch protection on `main` (block force pushes and deletions,
+include administrators) and keep the ticket-lint CI check (`lint` in
+`kb-ticket-lint.yml`) required. Do **not** require approving reviews on `main`: the
+agent cannot approve its own PR, and `gh pr merge --admin` is refused when
+administrators are included. If you do require reviews, exclude administrators from
+that rule and accept that the agent can then bypass it.
+
+- Write the first mission yourself (`/ba-mission-plan`); the loop works the backlog.
+- After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the
+  default branch; `kb auto run` refuses until you do (the Q&A worktree is checked
+  out from the default branch, and `kb publish` refuses a dirty `.kb/`).
+- `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must
+  have auto-merge **on** for this repo and for the Dev repo. The hub must be 1.29.0
+  or later.
+- Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (as in `.mcp.json`) and log
+  the `claude` CLI in with your subscription.
+- `kb auto status` shows the current task and why it stopped; after two failed
+  attempts it stops, and `kb auto run` resumes the same task once you fixed the
+  cause. `kb auto off` stops it after the current task.
+- A second process answers the Dev's questions in its own worktree
+  (`.kb/auto/worktrees/qa`). State and logs: `.kb/auto/` (git-ignored).
+- Re-run `kb init --kind ba` to get the permission allowlist and the skills' Auto
+  mode sections. The full reference is the README's "Full-auto mode" section.
+
 ## Upgrading an existing BA repo
 
 Re-run `kb init --kind ba` to pick up new templates. This only ever
 touches **scaffold files** — the CI workflow, the skill/command/prompt
 wrappers, and the ticket/mission templates under `docs/` — and only
 overwrites one when its content differs from the new template;
-`.kb/config.yaml`, `.kb/index.yaml`, and `.claude/settings.json` are never
-touched by a plain `kb init` — but `--force` replaces all three outright:
+`.kb/config.yaml` and `.kb/index.yaml` are never touched by a plain
+`kb init`, and `.claude/settings.json` is only merged into (the usage hooks and
+the auto-mode permission lists are added; every entry of yours stays) — but
+`--force` replaces all three outright:
 your hand-edited `.kb/config.yaml` (`kind`, `repo_id`, `asset_store`
 included), `.kb/index.yaml`, and your whole `.claude/settings.json` (hooks,
 permissions and model included), none of it merged.
@@ -572,8 +609,9 @@ for f in ~/.claude/projects/<this-repo-slug>/*.jsonl; do
 done
 ```
 
-If this repo already had a `.claude/settings.json`, `kb init` left it alone.
-Merge the hooks in by hand:
+If this repo already had a `.claude/settings.json`, `kb init` merged the hooks
+into it and kept your own entries. To do the same by hand (for example when
+`kb init` printed a note that the file is not valid JSON), add:
 
 ```json
 {"hooks": {
@@ -600,9 +638,9 @@ Merge the hooks in by hand:
 it, the `Stop` sweep still records subagents, minus each one's last call (it
 may still be streaming when `Stop` runs).
 
-`--force` does not merge these hooks in for you: it replaces the whole file
-with the scaffolded one, so a repo with its own `.claude/settings.json`
-still needs the hand-merge above.
+`--force` does not merge: it replaces the whole file with the scaffolded one,
+so a repo with its own `.claude/settings.json` loses its entries. Leave
+`--force` off to keep them.
 
 `.kb/usage/report.html` is generated, not a record — the committed `.jsonl`
 ledgers are. Regenerate it whenever you want with `kb usage report`; commit it
@@ -686,6 +724,8 @@ tiering change shows up in the report the next ticket generates.
   snapshot, registry kind, `--context` citations). With `kb mcp-setup`
   done it asks the hub over MCP and needs no hub clone; otherwise it
   clones the git hub from `hub:` / `--hub <url>`
+- `kb auto on|off|status|run` — full-auto mode: the `auto:` switch in
+  `.kb/config.yaml`, the runner's state, and the loop (`run [--once]`)
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code

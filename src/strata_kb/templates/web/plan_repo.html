@@ -25,10 +25,10 @@
   <div class="panel">
     <div class="panel-head"><h2>Tickets without mission</h2>
       <span class="note">{{ plan.unparented | length }}</span></div>
-    {% for id, title in plan.unparented %}
+    {% for u in plan.unparented %}
     <div class="queue-row">
-      <a class="cite" href="/ui/tickets/{{ group | urlencode }}/{{ id | urlencode }}?repo={{ plan.repo | urlencode }}">{{ id }}</a>
-      <span class="file">{{ title }}</span>
+      <a class="cite" href="/ui/tickets/{{ group | urlencode }}/{{ u.us_id | urlencode }}?repo={{ plan.repo | urlencode }}">{{ u.us_id }}</a>
+      <span class="file">{{ u.title }}</span>
     </div>
     {% endfor %}
   </div>

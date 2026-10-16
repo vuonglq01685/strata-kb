@@ -125,6 +125,9 @@ code_sync_app = typer.Typer(
 )
 app.add_typer(code_sync_app, name="code-sync")
 
+auto_app = typer.Typer(help="Full-auto mode: switch it on or off per repo, see status.")
+app.add_typer(auto_app, name="auto")
+
 user_app = typer.Typer(help="Hub UI accounts: add, passwd, role, remove, list, hash.")
 app.add_typer(user_app, name="user")
 
@@ -968,6 +971,147 @@ def _code_sync_root(kb_dir: Path, command: str) -> Path:
 
     _require_hub_kind(kb_dir, command)
     return gitio.git_root(kb_dir.resolve().parent)
+
+
+_AUTO_COMMIT_HINT = (
+    "Commit and push .kb/config.yaml (and .claude/settings.json) to the default branch "
+    "before `kb auto run`."
+)
+
+
+def _refuse_inside_auto_task(action: str) -> None:
+    """`kb auto on|off|run` are the owner's: a task process the loop started
+    (marked by STRATA_KB_AUTO_TASK) must not flip the switch or start a
+    second loop. `status` stays allowed."""
+    import os
+
+    from strata_kb.autorun.runner import AUTO_TASK_ENV
+
+    if os.environ.get(AUTO_TASK_ENV):
+        typer.secho(
+            f"kb auto {action} is refused inside an auto-mode task "
+            f"({AUTO_TASK_ENV} is set); only the repo owner runs it",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+
+@auto_app.command("on")
+def auto_on(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Turn full-auto mode on (ba/dev repos only). Prints the risks first."""
+    from strata_kb.autorun import switch
+
+    _refuse_inside_auto_task("on")
+    from strata_kb.config import load_config
+
+    path = kb_dir / "config.yaml"
+    try:
+        kind = load_config(kb_dir).kind
+        if kind not in ("ba", "dev"):
+            typer.secho(
+                f"kb auto works in ba or dev repos only (this repo kind: {kind or 'unset'})",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        for line in switch.warnings_for_on(kb_dir, hub):
+            typer.echo(line)
+        switch.set_enabled(path, True)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+    typer.echo("auto: on")
+    typer.echo(_AUTO_COMMIT_HINT)
+
+
+@auto_app.command("off")
+def auto_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn full-auto mode off."""
+    from strata_kb.autorun import switch
+
+    _refuse_inside_auto_task("off")
+
+    path = kb_dir / "config.yaml"
+    try:
+        switch.set_enabled(path, False)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+    typer.echo("auto: off")
+    typer.echo(_AUTO_COMMIT_HINT)
+
+
+@auto_app.command("status")
+def auto_status(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    as_json: bool = typer.Option(False, "--json", help="Print the status as JSON"),
+) -> None:
+    """Show the auto switch, its intervals and the runner's current state."""
+    from strata_kb.autorun import switch
+
+    try:
+        data = switch.status(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(kb_dir / "config.yaml", exc)
+    if as_json:
+        typer.echo(json.dumps(data))
+        return
+    for key, value in data.items():
+        typer.echo(f"{key}: {value}")
+
+
+@auto_app.command("run")
+def auto_run(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    once: bool = typer.Option(
+        False, "--once", help="Run a single step, print its outcome and exit"
+    ),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Run full-auto mode: pick a task, run it, repeat. Logs to stderr.
+    Exit 0 done, 2 stopped, 1 refused or error, 130 interrupted."""
+    import logging
+
+    from strata_kb import gitio
+    from strata_kb.autorun import runner
+    from strata_kb.errors import KbError
+
+    _refuse_inside_auto_task("run")
+    try:
+        root = gitio.git_root(kb_dir.resolve().parent)
+        reasons = runner.preflight(root, kb_dir, hub)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    for reason in reasons:
+        typer.secho(reason, fg=typer.colors.RED)
+    if reasons:
+        raise typer.Exit(1)
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    try:
+        with runner.run_lock(kb_dir):  # one loop per repo; a nested run refuses
+            if once:
+                cfg, handle, qa = runner.build_deps(kb_dir, hub)
+                runner.resume(kb_dir)
+                outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
+                typer.echo(outcome)
+                code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
+            else:
+                code = runner.run_loop(root, kb_dir, hub_flag=hub)
+    except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    except KeyboardInterrupt:
+        typer.echo("stopped by user")
+        raise typer.Exit(130) from None
+    if code:
+        raise typer.Exit(code)
 
 
 @code_sync_app.command("scan")
@@ -3639,15 +3783,19 @@ def mission_next(
         raise typer.Exit(1)
     if from_hub:
         handle, reason = _hub_or_reason(hub, kb_dir)
-        results, notes = (
+        results, unparented, notes = (
             planstatus.next_from_hub(handle, repo or None)
             if handle is not None
-            else ([], [f"hub unavailable ({reason})"])
+            else ([], [], [f"hub unavailable ({reason})"])
         )
         if json_output:
-            typer.echo(json.dumps(missionnext.to_json(results, notes)))
+            typer.echo(json.dumps(missionnext.to_json(results, notes, unparented)))
         else:
-            typer.echo(missionnext.render(results, notes, planstatus.FROM_HUB_LABELS))
+            typer.echo(
+                missionnext.render(
+                    results, notes, planstatus.FROM_HUB_LABELS, unparented
+                )
+            )
         return
 
     for label, d in (("--missions-dir", missions_dir), ("--tickets-dir", tickets_dir)):
