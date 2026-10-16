@@ -89,7 +89,7 @@ def _write_log(
         f"=== PROMPT ===\n{prompt}\n=== STDOUT ===\n{stdout}\n"
         f"=== STDERR ===\n{stderr}\nexit={code} duration={secs:.1f}s\n"
     )
-    path.write_text(body, encoding="utf-8")
+    path.write_text(body, encoding="utf-8", newline="\n")
 
 
 # Narrow on purpose: "context limit" or "file size limit" is a hard failure,
