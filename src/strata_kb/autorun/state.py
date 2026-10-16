@@ -38,20 +38,35 @@ def _auto_dir(kb_dir: Path) -> Path:
     return kb_dir / "auto"
 
 
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _parse(raw: object) -> AutoState:
+    if not isinstance(raw, dict):
+        raise ValueError("not an object")
+    task, stop = raw["task"], raw["stop_reason"]
+    attempts, waiting, stamp = raw["attempts"], raw["waiting_on"], raw["updated_at"]
+    if task is not None and not isinstance(task, str):
+        raise ValueError("task must be a string or null")
+    if stop is not None and not isinstance(stop, str):
+        raise ValueError("stop_reason must be a string or null")
+    if not _is_int(attempts) or attempts < 0:
+        raise ValueError("attempts must be a non-negative integer")
+    if not isinstance(waiting, list) or not all(_is_int(n) for n in waiting):
+        raise ValueError("waiting_on must be a list of integers")
+    if not isinstance(stamp, str):
+        raise ValueError("updated_at must be a string")
+    return AutoState(task, attempts, tuple(waiting), stop, stamp)
+
+
 def load(kb_dir: Path) -> AutoState:
     path = _auto_dir(kb_dir) / STATE_NAME
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        return AutoState(
-            task=raw["task"],
-            attempts=int(raw["attempts"]),
-            waiting_on=tuple(int(n) for n in raw["waiting_on"]),
-            stop_reason=raw["stop_reason"],
-            updated_at=str(raw["updated_at"]),
-        )
+        return _parse(json.loads(path.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return _empty()
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError) as exc:
         _log.warning("ignoring unreadable %s: %s", path, exc)
         return _empty()
 
