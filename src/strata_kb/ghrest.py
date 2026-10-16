@@ -70,7 +70,9 @@ def origin_slug(root: Path) -> tuple[str, str]:
     m = _SCP_RE.match(url)
     host = m.group("host") if m else urlsplit(url).hostname
     if not slug or not host:
-        raise GHError(f"cannot derive owner/repo and host from origin '{url}'")
+        raise GHError(
+            f"cannot derive owner/repo and host from origin '{gitio.redact_url(url)}'"
+        )
     return host, slug
 
 

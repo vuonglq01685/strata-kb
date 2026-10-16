@@ -35,6 +35,22 @@ def test_wait_reports_stop(tmp_path, monkeypatch):
     assert got == "stopped: ci-red"
 
 
+def test_wait_probes_the_pid_before_reading_state(tmp_path, monkeypatch):
+    # loop writes stop_reason and exits between the two reads: the pid probe
+    # must come first so the later state read still sees the reason.
+    save(tmp_path, _state())
+
+    def probe(kb):
+        save(tmp_path, _state(stop="ci-red"))
+        return None
+
+    monkeypatch.setattr(wait, "running_pid", probe)
+
+    got = wait.wait_for_change(tmp_path, 100, sleep=lambda s: None, now=_clock())
+
+    assert got == "stopped: ci-red"
+
+
 def test_wait_reports_not_running_without_a_reason(tmp_path, monkeypatch):
     save(tmp_path, _state())
     monkeypatch.setattr(wait, "running_pid", lambda kb: None)

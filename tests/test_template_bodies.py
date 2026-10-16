@@ -1380,7 +1380,22 @@ def test_kb_auto_body_has_cloud_path():
         "Blocking: No",
         "run_in_background",
         "still running",
-        "git worktree remove .kb/auto/worktrees/switch",
+        "git worktree remove --force .kb/auto/worktrees/switch",
+    ):
+        assert needle in body, needle
+
+
+def test_kb_auto_cloud_switch_is_rerunnable_and_targets_the_default_branch():
+    body = " ".join(
+        BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8").split()
+    )
+    for needle in (
+        "git branch -D auto/switch",
+        "kb pr find --head auto/switch --state open --json",
+        "close that PR and delete the remote `auto/switch` branch on GitHub",
+        "Run cleanup on every stop inside this step and after the merge",
+        "Never force-push",
+        "kb pr open --head auto/switch --base <default_branch>",
     ):
         assert needle in body, needle
 

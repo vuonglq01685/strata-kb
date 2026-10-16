@@ -509,3 +509,14 @@ def test_docs_describe_full_auto_mode():
             )
             assert "kb auto run" in guide, (g, lang)
             assert "branch protection" in guide, (g, lang)
+
+
+def test_readme_and_changelog_pin_the_rerunnable_cloud_switch():
+    for text in (
+        _readme_text(),
+        (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+    ):
+        text = _normalised(text)
+        assert "`/kb-auto run` is re-runnable" in text
+        assert "closed and deleted on GitHub by hand" in text
+        assert "git branch -D auto/switch" not in text

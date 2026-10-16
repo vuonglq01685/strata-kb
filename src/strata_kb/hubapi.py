@@ -9,11 +9,10 @@ Same client shape as `autorun/qa.py`.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from urllib.parse import urlencode
 
-from strata_kb import httpio
+from strata_kb import cloud, httpio
 from strata_kb.dockersetup import TOKEN_VAR
 from strata_kb.errors import KbError
 from strata_kb.kbcontext import KBContextError, parse_ref
@@ -143,8 +142,9 @@ class HubApi:
 
 
 def from_env() -> HubApi:
-    url, token = os.environ.get(HUB_URL_VAR, ""), os.environ.get(TOKEN_VAR, "")
-    for name, value in ((HUB_URL_VAR, url), (TOKEN_VAR, token)):
-        if not value:
-            raise KbError(f"{name} is not set — the runner reads Q&A from the hub")
-    return HubApi(url.rstrip("/"), token)
+    creds = cloud.hub_http()
+    if creds is None:
+        raise KbError(
+            f"{HUB_URL_VAR} and {TOKEN_VAR} are needed to read the hub on Claude Code cloud"
+        )
+    return HubApi(*creds)

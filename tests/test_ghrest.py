@@ -46,6 +46,13 @@ def test_origin_slug_without_origin_raises(tmp_path):
         ghrest.origin_slug(tmp_path)
 
 
+def test_origin_slug_unparsable_error_redacts_credentials(tmp_path):
+    root = make_repo(tmp_path, "https://x-access-token:s3cr3tTok@github.com/justowner")
+    with pytest.raises(GHError, match="cannot derive") as exc:
+        ghrest.origin_slug(root)
+    assert "s3cr3tTok" not in str(exc.value)
+
+
 def test_api_sends_host_method_path_and_json_body_on_stdin(root, fake_gh):
     fake_gh.on("POST", "pulls", {"ok": 1})
     assert ghrest.api(root, "POST", "repos/o/r/pulls", {"a": "é"}) == {"ok": 1}

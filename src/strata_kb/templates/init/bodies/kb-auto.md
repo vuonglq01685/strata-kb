@@ -91,25 +91,33 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
 4. Get the switch onto the default branch. Run
    `git fetch origin <default_branch>`, then read
    `git show origin/<default_branch>:.kb/config.yaml`. When its `auto:` block
-   already has `enabled: true`, skip to step 5. Otherwise:
-   1. Tell the owner the switch PR will be admin-merged into
+   already has `enabled: true`, skip to step 5. Otherwise, **cleanup** means:
+   `git worktree remove --force .kb/auto/worktrees/switch` when that path
+   exists, then `git branch -D auto/switch` when that local branch exists.
+   Run cleanup on every stop inside this step and after the merge (4.10), so
+   a re-run starts clean. Never force-push to get past a conflict.
+   1. Run cleanup now, in case an earlier run failed. Then run
+      `kb pr find --head auto/switch --state open --json`. When it lists a PR,
+      an earlier switch PR is still open: tell the owner to close that PR and
+      delete the remote `auto/switch` branch on GitHub, then run `/kb-auto
+      run` again, and stop.
+   2. Tell the owner the switch PR will be admin-merged into
       `<default_branch>`, with no review.
-   2. `git worktree add .kb/auto/worktrees/switch -b auto/switch FETCH_HEAD`.
-   3. The PR flips only `auto.enabled`; it never copies files over the
+   3. `git worktree add .kb/auto/worktrees/switch -b auto/switch FETCH_HEAD`.
+   4. The PR flips only `auto.enabled`; it never copies files over the
       default branch, which could revert changes made there since the session
       branch forked. In the worktree run
       `kb auto on --kb-dir .kb/auto/worktrees/switch/.kb` and show its
       warnings verbatim. Then compare the permissions: when
       `git diff --no-index --quiet .claude/settings.json .kb/auto/worktrees/switch/.claude/settings.json`
       exits non-zero (they differ, or the worktree has none), do not copy
-      the file. Run `git worktree remove --force .kb/auto/worktrees/switch`,
-      tell the owner to commit the auto-mode settings (the `kb init --kind
-      ba|dev` output) to `<default_branch>` first, and stop. Otherwise commit
-      only what changed:
+      the file. Run cleanup, tell the owner to commit the auto-mode settings
+      (the `kb init --kind ba|dev` output) to `<default_branch>` first, and
+      stop. Otherwise commit only what changed:
       `git -C .kb/auto/worktrees/switch add .kb/config.yaml` and
       `git -C .kb/auto/worktrees/switch commit -m "chore: enable full-auto mode"`.
-   4. `git -C .kb/auto/worktrees/switch push -u origin HEAD`.
-   5. Write the PR body to `.kb/auto/switch-pr.md` (run `mkdir -p .kb/auto`
+   5. `git -C .kb/auto/worktrees/switch push -u origin HEAD`.
+   6. Write the PR body to `.kb/auto/switch-pr.md` (run `mkdir -p .kb/auto`
       first). It must pass `kb pr lint`, so it has exactly these three
       sections, each filled in:
       `## Ticket` — "None: owner-approved chore, enable full-auto mode."
@@ -120,13 +128,18 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
       `Blocking: No`.
       Run `kb pr lint .kb/auto/switch-pr.md`; on a failure fix the file and
       lint again before opening.
-   6. `kb pr open --head auto/switch --title "chore: enable full-auto mode" --body-file .kb/auto/switch-pr.md`.
-   7. `kb pr checks auto/switch --watch`. Red (exit 1): show the failing
-      checks and stop; never merge on red or pending checks.
-   8. `kb pr merge auto/switch --squash --admin --delete-branch`. After an
+   7. `kb pr open --head auto/switch --base <default_branch> --title "chore: enable full-auto mode" --body-file .kb/auto/switch-pr.md`.
+      Always pass `--base`: without it the PR could target the session branch.
+   8. `kb pr checks auto/switch --watch`. Red (exit 1): show the failing
+      checks, run cleanup, and stop; never merge on red or pending checks.
+      The PR stays open: tell the owner to close it and delete the remote
+      `auto/switch` branch on GitHub before a re-run.
+   9. `kb pr merge auto/switch --squash --admin --delete-branch`. After an
       error, run `kb pr view auto/switch --json` before you stop: a merged PR
-      is a success.
-   9. `git worktree remove .kb/auto/worktrees/switch`.
+      is a success. On a real failure run cleanup and stop; the PR stays
+      open, so tell the owner to close it and delete the remote `auto/switch`
+      branch on GitHub before a re-run.
+   10. Run cleanup.
 5. `mkdir -p .kb/auto`, then start the loop detached exactly as in `run`
    steps 7 and 8 above (`nohup kb auto run > .kb/auto/run.log 2>&1 &`, then
    poll for the pid or a refusal in `.kb/auto/run.log`). On a refusal, show

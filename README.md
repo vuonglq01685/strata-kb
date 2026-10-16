@@ -1899,8 +1899,11 @@ keeps `kb auto wait [--max 6600] [--interval 30]` armed in the background.
 **The session must stay open** for the whole run. Not verified on real cloud yet:
 a session lasting over 3 h, pushing `auto/*` branches, an admin merge past a
 required review, `gh run` over REST. `kb publish --branch` (used by `kb-code-sync`)
-still opens its PR through `gh pr` and fails on cloud. A local `auto/switch` branch
-left by a failed switch PR must be deleted by hand (`git branch -D auto/switch`).
+still opens its PR through `gh pr` and fails on cloud. `/kb-auto run` is re-runnable:
+it removes a leftover local `auto/switch` worktree and branch itself. A switch PR left
+open by a failed run (red checks, merge error) and its remote `auto/switch` branch must
+be closed and deleted on GitHub by hand first; the skill stops and says so, and never
+force-pushes.
 
 ---
 

@@ -174,5 +174,23 @@ def test_from_env_names_the_missing_variable(monkeypatch, missing):
     monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub:1")
     monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", TOKEN)
     monkeypatch.delenv(missing)
-    with pytest.raises(KbError, match=f"{missing} is not set"):
+    with pytest.raises(
+        KbError, match="needed to read the hub on Claude Code cloud"
+    ) as exc:
+        hubapi.from_env()
+    assert "STRATA_KB_HUB_URL" in str(exc.value)
+    assert "STRATA_KB_HTTP_TOKEN" in str(exc.value)
+    assert "runner reads" not in str(exc.value)
+
+
+def test_from_env_strips_whitespace(monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_URL", " http://hub:1/ ")
+    monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", f" {TOKEN}\n")
+    assert hubapi.from_env().base_url == "http://hub:1"
+
+
+def test_from_env_whitespace_only_counts_as_unset(monkeypatch):
+    monkeypatch.setenv("STRATA_KB_HUB_URL", "http://hub:1")
+    monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", "  ")
+    with pytest.raises(KbError, match="needed to read the hub"):
         hubapi.from_env()

@@ -28,8 +28,10 @@ def wait_for_change(
     start = now()
     first: tuple | None = None
     while True:
+        # pid first: a loop that writes stop_reason then exits must still show it
+        pid = running_pid(kb_dir)
         state = autostate.load(kb_dir)
-        if running_pid(kb_dir) is None:
+        if pid is None:
             if state.stop_reason:
                 return f"stopped: {state.stop_reason}"
             return "not running — see .kb/auto/run.log"
