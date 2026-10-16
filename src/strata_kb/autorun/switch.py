@@ -153,6 +153,9 @@ def status(kb_dir: Path) -> dict:
         # switch must be pushed to.
         "running": _running_pid(kb_dir),
         "default_branch": _default_branch(kb_dir),
+        # For /kb-auto: on Claude Code cloud the switch goes out as an
+        # `auto/switch` PR and the session watches the loop with `kb auto wait`.
+        "cloud": cloud.is_cloud(),
     }
 
 

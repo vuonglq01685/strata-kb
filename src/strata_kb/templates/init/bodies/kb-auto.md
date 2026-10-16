@@ -2,8 +2,9 @@
 
 Thin wrapper around the `kb auto` CLI for a `ba` or `dev` repo. The argument
 is one of `on`, `off`, `status` (the default when empty) or `run`. Everything
-here is a human action on the owner's machine: the loop itself runs each task
-in its own `claude -p` process, so nothing of this session is carried into it.
+here is a human action on the owner's machine (or, when `cloud` is true, in
+this Claude Code cloud session): the loop itself runs each task in its own
+`claude -p` process, so nothing of this session is carried into it.
 
 Hard rules:
 - Never pass `--dangerously-skip-permissions`, and never edit
@@ -16,8 +17,9 @@ Hard rules:
 
 `kb auto status --json` is the one source for everything below. Its fields:
 `enabled`, `task`, `attempts`, `waiting_on`, `stop_reason`, `running` (the
-pid of a live `kb auto run` in this repo, or `null`) and `default_branch`
-(the branch the switch must be pushed to, or `null` outside git).
+pid of a live `kb auto run` in this repo, or `null`), `default_branch`
+(the branch the switch must be pushed to, or `null` outside git) and `cloud`
+(true on Claude Code cloud: the switch then goes out as a PR, see `run`).
 
 ## Workflow
 
@@ -37,7 +39,8 @@ pid of a live `kb auto run` in this repo, or `null`) and `default_branch`
 4. **`off`**. Run `kb auto off`. Say that a running loop stops at the next task
    boundary (it never kills a task midway) and that the log shows the stop.
 
-5. **`run`**, in this order; stop at the first step that fails.
+5. **`run`**, in this order; stop at the first step that fails. When `cloud`
+   is true, follow **`run` on cloud** below instead of these steps.
    1. `kb auto status --json`. When `running` is a pid, say the loop is
       already running and stop. Take `default_branch` from it; when it is
       `null`, say the repo has no git default branch and stop.
@@ -72,7 +75,61 @@ pid of a live `kb auto run` in this repo, or `null`) and `default_branch`
       path, `tail -f .kb/auto/run.log` to follow it, and `/kb-auto off` to
       stop it.
 
+**`run` on cloud** (`cloud` is true). The session branch is not the default
+branch and cannot push to it, so the switch reaches the default branch through
+an `auto/switch` pull request that this session admin-merges (the owner
+approved that by running `/kb-auto run`). Stop at the first step that fails.
+1. `kb auto status --json`. When `running` is a pid, say the loop is already
+   running and stop. The "must be on the default branch" check does not apply.
+   Take `default_branch` from it; when it is `null`, say the repo has no git
+   default branch and stop.
+2. When `enabled` is false, run `kb auto on` and show its warnings verbatim.
+3. Commit the switch on the session branch when it is not committed: when
+   `git status --porcelain -- .kb/config.yaml .claude/settings.json` prints
+   anything, run `git add .kb/config.yaml .claude/settings.json` and
+   `git commit -m "chore: enable full-auto mode" -- .kb/config.yaml .claude/settings.json`.
+4. Get the switch onto the default branch. Run
+   `git fetch origin <default_branch>`, then read
+   `git show origin/<default_branch>:.kb/config.yaml`. When its `auto:` block
+   already has `enabled: true`, skip to step 5. Otherwise:
+   1. Tell the owner the switch PR will be admin-merged into
+      `<default_branch>`, with no review.
+   2. `git worktree add .kb/auto/worktrees/switch -b auto/switch FETCH_HEAD`.
+   3. Copy `.kb/config.yaml` and `.claude/settings.json` from the session tree
+      into the same paths of that worktree (create `.claude/` there if it is
+      missing). In the worktree: `git -C .kb/auto/worktrees/switch add .kb/config.yaml .claude/settings.json`
+      and `git -C .kb/auto/worktrees/switch commit -m "chore: enable full-auto mode"`.
+   4. `git -C .kb/auto/worktrees/switch push -u origin HEAD`.
+   5. Write the PR body to `.kb/auto/switch-pr.md` (run `mkdir -p .kb/auto`
+      first). It must pass `kb pr lint`, so it has exactly these three
+      sections, each filled in:
+      `## Ticket` — "None: owner-approved chore, enable full-auto mode."
+      `## Changes` — what changed: `auto.enabled: true` in `.kb/config.yaml`
+      and the auto-mode permissions in `.claude/settings.json`.
+      `## Testing` — a fenced block holding the real output of
+      `git -C .kb/auto/worktrees/switch show --stat HEAD`, then a line
+      `Blocking: No`.
+      Run `kb pr lint .kb/auto/switch-pr.md`; on a failure fix the file and
+      lint again before opening.
+   6. `kb pr open --head auto/switch --title "chore: enable full-auto mode" --body-file .kb/auto/switch-pr.md`.
+   7. `kb pr checks auto/switch --watch`. Red (exit 1): show the failing
+      checks and stop; never merge on red or pending checks.
+   8. `kb pr merge auto/switch --squash --admin --delete-branch`. After an
+      error, run `kb pr view auto/switch --json` before you stop: a merged PR
+      is a success.
+   9. `git worktree remove .kb/auto/worktrees/switch`.
+5. `mkdir -p .kb/auto`, then start the loop detached exactly as in `run`
+   steps 7 and 8 above (`nohup kb auto run > .kb/auto/run.log 2>&1 &`, then
+   poll for the pid or a refusal in `.kb/auto/run.log`). On a refusal, show
+   those lines verbatim and stop.
+6. Arm the watcher, because a cloud session ends when it has nothing to do:
+   run `kb auto wait --max 6600` with the Bash tool's `run_in_background`.
+   Each time it returns, read its one line. Report the line to the owner only
+   when it does not start with `still running`. Then re-arm it (the same
+   background command) unless the line starts with `stopped:` or
+   `not running`; those end the watch, and you report them and stop.
+
 Do not run `kb auto run` in the foreground of this session, and never from
 inside an auto-mode task: the task process carries `STRATA_KB_AUTO_TASK=1`,
-under which `kb auto on`, `off` and `run` refuse, and the runner holds
+under which `kb auto on`, `off`, `run` and `wait` refuse, and the runner holds
 `.kb/auto/run.lock` anyway.

@@ -1062,6 +1062,22 @@ def auto_status(
         typer.echo(f"{key}: {value}")
 
 
+@auto_app.command("wait")
+def auto_wait(
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    max_seconds: int = typer.Option(
+        6600, "--max", min=1, help="Give up waiting after this many seconds"
+    ),
+    interval: int = typer.Option(30, "--interval", min=1, help="Seconds between reads"),
+) -> None:
+    """Wait until the auto loop's task changes, it stops, or --max elapses;
+    print one status line. A cloud session re-arms this to stay alive."""
+    from strata_kb.autorun import wait
+
+    _refuse_inside_auto_task("wait")
+    typer.echo(wait.wait_for_change(kb_dir, max_seconds, interval))
+
+
 @auto_app.command("run")
 def auto_run(
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),

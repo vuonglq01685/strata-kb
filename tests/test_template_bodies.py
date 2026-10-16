@@ -1369,6 +1369,22 @@ def test_kb_auto_body_pins_its_contract(tmp_path, kind):
     assert "strata-kb:include" not in text
 
 
+def test_kb_auto_body_has_cloud_path():
+    body = BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8")
+    for needle in (
+        "kb auto wait --max 6600",
+        "auto/switch",
+        "--admin",
+        "`cloud`",
+        "kb pr lint",
+        "Blocking: No",
+        "run_in_background",
+        "still running",
+        "git worktree remove .kb/auto/worktrees/switch",
+    ):
+        assert needle in body, needle
+
+
 def test_no_template_calls_gh_pr():
     # GraphQL-backed `gh pr ...` fails on Claude Code cloud; skills use `kb pr` (REST).
     call = re.compile(r"\bgh pr (list|create|checks|merge|view|edit)\b")
