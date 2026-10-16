@@ -1385,6 +1385,18 @@ def test_kb_auto_body_has_cloud_path():
         assert needle in body, needle
 
 
+def test_kb_auto_cloud_switch_flips_only_the_flag_and_watcher_outlives_default_timeout():
+    body = BASE.joinpath("bodies", "kb-auto.md").read_text(encoding="utf-8")
+    for needle in (
+        "kb auto on --kb-dir .kb/auto/worktrees/switch/.kb",
+        "git diff --no-index --quiet",
+        "`timeout: 7200000`",
+        "no `kb auto wait` line",
+    ):
+        assert needle in body, needle
+    assert "Copy `.kb/config.yaml` and `.claude/settings.json`" not in body
+
+
 def test_no_template_calls_gh_pr():
     # GraphQL-backed `gh pr ...` fails on Claude Code cloud; skills use `kb pr` (REST).
     call = re.compile(r"\bgh pr (list|create|checks|merge|view|edit)\b")

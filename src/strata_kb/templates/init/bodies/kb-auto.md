@@ -95,17 +95,26 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
    1. Tell the owner the switch PR will be admin-merged into
       `<default_branch>`, with no review.
    2. `git worktree add .kb/auto/worktrees/switch -b auto/switch FETCH_HEAD`.
-   3. Copy `.kb/config.yaml` and `.claude/settings.json` from the session tree
-      into the same paths of that worktree (create `.claude/` there if it is
-      missing). In the worktree: `git -C .kb/auto/worktrees/switch add .kb/config.yaml .claude/settings.json`
-      and `git -C .kb/auto/worktrees/switch commit -m "chore: enable full-auto mode"`.
+   3. The PR flips only `auto.enabled`; it never copies files over the
+      default branch, which could revert changes made there since the session
+      branch forked. In the worktree run
+      `kb auto on --kb-dir .kb/auto/worktrees/switch/.kb` and show its
+      warnings verbatim. Then compare the permissions: when
+      `git diff --no-index --quiet .claude/settings.json .kb/auto/worktrees/switch/.claude/settings.json`
+      exits non-zero (they differ, or the worktree has none), do not copy
+      the file. Run `git worktree remove --force .kb/auto/worktrees/switch`,
+      tell the owner to commit the auto-mode settings (the `kb init --kind
+      ba|dev` output) to `<default_branch>` first, and stop. Otherwise commit
+      only what changed:
+      `git -C .kb/auto/worktrees/switch add .kb/config.yaml` and
+      `git -C .kb/auto/worktrees/switch commit -m "chore: enable full-auto mode"`.
    4. `git -C .kb/auto/worktrees/switch push -u origin HEAD`.
    5. Write the PR body to `.kb/auto/switch-pr.md` (run `mkdir -p .kb/auto`
       first). It must pass `kb pr lint`, so it has exactly these three
       sections, each filled in:
       `## Ticket` — "None: owner-approved chore, enable full-auto mode."
       `## Changes` — what changed: `auto.enabled: true` in `.kb/config.yaml`
-      and the auto-mode permissions in `.claude/settings.json`.
+      (nothing else).
       `## Testing` — a fenced block holding the real output of
       `git -C .kb/auto/worktrees/switch show --stat HEAD`, then a line
       `Blocking: No`.
@@ -123,10 +132,13 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
    poll for the pid or a refusal in `.kb/auto/run.log`). On a refusal, show
    those lines verbatim and stop.
 6. Arm the watcher, because a cloud session ends when it has nothing to do:
-   run `kb auto wait --max 6600` with the Bash tool's `run_in_background`.
-   Each time it returns, read its one line. Report the line to the owner only
-   when it does not start with `still running`. Then re-arm it (the same
-   background command) unless the line starts with `stopped:` or
+   run `kb auto wait --max 6600` with the Bash tool's `run_in_background` and
+   `timeout: 7200000` (the default background timeout is 30 minutes, which
+   would kill the command before `--max` elapses). Each time it returns, read
+   its one line. A return with no `kb auto wait` line (the command was killed
+   or printed nothing) counts as `still running`. Report the line to the
+   owner only when it does not start with `still running`. Then re-arm it
+   (the same background command) unless the line starts with `stopped:` or
    `not running`; those end the watch, and you report them and stop.
 
 Do not run `kb auto run` in the foreground of this session, and never from
