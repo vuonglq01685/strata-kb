@@ -303,6 +303,15 @@ Criteria live in `docs/pr-review-rubric.md`, overridden by
 passes; a round only counts as clean once no BLOCKER and no SUGGESTED
 finding is left open — NOTE and NITS get recorded, not fixed.
 
+A1 and A2 aim for one review round plus one verification round. The author
+self-checks before review; round 1 returns a coverage matrix and tags each
+gap with a defect class; the fix sweeps the whole artefact for each class;
+later rounds verify the fix against the diff. A design over 8 ACs or 600
+lines, or a plan over 12 tasks or 600 lines, is reviewed in parallel slices
+plus a lead reviewer that re-checks the slice findings and checks drift from
+the ticket and the design. A round that finds no fewer BLOCKER plus
+SUGGESTED gaps than the one before stops the loop and hands you the trend.
+
 Where your assistant's runtime cannot dispatch subagents — the default
 for the Copilot and Cursor wrappers — the review still runs, but as a
 single pass reading only what it was handed, and it is a **report, not a
