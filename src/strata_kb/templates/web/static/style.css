@@ -269,7 +269,7 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 .chip .x { color: rgba(255,255,255,.75); }
 
 /* reader */
-.reader { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+.reader { display: flex; flex-direction: column; gap: 16px; }
 .level-tabs { display: flex; align-items: center; gap: 6px; padding: 4px;
   background: var(--field); border: 1px solid var(--line); border-radius: 9px; width: fit-content; }
 .level-tabs a { height: 32px; padding: 0 15px; display: inline-flex; align-items: center;
