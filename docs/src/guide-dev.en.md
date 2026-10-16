@@ -479,11 +479,11 @@ administrators from that rule and accept that the agent can then bypass it.
    the skills (Auto mode sections) and adds `/dev-test-workflow`.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; have `claude` logged in with
    your subscription.
-5. After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the default
+5. After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the default
    branch. `kb auto run` refuses until you do: `kb publish` refuses a dirty `.kb/`, so no
    ticket would reach `done`.
 
-**Run.** `kb auto on`, then commit those two files, then `kb auto run`. `kb auto status` shows the task, attempts, the
+**Run.** `kb auto on`, then commit and push those two files, then `kb auto run`. `kb auto status` shows the task, attempts, the
 questions it waits on and the stop reason; `kb auto off` stops after the current task.
 
 **What it does.** One fresh `claude -p` process per ticket. First, if no workflow runs

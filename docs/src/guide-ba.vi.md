@@ -404,11 +404,11 @@ review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng
    gộp vào file của bạn, mục của bạn được giữ nguyên) và các phần Auto mode trong skill.
 4. Đặt biến môi trường `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` (giá trị trong
    `.mcp.json`), và đăng nhập CLI `claude` bằng gói subscription của bạn.
-5. Sau `kb auto on`, hãy commit `.kb/config.yaml` và `.claude/settings.json` vào nhánh mặc định.
+5. Sau `kb auto on`, hãy commit và push `.kb/config.yaml` và `.claude/settings.json` lên nhánh mặc định.
    `kb auto run` từ chối chạy cho đến khi bạn làm vậy: worktree Q&A được checkout từ nhánh
    mặc định, và `kb publish` từ chối khi `.kb/` có thay đổi chưa commit.
 
-**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), commit hai
+**Chạy.** `kb auto on` (in cảnh báo rồi bật `auto.enabled` trong `.kb/config.yaml`), commit và push hai
 file trên, sau đó `kb auto run` trong một terminal. `kb auto status` cho biết công tắc, task hiện tại và lý do
 dừng; `kb auto off` dừng vòng lặp sau task đang chạy.
 

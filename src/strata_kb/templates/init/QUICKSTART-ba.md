@@ -460,7 +460,7 @@ administrators are included. If you do require reviews, exclude administrators f
 that rule and accept that the agent can then bypass it.
 
 - Write the first mission yourself (`/ba-mission-plan`); the loop works the backlog.
-- After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the
+- After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the
   default branch; `kb auto run` refuses until you do (the Q&A worktree is checked
   out from the default branch, and `kb publish` refuses a dirty `.kb/`).
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must

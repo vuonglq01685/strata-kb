@@ -608,7 +608,7 @@ def test_preflight_refuses_when_default_branch_has_switch_off(git_repo, tmp_path
     _write_config(kb_dir, GOOD)
     run_git(root, "commit", "-a", "-m", "on, on a branch only")
     (reason,) = preflight(root, kb_dir)
-    assert "on main" in reason and "auto.enabled: true" in reason
+    assert "on origin/main" in reason and "auto.enabled: true" in reason
 
 
 def test_preflight_refuses_when_default_branch_lacks_the_config(git_repo, tmp_path):
@@ -619,4 +619,35 @@ def test_preflight_refuses_when_default_branch_lacks_the_config(git_repo, tmp_pa
     run_git(root, "add", ".kb/config.yaml")
     run_git(root, "commit", "-m", "config on a branch only")
     (reason,) = preflight(root, kb_dir)
-    assert "on main" in reason and "auto.enabled: true" in reason
+    assert "on origin/main" in reason and "auto.enabled: true" in reason
+
+
+def _origin(root, run_git, tmp_path):
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(root, "remote", "add", "origin", str(origin))
+    return origin
+
+
+def test_preflight_passes_when_the_switch_is_pushed(git_repo, tmp_path):
+    root, kb_dir, run_git = git_repo
+    _origin(root, run_git, tmp_path)
+    run_git(root, "push", "-u", "origin", "main")
+    assert preflight(root, kb_dir) == []
+
+
+def test_preflight_refuses_a_switch_committed_but_not_pushed(git_repo, tmp_path):
+    root, kb_dir, run_git = git_repo
+    _write_config(kb_dir, GOOD.replace("true", "false"))
+    run_git(root, "commit", "-a", "-m", "off")
+    _origin(root, run_git, tmp_path)
+    run_git(root, "push", "-u", "origin", "main")
+    _write_config(kb_dir, GOOD)
+    run_git(root, "commit", "-a", "-m", "on, not pushed")
+    (reason,) = preflight(root, kb_dir)
+    assert "origin/main" in reason and "push" in reason
+
+
+def test_preflight_without_a_remote_reads_the_local_default_branch(git_repo):
+    root, kb_dir, _ = git_repo
+    assert preflight(root, kb_dir) == []

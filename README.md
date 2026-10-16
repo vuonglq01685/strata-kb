@@ -1633,7 +1633,7 @@ also cannot see the current branch: the agent's working tree must never sit on
 - The hub is on **1.29.0 or later**. The runner polls ticket Q&A over the new
   `GET /api/questions` route (below), which an older hub does not have.
 - `.kb/config.yaml` (with `auto.enabled: true`) and `.claude/settings.json` are
-  **committed to the default branch** before `kb auto run`. `kb auto on` only
+  **committed and pushed to the default branch** before `kb auto run`. `kb auto on` only
   edits the file. A dirty `.kb/` makes `kb publish` refuse, so no ticket would
   reach `done`, and the BA's Q&A worktree is checked out from the default branch,
   where the switch would still read `false`.
@@ -1667,7 +1667,7 @@ only, so add `qa_interval`, `idle_interval` or `hotfix_base` by hand to change t
 
 | Command | What it does |
 |---|---|
-| `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
+| `kb auto on` | Sets `enabled: true` (comments and other keys stay), then prints one sentence: commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch before `kb auto run`. First prints the plain warnings: "Auto mode merges pull requests as admin, with no review. Turn it on only for a repo where that is acceptable."; and, when the hub's `federation/registry.yaml` lists **more than one `dev` repo**, that auto mode is built for one Dev per hub (a warning, not a refusal). A repo whose kind is not `ba` or `dev` exits `1` |
 | `kb auto off` | Sets `enabled: false` (and prints the same commit sentence). A running loop stops at the next task boundary; it never kills a task midway |
 | `kb auto status [--json]` | The switch, the intervals, `hotfix_base`, and the runner's `task`, `attempts`, `waiting_on` (question ids) and `stop_reason`, one `key: value` per line |
 | `kb auto run [--once] [--hub URL]` | Run the loop in the foreground and log to stderr. `--once` runs one step, prints its outcome (`ran`, `idle`, `waiting`, `stopped` or `done`) and exits `0` for every outcome except `stopped` (`2`). The loop exits `0` done, `2` stopped, `1` refused or error, `130` interrupted with Ctrl-C |
@@ -1681,7 +1681,7 @@ the repo's hub registry entry is missing or lacks `auto_merge: true` (both the B
 repo and the Dev repo need it). It also refuses when `.kb/config.yaml` or
 `.claude/settings.json` is untracked or has uncommitted changes, or when the
 default branch's copy of `.kb/config.yaml` is missing or lacks `auto.enabled: true`:
-commit the switch to the default branch first.
+commit and push the switch to the default branch first (the check reads `origin/<default>` after a fetch, because the skills and the Q&A worktree work from origin).
 
 **One task, one fresh process.** The runner holds no model context. For each task
 it starts a new `claude -p --output-format json --permission-mode acceptEdits`

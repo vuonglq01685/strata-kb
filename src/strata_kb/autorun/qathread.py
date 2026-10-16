@@ -87,7 +87,7 @@ class QaThread:
             try:
                 self.tick()
             except Exception as exc:  # noqa: BLE001 -- the Q&A thread must outlive any one tick
-                logger.warning("Q&A tick failed: %s", exc)
+                logger.warning("Q&A tick failed: %s", exc, exc_info=True)
             self._stop.wait(self._interval)
 
     def tick(self) -> bool:

@@ -466,7 +466,7 @@ cannot approve its own PR, and `gh pr merge --admin` is refused when
 administrators are included. If you do require reviews, exclude administrators
 from that rule and accept that the agent can then bypass it.
 
-- After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the
+- After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the
   default branch; `kb auto run` refuses until you do (`kb publish` refuses a
   dirty `.kb/`, so no ticket would reach `done`).
 - `intake:` must be set in `.kb/config.yaml`, and the hub's Registry page must

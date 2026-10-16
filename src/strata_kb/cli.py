@@ -974,7 +974,7 @@ def _code_sync_root(kb_dir: Path, command: str) -> Path:
 
 
 _AUTO_COMMIT_HINT = (
-    "Commit .kb/config.yaml (and .claude/settings.json) to the default branch "
+    "Commit and push .kb/config.yaml (and .claude/settings.json) to the default branch "
     "before `kb auto run`."
 )
 

@@ -477,11 +477,11 @@ review, hãy loại administrator khỏi quy tắc đó và chấp nhận rằng
    lint và build của các `langs:` bạn dùng, vào `.claude/settings.json`, làm mới các skill
    (phần Auto mode) và thêm `/dev-test-workflow`.
 4. Đặt `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`; đăng nhập `claude` bằng subscription.
-5. Sau `kb auto on`, hãy commit `.kb/config.yaml` và `.claude/settings.json` vào nhánh mặc định.
+5. Sau `kb auto on`, hãy commit và push `.kb/config.yaml` và `.claude/settings.json` lên nhánh mặc định.
    `kb auto run` từ chối chạy cho đến khi bạn làm vậy: `kb publish` từ chối khi `.kb/` có thay
    đổi chưa commit, nên không ticket nào đến được `done`.
 
-**Chạy.** `kb auto on`, commit hai file trên, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
+**Chạy.** `kb auto on`, commit và push hai file trên, rồi `kb auto run`. `kb auto status` hiện task, số lần thử, các câu hỏi
 đang chờ và lý do dừng; `kb auto off` dừng sau task đang chạy.
 
 **Nó làm gì.** Mỗi ticket là một tiến trình `claude -p` mới. Trước hết, nếu chưa workflow

@@ -65,12 +65,16 @@ def _switch_refusals(root: Path) -> list[str]:
             reasons.append(f"{rel} is not tracked by git -- commit it")
         elif gitio.is_dirty(root, root / rel):
             reasons.append(f"{rel} has uncommitted changes -- commit it")
-    branch = "the default branch"
+    where, how = "the default branch", "commit it"
     enabled = False
     try:
-        branch = gitio.default_branch(root)
+        branch = where = gitio.default_branch(root)
+        if gitio.has_remote(root):
+            # The skills and the Q&A worktree work from origin, not the local branch.
+            gitio.fetch_branch(root, branch)
+            where, how = f"origin/{branch}", f"commit and push it to {branch}"
         committed = yaml.safe_load(
-            gitio.read_at(root, branch, root / SWITCH_FILES[0]) or ""
+            gitio.read_at(root, where, root / SWITCH_FILES[0]) or ""
         )
         auto = committed.get("auto") if isinstance(committed, dict) else None
         enabled = isinstance(auto, dict) and auto.get("enabled") is True
@@ -78,8 +82,7 @@ def _switch_refusals(root: Path) -> list[str]:
         logger.debug("committed config not read: %s", exc)
     if not enabled:
         reasons.append(
-            f"{SWITCH_FILES[0]} on {branch} lacks `auto.enabled: true` -- "
-            f"commit it to {branch}"
+            f"{SWITCH_FILES[0]} on {where} lacks `auto.enabled: true` -- {how}"
         )
     return reasons
 

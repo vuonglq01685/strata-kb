@@ -415,12 +415,12 @@ reviews, exclude administrators from that rule and accept that the agent can the
    (merged into your file, your entries stay) and the skills' Auto mode sections.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values in `.mcp.json`)
    and have the `claude` CLI logged in with your subscription.
-5. After `kb auto on`, commit `.kb/config.yaml` and `.claude/settings.json` to the default
+5. After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the default
    branch. `kb auto run` refuses until you do: the Q&A worktree is checked out from the
    default branch, and `kb publish` refuses a dirty `.kb/`.
 
 **Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
-`.kb/config.yaml`), commit the two files above, then `kb auto run` in a terminal. `kb auto status` shows the switch,
+`.kb/config.yaml`), commit and push the two files above, then `kb auto run` in a terminal. `kb auto status` shows the switch,
 the current task, and why it stopped; `kb auto off` stops the loop after the current
 task.
 
