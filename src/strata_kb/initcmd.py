@@ -379,6 +379,8 @@ _PLAN_DOC_LINE = ".kb/*-plan/"
 # the first `kb publish` refuse on a dirty `.kb/`. `kb ci-publish` walks the
 # tree, so ignored files still upload.
 _BA_INDEX_LINE = ".kb/index.yaml"
+# Full-auto runner state and logs: local to the machine running it.
+_AUTO_DIR_LINE = ".kb/auto/"
 
 
 def _ensure_kb_doc_ignored(target: Path, line: str, report: InitReport) -> None:
@@ -625,9 +627,11 @@ def init_repo(
     if kind == KIND_BA:
         _ensure_kb_doc_ignored(target, _PLAN_DOC_LINE, report)
         _ensure_kb_doc_ignored(target, _BA_INDEX_LINE, report)
+        _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
         scaffold_ba_local_overrides(target, report)
     if kind == KIND_DEV:
         _ensure_kb_doc_ignored(target, _CODE_DOC_LINE, report)
+        _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
         scaffold_dev_local_overrides(target, report)
         done, conflicts = impltidy.tidy(target / "docs" / "impl")
         report.notes.extend(f"moved: {s} → {d}" for s, d in done)

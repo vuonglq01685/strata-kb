@@ -1819,6 +1819,7 @@ def test_init_dev_appends_to_an_existing_gitignore_once(tmp_path: Path):
     lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert lines[0] == "node_modules/"
     assert lines.count(".kb/*-code/") == 1
+    assert lines.count(".kb/auto/") == 1
 
 
 def test_init_ba_writes_publish_workflow(tmp_path: Path):
@@ -1841,6 +1842,7 @@ def test_init_ba_gitignores_generated_kb_files(tmp_path: Path):
     # the first `kb publish` refuse on a dirty `.kb/`.
     assert lines.count(".kb/*-plan/") == 1
     assert lines.count(".kb/index.yaml") == 1
+    assert lines.count(".kb/auto/") == 1
     assert ".kb/*-code/" not in lines
 
 

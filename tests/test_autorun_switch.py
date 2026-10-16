@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from strata_kb.autorun.state import AutoState, save
 from strata_kb.autorun.switch import set_enabled, status, warnings_for_on
 from strata_kb.cli import app
 from strata_kb.config import AutoConfig, load_config
@@ -106,7 +107,7 @@ def test_warnings_unreachable_hub_says_registry_not_checked(tmp_path):
     assert any("admin" in w for w in warnings)
 
 
-def test_status_defaults_and_state_fields_none(tmp_path):
+def test_status_defaults_and_empty_state_fields(tmp_path):
     _kb(tmp_path, "kind: ba\n")
     assert status(tmp_path) == {
         "enabled": False,
@@ -114,10 +115,23 @@ def test_status_defaults_and_state_fields_none(tmp_path):
         "idle_interval": 600,
         "hotfix_base": "",
         "task": None,
-        "attempts": None,
-        "waiting_on": None,
+        "attempts": 0,
+        "waiting_on": [],
         "stop_reason": None,
     }
+
+
+def test_status_reports_saved_state(tmp_path):
+    _kb(tmp_path, "kind: dev\n")
+    save(
+        tmp_path,
+        AutoState("dev-implement-ticket:M-x-US3", 2, (4,), "usage-limit", ""),
+    )
+
+    got = status(tmp_path)
+
+    assert got["task"] == "dev-implement-ticket:M-x-US3" and got["attempts"] == 2
+    assert got["waiting_on"] == [4] and got["stop_reason"] == "usage-limit"
 
 
 def test_cli_auto_status_json(tmp_path):

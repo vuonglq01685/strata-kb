@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from strata_kb.autorun.state import load
 from strata_kb.config import KBConfig, load_config
 from strata_kb.federation import RegistryError, load_registry
 
@@ -85,14 +86,14 @@ def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
 
 def status(kb_dir: Path) -> dict:
     auto = load_config(kb_dir).auto
+    state = load(kb_dir)
     return {
         "enabled": auto.enabled,
         "qa_interval": auto.qa_interval,
         "idle_interval": auto.idle_interval,
         "hotfix_base": auto.hotfix_base,
-        # Task 5 adds the state file and fills these in.
-        "task": None,
-        "attempts": None,
-        "waiting_on": None,
-        "stop_reason": None,
+        "task": state.task,
+        "attempts": state.attempts,
+        "waiting_on": list(state.waiting_on),
+        "stop_reason": state.stop_reason,
     }
