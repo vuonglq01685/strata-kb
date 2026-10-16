@@ -72,7 +72,7 @@ AUTO-RESULT: failed <reason>
 
 def _slug(prompt: str) -> str:
     first = prompt.strip().splitlines()[0] if prompt.strip() else ""
-    return re.sub(r"[^A-Za-z0-9_-]", "-", first)[:MAX_SLUG]
+    return re.sub(r"[^A-Za-z0-9_-]", "-", first)[:MAX_SLUG].strip("-") or "task"
 
 
 def _write_log(
@@ -92,8 +92,16 @@ def _write_log(
     path.write_text(body, encoding="utf-8")
 
 
+# Narrow on purpose: "context limit" or "file size limit" is a hard failure,
+# and calling it usage-limit would make the loop back off and retry forever.
+_USAGE_LIMIT = re.compile(
+    r"usage limit|rate limit|limit (reached|exceeded)|resets? at|try again (at|in)",
+    re.I,
+)
+
+
 def _error(message: str) -> TaskResult:
-    kind: Kind = "usage-limit" if re.search(r"limit", message, re.I) else "failed"
+    kind: Kind = "usage-limit" if _USAGE_LIMIT.search(message) else "failed"
     return TaskResult(kind, (), message[:MAX_REASON])
 
 
@@ -130,7 +138,7 @@ def run_task(
         return TaskResult("failed", (), f"timed out after {timeout}s")
     except OSError as exc:
         _write_log(log_dir, prompt, "", str(exc), "oserror", time.monotonic() - start)
-        return _error(f"cannot run {executable}: {exc}")
+        return TaskResult("failed", (), f"cannot run {executable}: {exc}"[:MAX_REASON])
     _write_log(
         log_dir,
         prompt,

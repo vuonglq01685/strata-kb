@@ -36,6 +36,14 @@ def fake_claude(tmp_path, monkeypatch) -> FakeClaude:
     return FakeClaude(bindir, replies)
 
 
+def test_parse_done():
+    assert parse_result("...\nAUTO-RESULT: done\n").kind == "done"
+
+
+def test_parse_blocked_ids():
+    assert parse_result("AUTO-RESULT: blocked-qa Q12,Q13").ids == (12, 13)
+
+
 def test_missing_line_is_failed():
     assert parse_result("done!\n") == TaskResult("failed", (), "no result line")
 
@@ -102,11 +110,14 @@ def test_run_task_fresh_process_and_log(fake_claude, tmp_path):
     ]
     assert Path(calls[0]["cwd"]).resolve() == root.resolve()
     assert calls[0]["stdin"] == prompt
-    first_log, second_log = sorted(
-        logs.glob("*-dev-implement-US3*.log"), key=lambda p: p.stem.endswith("-2")
-    )
-    log = first_log.read_text(encoding="utf-8")
-    assert "blocked-qa Q7" in second_log.read_text(encoding="utf-8")
+    # Same-second runs get a -2 suffix, which sorts before ".log"; so match
+    # by content, not by order.
+    texts = [
+        p.read_text(encoding="utf-8") for p in logs.glob("*-dev-implement-US3*.log")
+    ]
+    assert len(texts) == 2
+    log = next(t for t in texts if "AUTO-RESULT: done" in t)
+    assert any("blocked-qa Q7" in t for t in texts)
     for part in ("PROMPT", "STDOUT", "STDERR", prompt, "AUTO-RESULT: done"):
         assert part in log
     assert log.rstrip().splitlines()[-1].startswith("exit=0 duration=")
@@ -125,6 +136,11 @@ def test_usage_limit_nonzero_exit(fake_claude, tmp_path):
     result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
     assert result.kind == "usage-limit"
     assert "LIMIT reached" in result.reason
+
+
+def test_non_usage_limit_error_is_failed(fake_claude, tmp_path):
+    fake_claude.script({"is_error": True, "result": "file size limit"})
+    assert run_task(tmp_path, "/x", log_dir=tmp_path / "logs").kind == "failed"
 
 
 def test_other_error_is_failed_and_capped(fake_claude, tmp_path):
@@ -147,7 +163,7 @@ def test_reply_without_result_line_is_failed(fake_claude, tmp_path):
     )
 
 
-def test_timeout_is_failed(fake_claude, tmp_path, monkeypatch):
+def test_timeout_is_failed(tmp_path, monkeypatch):
     import subprocess
 
     from strata_kb.autorun import claude
