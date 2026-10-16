@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 from strata_kb import lintcore, mission
 from strata_kb.mdmask import _blank_invisible
@@ -55,6 +55,7 @@ class StoryStatus:
     title: str
     status: str  # done | ready | draft | to-draft | blocked
     reasons: tuple[str, ...]  # blocked / draft
+    depends_on: tuple[str, ...] = ()  # full US ids; empty for unparented items
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]
@@ -319,7 +320,8 @@ def statuses(
             out.append(
                 StoryStatus(s.us_id, s.mission_id, s.title, status, tuple(reasons))
             )
-    return out
+    deps = {s.us_id: s.depends_on for _m, stories, _d in missions for s in stories}
+    return [replace(r, depends_on=deps[r.us_id]) for r in out]
 
 
 def _blocking(
@@ -406,7 +408,11 @@ def render(
 
 
 def _story_json(r: StoryStatus) -> dict:
-    return {**asdict(r), "reasons": list(r.reasons)}
+    return {
+        **asdict(r),
+        "reasons": list(r.reasons),
+        "depends_on": list(r.depends_on),
+    }
 
 
 def to_json(

@@ -375,7 +375,9 @@ def test_to_json_shape():
         "title": "Foundation slice",
         "status": "to-draft",
         "reasons": [],
+        "depends_on": [],
     }
+    assert data["stories"][1]["depends_on"] == ["M-platform-US1"]
     assert data["stories"][1]["reasons"] == [
         "US M-platform-US1 not done",
         "D2 OPEN (owner: Alice)",

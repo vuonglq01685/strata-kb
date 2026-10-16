@@ -71,6 +71,7 @@ def test_ba_blocker_beats_draft_and_to_draft(tmp_path: Path):
         "no Definition of Ready section",
         "US M-x-US1 not done",
         "US M-x-US9 unknown",
+        "parent mission rev 3 affects this story",
     ],
 )
 def test_ba_ticket_level_reasons_are_not_blockers(tmp_path: Path, reason: str):
@@ -176,7 +177,81 @@ def test_dev_nothing_to_do(tmp_path: Path, monkeypatch):
     assert pick_dev(None, tmp_path) is None  # type: ignore[arg-type]
 
 
-def test_dev_kb_test_yml_counts_even_without_the_mark(tmp_path: Path, monkeypatch):
-    _workflow(tmp_path, "name: tests\n")
-    _hub(monkeypatch, [], [])
+def test_ba_demoted_ticket_is_amended_not_a_mission_blocker(tmp_path: Path):
+    stories = [_story("US1", "draft", ["parent mission rev 4 affects this story"])]
+    assert pick_ba(tmp_path, tmp_path, _runner(stories)) == Task(
+        "ba-ticket-author", "--amend US1"
+    )
+
+
+def test_ba_draft_with_d_row_reason_is_a_mission_blocker(tmp_path: Path):
+    stories = [_story("US1", "draft", ["D3 OPEN (owner: ba)"], mission="M-z")]
+    assert pick_ba(tmp_path, tmp_path, _runner(stories)) == Task(
+        "ba-mission-plan", "--amend M-z"
+    )
+
+
+@pytest.mark.parametrize("reason", ["Q2 open (owner: ba)", "open question 'which db?'"])
+def test_ba_question_reasons_are_mission_blockers(tmp_path: Path, reason: str):
+    stories = [_story("US1", "draft", [reason], mission="M-q")]
+    assert pick_ba(tmp_path, tmp_path, _runner(stories)) == Task(
+        "ba-mission-plan", "--amend M-q"
+    )
+
+
+def test_ba_first_blocker_in_mission_order_wins(tmp_path: Path):
+    stories = [
+        _story("US1", "blocked", ["D1 OPEN (owner: a)"], mission="M-a"),
+        _story("US2", "blocked", ["Q1 open (owner: b)"], mission="M-b"),
+    ]
+    assert pick_ba(tmp_path, tmp_path, _runner(stories)) == Task(
+        "ba-mission-plan", "--amend M-a"
+    )
+
+
+@pytest.mark.parametrize(
+    "stdout", ["{}", "null", "[]", '{"stories": [{}], "next": null}']
+)
+def test_ba_unexpected_json_shape_raises(tmp_path: Path, stdout: str):
+    with pytest.raises(KbError, match="unexpected JSON"):
+        pick_ba(tmp_path, tmp_path, _runner([], stdout=stdout))
+
+
+def test_ba_bad_json_message_quotes_stdout(tmp_path: Path):
+    with pytest.raises(KbError, match="'not json'"):
+        pick_ba(tmp_path, tmp_path, _runner([], stdout="not json"))
+
+
+def _dep(us_id: str, status: str, depends_on=()) -> StoryStatus:
+    return StoryStatus(us_id, "M-x", "t", status, (), tuple(depends_on))
+
+
+def test_dev_skips_ready_story_with_open_dependency(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(
+        monkeypatch,
+        [_dep("US1", "draft"), _dep("US2", "ready", ["US1"])],
+        [],
+    )
     assert pick_dev(None, tmp_path) is None  # type: ignore[arg-type]
+
+
+def test_dev_takes_next_story_whose_dependencies_are_done(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(
+        monkeypatch,
+        [
+            _dep("US1", "draft"),
+            _dep("US2", "ready", ["US1"]),
+            _dep("US3", "done"),
+            _dep("US4", "ready", ["US3"]),
+        ],
+        [],
+    )
+    assert pick_dev(None, tmp_path) == Task("dev-implement-ticket", "US4")  # type: ignore[arg-type]
+
+
+def test_dev_ignores_directory_named_like_a_workflow(tmp_path: Path, monkeypatch):
+    _hub(monkeypatch, [], [])
+    (tmp_path / ".github" / "workflows" / "x.yml").mkdir(parents=True)
+    assert pick_dev(None, tmp_path) == Task("dev-test-workflow", "")  # type: ignore[arg-type]
