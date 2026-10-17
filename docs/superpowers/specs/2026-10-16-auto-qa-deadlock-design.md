@@ -151,11 +151,14 @@ Exact wording is the builder's; the meaning is not.
 
 ### 5.4 G3 — `--model` / `--effort`
 
-- `kb auto run` (`cli.py` `auto_run`) gains `--model` and `--effort`, default
-  empty. They are passed down to `claude.run_task` for both the main loop and
+- `kb auto run` (`cli.py` `auto_run`) gains `--model` (default `opus` —
+  **owner decided 2026-10-17**: every task the runner starts with `claude -p`
+  runs on Opus; the alias tracks the newest Opus) and `--effort` (default
+  empty). They are passed down to `claude.run_task` for both the main loop and
   the `QaThread`.
 - Non-empty → `claude -p … --model <id>` and `--effort <level>`. Empty → no
-  flag, so `ANTHROPIC_MODEL` / `CLAUDE_CODE_EFFORT_LEVEL` env vars keep working.
+  flag: `--model ""` hands the choice back to `ANTHROPIC_MODEL` / claude's
+  default; an empty `--effort` leaves `CLAUDE_CODE_EFFORT_LEVEL` in charge.
 - Not stored in config.
 
 ### 5.5 G5 — trust on cloud
