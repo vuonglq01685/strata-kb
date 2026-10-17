@@ -280,3 +280,45 @@ def test_dev_ignores_directory_named_like_a_workflow(tmp_path: Path, monkeypatch
     _hub(monkeypatch, [], [])
     (tmp_path / ".github" / "workflows" / "x.yml").mkdir(parents=True)
     assert pick_dev(None, tmp_path) == Task("dev-test-workflow", "")  # type: ignore[arg-type]
+
+
+def test_ba_skip_passes_over_a_draft_to_the_next_draft(tmp_path: Path):
+    stories = [
+        _story("US1", "draft", ["DoR 7/8 ticked"]),
+        _story("US2", "draft", ["DoR 5/8 ticked"]),
+    ]
+    skip = {"ba-ticket-author:--amend US1"}
+    assert pick_ba(tmp_path, tmp_path, _runner(stories), skip=skip) == Task(
+        "ba-ticket-author", "--amend US2"
+    )
+
+
+def test_ba_skipped_drafts_fall_through_to_to_draft(tmp_path: Path):
+    stories = [
+        _story("US1", "draft", ["DoR 7/8 ticked"]),
+        _story("US2", "to-draft"),
+        _story("US3", "to-draft"),
+    ]
+    run = _runner(stories, nxt="US2")
+    skip = {"ba-ticket-author:--amend US1"}
+    assert pick_ba(tmp_path, tmp_path, run, skip=skip) == Task(
+        "ba-ticket-author", "US2"
+    )
+    skip.add("ba-ticket-author:US2")
+    assert pick_ba(tmp_path, tmp_path, run, skip=skip) == Task(
+        "ba-ticket-author", "US3"
+    )
+    skip.add("ba-ticket-author:US3")
+    assert pick_ba(tmp_path, tmp_path, run, skip=skip) is None
+
+
+def test_dev_skip_passes_over_a_ready_ticket(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [_dep("US1", "ready"), _dep("US2", "ready")], [])
+    skip = {"dev-implement-ticket:US1"}
+    assert pick_dev(None, tmp_path, skip) == Task("dev-implement-ticket", "US2")  # type: ignore[arg-type]
+
+
+def test_dev_skipped_test_workflow_picks_nothing(tmp_path: Path, monkeypatch):
+    _hub(monkeypatch, [_dep("US1", "ready")], [])
+    assert pick_dev(None, tmp_path, {"dev-test-workflow:"}) is None  # type: ignore[arg-type]

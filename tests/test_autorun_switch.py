@@ -123,6 +123,7 @@ def test_status_defaults_and_empty_state_fields(tmp_path):
         "attempts": 0,
         "waiting_on": [],
         "stop_reason": None,
+        "skipped": [],
         "running": None,
         "default_branch": None,  # no git repo under tmp_path
         "cloud": False,

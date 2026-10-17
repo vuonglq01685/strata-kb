@@ -1777,8 +1777,11 @@ answering, in its Q&A thread.
   same task** with fresh attempts.
 - **A task that ended `done` is still picked.** The hub may not show it as `done`
   yet (the publish PR is still merging). The runner does not run it again: it
-  waits `idle_interval` and checks again, and after 5 checks it stops with
-  `<task> ended done but is still picked after 5 checks`.
+  waits `idle_interval` and checks again. After 5 checks it skips the task (the
+  agent cannot move it, e.g. a draft whose Open decisions only the SA or Dev can
+  close), lists it under `skipped` in `kb auto status` and picks the next one. When
+  every task left is skipped the loop stops with `every task left was skipped:
+  <task>[, <task>...]`; `kb auto run` gives the skipped tasks another chance.
 - **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that
   ended in a failure other than `dor-unticked` stop the loop with `qa thread:
   <reason>`. A usage-limit wait does not count.

@@ -33,7 +33,7 @@ logger = logging.getLogger("strata_kb.autorun.runner")
 Outcome = Literal["ran", "idle", "waiting", "stopped", "done"]
 
 MAX_ATTEMPTS = 2  # a task that ends `failed` twice stops the loop
-MAX_SAME_PICK = 5  # picks of the task that just ended `done` before the loop stops
+MAX_SAME_PICK = 5  # picks of the task that just ended `done` before it is skipped
 BACKOFF_START = 900
 BACKOFF_MAX = 3600
 EXIT_DONE = 0
@@ -198,17 +198,14 @@ def _task_for(
     hub: HubHandle | hubapi.HubApi,
     state: autostate.AutoState,
 ) -> Task | None:
-    """The stored task (a crash, a retry, an answered question), else a pick."""
+    """The stored task (a crash, a retry, an answered question), else a pick.
+    Raises KbError when the pick fails."""
     if state.task:
         skill, _, arg = state.task.partition(":")
         return Task(skill, arg)
-    try:
-        if cfg.kind == "ba":
-            return picker.pick_ba(root, kb_dir)
-        return picker.pick_dev(hub, root)
-    except KbError as exc:
-        logger.error("could not pick a task: %s", exc)
-        return None
+    if cfg.kind == "ba":
+        return picker.pick_ba(root, kb_dir, skip=state.skipped)
+    return picker.pick_dev(hub, root, skip=state.skipped)
 
 
 def _settle(
@@ -253,14 +250,24 @@ def _settle(
 
 def _repicked(kb_dir: Path, state: autostate.AutoState, task: Task) -> Outcome:
     """The task that just ended `done` is still picked: the hub has not caught up
-    with its publish yet. Wait instead of re-running it; stop after a few checks."""
+    with its publish yet. Wait instead of re-running it; after a few checks skip
+    it (the agent cannot move it, e.g. a draft only the SA/Dev can unblock) and
+    move on to the next task."""
     state = replace(state, same_pick=state.same_pick + 1)
     if state.same_pick >= MAX_SAME_PICK:
-        return _stop(
-            kb_dir,
+        state = replace(
             state,
-            f"{task.key} ended done but is still picked after {MAX_SAME_PICK} checks",
+            last_done=None,
+            same_pick=0,
+            skipped=(*state.skipped, task.key),
         )
+        autostate.save(kb_dir, state)
+        logger.warning(
+            "%s ended done but is still picked after %d checks; skipping it",
+            task.key,
+            MAX_SAME_PICK,
+        )
+        return "ran"
     autostate.save(kb_dir, state)
     logger.info("%s ended done but is still picked; waiting for the hub", task.key)
     return "idle"
@@ -319,7 +326,11 @@ def run_once(
         if not ready:
             logger.info("waiting on questions %s", list(state.waiting_on))
             return "waiting"
-    task = _task_for(root, kb_dir, cfg, hub, state)
+    try:
+        task = _task_for(root, kb_dir, cfg, hub, state)
+    except KbError as exc:
+        logger.error("could not pick a task: %s", exc)
+        return "idle"
     if task is None:
         if qa_thread is not None and qa_thread.only_parked_left():
             parked = sorted(qa_thread.parked)
@@ -330,6 +341,14 @@ def run_once(
                 "Drafts are on "
                 + ", ".join(PARKED_PREFIX + t for t in parked)
                 + ". Fix the ticket, then run `kb auto run` to resume.",
+            )
+        if state.skipped:
+            return _stop(
+                kb_dir,
+                state,
+                "every task left was skipped: " + ", ".join(state.skipped),
+                "Each ended done but stayed picked. Fix them, then run "
+                "`kb auto run` to resume.",
             )
         return "idle"
     if task.key == state.last_done:
@@ -366,11 +385,13 @@ def _resolve_hub(
 
 
 def resume(kb_dir: Path) -> None:
-    """The owner is running again after a stop: same task, fresh attempts."""
+    """The owner is running again after a stop: same task, fresh attempts, and
+    the skipped tasks get another chance."""
     first = autostate.load(kb_dir)
     if first.stop_reason:
         autostate.save(
-            kb_dir, replace(first, stop_reason=None, attempts=0, same_pick=0)
+            kb_dir,
+            replace(first, stop_reason=None, attempts=0, same_pick=0, skipped=()),
         )
 
 

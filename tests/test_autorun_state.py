@@ -80,6 +80,8 @@ GOOD = {
         {"same_pick": -1},
         {"same_pick": True},
         {"same_pick": "2"},
+        {"skipped": "a:b"},
+        {"skipped": [1]},
     ],
 )
 def test_load_rejects_wrong_typed_fields(tmp_path, caplog, bad):
@@ -106,6 +108,12 @@ def test_last_done_and_same_pick_round_trip_and_default(tmp_path):
     got = load(tmp_path)
     assert (got.last_done, got.same_pick) == ("a:b", 3)
     assert (EMPTY.last_done, EMPTY.same_pick) == (None, 0)
+
+
+def test_skipped_round_trips_and_defaults_empty(tmp_path):
+    save(tmp_path, AutoState(None, 0, (), None, "", skipped=("a:b", "c:d")))
+    assert load(tmp_path).skipped == ("a:b", "c:d")
+    assert EMPTY.skipped == ()
 
 
 def test_save_failure_removes_temp_file(tmp_path, monkeypatch):

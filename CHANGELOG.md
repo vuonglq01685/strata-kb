@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.30.3 — 2026-10-17
+
+Full-auto mode no longer halts the backlog on a task its agent cannot move (#125).
+
+- **Skip, don't stop.** A task that ended `done` but is still picked after 5 checks (e.g. a BA draft whose last unticked DoR box is the grounding box, whose Open decisions only the SA or Dev can close) is now skipped: the runner logs a warning, records it under `skipped` in `.kb/auto/state.json` and picks the next task — the next draft, then the stories still to draft. Dev skips the same way. The loop stops only when every task left is skipped, with `every task left was skipped: <task>[, <task>...]` (exit `2`). `kb auto status` gains `skipped`. `kb auto run` after a stop clears the list, so the skipped tasks get another chance.
+- **Docs.** README and the BA and Dev guides (EN, VI) describe the skip. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI. The hub and the skills are unchanged.
+
 ## 1.30.2 — 2026-10-17
 
 Full-auto mode no longer deadlocks on a Q&A question the BA cannot answer, and the task runner is steadier on cloud.
