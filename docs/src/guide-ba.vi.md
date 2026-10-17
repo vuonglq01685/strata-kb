@@ -418,10 +418,13 @@ ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở
 `to-draft` kế tiếp (`/ba-ticket-author`), còn không thì chờ `idle_interval` giây. Mỗi thay
 đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
 worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
-đang mở của Dev bằng `/ba-answer-questions`.
+đang mở của Dev, từng ticket một, bằng `/ba-answer-questions <ticket-id>`.
 
 **Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
-`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Chờ hết hạn mức
+`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Ticket không thể tick lại Definition of Ready sẽ bị "đỗ" (parked), không tính là thất bại:
+bản nháp được lưu ở nhánh `auto/qa-parked/<ticket>` và tiến trình Q&A chuyển sang ticket khác.
+Khi chỉ còn ticket bị đỗ có câu hỏi mở và BA hết task, vòng lặp dừng với `parked: <các ticket>`
+(thoát mã `2`); sửa ticket rồi chạy `kb auto run`. Chờ hết hạn mức
 sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
 mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
 Trạng thái và log nằm trong `.kb/auto/` (git bỏ qua).

@@ -1721,14 +1721,26 @@ fix and push until it is green, squash-merge. The merge to `main` triggers
 
 **The BA Q&A thread.** While the BA loop runs, a background thread checks the hub
 every `qa_interval` for **open** questions on this repo's tickets. When there are
-any and no answer is in progress, it runs `/ba-answer-questions` in a **separate
+any and no answer is in progress, it takes the oldest ticket that is not parked and
+runs `/ba-answer-questions <ticket-id>` (one ticket per run) in a **separate
 `claude -p` process in its own git worktree** (`.kb/auto/worktrees/qa`, branch
 `auto/qa`), beside the main task: own context, own files. It answers from the
 mission, the ticket and the KB, amends the ticket when the answer changes it,
 re-ticks the Definition of Ready after a fresh-context check, and goes through the
-same PR, green CI, merge, publish path. One answer at a time; new questions wait
-for the next check. Whichever side merges second merges `main` in and re-runs
-lint and check.
+same PR, green CI, merge, publish path. When the ticket's `architecture` reference
+has drifted (`kb_ticket_stale`), it re-grounds the ticket in the same amendment. One
+answer at a time; new questions wait for the next check. Whichever side merges
+second merges `main` in and re-runs lint and check.
+
+A ticket whose Definition of Ready cannot be re-ticked (`dor-unticked`) is
+**parked**: the thread saves the draft on `auto/qa-parked/<ticket>` (pushed when a
+remote exists; the code never deletes it), skips that ticket and goes on with the
+next one. A parked ticket is not a failure. To resume, fix the ticket (merge the
+draft branch if you want its work), then run `kb auto run`: the park list lives in
+memory and is cleared on restart.
+
+After every task the repo root returns to the branch it was on before the task
+started, so the next task and your own checkout are not left on a task branch.
 
 **The Dev loop.** One ticket at a time, from `kb mission next --from-hub --json`:
 
@@ -1767,9 +1779,14 @@ answering, in its Q&A thread.
   yet (the publish PR is still merging). The runner does not run it again: it
   waits `idle_interval` and checks again, and after 5 checks it stops with
   `<task> ended done but is still picked after 5 checks`.
-- **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that did
-  not end `done` stop the loop with `qa thread: <reason>`. A usage-limit wait does
-  not count.
+- **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that
+  ended in a failure other than `dor-unticked` stop the loop with `qa thread:
+  <reason>`. A usage-limit wait does not count.
+- **Only parked tickets are left.** When the main loop has no task and every open
+  question belongs to a parked ticket (and no answer is running), the loop stops
+  with `parked: <ticket>[, <ticket>...]` (sorted) and exit `2`. The log names the
+  `auto/qa-parked/<ticket>` branches holding the drafts. Fix the tickets, then
+  `kb auto run`.
 - **Usage limit.** When `claude` reports the subscription limit, the task is
   retried after 15, then 30, then 60 minutes (and 60 from then on); the backoff
   resets after any other result. A usage-limit wait never counts as a failed
@@ -1889,7 +1906,10 @@ hub must be **1.30.0 or later** (`GET /api/plan/next`, `GET /api/registry/entry`
 nothing from it; every other hub-reading `kb` command refuses and points at the
 `strata-kb` MCP tools. `kb pr find|view|open|checks|merge|edit` talk to the GitHub
 REST API (`gh api`), because GraphQL is blocked there; the skills call `kb pr`, not
-`gh pr`. The origin must be a plain GitHub URL.
+`gh pr`. The origin must be a plain GitHub URL. A cloud session has no one to click
+"trust this folder", so `kb auto run` there marks the repo root (and, on a BA repo, the Q&A
+worktree) trusted in `~/.claude.json` (`hasTrustDialogAccepted`; other keys kept,
+an unparseable file left alone). Locally it never writes that file.
 
 `/kb-auto run` there stays on the session's `claude/...` branch. When the default
 branch's switch is off it opens an `auto/switch` PR that flips only `auto.enabled`

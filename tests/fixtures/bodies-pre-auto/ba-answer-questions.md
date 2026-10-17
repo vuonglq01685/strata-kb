@@ -96,7 +96,9 @@ fallback `kb ticket lint`).
 ## Hard rules
 
 - This skill never commits, pushes or publishes, and never waits for the
-  publish. The BA commits and merges.
+  publish. The BA commits and merges. The one allowed git write is merging
+  a parked draft branch (`auto/qa-parked/<ticket-id>`, written only by auto
+  mode), as step 3 says.
 - Every answer is the BA's; never answer a question yourself, never guess
   at a missing fact.
 - One amendment per ticket, Revision N+1, one change-log row, Trigger
