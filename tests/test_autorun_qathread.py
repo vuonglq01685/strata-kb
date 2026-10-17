@@ -8,28 +8,33 @@ import pytest
 
 from strata_kb import gitio
 from strata_kb.autorun.claude import TaskResult
-from strata_kb.autorun.qathread import QaThread, open_question_count
+from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.errors import KbError
 
 WAIT = 10  # generous bound on event waits; passing runs never reach it
 
 
 class FakeQa:
-    def __init__(self, open_=(1,), fail=False):
+    def __init__(self, open_=((1, "T-1"),), fail=False):
+        # an item is (id, ticket), or a ready dict (e.g. a question without a ticket)
         self.open_, self.fail, self.calls = list(open_), fail, []
 
     def list(self, status="open", repo="", ticket=""):
         self.calls.append((status, repo, ticket))
         if self.fail:
             raise KbError("hub answered 500")
-        return [{"id": i} for i in self.open_]
+        return [
+            q if isinstance(q, dict) else {"id": q[0], "ticket": q[1]}
+            for q in self.open_
+        ]
 
 
 class Runner:
     """Fake `run_task`: records each call, finishes when `release` is set."""
 
-    def __init__(self, result=None):
+    def __init__(self, result=None, on_run=None):
         self.result = result or TaskResult("done")
+        self.on_run = on_run  # called with the worktree before the result returns
         self.calls: list[tuple[Path, str]] = []
         self.branches: list[str] = []
         self.started = threading.Event()
@@ -41,6 +46,8 @@ class Runner:
         self.branches.append(gitio.current_branch(root))
         self.started.set()
         assert self.release.wait(WAIT)
+        if self.on_run:
+            self.on_run(root)
         self.finished.set()
         return self.result
 
@@ -281,6 +288,142 @@ def test_stop_without_start_is_safe(repo):
 
 
 def test_open_question_count():
-    qa = FakeQa(open_=(1, 2, 3))
+    qa = FakeQa(open_=((1, "T-a"), (2, "T-b"), (3, "T-b")))
     assert open_question_count(qa, "svc") == 3  # type: ignore[arg-type]
     assert qa.calls == [("open", "svc", "")]
+
+
+UNTICKED = TaskResult("failed", (), "dor-unticked something-else")
+
+
+def _parking(repo, open_=((2, "T-a"),), **runner_kw):
+    runner = Runner(UNTICKED, **runner_kw)
+    runner.release.set()
+    qt, qa, _ = make(repo, qa=FakeQa(open_=open_), runner=runner)
+    return qt, qa, runner
+
+
+def _prompt_head(runner: Runner, n: int = -1) -> str:
+    return runner.calls[n][1].splitlines()[0]
+
+
+def test_tick_runs_the_oldest_unparked_ticket(repo):
+    qt, _, runner = make(repo, qa=FakeQa(open_=[(3, "T-b"), (2, "T-a")]))
+    runner.release.set()
+    assert _tick_and_settle(qt)
+    assert _prompt_head(runner) == "/ba-answer-questions T-a"
+
+
+def test_dor_unticked_parks_the_launched_ticket_without_counting(repo):
+    qt, _, _ = _parking(repo)
+    assert _tick_and_settle(qt)
+    assert qt.parked == {"T-a"} and qt.failed_twice is False
+    qt._qa.open_ = [(2, "T-a"), (3, "T-b")]
+    assert _tick_and_settle(qt)
+    assert qt.failed_twice is False
+
+
+def test_parked_ticket_is_skipped_next_tick(repo):
+    qt, qa, runner = _parking(repo)
+    _tick_and_settle(qt)
+    qa.open_ = [(2, "T-a"), (3, "T-b")]
+    assert _tick_and_settle(qt)
+    assert _prompt_head(runner) == "/ba-answer-questions T-b"
+    qa.open_ = [(2, "T-a")]
+    assert qt.tick() is False
+
+
+def test_park_saves_draft_branch(repo, run_git):
+    root, _ = repo
+    qt, _, _ = _parking(
+        repo,
+        on_run=lambda wt: (wt / "draft.txt").write_text(
+            "d\n", encoding="utf-8", newline="\n"
+        ),
+    )
+    _tick_and_settle(qt)
+    branch = PARKED_PREFIX + "T-a"
+    run_git(root, "rev-parse", "--verify", branch)
+    assert "draft.txt" in run_git(root, "ls-tree", "-r", "--name-only", branch).split()
+
+
+def test_park_with_clean_worktree_creates_no_commit(repo, run_git):
+    root, _ = repo
+    qt, _, _ = _parking(repo)
+    _tick_and_settle(qt)
+    base = run_git(qt.worktree, "rev-parse", "auto/qa")
+    assert run_git(root, "rev-parse", PARKED_PREFIX + "T-a") == base
+    assert qt.parked == {"T-a"}
+
+
+def test_park_git_error_is_a_warning(repo, monkeypatch, caplog):
+    def boom(*a, **k):
+        raise gitio.GitError("boom")
+
+    monkeypatch.setattr(gitio, "commit_all", boom)
+    qt, _, _ = _parking(repo)
+    with caplog.at_level(logging.WARNING):
+        _tick_and_settle(qt)
+    assert qt.parked == {"T-a"}
+    assert any(
+        r.levelno == logging.WARNING and "T-a" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_invalid_ticket_ref_parks_with_warning(repo, caplog):
+    qt, _, _ = _parking(repo, open_=((2, "bad..name"),))
+    with caplog.at_level(logging.WARNING):
+        _tick_and_settle(qt)
+    assert qt.parked == {"bad..name"}
+    assert any(
+        r.levelno == logging.WARNING and "bad..name" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_park_pushes_draft_when_remote_exists(repo, run_git, tmp_path):
+    root, _ = repo
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(root, "remote", "add", "origin", str(origin))
+    run_git(root, "push", "-u", "origin", "main")
+    qt, _, _ = _parking(
+        repo,
+        on_run=lambda wt: (wt / "draft.txt").write_text(
+            "d\n", encoding="utf-8", newline="\n"
+        ),
+    )
+    _tick_and_settle(qt)
+    run_git(origin, "rev-parse", "--verify", PARKED_PREFIX + "T-a")
+
+
+def test_question_without_ticket_runs_bare_and_never_parks(repo):
+    qt, _, runner = _parking(repo, open_=[{"id": 1}])
+    assert _tick_and_settle(qt)
+    assert _prompt_head(runner) == "/ba-answer-questions"
+    assert qt.parked == frozenset() and not qt.failed_twice
+    assert _tick_and_settle(qt)
+    assert qt.failed_twice
+
+
+def test_other_failures_still_count(repo):
+    runner = Runner(TaskResult("failed", (), "ci-red http://x"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    _tick_and_settle(qt)
+    _tick_and_settle(qt)
+    assert qt.failed_twice and qt.parked == frozenset()
+
+
+def test_only_parked_left(repo):
+    qt, qa, _ = _parking(repo)
+    assert qt.only_parked_left() is False  # nothing parked yet
+    _tick_and_settle(qt)
+    qa.open_ = [(2, "T-a")]
+    assert qt.only_parked_left() is True
+    qa.open_ = [(2, "T-a"), (3, "T-b")]
+    assert qt.only_parked_left() is False
+    qa.open_ = []
+    assert qt.only_parked_left() is False
+    qa.open_, qa.fail = [(2, "T-a")], True
+    assert qt.only_parked_left() is False
