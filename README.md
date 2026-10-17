@@ -305,7 +305,7 @@ that follows it.
 | `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
-| `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL]` runs the loop (exit `0` done, `2` stopped, `1` refused); `wait [--max 6600] [--interval 30]` blocks until the loop ends or changes. See [Full-auto mode](#full-auto-mode) |
+| `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL] [--model ID] [--effort LEVEL]` runs the loop (`--model` defaults to `opus`, `""` = claude's default; exit `0` done, `2` stopped, `1` refused); `wait [--max 6600] [--interval 30]` blocks until the loop ends or changes. See [Full-auto mode](#full-auto-mode) |
 
 `kb usage` records what each ticket cost from Claude Code's own transcripts,
 subagents included (`Stop` + `SubagentStop` hooks, scaffolded by

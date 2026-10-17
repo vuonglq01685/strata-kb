@@ -3,6 +3,18 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.30.2 — 2026-10-17
+
+Full-auto mode no longer deadlocks on a Q&A question the BA cannot answer, and the task runner is steadier on cloud.
+
+- **Q&A deadlock.** `/ba-answer-questions` re-grounds on the KB when `architecture` drifts and resumes a parked draft. The Q&A thread runs one ticket per run. A ticket whose result is `dor-unticked` is parked (in memory only); its draft is saved on the branch `auto/qa-parked/<ticket>`, which the code never deletes. When only parked work is left the runner stops with `parked: <ticket>[, <ticket>...]` (sorted, exit 2) instead of looping. Any other Q&A failure still stops the loop after two in a row.
+- **Task prompt.** The prompt bans `git -C` and tells the task to skip a repo rule it cannot run and to note the skip in the PR.
+- **`kb auto run --model/--effort`.** `--model ID` picks the model for each task's `claude -p`; the default is `opus` (`--model ""` uses claude's own default). `--effort LEVEL` sets the effort level (empty = claude's default).
+- **Cloud trust.** On Claude Code cloud, `kb auto run` marks the repo root and the BA Q&A worktree as trusted in `~/.claude.json` (`hasTrustDialogAccepted`) so a fresh `claude -p` does not stall on the folder-trust dialog. It never overwrites a file it cannot parse, keeps every other key and writes atomically. Local runs are unchanged.
+- **Root branch restored.** The runner returns the repo root to its branch after each task, so a task that leaves a different branch checked out no longer derails the next one. A git failure here, or when saving a parked draft, is a logged warning, never a stop.
+- **Docs.** README and the four guides list `--model` and `--effort` in the `kb auto` row. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI and re-run `kb init --kind ba` to get the `/ba-answer-questions` change. The hub is unchanged.
+
 ## 1.30.1 — 2026-10-16
 
 A faster release pipeline and a reader layout fix.

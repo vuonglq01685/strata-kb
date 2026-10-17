@@ -958,7 +958,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
-| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once] [--model] [--effort]`) | `0` ok or done, `2` stopped, `1` refused or error |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
 **Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.

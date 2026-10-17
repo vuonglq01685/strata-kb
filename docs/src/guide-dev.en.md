@@ -874,7 +874,7 @@ Linux (CI) is that caveat, not real drift.
 | `kb plan waves <plan-file> [--json]` | Dependency waves of a `docs/impl/<id>/plan.md` | `0` ok, `1` shared file without a dependency, cycle, unknown task, missing `Depends on:`, or empty `Serial resource:` |
 | `kb impl tidy [--impl-dir]` | Move an old flat `docs/impl/<id>-*` layout into `docs/impl/<id>/`; idempotent, never overwrites | `0` after a report, `1` when the dir is missing |
 | `kb pr lint <file>` | PR evidence gate | `0` PASS, `1` FAIL |
-| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once] [--model] [--effort]`) | `0` ok or done, `2` stopped, `1` refused or error |
 
 **Slash commands:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
 `/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,

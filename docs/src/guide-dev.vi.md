@@ -871,7 +871,7 @@ thật.
 | `kb plan waves <plan-file> [--json]` | Các wave dependency của một `docs/impl/<id>/plan.md` | `0` ok, `1` file dùng chung không có dependency, vòng lặp, task không xác định, thiếu `Depends on:`, hoặc `Serial resource:` rỗng |
 | `kb impl tidy [--impl-dir]` | Dời layout phẳng cũ `docs/impl/<id>-*` vào `docs/impl/<id>/`; chạy lại không đổi gì, không bao giờ ghi đè | `0` sau khi in báo cáo, `1` khi thư mục không tồn tại |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
-| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once] [--model] [--effort]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
 `/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,

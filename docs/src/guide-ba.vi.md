@@ -940,7 +940,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
-| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once] [--model] [--effort]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
