@@ -1894,7 +1894,9 @@ and every story and ticket carries `depends_on`.
   be `main`.
 - A tool outside the allowlist and the per-language table is denied, and a Dev task
   ends `failed command-denied <command>`. Widen `.claude/settings.json` by hand
-  (add the command to `permissions.allow`), then `kb auto run`.
+  (add the command to `permissions.allow`), then `kb auto run`. A denied, missing or
+  refused `kb` command that has a `strata-kb` MCP tool (or one that cannot reach the
+  hub) is not a failure: the skill counts it as no CLI and runs the MCP tool.
 - One BA repo and one Dev repo per hub, one ticket at a time per repo. The BA's Q&A
   thread is the only concurrency.
 

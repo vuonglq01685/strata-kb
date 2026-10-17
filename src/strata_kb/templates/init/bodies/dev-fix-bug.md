@@ -31,6 +31,14 @@ text it returns as `docs/impl/<id>/ticket.md`, the file the CLI would
 write. `kb impl tidy` and the cache-writing `kb resolve --write-cache`
 stay CLI-first.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Steps
 
 1. **Intake** — run `kb impl tidy` first (it moves an old flat
@@ -213,7 +221,7 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<BUG-id>/auto-decisions.md` (create the file with the heading `# Auto decisions`; it is committed with the bug's other files). `dev-handover` copies the lines into the PR's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
 

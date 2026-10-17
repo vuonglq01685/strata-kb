@@ -96,6 +96,14 @@ def test_prompt_for_skips_unrunnable_repo_rule():
     assert "PR" in prompt
 
 
+def test_prompt_for_treats_a_blocked_kb_cli_as_no_cli():
+    prompt = " ".join(prompt_for("x", "", "dev").split())
+    assert "counts as no CLI" in prompt
+    assert "denies it" in prompt and "cannot reach the hub" in prompt
+    assert "use its MCP tool" in prompt
+    assert "not a reason to fail" in prompt
+
+
 # --- run_task ----------------------------------------------------------------
 
 

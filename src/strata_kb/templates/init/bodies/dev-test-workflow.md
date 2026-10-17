@@ -114,7 +114,7 @@ The runner starts this skill as `/dev-test-workflow` when no workflow in `.githu
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why (the languages, each command and where it came from, what was left out). Put the lines in the PR description's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. A `kb-test.yml` (or a workflow carrying the `# kb-test` marker) that runs the repo's tests on `pull_request` and is on the default branch means the work is finished; `kb pr find --head auto/kb-test --state merged --json` shows the merge. When the file is missing from your working tree, create the branch as in **Branch first** below (`FETCH_HEAD` already holds the merged file) and end `AUTO-RESULT: done`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/kb-test`, then `git pull origin auto/kb-test`, and continue at step 3 of the branch rule below (the CI step).
 

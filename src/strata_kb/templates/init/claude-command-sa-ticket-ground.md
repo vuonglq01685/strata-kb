@@ -14,6 +14,14 @@ matching CLI command only when it does not, or the MCP server cannot be
 reached. The gate is `kb_ticket_check`; `kb ticket check` is its CLI
 fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 Pipeline: Intake → Load → Fill → Gate → Handover. Hard rules the skill
 enforces: every line of the SA-owned section (`## Technical grounding`,
 or `## Services & order` with `--mission`) points at a section id that

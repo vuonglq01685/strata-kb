@@ -5,11 +5,12 @@ All notable changes to Strata are recorded here. This project follows
 
 ## 1.30.3 — 2026-10-17
 
-Full-auto mode no longer halts the backlog on a task its agent cannot move (#125).
+Full-auto mode no longer halts the backlog on a task its agent cannot move (#125), and a skill no longer stops when a `kb` command with an MCP tool is blocked in its environment.
 
 - **Skip, don't stop.** A task that ended `done` but is still picked after 5 checks (e.g. a BA draft whose last unticked DoR box is the grounding box, whose Open decisions only the SA or Dev can close) is now skipped: the runner logs a warning, records it under `skipped` in `.kb/auto/state.json` and picks the next task — the next draft, then the stories still to draft. Dev skips the same way. The loop stops only when every task left is skipped, with `every task left was skipped: <task>[, <task>...]` (exit `2`). `kb auto status` gains `skipped`. `kb auto run` after a stop clears the list, so the skipped tasks get another chance.
-- **Docs.** README and the BA and Dev guides (EN, VI) describe the skip. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
-- **Upgrade.** Upgrade the CLI. The hub and the skills are unchanged.
+- **A blocked CLI counts as no CLI.** Every skill's "Hub access — MCP first" rule gains a paragraph: a `kb` command that has a `strata-kb` MCP tool counts as having no CLI when `kb` is not installed, the permission system denies it, it refuses to run in the environment (as hub-reading commands do on Claude Code cloud) or it cannot reach the hub. The skill then runs the MCP tool, even for the commands it runs CLI-first (`kb resolve --status-only --cache` / `--write-cache` in the freshness re-check), and stops only when the MCP tool fails too. The Dev Auto mode sections make a denied `kb` command with an MCP tool the one exception to `failed command-denied`, and the auto task prompt carries the same rule.
+- **Docs.** README, QUICKSTART-dev and the BA and Dev guides (EN, VI) describe the skip and the blocked-CLI rule. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI, then re-run `kb init --kind ba` or `kb init --kind dev` to get the skill changes. The hub is unchanged.
 
 ## 1.30.2 — 2026-10-17
 

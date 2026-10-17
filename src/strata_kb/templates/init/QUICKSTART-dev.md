@@ -483,7 +483,9 @@ from that rule and accept that the agent can then bypass it.
 - `kb auto status` shows the current task and why it stopped; after two failed
   attempts it stops, and `kb auto run` resumes the same task once you fixed the
   cause. A tool outside the allowlist ends the task `failed command-denied`: add
-  the command to `permissions.allow` in `.claude/settings.json` by hand.
+  the command to `permissions.allow` in `.claude/settings.json` by hand. A blocked
+  `kb` command that has a `strata-kb` MCP tool is not a failure: the skill counts
+  it as no CLI and runs the MCP tool.
 - Re-run `kb init --kind dev` to get the permission allowlist (with the commands
   of your `langs:`), the Auto mode sections and the `dev-test-workflow` skill. The
   full reference is the README's "Full-auto mode" section.
