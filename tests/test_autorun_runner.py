@@ -705,9 +705,9 @@ def test_run_lock_is_released_after_an_exception(tmp_path):
 
 class ParkedQaThread:
     failed_twice = False
-    parked = frozenset({"T-a"})
 
-    def __init__(self, only_parked: bool = True):
+    def __init__(self, only_parked: bool = True, parked=("T-a",)):
+        self.parked = frozenset(parked)
         self._only_parked = only_parked
 
     def only_parked_left(self) -> bool:
@@ -723,6 +723,13 @@ def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
     assert autostate.load(env[1]).stop_reason == "parked: T-a"
     assert "auto/qa-parked/T-a" in caplog.text
     assert script.prompts == []
+
+
+def test_parked_stop_lists_every_ticket_sorted(env, monkeypatch):
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    parked = ParkedQaThread(parked={"T-b", "T-a"})
+    assert once(env, Script(), cfg=cfg_of("ba"), qa_thread=parked) == "stopped"
+    assert autostate.load(env[1]).stop_reason == "parked: T-a, T-b"
 
 
 def test_parked_with_task_left_keeps_running(env):

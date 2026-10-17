@@ -86,9 +86,12 @@ class QaThread:
             return frozenset(self._parked)
 
     def only_parked_left(self) -> bool:
-        """True when every open question is on a parked ticket (and there is one)."""
+        """True when every open question is on a parked ticket (and there is one).
+        False while an answer runs: its tickets' questions may read `waiting`."""
         parked = self.parked
-        if not parked:
+        if not parked or (
+            self._proc_thread is not None and self._proc_thread.is_alive()
+        ):
             return False
         try:
             questions = self._qa.list("open", repo=self._repo)

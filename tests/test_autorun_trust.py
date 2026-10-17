@@ -19,6 +19,17 @@ def test_trust_creates_file(tmp_path: Path):
     assert data == {"projects": {str(a.resolve()): {"hasTrustDialogAccepted": True}}}
 
 
+def test_trust_fills_an_existing_empty_file(tmp_path: Path):
+    config = tmp_path / ".claude.json"
+    config.write_text("", encoding="utf-8")
+    a = tmp_path / "a"
+
+    trust.trust_dirs([a], config)
+
+    data = json.loads(config.read_text(encoding="utf-8"))
+    assert data == {"projects": {str(a.resolve()): {"hasTrustDialogAccepted": True}}}
+
+
 def test_trust_keeps_other_keys(tmp_path: Path):
     config = tmp_path / ".claude.json"
     a = tmp_path / "a"

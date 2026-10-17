@@ -427,3 +427,17 @@ def test_only_parked_left(repo):
     assert qt.only_parked_left() is False
     qa.open_, qa.fail = [(2, "T-a")], True
     assert qt.only_parked_left() is False
+
+
+def test_only_parked_left_is_false_while_an_answer_runs(repo):
+    qt, qa, runner = _parking(repo)
+    qa.open_ = [(2, "T-a"), (3, "T-b")]
+    _tick_and_settle(qt)  # T-a parks
+    runner.release.clear()
+    runner.started.clear()
+    assert qt.tick() is True  # T-b answer in flight
+    assert runner.started.wait(WAIT)
+    qa.open_ = [(2, "T-a")]  # T-b's questions turned `waiting` during CI
+    assert qt.only_parked_left() is False
+    runner.release.set()
+    settle(qt)
