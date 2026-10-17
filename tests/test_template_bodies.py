@@ -216,6 +216,23 @@ def test_hub_commands_name_their_mcp_tool_first(name):
     assert "There is no MCP fallback" not in text, name
 
 
+HUB_RULE_FILES = sorted(
+    p.name if p.parent == BASE else f"bodies/{p.name}"
+    for p in (*BASE.iterdir(), *BASE.joinpath("bodies").iterdir())
+    if p.name.endswith(".md") and "Hub access — MCP first" in p.read_text("utf-8")
+)
+
+
+@pytest.mark.parametrize("name", HUB_RULE_FILES)
+def test_hub_access_rule_counts_a_blocked_cli_as_no_cli(name):
+    text = " ".join(BASE.joinpath(name).read_text(encoding="utf-8").split())
+    rule = _hub_access_rule(text)
+    assert "**A blocked CLI counts as no CLI.**" in rule, name
+    for cause in ("not installed", "denies it", "refuses", "cannot reach the hub"):
+        assert cause in rule, (name, cause)
+    assert "not a denial to report" in rule, name
+
+
 def _mcp_before_cli(text: str, step: str, tool: str, cli: str, name: str) -> None:
     at = text.index(step)
     assert text.index(tool, at) < text.index(cli, at), (name, step)
@@ -1290,6 +1307,13 @@ def test_dev_auto_sections_end_the_run_on_a_denied_command(name):
     assert "A command the permission system denies" in text
     assert "command-denied <command>" in text
     assert "Never work around a denial" in text
+
+
+@pytest.mark.parametrize("name", DEV_AUTO_ALL)
+def test_dev_auto_sections_run_mcp_for_a_denied_kb_command(name):
+    text = _dev_text(name)
+    assert "a denied `kb` command that has a `strata-kb` MCP tool" in text
+    assert "counts as no CLI: run the MCP tool and carry on" in text
 
 
 @pytest.mark.parametrize(

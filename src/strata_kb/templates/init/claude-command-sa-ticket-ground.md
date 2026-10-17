@@ -14,6 +14,14 @@ matching CLI command only when it does not, or the MCP server cannot be
 reached. The gate is `kb_ticket_check`; `kb ticket check` is its CLI
 fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 Pipeline: Intake → Load → Fill → Gate → Handover. Hard rules the skill
 enforces: every line of the SA-owned section (`## Technical grounding`,
 or `## Services & order` with `--mission`) points at a section id that
@@ -32,7 +40,12 @@ cites an id); a new file is its own `Files:` entry; a job is never `[NEW]`; in a
 greenfield repo the proposal cites the architecture document in the
 Decision cell so the BA can flip the row once, at mission time; you
 may APPEND rows to that table and never edit, delete or re-status an
-existing one — only a human flips OPEN to DECIDED; code that exists and
+existing one — only a human flips OPEN to DECIDED; a row you append
+never contradicts a DECIDED row of any mission under `missions/` (check
+auth, session, rendering, caching and data-access rows first) — a clash
+goes under `Open decisions` (quoted) and `BA-section contradictions` in
+`## Needs input`, never into a proposal, and the gate's `DECIDED rows
+already bind` warning lists the rows to read; code that exists and
 the document cannot prove → `Open decisions`, never inference; the
 section also carries `Volumes:`, `Healthchecks:` and `Devices:` lines
 read from each `svc.*` record's `Volumes`, `Healthcheck` and `Devices`

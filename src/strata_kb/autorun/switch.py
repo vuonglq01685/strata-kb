@@ -149,6 +149,7 @@ def status(kb_dir: Path) -> dict:
         "attempts": state.attempts,
         "waiting_on": list(state.waiting_on),
         "stop_reason": state.stop_reason,
+        "skipped": list(state.skipped),
         # For /kb-auto: is a loop alive (OS lock probe), and which branch the
         # switch must be pushed to.
         "running": _running_pid(kb_dir),

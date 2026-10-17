@@ -22,6 +22,14 @@ as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb pr lint`
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -218,7 +226,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). Copy every line in that file into the PR description's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>` (a bug: `fix/<BUG-id>` or `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at step 3 of the branch rule below (the CI step).
 

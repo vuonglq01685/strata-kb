@@ -419,12 +419,19 @@ ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở
 đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
 worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
 đang mở của Dev, từng ticket một, bằng `/ba-answer-questions <ticket-id>`.
+Ticket và mission đi cùng nhau: khi D-row hay câu hỏi mở chặn chính ticket,
+`/ba-ticket-author` chốt nó và amend mission trong cùng PR; một lượt amend mission thì
+viết lại các ticket chưa xong mà nó liệt kê trong `Affected`, cũng trong PR đó.
 
 **Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
 `kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Ticket không thể tick lại Definition of Ready sẽ bị "đỗ" (parked), không tính là thất bại:
 bản nháp được lưu ở nhánh `auto/qa-parked/<ticket>` và tiến trình Q&A chuyển sang ticket khác.
 Khi chỉ còn ticket bị đỗ có câu hỏi mở và BA hết task, vòng lặp dừng với `parked: <các ticket>`
-(thoát mã `2`); sửa ticket rồi chạy `kb auto run`. Chờ hết hạn mức
+(thoát mã `2`); sửa ticket rồi chạy `kb auto run`. Task đã kết thúc `done` mà sau 5 lần kiểm tra
+vẫn được chọn lại (bản nháp có Open decisions mà chỉ SA hoặc Dev đóng được) sẽ bị bỏ qua, ghi ở
+`skipped` trong `kb auto status`, và vòng lặp chuyển sang bản nháp hoặc story kế tiếp; khi mọi task
+còn lại đều bị bỏ qua thì dừng với `every task left was skipped: <các task>`, và `kb auto run` thử lại
+chúng. Chờ hết hạn mức
 sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
 mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
 Trạng thái và log nằm trong `.kb/auto/` (git bỏ qua).

@@ -106,6 +106,24 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
     return f"# {title}\n\n{provenance}\n\n{promote_headings(body.strip(chr(10)))}\n"
 
 
+def missions(hub: HubHandle) -> dict[str, str]:
+    """Every mission the hub's plans publish, by id, in its source shape. A
+    mission that cannot be read is left out: callers use this for advice
+    (`kb ticket check`'s related-rows warning), never for a verdict. Reads
+    each plan once; no provenance line, so no git call."""
+    from strata_kb.planstatus import _l3_section, _restore
+
+    out: dict[str, str] = {}
+    for fed, manifest in plan_docs(hub, None):
+        for s in manifest.sections:
+            if s.id != s.file or s.id in out:  # a mission is named like its group
+                continue
+            section = _l3_section(fed, manifest.id, s)
+            if section is not None:
+                out[s.id] = _restore(s.title, section)
+    return out
+
+
 def split_assets(hub: HubHandle, ticket_ref: str) -> tuple[list[Path], list[str]]:
     """`(found, missing)` for the assets the fetched text references: files
     under the plan document's `assets/`, and the names of those not on disk

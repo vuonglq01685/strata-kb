@@ -498,7 +498,11 @@ blocks a ticket, the Dev asks the BA through hub Q&A and waits; once every quest
 **When it stops.** After two failed attempts at one ticket (a red CI after two fix rounds
 stops it at once); fix it, then `kb auto run` resumes it. A tool outside the allowlist ends
 the task `failed command-denied <command>`: add that command to `permissions.allow` in
-`.claude/settings.json` by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure.
+`.claude/settings.json` by hand. A blocked `kb` command that has a `strata-kb` MCP tool
+(denied, missing, refused here, or unable to reach the hub) counts as no CLI: the skill runs
+the MCP tool instead of failing. A ticket that ended `done` but is still picked after 5 checks
+is skipped (`skipped` in `kb auto status`) and the loop moves on; when every ticket left is
+skipped it stops, and `kb auto run` retries them. A usage-limit wait (15, 30, 60 minutes) is not a failure.
 It finishes, exit `0`, when every story and every unparented ticket and bug is `done`.
 The default branch must be `main`.
 

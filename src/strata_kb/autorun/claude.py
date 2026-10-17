@@ -67,6 +67,11 @@ Run git from the working directory; never use `git -C`. When a rule of this \
 repo (`CLAUDE.md`, `AGENTS.md`, ...) needs a command you are not allowed to \
 run, skip that step and name it in the PR's notes; do not stop or fail for it.
 
+A `kb` command that has a `strata-kb` MCP tool counts as no CLI when it \
+cannot run here (`kb` is missing, the permission system denies it, it refuses \
+in this environment, or it cannot reach the hub): use its MCP tool instead. A \
+blocked CLI is not a reason to fail while the MCP tool works.
+
 End your reply with exactly one line, and make it the last line, in one of \
 these three forms:
 AUTO-RESULT: done

@@ -71,8 +71,8 @@ def env(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         planstatus, "next_from_hub", lambda h, repo=None: (tickets["stories"], [], [])
     )
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root: TASK)
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: TASK)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): TASK)
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): TASK)
     return tmp_path, kb_dir, hub, tickets
 
 
@@ -192,10 +192,12 @@ def test_ba_open_question_blocks_done(env):
 
 
 def test_idle_when_nothing_to_pick(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root: None)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
     assert once(env, Script()) == "idle"
     monkeypatch.setattr(
-        picker, "pick_dev", lambda h, root: (_ for _ in ()).throw(KbError("boom"))
+        picker,
+        "pick_dev",
+        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
     )
     assert once(env, Script()) == "idle"
 
@@ -223,17 +225,53 @@ def test_done_task_picked_again_idles_without_running(env, caplog):
     assert autostate.load(env[1]).same_pick == 1
 
 
-def test_fifth_repick_of_done_task_stops(env):
-    script = Script(TaskResult("done"))
+def test_fifth_repick_of_done_task_skips_it_and_moves_on(env, monkeypatch, caplog):
+    other = Task("dev-implement-ticket", "M-x-US4")
+    seen: list = []
+
+    def pick(h, root, skip=()):
+        seen.append(tuple(skip))
+        return other if TASK.key in skip else TASK
+
+    monkeypatch.setattr(picker, "pick_dev", pick)
+    script = Script(TaskResult("done"), TaskResult("done"))
     once(env, script)
     for _ in range(4):
         assert once(env, script) == "idle"
-    assert once(env, script) == "stopped"
+    with caplog.at_level(logging.WARNING):
+        assert once(env, script) == "ran"
+    assert f"{TASK.key} ended done but is still picked after 5 checks" in caplog.text
     state = autostate.load(env[1])
-    assert (
-        state.stop_reason == f"{TASK.key} ended done but is still picked after 5 checks"
+    assert (state.skipped, state.last_done, state.same_pick) == ((TASK.key,), None, 0)
+    assert state.stop_reason is None
+
+    assert once(env, script) == "ran"  # the next task runs
+    assert script.prompts[1].startswith("/dev-implement-ticket M-x-US4")
+    assert seen[-1] == (TASK.key,)
+
+
+def test_every_task_left_skipped_stops(env, monkeypatch):
+    autostate.save(
+        env[1], autostate.AutoState(None, 0, (), None, "", skipped=(TASK.key,))
     )
-    assert len(script.prompts) == 1
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
+    assert once(env, Script()) == "stopped"
+    assert (
+        autostate.load(env[1]).stop_reason == f"every task left was skipped: {TASK.key}"
+    )
+
+
+def test_pick_error_with_skipped_tasks_idles(env, monkeypatch):
+    autostate.save(
+        env[1], autostate.AutoState(None, 0, (), None, "", skipped=(TASK.key,))
+    )
+    monkeypatch.setattr(
+        picker,
+        "pick_dev",
+        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
+    )
+    assert once(env, Script()) == "idle"
+    assert autostate.load(env[1]).stop_reason is None
 
 
 def test_different_pick_resets_the_repick_guard(env, monkeypatch):
@@ -241,7 +279,7 @@ def test_different_pick_resets_the_repick_guard(env, monkeypatch):
     once(env, script)
     assert once(env, script) == "idle"
     other = Task("dev-implement-ticket", "M-x-US4")
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root: other)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): other)
 
     assert once(env, script) == "ran"
 
@@ -251,10 +289,13 @@ def test_different_pick_resets_the_repick_guard(env, monkeypatch):
 
 
 def test_resume_resets_repick_count_but_keeps_last_done(env):
-    autostate.save(env[1], autostate.AutoState(None, 0, (), "stuck", "", TASK.key, 4))
+    autostate.save(
+        env[1], autostate.AutoState(None, 0, (), "stuck", "", TASK.key, 4, ("a:b",))
+    )
     runner_mod.resume(env[1])
     state = autostate.load(env[1])
     assert (state.stop_reason, state.same_pick, state.last_done) == (None, 0, TASK.key)
+    assert state.skipped == ()  # the owner fixed them: they get another chance
 
 
 def test_crash_resumes_stored_task(env, monkeypatch):
@@ -321,7 +362,7 @@ def test_run_loop_sleeps_per_outcome_and_survives_errors(env, monkeypatch):
     sleeps: list[float] = []
     picks = iter([None, KbError("x"), RuntimeError("boom"), TASK])
 
-    def pick(hub, root):
+    def pick(hub, root, skip=()):
         item = next(picks)
         if isinstance(item, Exception):
             raise item
@@ -715,7 +756,7 @@ class ParkedQaThread:
 
 
 def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
     script = Script()
     with caplog.at_level(logging.ERROR):
         outcome = once(env, script, cfg=cfg_of("ba"), qa_thread=ParkedQaThread())
@@ -726,7 +767,7 @@ def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
 
 
 def test_parked_stop_lists_every_ticket_sorted(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
     parked = ParkedQaThread(parked={"T-b", "T-a"})
     assert once(env, Script(), cfg=cfg_of("ba"), qa_thread=parked) == "stopped"
     assert autostate.load(env[1]).stop_reason == "parked: T-a, T-b"
@@ -740,7 +781,7 @@ def test_parked_with_task_left_keeps_running(env):
 
 
 def test_parked_with_unparked_question_idles(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
     outcome = once(env, Script(), cfg=cfg_of("ba"), qa_thread=ParkedQaThread(False))
     assert outcome == "idle"
 

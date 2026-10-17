@@ -724,6 +724,39 @@ async def test_kb_ticket_check_new_marker_reads_the_passed_mission(
     assert "parent mission 'M-demo' not found" in other  # wrong id is ignored
     assert "D1 (DECIDED" in passed
     assert passed.rstrip().endswith("Grounding: PASS")
+    # M-demo is not on the hub either: no "read from the hub" note.
+    assert "read from the hub's published plan" not in without
+    assert "read from the hub's published plan" not in passed
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_check_warns_on_related_decided_rows_of_hub_missions(
+    code_doc, fed_hub, run_git, monkeypatch
+):
+    from strata_kb import ticketfetch
+    from tests.test_cli_ticket_check import _publish_to_hub
+    from tests.test_ticketcheck import AUTH_MISSION, WEB_MISSION, grounding, ticket
+
+    kb_dir, rev = code_doc
+    _publish_to_hub(fed_hub, kb_dir, "demo", run_git)
+    # The hub holds a stale M-demo (D3 still OPEN) and M-auth.
+    stale = WEB_MISSION.replace(
+        "client-side via `apiFetch` | DECIDED", "client-side via `apiFetch` | OPEN"
+    )
+    monkeypatch.setattr(
+        ticketfetch, "missions", lambda hub: {"M-demo": stale, "M-auth": AUTH_MISSION}
+    )
+    text = ticket(grounding(rev, Externals="int.web [NEW: D1]"), parent="M-demo")
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(
+            await client.call_tool(
+                "kb_ticket_check",
+                {"ticket_markdown": text, "mission_markdown": WEB_MISSION},
+            )
+        )
+    # mission_markdown wins over the hub's M-demo, so its DECIDED D3 counts.
+    assert "already bind: M-auth D26 (`apiFetch`); M-demo D3 (`apiFetch`)" in out
 
 
 @pytest.mark.anyio
@@ -762,6 +795,39 @@ async def test_kb_ticket_lint_checks_the_back_link_with_ticket_id(fed_hub):
         )
     assert "checks skipped" in skipped
     assert "'M-airspace-filter-US1' is not in the backlog" in failed
+    # No ticket_id, or the mission passed: no hub-copy note.
+    assert "read from the hub's published plan" not in skipped
+    assert "read from the hub's published plan" not in failed
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_notes_a_mission_read_from_the_hub(
+    fed_hub, tmp_path, run_git
+):
+    from tests.test_ticketfetch import publish_plan
+    from tests.test_ticketlint import DEFAULT_TITLE
+
+    block = _golden_ticket_block(fed_hub)
+    publish_plan(fed_hub, "ba-one", tmp_path / "ba-one", block)
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish ba-one plan")
+    text = _build_ticket(
+        block, title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter"
+    )
+    other = "# Other\n> Mission: M-other\n"
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        args = {"ticket_markdown": text, "ticket_id": "M-airspace-filter-US1"}
+        out = _text(await client.call_tool("kb_ticket_lint", args))
+        named_other = _text(
+            await client.call_tool(
+                "kb_ticket_lint", {**args, "mission_markdown": other}
+            )
+        )
+    note = "[note] parent mission M-airspace-filter read from the hub's published plan"
+    assert note in out
+    assert "passes its text as mission_markdown" in out
+    assert note in named_other  # a mission_markdown naming another id is ignored
 
 
 # --- kb_ticket_stale: `kb ticket stale` over MCP, one file per call ---------

@@ -13,6 +13,14 @@ required; they work only against the shared hub server. Any other MCP
 target answers `Q&A needs the shared hub server — point MCP at it (kb
 mcp-setup)`: stop, repeat it to the BA, change and record nothing.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 Pipeline: List → Walk → Answer → Record → Report. List: `kb_question_list`
 for this repo's `repo_id`, status `open` (plus `ticket=` when a ticket is given); none → say so and stop. Walk: one
 ticket at a time, each question beside the local ticket. Answer: the BA's

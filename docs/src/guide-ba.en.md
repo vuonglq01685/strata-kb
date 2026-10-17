@@ -431,13 +431,19 @@ last one's context. In order: a story held by an open D-row or blocking open que
 change goes through a branch, a PR, green CI and a merge; the merge publishes. A
 second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
 questions, one ticket at a time with `/ba-answer-questions <ticket-id>`, every `qa_interval` seconds.
+A ticket and its mission move together: when a ticket's own D-row or open question
+blocks it, `/ba-ticket-author` settles it and amends the mission in the same PR, and a
+mission amend re-authors the not-done tickets it lists in `Affected` in its PR.
 
 **When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
 `kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
 A ticket whose Definition of Ready cannot be re-ticked is parked, not a failure: its draft
 goes to branch `auto/qa-parked/<ticket>` and the Q&A process moves on. When only parked tickets
 have open questions and the BA has no task, it stops with `parked: <tickets>` (exit `2`);
-fix the ticket, then `kb auto run`. A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
+fix the ticket, then `kb auto run`. A task that ended `done` but is still picked after 5 checks
+(a draft whose Open decisions only the SA or Dev can close) is skipped, listed under `skipped` in
+`kb auto status`, and the loop moves on to the next draft or story; when every task left is skipped
+it stops with `every task left was skipped: <tasks>`, and `kb auto run` retries them. A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
 when every story and unparented ticket and bug is `done` and no question is open.
 State and logs are in `.kb/auto/` (git-ignored).
 

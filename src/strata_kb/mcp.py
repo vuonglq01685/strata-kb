@@ -76,10 +76,13 @@ def _known_docs(hub) -> str:
     )
 
 
-def _mission_loader(hub, mission_markdown: str | None):
+def _mission_loader(
+    hub, mission_markdown: str | None, from_hub: list[str] | None = None
+):
     """Mission text by id for the ticket tools: the client's
     `mission_markdown` when its `> Mission:` line names that id, else the
-    mission's section of the hub's plan, else None."""
+    mission's section of the hub's plan, else None. Ids served from the
+    hub are appended to `from_hub`."""
     from strata_kb import mission, ticketfetch
 
     def load(mission_id: str) -> str | None:
@@ -88,11 +91,27 @@ def _mission_loader(hub, mission_markdown: str | None):
             if m is not None and m.group(1) == mission_id:
                 return mission_markdown
         try:
-            return ticketfetch.render(hub, mission_id)
+            text = ticketfetch.render(hub, mission_id)
         except ticketfetch.TicketFetchError:
             return None
+        if from_hub is not None and mission_id not in from_hub:
+            from_hub.append(mission_id)
+        return text
 
     return load
+
+
+def _hub_mission_note(from_hub: list[str]) -> str:
+    """A note when a parent mission was read from the hub's published plan:
+    a BA or SA with a local amend (a new D-row, a flipped status) gets a
+    PASS here that CI, which reads missions/, can fail. A Dev reads the hub
+    copy on purpose and can ignore it."""
+    return "".join(
+        f"[note] parent mission {mid} read from the hub's published plan — "
+        f"a BA or SA with a local missions/{mid}.md passes its text as "
+        "mission_markdown (CI reads the local file)\n\n"
+        for mid in from_hub
+    )
 
 
 HUB_DOWN = (
@@ -328,13 +347,14 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
+            from_hub: list[str] = []
             report = lint_ticket(
                 ticket_markdown,
                 hub,
                 ticket_id=ticket_id or None,
-                load_mission=_mission_loader(hub, mission_markdown),
+                load_mission=_mission_loader(hub, mission_markdown, from_hub),
             )
-            return stale_hub_note(hub) + report.render()
+            return stale_hub_note(hub) + _hub_mission_note(from_hub) + report.render()
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -357,12 +377,13 @@ def create_server(config: ServerConfig) -> MCPServer:
         from the hub only — no local fallback."""
 
         def _run() -> str:
-            from strata_kb import ticketcheck, ticketstale
+            from strata_kb import mission, ticketcheck, ticketfetch, ticketstale
 
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            load_mission = _mission_loader(hub, mission_markdown)
+            from_hub: list[str] = []
+            load_mission = _mission_loader(hub, mission_markdown, from_hub)
 
             def load_doc(repo, doc):
                 return ticketcheck.load_from_hub(hub.federation_dir, repo, doc)
@@ -377,6 +398,15 @@ def create_server(config: ServerConfig) -> MCPServer:
                     return None
                 return ticketcheck.parse_decisions(text, f"mission {mission_id}")
 
+            def load_missions() -> dict[str, str]:
+                # The hub's missions, with the client's local copy winning.
+                out = ticketfetch.missions(hub)
+                if mission_markdown:
+                    m = mission.MISSION_LINE_RE.search(mission_markdown)
+                    if m is not None:
+                        out[m.group(1)] = mission_markdown
+                return out
+
             report = ticketcheck.check(
                 ticket_markdown,
                 load_doc=load_doc,
@@ -386,8 +416,10 @@ def create_server(config: ServerConfig) -> MCPServer:
                 load_at=lambda r, d, rev, ids: ticketstale.drift_refs(
                     hub, r, d, rev, ids
                 ),
+                load_missions=load_missions,
             )
-            return stale_hub_note(hub) + report.render("Grounding")
+            note = _hub_mission_note(from_hub)
+            return stale_hub_note(hub) + note + report.render("Grounding")
 
         return await anyio.to_thread.run_sync(_run)
 

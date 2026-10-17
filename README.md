@@ -1154,7 +1154,13 @@ Mission lint runs over MCP too (`kb_mission_lint`), without the ticket-coverage
 warning: that check needs filesystem access to the sibling `tickets/` directory,
 which only the CLI has. Ticket lint and ticket check run over MCP too
 (`kb_ticket_lint`, `kb_ticket_check`); the client passes the mission's text
-(`mission_markdown`) when it is not on the hub yet. Only the CLI's local
+(`mission_markdown`) when it is not on the hub yet. When a parent mission is read
+from the hub's published plan, both tools print a `[note]`: it can differ from the
+local file CI reads. `kb ticket check` also warns when a cited D-row that is not yet
+DECIDED names a file or symbol (a back-ticked path, dotted name or camelCase
+identifier) that a DECIDED row of any mission already names, unless the row already
+cites it; the CLI reads every mission under `missions/` (for a mission plan, its own
+directory), MCP every mission on the hub with `mission_markdown` winning. Only the CLI's local
 `-code` fallback (`--kb-dir`) has no MCP twin. `kb ticket lint --missions-dir`
 and `kb mission lint --tickets-dir` point either gate at a non-sibling folder.
 
@@ -1777,8 +1783,11 @@ answering, in its Q&A thread.
   same task** with fresh attempts.
 - **A task that ended `done` is still picked.** The hub may not show it as `done`
   yet (the publish PR is still merging). The runner does not run it again: it
-  waits `idle_interval` and checks again, and after 5 checks it stops with
-  `<task> ended done but is still picked after 5 checks`.
+  waits `idle_interval` and checks again. After 5 checks it skips the task (the
+  agent cannot move it, e.g. a draft whose Open decisions only the SA or Dev can
+  close), lists it under `skipped` in `kb auto status` and picks the next one. When
+  every task left is skipped the loop stops with `every task left was skipped:
+  <task>[, <task>...]`; `kb auto run` gives the skipped tasks another chance.
 - **The BA's Q&A thread fails twice in a row.** Two answer runs in a row that
   ended in a failure other than `dor-unticked` stop the loop with `qa thread:
   <reason>`. A usage-limit wait does not count.
@@ -1891,7 +1900,9 @@ and every story and ticket carries `depends_on`.
   be `main`.
 - A tool outside the allowlist and the per-language table is denied, and a Dev task
   ends `failed command-denied <command>`. Widen `.claude/settings.json` by hand
-  (add the command to `permissions.allow`), then `kb auto run`.
+  (add the command to `permissions.allow`), then `kb auto run`. A denied, missing or
+  refused `kb` command that has a `strata-kb` MCP tool (or one that cannot reach the
+  hub) is not a failure: the skill counts it as no CLI and runs the MCP tool.
 - One BA repo and one Dev repo per hub, one ticket at a time per repo. The BA's Q&A
   thread is the only concurrency.
 

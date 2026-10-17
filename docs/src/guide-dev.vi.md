@@ -496,7 +496,11 @@ trong một tiến trình mới.
 **Khi nào dừng.** Sau hai lần thất bại ở cùng một ticket (CI vẫn đỏ sau hai vòng sửa thì dừng
 ngay); sửa xong, `kb auto run` chạy tiếp ticket đó. Công cụ ngoài danh sách cho phép làm task
 kết thúc `failed command-denied <lệnh>`: tự thêm lệnh đó vào `permissions.allow` trong
-`.claude/settings.json`. Chờ hết hạn mức sử dụng (15, 30, 60 phút) không tính là thất bại.
+`.claude/settings.json`. Lệnh `kb` có tool MCP `strata-kb` tương ứng mà bị chặn (bị từ chối
+quyền, không có `kb`, bị môi trường từ chối, hoặc không tới được hub) được coi là không có CLI:
+skill chạy tool MCP thay vì thất bại. Ticket đã kết thúc `done` mà sau 5 lần kiểm tra vẫn được chọn lại sẽ bị
+bỏ qua (`skipped` trong `kb auto status`) và vòng lặp chuyển sang ticket khác; khi mọi ticket còn
+lại đều bị bỏ qua thì dừng, và `kb auto run` thử lại chúng. Chờ hết hạn mức sử dụng (15, 30, 60 phút) không tính là thất bại.
 Vòng lặp kết thúc, thoát mã `0`, khi mọi story, mọi ticket không thuộc mission và mọi bug đều
 `done`.
 Nhánh mặc định phải là `main`.

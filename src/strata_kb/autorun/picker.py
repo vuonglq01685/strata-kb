@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,25 +50,35 @@ def _mission_next(root: Path, run) -> dict:
         ) from exc
 
 
-def _ba_task(data: dict) -> Task | None:
+def _ba_tasks(data: dict) -> Iterator[Task]:
     stories = data["stories"]
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
-            return Task("ba-mission-plan", f"--amend {s['mission_id']}")
+            yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
     for s in stories:
         if s["status"] == "draft":
-            return Task("ba-ticket-author", f"--amend {s['us_id']}")
+            yield Task("ba-ticket-author", f"--amend {s['us_id']}")
     if data["next"]:
-        return Task("ba-ticket-author", data["next"])
-    return None
+        yield Task("ba-ticket-author", data["next"])
+    # past a skipped `next`, the later stories still to draft
+    for s in stories:
+        if s["status"] == "to-draft":
+            yield Task("ba-ticket-author", s["us_id"])
 
 
-def pick_ba(root: Path, kb_dir: Path, run=subprocess.run) -> Task | None:
+def _first(tasks: Iterable[Task], skip: Collection[str]) -> Task | None:
+    return next((t for t in tasks if t.key not in skip), None)
+
+
+def pick_ba(
+    root: Path, kb_dir: Path, run=subprocess.run, skip: Collection[str] = ()
+) -> Task | None:
     """Mission blocker, then a draft ticket to amend, then the next ticket to
-    write. First match in mission order within each rule."""
+    write. First match in mission order within each rule whose key is not in
+    `skip`."""
     data = _mission_next(root, run)
     try:
-        return _ba_task(data)
+        return _first(_ba_tasks(data), skip)
     except (KeyError, TypeError) as exc:
         raise KbError(
             f"kb mission next gave unexpected JSON: {str(data)[:MAX_STDERR]!r}"
@@ -94,20 +105,26 @@ def plan_next(
     return planstatus.next_from_hub(hub)
 
 
-def pick_dev(hub: HubHandle | HubApi, root: Path) -> Task | None:
-    """CI workflow first, then a ready bug, then a ready unparented ticket,
-    then the first ready story whose dependencies are done."""
-    if not _has_test_workflow(root):
-        return Task("dev-test-workflow", "")
-    stories, unparented, _notes = plan_next(hub)
+def _dev_tasks(stories, unparented) -> Iterator[Task]:
     for u in unparented:
         if u.status == "ready" and u.us_id.startswith("BUG-"):
-            return Task("dev-fix-bug", u.us_id)
+            yield Task("dev-fix-bug", u.us_id)
     for u in unparented:
         if u.status == "ready" and not u.us_id.startswith("BUG-"):
-            return Task("dev-implement-ticket", u.us_id)
+            yield Task("dev-implement-ticket", u.us_id)
     done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
     for s in stories:
         if s.status == "ready" and all(d in done for d in s.depends_on):
-            return Task("dev-implement-ticket", s.us_id)
-    return None
+            yield Task("dev-implement-ticket", s.us_id)
+
+
+def pick_dev(
+    hub: HubHandle | HubApi, root: Path, skip: Collection[str] = ()
+) -> Task | None:
+    """CI workflow first, then a ready bug, then a ready unparented ticket,
+    then the first ready story whose dependencies are done. Tasks whose key
+    is in `skip` are passed over."""
+    if not _has_test_workflow(root):
+        return _first([Task("dev-test-workflow", "")], skip)
+    stories, unparented, _notes = plan_next(hub)
+    return _first(_dev_tasks(stories, unparented), skip)

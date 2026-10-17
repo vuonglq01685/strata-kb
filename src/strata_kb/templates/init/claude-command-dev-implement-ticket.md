@@ -27,6 +27,14 @@ the fallback. `kb impl tidy`, `kb svc note` and the cache-writing `kb resolve --
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -181,7 +189,7 @@ The runner starts this skill as `/dev-implement-ticket <us-id>`. Nobody answers 
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions`; it is committed with the ticket's other files). `dev-handover` copies the lines into the PR's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 **A real blocker is a BA question.** A blocker is something only the BA can settle: a broken citation, a ticket with no `kb-context`, a failed grounding check, a stale citation that changes an AC, or an unmerged dependency this story needs. Call `kb_question_ask(ticket, question, asked_by, context, blocks)`: `asked_by` is `kb-auto`; `blocks` names the AC ids the blocker touches (every AC when it stops the whole ticket). Skip the call when `kb_question_list` already shows the same question. Then end `AUTO-RESULT: blocked-qa Q<id>`, with every other blocking id from `kb_question_list`. When Q&A is unavailable, end `AUTO-RESULT: failed qa-unavailable` instead.
 

@@ -18,6 +18,14 @@ matching CLI command only when it does not, or the MCP server cannot be
 reached. The gate is `kb_ticket_check`; `kb ticket check` is its CLI
 fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Workflow
 
 1. **Intake** — read the document. Identify the product repo id
@@ -29,7 +37,10 @@ fallback.
    points at `missions/M-<slug>.md`. Load its `## Technology decisions`
    table — its D-rows are the only legal targets of `[NEW: D<n>]`. With
    `--mission` that table is in the file you are filling. No parent
-   mission, no table: case 2 of Fill degrades to free text.
+   mission, no table: case 2 of Fill degrades to free text. Read the
+   `## Technology decisions` of every other mission under `missions/`
+   too: their DECIDED rows bind the code this ticket touches as much as
+   the parent's do.
 2. **Load** — from `<repo-id>-code` on the hub only, via the MCP tool
    `kb_get_section` (fallback: `kb get <repo-id>-code <section-id>`),
    discovering ids with `kb_search` (fallback: `kb query`) restricted to
@@ -54,6 +65,16 @@ fallback.
      matching row → append one first, then write the marker:
      `| D<n> | <concrete proposal: svc/table/route name and one line why> | OPEN | <human SA / tech lead> | <US id> |`
      The proposal is specific — a name the ticket can use — never "TBD".
+     Before you write it, check it against every DECIDED row of every
+     mission, auth, session, rendering, caching and data-access rows
+     first. A proposal a DECIDED row rules out (server-side fetching where
+     the session lives only in the client, a public route where a guard
+     requires a token) is never written. Propose an option that agrees
+     with the row and cite it in the Decision cell
+     (`… agrees with D26 of M-identity-access`). When no option agrees,
+     write no row: the BA placeholder goes under `Open decisions`, quoting
+     the clash (a FAIL by design), and the clash is listed under
+     `BA-section contradictions` in `## Needs input`, naming both rows.
      In a greenfield repo (`<repo>-code` has no `svc.*`) every service,
      table or route the mission needs comes from the architecture
      document on the hub: cite it in the Decision cell (the proposal
@@ -204,6 +225,13 @@ fallback.
      Dev. Report it and stop; NEVER flip a Status to make the gate pass.
    - warning `has Technology decisions — reference the row as
      [NEW: D<n>]` — you used free text where a D-row belongs.
+   - warning `decision D<n> names files or symbols that DECIDED rows
+     already bind: <mission> D<k> (…)` — it fires for a row not yet
+     DECIDED. Read each listed row. For a row this run appended: when it
+     contradicts one, rewrite it, or drop it and park the placeholder as
+     above; when it agrees, cite the listed rows in its Decision cell and
+     the warning clears. For an existing row, change nothing: name the
+     listed rows in the handover, beside the row's decision.
    - `[note] grounded @<old>, still valid at @<new>` or a `[warn]
      grounded @<old>, now @<new> …` — a PASS: `-code` moved but every
      cited fact still holds. Show the diff to the BA; do not re-ground.
@@ -261,6 +289,9 @@ fallback.
 - You may APPEND rows to `## Technology decisions`; never edit or delete
   an existing row, never change a Status — only a human flips OPEN to
   DECIDED.
+- A row you append never contradicts a DECIDED row of any mission. A
+  clash goes under `Open decisions` and `BA-section contradictions`,
+  never into a proposal.
 - A value for a field the document does not carry has exactly two
   homes: `[NEW: D<n>]` when the ticket intends to create or change it,
   or `Open decisions` when the document simply cannot prove it. It

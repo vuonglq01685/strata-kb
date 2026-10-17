@@ -29,6 +29,14 @@ stay CLI. `kb mission next` stays CLI too:
 it reads this repo's unpublished `missions/` and `tickets/`, which
 `kb_mission_next` (the published plan only) cannot see.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Workflow
 
 1. **Intake** — collect the business need: what capability, for which

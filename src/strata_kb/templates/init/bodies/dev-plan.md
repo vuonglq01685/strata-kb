@@ -15,6 +15,14 @@ as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb plan wav
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -365,7 +373,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). `dev-handover` copies the lines into the PR's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 - **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER and no SUGGESTED gap open), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps through the fix subagent and re-review, at most 2 fix rounds (not 3). A plan that is still not clean after that stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
 - **No `-code` document yet — "ask the Dev once for the build/test/lint commands"** → never ask; read them from the repo, in this order: the `run:` lines of `.github/workflows/*.yml` (skip the scaffolded `kb-pr-lint.yml`, `kb-doctor.yml` and `kb-code.yml`; `kb-test.yml` counts), `docs/conventions/<lang>.md` and its `testing.md`, then the package manifests and task files (`package.json` scripts, `pyproject.toml`, `Makefile`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Package.swift`). `cmd.lint` and `cmd.build` come only from commands that `docs/conventions/<lang>.md` and its pack files name for the repo's languages, in the families the allowlist permits per language (test runner, install, lint, type check and build: for example `ruff`, `npm run lint`, `go vet`, `cargo clippy`, `dotnet build`); a command outside those families is denied in a headless run, so choose another one the conventions name. Record the commands in the `cmd.test:` / `cmd.lint:` header lines and log where each came from. A repo with no test command at all gets `AUTO-RESULT: failed no-test-command`.

@@ -25,6 +25,14 @@ as `docs/impl/<ticket-id>/ticket.md`, the file the CLI would write. `kb plan wav
 `--write-cache` stay CLI-first; where a step below names an MCP path for
 one, it is only the no-CLI fallback.
 
+**A blocked CLI counts as no CLI.** A `kb` command that has a
+`strata-kb` MCP tool has no CLI here when it cannot run: `kb` is not
+installed, the permission system denies it, it refuses to run in this
+environment (as hub-reading commands do on Claude Code cloud), or it
+cannot reach the hub. Then run its MCP tool, even where this skill runs
+the CLI first, and carry on: that is the fallback, not a failure and not
+a denial to report. Stop only when the MCP tool fails too.
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -247,7 +255,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Append it to `docs/impl/<ticket-id>/auto-decisions.md` (create the file with the heading `# Auto decisions` when it is missing). `dev-handover` copies the lines into the PR's `## Notes`.
 
-**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings.
+**A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
 - **Isolate: "a dedicated branch", named from the ticket id** → the branch is `auto/<ticket-id>`, and `dev-implement-ticket` has already created it. Check with `git branch --show-current` and stay on it. When you were started alone and are on the default branch, create it with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. A worktree for a lane stays optional, and a lane's branch is cut from the ticket branch as written.
 - **Plan incomplete — "stop and send it back to `dev-plan`"; a task with no test and no `Exempt:` line — "stop and return the task to `dev-plan`"; a merge conflict between lanes is "a plan defect: stop, do not resolve"** → repair it yourself: run `dev-plan` on the plan, which fixes it and re-approves it under its own Auto mode, then resume at the first unticked task. A task goes back to `dev-plan` at most 2 times; after that, end `AUTO-RESULT: failed plan-defect task <n>`.

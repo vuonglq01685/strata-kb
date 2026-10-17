@@ -254,3 +254,10 @@ def test_split_assets_treats_a_symlinked_assets_folder_as_missing(
     found, missing = ticketfetch.split_assets(hub, "BUG-12")
     assert found == []
     assert missing == [name]
+
+
+def test_missions_lists_each_published_mission_and_no_ticket(plan_hub):
+    found = ticketfetch.missions(plan_hub)
+    assert list(found) == [MISSION_ID]
+    assert US1 not in found
+    assert found[MISSION_ID].startswith("# ")

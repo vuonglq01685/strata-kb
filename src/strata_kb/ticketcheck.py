@@ -25,6 +25,7 @@ import posixpath
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 
 import yaml
@@ -156,6 +157,7 @@ class Decision:
     supersedes: str | None = (
         None  # D-id named by `Supersedes D<n>` in the Decision cell
     )
+    text: str = dc_field(default="", compare=False)  # Decision cell, for related rows
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,9 @@ LoadDrift = Callable[[str | None, str, str], list[ResolvedRef] | None]
 LoadDecisions = Callable[
     [str], DecisionTable | None
 ]  # mission id -> table, None = file missing
+
+# every mission the caller can see: mission id -> its text
+LoadMissions = Callable[[], dict[str, str]]
 
 # (repo, doc id, grounded rev, section ids) -> those sections as they stood at
 # the grounded revision, None = no baseline
@@ -221,8 +226,109 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
             owner,
             blocks,
             sup.group(1) if sup else None,
+            cell.strip(),
         )
     return DecisionTable(source, out)
+
+
+_ANCHOR_SPAN_RE = re.compile(r"`([^`\s]+)`")
+_ANCHOR_SHAPE_RE = re.compile(r"[/.]|[a-z][A-Z]")
+_NEW_DECISION_RE = re.compile(r"\[NEW:\s*(D\d+)\s*\]")
+
+
+def decision_anchors(cell: str) -> set[str]:
+    """The files and symbols a Decision cell names: back-ticked spans shaped
+    like a path, a dotted name or a camelCase/PascalCase identifier. Plain
+    words, CONSTANTS and commands are too generic to tie two rows, and so
+    is a bare file name (`page.tsx`, `index.ts`): paths match in full."""
+    out: set[str] = set()
+    for span in _ANCHOR_SPAN_RE.findall(cell):
+        span = span.removesuffix("()")
+        if _ANCHOR_SHAPE_RE.search(span):
+            out.add(span)
+    return out
+
+
+def _names_row(cell: str, row_id: str, mission_id: str, own_mission: str) -> bool:
+    """`cell` already cites D<n> of `mission_id` — the SA weighed that row.
+    Another mission's row counts only when its id and the mission id stand
+    close together, in either order."""
+    row = rf"\b{row_id}\b"
+    if mission_id == own_mission:
+        return re.search(row, cell) is not None
+    mission_ = rf"(?<![\w-]){re.escape(mission_id)}(?![\w-])"
+    near = r"[^;|]{0,40}?"
+    return re.search(rf"{row}{near}{mission_}|{mission_}{near}{row}", cell) is not None
+
+
+def related_decided(
+    row: Decision, own_mission: str, tables: dict[str, DecisionTable]
+) -> list[str]:
+    """`<mission> D<n> (`anchor`, …)` for every DECIDED row of every mission
+    that names a file or symbol `row` names too, minus the rows `row`
+    already cites."""
+    mine = decision_anchors(row.text)
+    if not mine:
+        return []
+    out: list[str] = []
+    for mission_id in sorted(tables):
+        for other in tables[mission_id].rows.values():
+            if mission_id == own_mission and other.id == row.id:
+                continue
+            if other.status.upper() != "DECIDED":
+                continue
+            shared = sorted(mine & decision_anchors(other.text))
+            if not shared or _names_row(row.text, other.id, mission_id, own_mission):
+                continue
+            spans = ", ".join(f"`{a}`" for a in shared[:3])
+            out.append(f"{mission_id} {other.id} ({spans})")
+    return out
+
+
+def _check_related_decisions(
+    text: str,
+    heading: str,
+    section: _Section,
+    decisions: _Decisions,
+    own_mission: str | None,
+    load_missions: LoadMissions | None,
+    issues: list[Issue],
+    notes: list[str],
+) -> None:
+    """A D-row the section cites that is not DECIDED yet and names a file or
+    symbol a DECIDED row already binds (in any mission) gets one warning
+    listing those rows: the gate cannot judge a contradiction, the SA reads
+    them before the row is decided. A DECIDED row was weighed already."""
+    if decisions.table is None or own_mission is None:
+        return
+    first_line: dict[str, int] = {}
+    for offset, line in enumerate(section.lines):
+        for m in _NEW_DECISION_RE.finditer(line):
+            row = decisions.table.rows.get(m.group(1))
+            if row is not None and row.status.upper() != "DECIDED":
+                first_line.setdefault(row.id, section.first_line + offset)
+    if not first_line:
+        return
+    if load_missions is None:
+        notes.append(
+            "related-decisions check skipped — no missions directory or hub plan"
+        )
+        return
+    missions = load_missions()
+    if heading == SERVICES_HEADING:
+        missions = {**missions, own_mission: text}  # the checked text is newest
+    tables = {mid: parse_decisions(body, mid) for mid, body in missions.items()}
+    for row_id, lineno in first_line.items():
+        related = related_decided(decisions.table.rows[row_id], own_mission, tables)
+        if related:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"decision {row_id} names files or symbols that DECIDED rows "
+                    f"already bind: {'; '.join(related)} — confirm {row_id} agrees "
+                    f"with each before it is decided (line {lineno})",
+                )
+            )
 
 
 def load_doc_dir(doc_dir: Path, source: str) -> LoadedDoc:
@@ -453,6 +559,7 @@ def check(
     load_decisions: LoadDecisions | None = None,
     load_drift: LoadDrift | None = None,
     load_at: LoadAt | None = None,
+    load_missions: LoadMissions | None = None,
 ) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
@@ -509,6 +616,13 @@ def check(
     _check_files(section, doc, decisions, issues, notes, structure)
     _judge_new_entries(new_entries, doc, decisions, issues, notes)
     _check_new_coverage(new_entries, doc, issues)
+    own_mission = decisions.mission_id
+    if heading == SERVICES_HEADING:
+        m = mission.MISSION_LINE_RE.search(text)
+        own_mission = m.group(1) if m else None
+    _check_related_decisions(
+        text, heading, section, decisions, own_mission, load_missions, issues, notes
+    )
     _check_new_exists(
         new_entries, doc, issues, notes, moved, load_at, structure, repo, rev
     )
