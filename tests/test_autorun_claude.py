@@ -85,6 +85,17 @@ def test_prompt_for_strips_empty_arg():
     assert prompt_for("ba-next", "", "docs").splitlines()[0] == "/ba-next"
 
 
+def test_prompt_for_forbids_git_dash_c():
+    assert "never use `git -C`" in prompt_for("x", "", "ba")
+
+
+def test_prompt_for_skips_unrunnable_repo_rule():
+    prompt = prompt_for("x", "", "ba")
+    assert "CLAUDE.md" in prompt
+    assert "skip that step" in prompt
+    assert "PR" in prompt
+
+
 # --- run_task ----------------------------------------------------------------
 
 
@@ -122,6 +133,28 @@ def test_run_task_fresh_process_and_log(fake_claude, tmp_path):
     for part in ("PROMPT", "STDOUT", "STDERR", prompt, "AUTO-RESULT: done"):
         assert part in log
     assert log.rstrip().splitlines()[-1].startswith("exit=0 duration=")
+
+
+def test_run_task_passes_model_and_effort(fake_claude, tmp_path):
+    fake_claude.script("work\nAUTO-RESULT: done")
+    result = run_task(
+        tmp_path,
+        "/x",
+        log_dir=tmp_path / "logs",
+        model="claude-sonnet-5-5",
+        effort="high",
+    )
+    argv = fake_claude.calls()[0]["argv"]
+    assert result.kind == "done"
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
+    assert argv[argv.index("--effort") + 1] == "high"
+
+
+def test_run_task_omits_empty_model_and_effort(fake_claude, tmp_path):
+    fake_claude.script("work\nAUTO-RESULT: done")
+    run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
+    argv = fake_claude.calls()[0]["argv"]
+    assert "--model" not in argv and "--effort" not in argv
 
 
 def test_usage_limit_envelope(fake_claude, tmp_path):

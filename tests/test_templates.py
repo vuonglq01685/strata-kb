@@ -3580,6 +3580,21 @@ def test_ba_answer_questions_wrappers_carry_the_five_steps_and_next_step_block()
         assert "State:" in text, name
 
 
+def test_ba_answer_questions_regrounds_and_resumes_parked_draft():
+    text = _normalised(_read_init_template("claude-skill-ba-answer-questions.md"))
+    for needle in (
+        "question, architecture",
+        "kb_ticket_stale",
+        "auto/qa-parked/<ticket-id>",
+        "git fetch origin auto/qa-parked/<ticket-id>",
+        "git merge --no-edit FETCH_HEAD",
+        "git merge --abort",
+        "dor-unticked <ticket-id>",
+    ):
+        assert needle in text, needle
+    assert "the only amendment trigger this skill uses" not in text
+
+
 # --- dev-sa: the Dev-repo SA agent, and the fifth BA-Q state marker -----------
 #
 # Deliberately NOT in DEV_WORKFLOW_SKILLS (same reasoning as dev-code-seed and

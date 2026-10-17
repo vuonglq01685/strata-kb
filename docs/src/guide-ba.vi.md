@@ -418,10 +418,13 @@ ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở
 `to-draft` kế tiếp (`/ba-ticket-author`), còn không thì chờ `idle_interval` giây. Mỗi thay
 đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
 worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
-đang mở của Dev bằng `/ba-answer-questions`.
+đang mở của Dev, từng ticket một, bằng `/ba-answer-questions <ticket-id>`.
 
 **Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
-`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Chờ hết hạn mức
+`kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Ticket không thể tick lại Definition of Ready sẽ bị "đỗ" (parked), không tính là thất bại:
+bản nháp được lưu ở nhánh `auto/qa-parked/<ticket>` và tiến trình Q&A chuyển sang ticket khác.
+Khi chỉ còn ticket bị đỗ có câu hỏi mở và BA hết task, vòng lặp dừng với `parked: <các ticket>`
+(thoát mã `2`); sửa ticket rồi chạy `kb auto run`. Chờ hết hạn mức
 sử dụng (15, 30 rồi 60 phút) không tính là thất bại. Vòng lặp kết thúc, thoát mã `0`, khi
 mọi story, mọi ticket không thuộc mission và mọi bug đều `done` và không còn câu hỏi mở.
 Trạng thái và log nằm trong `.kb/auto/` (git bỏ qua).
@@ -940,7 +943,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Chuyển `tickets/*.md` phẳng vào `tickets/<mission-id>/` theo dòng cha của chúng | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Story nào done, ready, draft, to-draft hay blocked | `0` |
 | `kb plan-ingest` | Dựng `.kb/<repo_id>-plan/` từ các mission và các ticket sẵn sàng; in các dòng `skipped:` | `0`, `1` không chạy được (đầu vào không đọc được, thiếu thư mục, repo id không hợp lệ, đích không do nó sinh, index hỏng, ghi thất bại) |
-| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
+| `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once] [--model] [--effort]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
 | `kb publish` | Sinh lại plan, gắn tag, để CI gửi nó lên hub | `0`, `1` sinh lại plan hoặc build thất bại, hoặc intake từ chối |
 
 **Slash command:** `/ba-ticket-author` (thêm `--amend <ticket>`), `/ba-mission-plan` (thêm `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.

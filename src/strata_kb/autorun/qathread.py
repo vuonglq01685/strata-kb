@@ -23,10 +23,20 @@ logger = logging.getLogger("strata_kb.autorun.qathread")
 SKILL = "ba-answer-questions"
 BRANCH = "auto/qa"
 MAX_FAILURES = 2  # consecutive failed answers that stop the BA loop
+PARKED_PREFIX = (
+    "auto/qa-parked/"  # a parked ticket's draft lives on PARKED_PREFIX + ticket
+)
 
 
 def open_question_count(qa: QaClient, repo: str) -> int:
     return len(qa.list("open", repo=repo))
+
+
+def _next_ticket(questions: list[dict], parked: frozenset[str]) -> str | None:
+    """Ticket of the oldest open question not on a parked ticket ("" if it has
+    none); None when nothing is left to answer."""
+    left = [q for q in questions if q.get("ticket", "") not in parked]
+    return min(left, key=lambda q: q["id"]).get("ticket", "") if left else None
 
 
 class QaThread:
@@ -48,6 +58,7 @@ class QaThread:
         self._lock = threading.Lock()
         self._failures = 0  # consecutive answers that did not end `done`
         self._stop_reason = ""
+        self._parked: set[str] = set()  # tickets whose answer stopped on dor-unticked
 
     @property
     def worktree(self) -> Path:
@@ -68,6 +79,25 @@ class QaThread:
     def failed_twice(self) -> bool:
         with self._lock:
             return self._failures >= MAX_FAILURES
+
+    @property
+    def parked(self) -> frozenset[str]:
+        with self._lock:
+            return frozenset(self._parked)
+
+    def only_parked_left(self) -> bool:
+        """True when every open question is on a parked ticket (and there is one).
+        False while an answer runs: its tickets' questions may read `waiting`."""
+        parked = self.parked
+        if not parked or (
+            self._proc_thread is not None and self._proc_thread.is_alive()
+        ):
+            return False
+        try:
+            questions = self._qa.list("open", repo=self._repo)
+        except KbError:
+            return False
+        return bool(questions) and all(q.get("ticket", "") in parked for q in questions)
 
     @property
     def stop_reason(self) -> str:
@@ -100,13 +130,16 @@ class QaThread:
             self._skip_ticks -= 1
             return False
         try:
-            if not open_question_count(self._qa, self._repo):
+            ticket = _next_ticket(self._qa.list("open", repo=self._repo), self.parked)
+            if ticket is None:
                 return False
             self._fresh_worktree()
         except KbError as exc:
             logger.warning("Q&A check skipped: %s", exc)
             return False
-        self._proc_thread = threading.Thread(target=self._answer, daemon=True)
+        self._proc_thread = threading.Thread(
+            target=self._answer, args=(ticket,), daemon=True
+        )
         self._proc_thread.start()
         return True
 
@@ -122,11 +155,28 @@ class QaThread:
         gitio.worktree_prune(self._root)
         gitio.worktree_add(self._root, self.worktree, BRANCH, base, reset=True)
 
-    def _answer(self) -> None:
+    def _park(self, ticket: str) -> None:
+        """Park `ticket` for good: keep the draft on its own branch (pushed when
+        there is a remote) so the next run can resume it. Git trouble only warns."""
+        with self._lock:
+            self._parked.add(ticket)
+        branch = PARKED_PREFIX + ticket
+        try:
+            wt = self.worktree
+            gitio.checkout_branch(wt, branch, "HEAD")
+            if gitio.commit_all(
+                wt, f"auto: park Q&A draft for {ticket}"
+            ) and gitio.has_remote(wt):
+                gitio.push_branch(wt, branch)
+        except KbError as exc:
+            logger.warning("Q&A draft for %s not saved: %s", ticket, exc)
+        logger.warning("Q&A parked %s; draft on %s", ticket, branch)
+
+    def _answer(self, ticket: str) -> None:
         try:
             result = self._run_task(
                 self.worktree,
-                claude.prompt_for(SKILL, "", "ba"),
+                claude.prompt_for(SKILL, ticket, "ba"),
                 log_dir=autostate.log_dir(self._kb_dir),
             )
         except Exception as exc:  # noqa: BLE001 -- a dead answer must free the slot
@@ -138,6 +188,13 @@ class QaThread:
             self._record(True)
             return
         logger.warning("Q&A answer %s: %s", result.kind, result.reason)
+        if (
+            ticket
+            and result.kind == "failed"
+            and result.reason.startswith("dor-unticked")
+        ):
+            self._park(ticket)
+            return
         if result.kind == "usage-limit":
             # shortcut: a usage limit is waited out, not counted as a failure
             self._skip_ticks = 1

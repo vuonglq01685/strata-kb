@@ -430,11 +430,14 @@ last one's context. In order: a story held by an open D-row or blocking open que
 `to-draft` story (`/ba-ticket-author`), otherwise it waits `idle_interval` seconds. Each
 change goes through a branch, a PR, green CI and a merge; the merge publishes. A
 second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
-questions with `/ba-answer-questions` every `qa_interval` seconds.
+questions, one ticket at a time with `/ba-answer-questions <ticket-id>`, every `qa_interval` seconds.
 
 **When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
 `kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
-A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
+A ticket whose Definition of Ready cannot be re-ticked is parked, not a failure: its draft
+goes to branch `auto/qa-parked/<ticket>` and the Q&A process moves on. When only parked tickets
+have open questions and the BA has no task, it stops with `parked: <tickets>` (exit `2`);
+fix the ticket, then `kb auto run`. A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
 when every story and unparented ticket and bug is `done` and no question is open.
 State and logs are in `.kb/auto/` (git-ignored).
 
@@ -958,7 +961,7 @@ kb mission lint missions/M-checkout.md
 | `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
 | `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
-| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once]`) | `0` ok or done, `2` stopped, `1` refused or error |
+| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once] [--model] [--effort]`) | `0` ok or done, `2` stopped, `1` refused or error |
 | `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
 
 **Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.

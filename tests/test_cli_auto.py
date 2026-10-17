@@ -181,3 +181,66 @@ def test_auto_status_still_works_inside_an_auto_task(repo, monkeypatch):
     monkeypatch.setenv(runner_mod.AUTO_TASK_ENV, "1")
     result = cli.invoke(app, ["auto", "status", "--json"])
     assert result.exit_code == 0
+
+
+def _capture_loop(monkeypatch) -> dict:
+    seen: dict = {}
+    monkeypatch.setattr(runner_mod, "run_loop", lambda *a, **kw: seen.update(kw) or 0)
+    return seen
+
+
+def test_auto_run_passes_model_and_effort(repo, monkeypatch):
+    seen = _capture_loop(monkeypatch)
+
+    cli.invoke(app, ["auto", "run", "--model", "m1", "--effort", "high"])
+
+    assert seen["run_task"].keywords == {"model": "m1", "effort": "high"}
+
+
+def test_auto_run_defaults_model_to_opus(repo, monkeypatch):
+    seen = _capture_loop(monkeypatch)
+
+    cli.invoke(app, ["auto", "run"])
+    assert seen["run_task"].keywords == {"model": "opus", "effort": ""}
+
+    cli.invoke(app, ["auto", "run", "--model", ""])
+    assert seen["run_task"].keywords == {"model": "", "effort": ""}
+
+
+def test_once_passes_model_and_effort(repo, monkeypatch):
+    _fake_deps(monkeypatch)
+    seen: dict = {}
+    monkeypatch.setattr(
+        runner_mod, "run_once", lambda *a, **kw: seen.update(kw) or "idle"
+    )
+
+    cli.invoke(app, ["auto", "run", "--once", "--effort", "low"])
+
+    assert seen["run_task"].keywords == {"model": "opus", "effort": "low"}
+
+
+@pytest.mark.parametrize(
+    ("kind", "extra"), [("dev", []), ("ba", [Path(".kb/auto/worktrees/qa")])]
+)
+def test_auto_run_writes_trust_on_cloud_only(repo, monkeypatch, kind, extra):
+    from strata_kb.autorun import trust
+
+    _capture_loop(monkeypatch)
+    (repo / "config.yaml").write_text(
+        GOOD.replace("kind: dev", f"kind: {kind}"), encoding="utf-8"
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        trust, "trust_dirs", lambda paths, config=None: calls.append(list(paths))
+    )
+
+    monkeypatch.setenv("STRATA_KB_CLOUD", "0")
+    cli.invoke(app, ["auto", "run"])
+    assert calls == []
+
+    monkeypatch.setenv("STRATA_KB_CLOUD", "1")
+    cli.invoke(app, ["auto", "run"])
+    root = repo.parent.resolve()
+    assert [[p.resolve() for p in c] for c in calls] == [
+        [root, *[(root / e).resolve() for e in extra]]
+    ]
