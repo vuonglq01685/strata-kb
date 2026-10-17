@@ -63,6 +63,10 @@ Auto mode is ON for this {kind} repo. Follow the "Auto mode" section of the \
 skill. Never ask the human anything; a question for the human goes into the \
 hub's Q&A instead.
 
+Run git from the working directory; never use `git -C`. When a rule of this \
+repo (`CLAUDE.md`, `AGENTS.md`, ...) needs a command you are not allowed to \
+run, skip that step and name it in the PR's notes; do not stop or fail for it.
+
 End your reply with exactly one line, and make it the last line, in one of \
 these three forms:
 AUTO-RESULT: done
@@ -114,6 +118,8 @@ def run_task(
     log_dir: Path,
     executable: str = "claude",
     timeout: int = DEFAULT_TIMEOUT,
+    model: str = "",
+    effort: str = "",
 ) -> TaskResult:
     cmd = [
         shutil.which(executable) or executable,
@@ -123,6 +129,10 @@ def run_task(
         "--permission-mode",
         "acceptEdits",
     ]
+    if model:
+        cmd += ["--model", model]
+    if effort:
+        cmd += ["--effort", effort]
     start = time.monotonic()
     try:
         proc = subprocess.run(
