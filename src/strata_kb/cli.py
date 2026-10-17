@@ -1087,13 +1087,25 @@ def auto_run(
     hub: str = typer.Option(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
+    model: str = typer.Option(
+        "opus",
+        "--model",
+        help="Model for each task's claude -p (default opus; empty = claude's default)",
+    ),
+    effort: str = typer.Option(
+        "",
+        "--effort",
+        help="Effort level for each task's claude -p (empty = claude's default)",
+    ),
 ) -> None:
     """Run full-auto mode: pick a task, run it, repeat. Logs to stderr.
     Exit 0 done, 2 stopped, 1 refused or error, 130 interrupted."""
+    import functools
     import logging
 
-    from strata_kb import gitio
-    from strata_kb.autorun import runner
+    from strata_kb import cloud, gitio
+    from strata_kb.autorun import claude, runner, trust
+    from strata_kb.config import load_config
     from strata_kb.errors import KbError
 
     _refuse_inside_auto_task("run")
@@ -1110,16 +1122,24 @@ def auto_run(
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
+    task_runner = functools.partial(claude.run_task, model=model, effort=effort)
     try:
+        if cloud.is_cloud():  # no human to accept the folder-trust dialog
+            dirs = [root]
+            if load_config(kb_dir).kind == "ba":
+                dirs.append((kb_dir / "auto" / "worktrees" / "qa").resolve())
+            trust.trust_dirs(dirs)
         with runner.run_lock(kb_dir):  # one loop per repo; a nested run refuses
             if once:
                 cfg, handle, qa = runner.build_deps(kb_dir, hub)
                 runner.resume(kb_dir)
-                outcome = runner.run_once(root, kb_dir, cfg=cfg, hub=handle, qa=qa)
+                outcome = runner.run_once(
+                    root, kb_dir, cfg=cfg, hub=handle, qa=qa, run_task=task_runner
+                )
                 typer.echo(outcome)
                 code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
             else:
-                code = runner.run_loop(root, kb_dir, hub_flag=hub)
+                code = runner.run_loop(root, kb_dir, hub_flag=hub, run_task=task_runner)
     except (KbError, *_CONFIG_READ_ERRORS, OSError) as exc:
         typer.secho(" ".join(str(exc).split()), fg=typer.colors.RED)
         raise typer.Exit(1) from None
