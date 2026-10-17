@@ -1,7 +1,7 @@
 # Full-auto: Q&A deadlock on stale refs, and five cloud-run fixes — design
 
 Date: 2026-10-16
-Status: draft, awaiting owner approval (builder check done)
+Status: approved by owner (2026-10-17)
 Issue: #124
 Builds on: `2026-10-16-full-auto-mode-design.md` (1.29.0), `2026-10-16-kb-auto-cloud-design.md` (1.30.0)
 
@@ -188,8 +188,8 @@ File: `src/strata_kb/autorun/runner.py`, `run_once`, around `run_task`.
 - Tests: extend `tests/test_autorun_qathread.py`, `test_autorun_claude.py`,
   `test_autorun_runner.py`, `test_cli_auto.py`, `test_autorun_cloud.py` (or the
   matching files). Run the repo's gate (`scripts/gate.sh`) before push.
-- Versioning and `CHANGELOG.md` follow the repo's pattern. **My call:** minor
-  bump to 1.31.0 (new CLI flags).
+- Versioning and `CHANGELOG.md` follow the repo's pattern. **Version:**
+  — **owner decided**: patch release 1.30.2 (an issue fix), though it adds CLI flags.
 
 ## 7. Left to the builder
 
@@ -217,4 +217,4 @@ File: `src/strata_kb/autorun/runner.py`, `run_once`, around `run_task`.
   default branch's and the hub's; a conflict aborts the merge and starts fresh.
 - `kb-auto.md` (the interactive `/kb-auto` skill) also uses `git -C`; it is not
   covered by `prompt_for` and is left as is (a human approves its prompts).
-- Version 1.31.0.
+- (Version is the owner's call: 1.30.2.)
