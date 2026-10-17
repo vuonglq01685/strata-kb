@@ -2411,7 +2411,8 @@ WEB_MISSION = """# Catalog — mission
 |---|---|---|---|---|
 | D1 | `GenrePage` loads the first page server-side via `apiFetch` of `apps/web/src/lib/api-client.ts` | OPEN | SA | M-demo-US1 |
 | D2 | Server renders have no session | DECIDED | BA | M-demo-US1 |
-| D3 | `GenreGrid` loads every page client-side via `apiFetch`; respects D26 of `M-auth` | DECIDED | SA | M-demo-US1 |
+| D3 | `GenreGrid` loads every page client-side via `apiFetch` | DECIDED | SA | M-demo-US1 |
+| D4 | `GenreGrid` retries `apiFetch` once; agrees with D26 of `M-auth` and D3 | OPEN | SA | M-demo-US1 |
 """
 
 AUTH_MISSION = """# Auth — mission
@@ -2434,16 +2435,22 @@ def related_warnings(report) -> list[str]:
     return [w for w in warnings(report) if "DECIDED rows already bind" in w]
 
 
-def test_new_decision_sharing_a_symbol_with_a_decided_row_of_another_mission_warns(
+def check_with_missions(kb_dir, text, mission_text=WEB_MISSION, **missions):
+    return ticketcheck.check(
+        text,
+        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
+        load_decisions=decisions_of(mission_text),
+        load_missions=missions_of(**missions) if missions else None,
+    )
+
+
+def test_open_decision_sharing_a_symbol_with_a_decided_row_of_another_mission_warns(
     code_doc,
 ):
     kb_dir, rev = code_doc
     text = ticket(grounding(rev, Externals="int.web [NEW: D1]"), parent="M-demo")
-    report = ticketcheck.check(
-        text,
-        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
-        load_decisions=decisions_of(WEB_MISSION),
-        load_missions=missions_of(**{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}),
+    report = check_with_missions(
+        kb_dir, text, **{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}
     )
     found = related_warnings(report)
     assert len(found) == 1, report.render("Grounding")
@@ -2452,36 +2459,75 @@ def test_new_decision_sharing_a_symbol_with_a_decided_row_of_another_mission_war
     assert "M-auth D26 (`apiFetch`)" in found[0]
     assert "M-demo D3 (`apiFetch`)" in found[0]
     assert "D20" not in found[0] and "D27" not in found[0]
+    assert found[0].endswith("before it is decided (line 14)")
 
 
-def test_a_row_that_already_names_the_related_row_is_not_warned_about(code_doc):
+def test_a_decided_cited_row_is_not_warned_about(code_doc):
     kb_dir, rev = code_doc
     text = ticket(grounding(rev, Externals="int.web [NEW: D3]"), parent="M-demo")
-    report = ticketcheck.check(
-        text,
-        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
-        load_decisions=decisions_of(WEB_MISSION),
-        load_missions=missions_of(**{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}),
+    report = check_with_missions(
+        kb_dir, text, **{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}
     )
-    # D3 names D26 of M-auth already; D1 shares `apiFetch` but is OPEN.
+    # D3 shares `apiFetch` with M-auth D26, but D3 is DECIDED: it was weighed.
     assert related_warnings(report) == [], report.render("Grounding")
 
 
-def test_related_rows_are_skipped_without_a_missions_loader(code_doc):
+def test_rows_the_cited_row_already_names_are_not_warned_about(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.web [NEW: D4]"), parent="M-demo")
+    report = check_with_missions(
+        kb_dir, text, **{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}
+    )
+    # D4 cites "D26 of `M-auth`" and "D3"; both are skipped.
+    assert related_warnings(report) == [], report.render("Grounding")
+
+
+def test_names_row_pairs_the_row_with_its_own_mission_id():
+    cell = "agrees with D26 of `M-auth-v2`; D20 of M-authz"
+    assert not ticketcheck._names_row(cell, "D26", "M-auth", "M-demo")
+    assert not ticketcheck._names_row(cell, "D20", "M-auth", "M-demo")
+    assert ticketcheck._names_row(cell, "D26", "M-auth-v2", "M-demo")
+    assert ticketcheck._names_row("M-auth D20 holds", "D20", "M-auth", "M-demo")
+    assert not ticketcheck._names_row("D2 holds", "D20", "M-demo", "M-demo")
+
+
+def test_related_rows_are_skipped_with_a_note_without_a_missions_loader(code_doc):
     kb_dir, rev = code_doc
     text = ticket(grounding(rev, Externals="int.web [NEW: D1]"), parent="M-demo")
-    report = run(text, kb_dir, load_decisions=decisions_of(WEB_MISSION))
+    report = check_with_missions(kb_dir, text)
     assert related_warnings(report) == []
+    assert any("related-decisions check skipped" in n for n in notes(report))
 
 
-def test_decision_anchors_keep_paths_symbols_and_basenames():
+def test_services_heading_reads_its_own_rows_from_the_checked_text(code_doc):
+    kb_dir, rev = code_doc
+    # On disk D3 is still OPEN; the checked text has it DECIDED.
+    stale = WEB_MISSION.replace(
+        "client-side via `apiFetch` | DECIDED", "client-side via `apiFetch` | OPEN"
+    )
+    text = (
+        WEB_MISSION
+        + "\n## Services & order\n"
+        + grounding(rev, Externals="int.web [NEW: D1]")
+        + "\n"
+    )
+    report = ticketcheck.check(
+        text,
+        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
+        heading=ticketcheck.SERVICES_HEADING,
+        load_missions=missions_of(**{"M-demo": stale}),
+    )
+    found = related_warnings(report)
+    assert len(found) == 1 and "M-demo D3 (`apiFetch`)" in found[0], found
+
+
+def test_decision_anchors_keep_paths_and_symbols_only():
     anchors = ticketcheck.decision_anchors(
         "`apps/web/src/lib/api-client.ts`, `notFound()`, `GenrePage`, "
         "`MOVIE`, `limit`, `pnpm -r test`, `titles.type`"
     )
     assert anchors == {
         "apps/web/src/lib/api-client.ts",
-        "api-client.ts",
         "notFound",
         "GenrePage",
         "titles.type",

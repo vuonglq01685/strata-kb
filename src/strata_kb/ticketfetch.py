@@ -107,20 +107,20 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
 
 
 def missions(hub: HubHandle) -> dict[str, str]:
-    """Every mission the hub's plans publish, by id, as `render` restores it.
-    A mission that cannot be read is left out: callers use this for advice
-    (`kb ticket check`'s related-rows warning), never for a verdict."""
-    from strata_kb.mission import MISSION_ID_RE
+    """Every mission the hub's plans publish, by id, in its source shape. A
+    mission that cannot be read is left out: callers use this for advice
+    (`kb ticket check`'s related-rows warning), never for a verdict. Reads
+    each plan once; no provenance line, so no git call."""
+    from strata_kb.planstatus import _l3_section, _restore
 
     out: dict[str, str] = {}
     for fed, manifest in plan_docs(hub, None):
-        for section in manifest.sections:
-            if section.id in out or not MISSION_ID_RE.match(section.id):
+        for s in manifest.sections:
+            if s.id != s.file or s.id in out:  # a mission is named like its group
                 continue
-            try:
-                out[section.id] = render(hub, f"{fed.meta.repo_id}:{section.id}")
-            except TicketFetchError:
-                continue
+            section = _l3_section(fed, manifest.id, s)
+            if section is not None:
+                out[s.id] = _restore(s.title, section)
     return out
 
 

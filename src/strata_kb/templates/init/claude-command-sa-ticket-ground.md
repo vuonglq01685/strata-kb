@@ -43,9 +43,9 @@ may APPEND rows to that table and never edit, delete or re-status an
 existing one — only a human flips OPEN to DECIDED; a row you append
 never contradicts a DECIDED row of any mission under `missions/` (check
 auth, session, rendering, caching and data-access rows first) — a clash
-goes under `BA-section contradictions` in `## Needs input`, never into a
-proposal, and the gate's `DECIDED rows already bind` warning lists the
-rows to read; code that exists and
+goes under `Open decisions` (quoted) and `BA-section contradictions` in
+`## Needs input`, never into a proposal, and the gate's `DECIDED rows
+already bind` warning lists the rows to read; code that exists and
 the document cannot prove → `Open decisions`, never inference; the
 section also carries `Volumes:`, `Healthchecks:` and `Devices:` lines
 read from each `svc.*` record's `Volumes`, `Healthcheck` and `Devices`

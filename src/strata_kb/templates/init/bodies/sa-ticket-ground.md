@@ -72,8 +72,9 @@ a denial to report. Stop only when the MCP tool fails too.
      requires a token) is never written. Propose an option that agrees
      with the row and cite it in the Decision cell
      (`… agrees with D26 of M-identity-access`). When no option agrees,
-     write no row: list the clash under `BA-section contradictions` in
-     `## Needs input`, naming both rows.
+     write no row: the BA placeholder goes under `Open decisions`, quoting
+     the clash (a FAIL by design), and the clash is listed under
+     `BA-section contradictions` in `## Needs input`, naming both rows.
      In a greenfield repo (`<repo>-code` has no `svc.*`) every service,
      table or route the mission needs comes from the architecture
      document on the hub: cite it in the Decision cell (the proposal
@@ -225,10 +226,12 @@ a denial to report. Stop only when the MCP tool fails too.
    - warning `has Technology decisions — reference the row as
      [NEW: D<n>]` — you used free text where a D-row belongs.
    - warning `decision D<n> names files or symbols that DECIDED rows
-     already bind: <mission> D<k> (…)` — read each listed row. When your
-     row contradicts one, rewrite your row (only a row this run appended)
-     or move the clash to `BA-section contradictions`. When it agrees,
-     cite the listed rows in its Decision cell; the warning then clears.
+     already bind: <mission> D<k> (…)` — it fires for a row not yet
+     DECIDED. Read each listed row. For a row this run appended: when it
+     contradicts one, rewrite it, or drop it and park the placeholder as
+     above; when it agrees, cite the listed rows in its Decision cell and
+     the warning clears. For an existing row, change nothing: name the
+     listed rows in the handover, beside the row's decision.
    - `[note] grounded @<old>, still valid at @<new>` or a `[warn]
      grounded @<old>, now @<new> …` — a PASS: `-code` moved but every
      cited fact still holds. Show the diff to the BA; do not re-ground.
@@ -287,7 +290,8 @@ a denial to report. Stop only when the MCP tool fails too.
   an existing row, never change a Status — only a human flips OPEN to
   DECIDED.
 - A row you append never contradicts a DECIDED row of any mission. A
-  clash goes under `BA-section contradictions`, never into a proposal.
+  clash goes under `Open decisions` and `BA-section contradictions`,
+  never into a proposal.
 - A value for a field the document does not carry has exactly two
   homes: `[NEW: D<n>]` when the ticket intends to create or change it,
   or `Open decisions` when the document simply cannot prove it. It

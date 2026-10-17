@@ -238,30 +238,31 @@ _NEW_DECISION_RE = re.compile(r"\[NEW:\s*(D\d+)\s*\]")
 
 def decision_anchors(cell: str) -> set[str]:
     """The files and symbols a Decision cell names: back-ticked spans shaped
-    like a path, a dotted name or a camelCase/PascalCase identifier (plain
-    words, CONSTANTS and commands are too generic to tie two rows), plus
-    each path's file name, since rows spell the same file at different
-    depths."""
+    like a path, a dotted name or a camelCase/PascalCase identifier. Plain
+    words, CONSTANTS and commands are too generic to tie two rows, and so
+    is a bare file name (`page.tsx`, `index.ts`): paths match in full."""
     out: set[str] = set()
     for span in _ANCHOR_SPAN_RE.findall(cell):
         span = span.removesuffix("()")
-        if not _ANCHOR_SHAPE_RE.search(span):
-            continue
-        out.add(span)
-        if "/" in span.rstrip("/"):
-            out.add(span.rstrip("/").rsplit("/", 1)[1])
+        if _ANCHOR_SHAPE_RE.search(span):
+            out.add(span)
     return out
 
 
 def _names_row(cell: str, row_id: str, mission_id: str, own_mission: str) -> bool:
-    """`cell` already cites D<n> of `mission_id` — the SA weighed that row."""
-    if not re.search(rf"\b{row_id}\b", cell):
-        return False
-    return mission_id == own_mission or mission_id in cell
+    """`cell` already cites D<n> of `mission_id` — the SA weighed that row.
+    Another mission's row counts only when its id and the mission id stand
+    close together, in either order."""
+    row = rf"\b{row_id}\b"
+    if mission_id == own_mission:
+        return re.search(row, cell) is not None
+    mission_ = rf"(?<![\w-]){re.escape(mission_id)}(?![\w-])"
+    near = r"[^;|]{0,40}?"
+    return re.search(rf"{row}{near}{mission_}|{mission_}{near}{row}", cell) is not None
 
 
 def related_decided(
-    row: Decision, own_mission: str, missions: dict[str, str]
+    row: Decision, own_mission: str, tables: dict[str, DecisionTable]
 ) -> list[str]:
     """`<mission> D<n> (`anchor`, …)` for every DECIDED row of every mission
     that names a file or symbol `row` names too, minus the rows `row`
@@ -270,9 +271,8 @@ def related_decided(
     if not mine:
         return []
     out: list[str] = []
-    for mission_id in sorted(missions):
-        table = parse_decisions(missions[mission_id], mission_id)
-        for other in table.rows.values():
+    for mission_id in sorted(tables):
+        for other in tables[mission_id].rows.values():
             if mission_id == own_mission and other.id == row.id:
                 continue
             if other.status.upper() != "DECIDED":
@@ -286,36 +286,47 @@ def related_decided(
 
 
 def _check_related_decisions(
+    text: str,
+    heading: str,
     section: _Section,
     decisions: _Decisions,
     own_mission: str | None,
     load_missions: LoadMissions | None,
     issues: list[Issue],
+    notes: list[str],
 ) -> None:
-    """A D-row the section cites that names a file or symbol a DECIDED row
-    already binds (in any mission) gets one warning listing those rows:
-    the gate cannot judge a contradiction, the SA reads them."""
-    if load_missions is None or decisions.table is None or own_mission is None:
+    """A D-row the section cites that is not DECIDED yet and names a file or
+    symbol a DECIDED row already binds (in any mission) gets one warning
+    listing those rows: the gate cannot judge a contradiction, the SA reads
+    them before the row is decided. A DECIDED row was weighed already."""
+    if decisions.table is None or own_mission is None:
         return
     first_line: dict[str, int] = {}
     for offset, line in enumerate(section.lines):
         for m in _NEW_DECISION_RE.finditer(line):
-            first_line.setdefault(m.group(1), section.first_line + offset)
+            row = decisions.table.rows.get(m.group(1))
+            if row is not None and row.status.upper() != "DECIDED":
+                first_line.setdefault(row.id, section.first_line + offset)
     if not first_line:
         return
+    if load_missions is None:
+        notes.append(
+            "related-decisions check skipped — no missions directory or hub plan"
+        )
+        return
     missions = load_missions()
+    if heading == SERVICES_HEADING:
+        missions = {**missions, own_mission: text}  # the checked text is newest
+    tables = {mid: parse_decisions(body, mid) for mid, body in missions.items()}
     for row_id, lineno in first_line.items():
-        row = decisions.table.rows.get(row_id)
-        if row is None:
-            continue
-        related = related_decided(row, own_mission, missions)
+        related = related_decided(decisions.table.rows[row_id], own_mission, tables)
         if related:
             issues.append(
                 Issue(
                     "warning",
                     f"decision {row_id} names files or symbols that DECIDED rows "
                     f"already bind: {'; '.join(related)} — confirm {row_id} agrees "
-                    f"with each and cite them in its Decision cell (line {lineno})",
+                    f"with each before it is decided (line {lineno})",
                 )
             )
 
@@ -609,7 +620,9 @@ def check(
     if heading == SERVICES_HEADING:
         m = mission.MISSION_LINE_RE.search(text)
         own_mission = m.group(1) if m else None
-    _check_related_decisions(section, decisions, own_mission, load_missions, issues)
+    _check_related_decisions(
+        text, heading, section, decisions, own_mission, load_missions, issues, notes
+    )
     _check_new_exists(
         new_entries, doc, issues, notes, moved, load_at, structure, repo, rev
     )

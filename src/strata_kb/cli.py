@@ -3562,6 +3562,10 @@ def ticket_check(
             return None
         return ticketcheck.parse_decisions(hub_text, f"hub:{mission_id}")
 
+    # A mission plan checked in place sits in the missions directory itself.
+    missions_root = resolved_missions
+    if missions_root is None and heading == ticketcheck.SERVICES_HEADING and path:
+        missions_root = path.parent
     report = ticketcheck.check(
         text,
         load_doc=load_doc,
@@ -3570,8 +3574,8 @@ def ticket_check(
         load_drift=load_drift,
         load_at=load_at,
         load_missions=(
-            functools.partial(_read_missions, resolved_missions)
-            if resolved_missions is not None
+            functools.partial(_read_missions, missions_root)
+            if missions_root is not None
             else None
         ),
     )

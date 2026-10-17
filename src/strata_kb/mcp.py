@@ -76,10 +76,13 @@ def _known_docs(hub) -> str:
     )
 
 
-def _mission_loader(hub, mission_markdown: str | None):
+def _mission_loader(
+    hub, mission_markdown: str | None, from_hub: list[str] | None = None
+):
     """Mission text by id for the ticket tools: the client's
     `mission_markdown` when its `> Mission:` line names that id, else the
-    mission's section of the hub's plan, else None."""
+    mission's section of the hub's plan, else None. Ids served from the
+    hub are appended to `from_hub`."""
     from strata_kb import mission, ticketfetch
 
     def load(mission_id: str) -> str | None:
@@ -88,30 +91,26 @@ def _mission_loader(hub, mission_markdown: str | None):
             if m is not None and m.group(1) == mission_id:
                 return mission_markdown
         try:
-            return ticketfetch.render(hub, mission_id)
+            text = ticketfetch.render(hub, mission_id)
         except ticketfetch.TicketFetchError:
             return None
+        if from_hub is not None and mission_id not in from_hub:
+            from_hub.append(mission_id)
+        return text
 
     return load
 
 
-def _hub_mission_note(ticket_markdown: str, mission_markdown: str | None) -> str:
-    """A warning when the ticket's parent mission is read from the hub's
-    published plan: a local amend (a new D-row, a flipped status) is not
-    there yet, so the tool can PASS where CI, which reads missions/, fails."""
-    from strata_kb import mission, ticket
-
-    m = ticket.PARENT_MISSION_RE.search(ticket_markdown)
-    if m is None:
-        return ""
-    if mission_markdown:
-        named = mission.MISSION_LINE_RE.search(mission_markdown)
-        if named is not None and named.group(1) == m.group(1):
-            return ""
-    return (
-        f"[warn] parent mission {m.group(1)} read from the hub's published plan "
-        f"— it can differ from your local missions/{m.group(1)}.md, which CI "
-        "reads; pass that file's text as mission_markdown\n\n"
+def _hub_mission_note(from_hub: list[str]) -> str:
+    """A note when a parent mission was read from the hub's published plan:
+    a BA or SA with a local amend (a new D-row, a flipped status) gets a
+    PASS here that CI, which reads missions/, can fail. A Dev reads the hub
+    copy on purpose and can ignore it."""
+    return "".join(
+        f"[note] parent mission {mid} read from the hub's published plan — "
+        f"a BA or SA with a local missions/{mid}.md passes its text as "
+        "mission_markdown (CI reads the local file)\n\n"
+        for mid in from_hub
     )
 
 
@@ -348,18 +347,14 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
+            from_hub: list[str] = []
             report = lint_ticket(
                 ticket_markdown,
                 hub,
                 ticket_id=ticket_id or None,
-                load_mission=_mission_loader(hub, mission_markdown),
+                load_mission=_mission_loader(hub, mission_markdown, from_hub),
             )
-            note = (
-                _hub_mission_note(ticket_markdown, mission_markdown)
-                if ticket_id
-                else ""
-            )
-            return stale_hub_note(hub) + note + report.render()
+            return stale_hub_note(hub) + _hub_mission_note(from_hub) + report.render()
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -387,7 +382,8 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            load_mission = _mission_loader(hub, mission_markdown)
+            from_hub: list[str] = []
+            load_mission = _mission_loader(hub, mission_markdown, from_hub)
 
             def load_doc(repo, doc):
                 return ticketcheck.load_from_hub(hub.federation_dir, repo, doc)
@@ -422,11 +418,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 ),
                 load_missions=load_missions,
             )
-            note = (
-                _hub_mission_note(ticket_markdown, mission_markdown)
-                if heading != ticketcheck.SERVICES_HEADING
-                else ""
-            )
+            note = _hub_mission_note(from_hub)
             return stale_hub_note(hub) + note + report.render("Grounding")
 
         return await anyio.to_thread.run_sync(_run)
