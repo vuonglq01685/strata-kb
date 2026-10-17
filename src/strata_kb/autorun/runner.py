@@ -22,7 +22,7 @@ from strata_kb.autorun import state as autostate
 from strata_kb.autorun.done import all_done
 from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run_lock
 from strata_kb.autorun.picker import Task
-from strata_kb.autorun.qathread import QaThread, open_question_count
+from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
@@ -266,6 +266,29 @@ def _repicked(kb_dir: Path, state: autostate.AutoState, task: Task) -> Outcome:
     return "idle"
 
 
+def _remember_branch(root: Path) -> str | None:
+    """The branch (or, detached, the commit) `root` is on; None when unknown."""
+    try:
+        branch = gitio.current_branch(root)
+        return gitio.head_commit(root) if branch == "HEAD" else branch
+    except gitio.GitError:
+        return None
+
+
+def _restore_branch(root: Path, ref: str | None) -> None:
+    """Put `root` back on `ref`: a task may leave it on its own branch. A failure
+    is a warning, never a stop."""
+    if ref is None:
+        return
+    try:
+        branch = gitio.current_branch(root)
+        if branch == ref or (branch == "HEAD" and gitio.head_commit(root) == ref):
+            return
+        gitio.checkout(root, ref)
+    except gitio.GitError as exc:
+        logger.warning("could not return %s to %s: %s", root, ref, exc)
+
+
 def run_once(
     root: Path,
     kb_dir: Path,
@@ -298,6 +321,16 @@ def run_once(
             return "waiting"
     task = _task_for(root, kb_dir, cfg, hub, state)
     if task is None:
+        if qa_thread is not None and qa_thread.only_parked_left():
+            parked = sorted(qa_thread.parked)
+            return _stop(
+                kb_dir,
+                state,
+                "parked: " + ", ".join(parked),
+                "Drafts are on "
+                + ", ".join(PARKED_PREFIX + t for t in parked)
+                + ". Fix the ticket, then run `kb auto run` to resume.",
+            )
         return "idle"
     if task.key == state.last_done:
         return _repicked(kb_dir, state, task)
@@ -305,14 +338,18 @@ def run_once(
         state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
     started = now()
+    ref = _remember_branch(root)
     try:
-        result = run_task(
-            root,
-            claude.prompt_for(task.skill, task.arg, cfg.kind),
-            log_dir=autostate.log_dir(kb_dir),
-        )
-    except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
-        result = claude.TaskResult("failed", (), f"runner error: {exc}")
+        try:
+            result = run_task(
+                root,
+                claude.prompt_for(task.skill, task.arg, cfg.kind),
+                log_dir=autostate.log_dir(kb_dir),
+            )
+        except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
+            result = claude.TaskResult("failed", (), f"runner error: {exc}")
+    finally:
+        _restore_branch(root, ref)
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
     return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
 

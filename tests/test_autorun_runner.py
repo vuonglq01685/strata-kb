@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import planstatus
+from strata_kb import gitio, planstatus
 from strata_kb.autorun import lock as lock_mod
 from strata_kb.autorun import picker
 from strata_kb.autorun import runner as runner_mod
@@ -701,3 +701,90 @@ def test_run_lock_is_released_after_an_exception(tmp_path):
     with pytest.raises(RuntimeError), lock_mod.run_lock(kb_dir):
         raise RuntimeError("boom")
     assert lock_mod.running_pid(kb_dir) is None
+
+
+class ParkedQaThread:
+    failed_twice = False
+    parked = frozenset({"T-a"})
+
+    def __init__(self, only_parked: bool = True):
+        self._only_parked = only_parked
+
+    def only_parked_left(self) -> bool:
+        return self._only_parked
+
+
+def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    script = Script()
+    with caplog.at_level(logging.ERROR):
+        outcome = once(env, script, cfg=cfg_of("ba"), qa_thread=ParkedQaThread())
+    assert outcome == "stopped"
+    assert autostate.load(env[1]).stop_reason == "parked: T-a"
+    assert "auto/qa-parked/T-a" in caplog.text
+    assert script.prompts == []
+
+
+def test_parked_with_task_left_keeps_running(env):
+    script = Script(TaskResult("done"))
+    outcome = once(env, script, cfg=cfg_of("ba"), qa_thread=ParkedQaThread())
+    assert outcome == "ran"
+    assert len(script.prompts) == 1
+
+
+def test_parked_with_unparked_question_idles(env, monkeypatch):
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb: None)
+    outcome = once(env, Script(), cfg=cfg_of("ba"), qa_thread=ParkedQaThread(False))
+    assert outcome == "idle"
+
+
+def _switching(run_git, result=None, dirty=None):
+    """A `run_task` double that leaves the root on `auto/US1` (and optionally
+    raises, or dirties a tracked file so a checkout back conflicts)."""
+
+    def run_task(root, prompt, *, log_dir):
+        run_git(root, "switch", "-c", "auto/US1")
+        if dirty:
+            (root / dirty).write_text("branch\n", encoding="utf-8")
+            run_git(root, "commit", "-am", "branch edit")
+            (root / dirty).write_text("dirty\n", encoding="utf-8")
+        if result is None:
+            raise RuntimeError("boom")
+        return result
+
+    return run_task
+
+
+def test_root_branch_restored_after_task(git_repo, env):
+    root, _, run_git = git_repo
+    outcome = once(env, _switching(run_git, TaskResult("done")))
+    assert outcome == "ran"
+    assert gitio.current_branch(root) == "main"
+
+
+def test_root_branch_restored_after_task_exception(git_repo, env):
+    root, kb_dir, run_git = git_repo
+    assert once(env, _switching(run_git)) == "ran"
+    assert gitio.current_branch(root) == "main"
+    assert autostate.load(kb_dir).attempts == 1
+
+
+def test_detached_head_restores_commit(git_repo, env):
+    root, _, run_git = git_repo
+    run_git(root, "checkout", "--detach")
+    sha = gitio.head_commit(root)
+    once(env, _switching(run_git, TaskResult("done")))
+    assert gitio.current_branch(root) == "HEAD"
+    assert gitio.head_commit(root) == sha
+
+
+def test_restore_failure_is_a_warning(git_repo, env, caplog):
+    root, _, run_git = git_repo
+    (root / "f.txt").write_text("main\n", encoding="utf-8")
+    run_git(root, "add", "f.txt")
+    run_git(root, "commit", "-m", "f")
+    script = _switching(run_git, TaskResult("done"), dirty="f.txt")
+    with caplog.at_level(logging.WARNING):
+        assert once(env, script) == "ran"
+    assert gitio.current_branch(root) == "auto/US1"
+    assert "could not return" in caplog.text
