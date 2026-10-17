@@ -1,7 +1,7 @@
 # Full-auto: Q&A deadlock on stale refs, and five cloud-run fixes — design
 
 Date: 2026-10-16
-Status: draft, awaiting owner approval
+Status: draft, awaiting owner approval (builder check done)
 Issue: #124
 Builds on: `2026-10-16-full-auto-mode-design.md` (1.29.0), `2026-10-16-kb-auto-cloud-design.md` (1.30.0)
 
@@ -127,6 +127,15 @@ File: `src/strata_kb/autorun/qathread.py` (plus `runner.py` only if needed).
   the allowlist; `git checkout <ref> -- <file>` and `git show` are not — read
   the revision with `git diff` or `git log -p` against `FETCH_HEAD`.)
 - Every other failure kind keeps the current two-in-a-row stop.
+- **Stop when only parked work is left (owner decided: stop, not idle).** A
+  parked question stays `open` on the hub, and the Dev story it blocks never
+  reaches `done`, so `all_done` can never be true. In `run_once`: when the main
+  loop has no task to run (`_task_for` returns `None`), the Q&A thread has
+  parked tickets, and every open question for this repo belongs to a parked
+  ticket, stop through `_stop` with reason `parked: <ticket>[, <ticket>...]`
+  and a hint naming the `auto/qa-parked/<ticket>` branches, then "fix the
+  ticket, then run `kb auto run` to resume" (exit 2, like every stop). Open
+  questions on unparked tickets, or a task still to run, keep the loop going.
 
 ### 5.3 G2 + G4 — two lines in the task prompt
 
@@ -195,6 +204,9 @@ File: `src/strata_kb/autorun/runner.py`, `run_once`, around `run_task`.
 
 - Park is in memory only and cleared by restarting `kb auto run` — **owner
   confirmed**.
+- When only parked questions are left, the loop stops with `parked: …` —
+  **owner decided**. The exact condition (no main task + all open questions
+  parked) is my call.
 - The Q&A re-ground covers `architecture` only, not `kb-context`.
 - The runner (not the skill) saves the parked draft, and the branch name is
   `auto/qa-parked/<ticket>`; parked branches are not cleaned up.
