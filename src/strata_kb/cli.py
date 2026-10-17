@@ -10,6 +10,7 @@ traceback. Importing this module forces the standard streams to UTF-8.
 
 from __future__ import annotations
 
+import functools
 import importlib.metadata
 import json
 import os
@@ -3425,6 +3426,19 @@ def ticket_tidy(
         typer.echo("nothing to tidy")
 
 
+def _read_missions(missions_dir: Path) -> dict[str, str]:
+    """Every mission file under `missions_dir`, by id, for `kb ticket
+    check`'s related-rows warning; an unreadable one is skipped (the warning
+    advises, it never fails the gate)."""
+    out: dict[str, str] = {}
+    for mission_path in sorted(missions_dir.glob("*.md")):
+        try:
+            out[mission_path.stem] = mission_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return out
+
+
 @ticket_app.command("check")
 def ticket_check(
     source: str = typer.Argument(..., help="Ticket file (or '-' to read from stdin)"),
@@ -3555,6 +3569,11 @@ def ticket_check(
         load_decisions=load_decisions,
         load_drift=load_drift,
         load_at=load_at,
+        load_missions=(
+            functools.partial(_read_missions, resolved_missions)
+            if resolved_missions is not None
+            else None
+        ),
     )
     if json_output:
         typer.echo(json.dumps(report.to_json()))

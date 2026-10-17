@@ -1154,7 +1154,12 @@ Mission lint runs over MCP too (`kb_mission_lint`), without the ticket-coverage
 warning: that check needs filesystem access to the sibling `tickets/` directory,
 which only the CLI has. Ticket lint and ticket check run over MCP too
 (`kb_ticket_lint`, `kb_ticket_check`); the client passes the mission's text
-(`mission_markdown`) when it is not on the hub yet. Only the CLI's local
+(`mission_markdown`) when it is not on the hub yet. Without it both tools print a
+`[warn]` that the parent mission was read from the hub's published plan, which can
+differ from the local file CI reads. `kb ticket check` also warns when a D-row the
+ticket cites names a file or symbol (a back-ticked path, dotted name or camelCase
+identifier) that a DECIDED row of any mission already binds, unless the row already
+cites it; the CLI reads every mission under `missions/`, MCP every mission on the hub. Only the CLI's local
 `-code` fallback (`--kb-dir`) has no MCP twin. `kb ticket lint --missions-dir`
 and `kb mission lint --tickets-dir` point either gate at a non-sibling folder.
 

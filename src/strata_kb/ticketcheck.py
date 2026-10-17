@@ -25,6 +25,7 @@ import posixpath
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 
 import yaml
@@ -156,6 +157,7 @@ class Decision:
     supersedes: str | None = (
         None  # D-id named by `Supersedes D<n>` in the Decision cell
     )
+    text: str = dc_field(default="", compare=False)  # Decision cell, for related rows
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,9 @@ LoadDrift = Callable[[str | None, str, str], list[ResolvedRef] | None]
 LoadDecisions = Callable[
     [str], DecisionTable | None
 ]  # mission id -> table, None = file missing
+
+# every mission the caller can see: mission id -> its text
+LoadMissions = Callable[[], dict[str, str]]
 
 # (repo, doc id, grounded rev, section ids) -> those sections as they stood at
 # the grounded revision, None = no baseline
@@ -221,8 +226,98 @@ def parse_decisions(text: str, source: str) -> DecisionTable:
             owner,
             blocks,
             sup.group(1) if sup else None,
+            cell.strip(),
         )
     return DecisionTable(source, out)
+
+
+_ANCHOR_SPAN_RE = re.compile(r"`([^`\s]+)`")
+_ANCHOR_SHAPE_RE = re.compile(r"[/.]|[a-z][A-Z]")
+_NEW_DECISION_RE = re.compile(r"\[NEW:\s*(D\d+)\s*\]")
+
+
+def decision_anchors(cell: str) -> set[str]:
+    """The files and symbols a Decision cell names: back-ticked spans shaped
+    like a path, a dotted name or a camelCase/PascalCase identifier (plain
+    words, CONSTANTS and commands are too generic to tie two rows), plus
+    each path's file name, since rows spell the same file at different
+    depths."""
+    out: set[str] = set()
+    for span in _ANCHOR_SPAN_RE.findall(cell):
+        span = span.removesuffix("()")
+        if not _ANCHOR_SHAPE_RE.search(span):
+            continue
+        out.add(span)
+        if "/" in span.rstrip("/"):
+            out.add(span.rstrip("/").rsplit("/", 1)[1])
+    return out
+
+
+def _names_row(cell: str, row_id: str, mission_id: str, own_mission: str) -> bool:
+    """`cell` already cites D<n> of `mission_id` — the SA weighed that row."""
+    if not re.search(rf"\b{row_id}\b", cell):
+        return False
+    return mission_id == own_mission or mission_id in cell
+
+
+def related_decided(
+    row: Decision, own_mission: str, missions: dict[str, str]
+) -> list[str]:
+    """`<mission> D<n> (`anchor`, …)` for every DECIDED row of every mission
+    that names a file or symbol `row` names too, minus the rows `row`
+    already cites."""
+    mine = decision_anchors(row.text)
+    if not mine:
+        return []
+    out: list[str] = []
+    for mission_id in sorted(missions):
+        table = parse_decisions(missions[mission_id], mission_id)
+        for other in table.rows.values():
+            if mission_id == own_mission and other.id == row.id:
+                continue
+            if other.status.upper() != "DECIDED":
+                continue
+            shared = sorted(mine & decision_anchors(other.text))
+            if not shared or _names_row(row.text, other.id, mission_id, own_mission):
+                continue
+            spans = ", ".join(f"`{a}`" for a in shared[:3])
+            out.append(f"{mission_id} {other.id} ({spans})")
+    return out
+
+
+def _check_related_decisions(
+    section: _Section,
+    decisions: _Decisions,
+    own_mission: str | None,
+    load_missions: LoadMissions | None,
+    issues: list[Issue],
+) -> None:
+    """A D-row the section cites that names a file or symbol a DECIDED row
+    already binds (in any mission) gets one warning listing those rows:
+    the gate cannot judge a contradiction, the SA reads them."""
+    if load_missions is None or decisions.table is None or own_mission is None:
+        return
+    first_line: dict[str, int] = {}
+    for offset, line in enumerate(section.lines):
+        for m in _NEW_DECISION_RE.finditer(line):
+            first_line.setdefault(m.group(1), section.first_line + offset)
+    if not first_line:
+        return
+    missions = load_missions()
+    for row_id, lineno in first_line.items():
+        row = decisions.table.rows.get(row_id)
+        if row is None:
+            continue
+        related = related_decided(row, own_mission, missions)
+        if related:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"decision {row_id} names files or symbols that DECIDED rows "
+                    f"already bind: {'; '.join(related)} — confirm {row_id} agrees "
+                    f"with each and cite them in its Decision cell (line {lineno})",
+                )
+            )
 
 
 def load_doc_dir(doc_dir: Path, source: str) -> LoadedDoc:
@@ -453,6 +548,7 @@ def check(
     load_decisions: LoadDecisions | None = None,
     load_drift: LoadDrift | None = None,
     load_at: LoadAt | None = None,
+    load_missions: LoadMissions | None = None,
 ) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
@@ -509,6 +605,11 @@ def check(
     _check_files(section, doc, decisions, issues, notes, structure)
     _judge_new_entries(new_entries, doc, decisions, issues, notes)
     _check_new_coverage(new_entries, doc, issues)
+    own_mission = decisions.mission_id
+    if heading == SERVICES_HEADING:
+        m = mission.MISSION_LINE_RE.search(text)
+        own_mission = m.group(1) if m else None
+    _check_related_decisions(section, decisions, own_mission, load_missions, issues)
     _check_new_exists(
         new_entries, doc, issues, notes, moved, load_at, structure, repo, rev
     )

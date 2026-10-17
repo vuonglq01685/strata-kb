@@ -37,7 +37,10 @@ a denial to report. Stop only when the MCP tool fails too.
    points at `missions/M-<slug>.md`. Load its `## Technology decisions`
    table — its D-rows are the only legal targets of `[NEW: D<n>]`. With
    `--mission` that table is in the file you are filling. No parent
-   mission, no table: case 2 of Fill degrades to free text.
+   mission, no table: case 2 of Fill degrades to free text. Read the
+   `## Technology decisions` of every other mission under `missions/`
+   too: their DECIDED rows bind the code this ticket touches as much as
+   the parent's do.
 2. **Load** — from `<repo-id>-code` on the hub only, via the MCP tool
    `kb_get_section` (fallback: `kb get <repo-id>-code <section-id>`),
    discovering ids with `kb_search` (fallback: `kb query`) restricted to
@@ -62,6 +65,15 @@ a denial to report. Stop only when the MCP tool fails too.
      matching row → append one first, then write the marker:
      `| D<n> | <concrete proposal: svc/table/route name and one line why> | OPEN | <human SA / tech lead> | <US id> |`
      The proposal is specific — a name the ticket can use — never "TBD".
+     Before you write it, check it against every DECIDED row of every
+     mission, auth, session, rendering, caching and data-access rows
+     first. A proposal a DECIDED row rules out (server-side fetching where
+     the session lives only in the client, a public route where a guard
+     requires a token) is never written. Propose an option that agrees
+     with the row and cite it in the Decision cell
+     (`… agrees with D26 of M-identity-access`). When no option agrees,
+     write no row: list the clash under `BA-section contradictions` in
+     `## Needs input`, naming both rows.
      In a greenfield repo (`<repo>-code` has no `svc.*`) every service,
      table or route the mission needs comes from the architecture
      document on the hub: cite it in the Decision cell (the proposal
@@ -212,6 +224,11 @@ a denial to report. Stop only when the MCP tool fails too.
      Dev. Report it and stop; NEVER flip a Status to make the gate pass.
    - warning `has Technology decisions — reference the row as
      [NEW: D<n>]` — you used free text where a D-row belongs.
+   - warning `decision D<n> names files or symbols that DECIDED rows
+     already bind: <mission> D<k> (…)` — read each listed row. When your
+     row contradicts one, rewrite your row (only a row this run appended)
+     or move the clash to `BA-section contradictions`. When it agrees,
+     cite the listed rows in its Decision cell; the warning then clears.
    - `[note] grounded @<old>, still valid at @<new>` or a `[warn]
      grounded @<old>, now @<new> …` — a PASS: `-code` moved but every
      cited fact still holds. Show the diff to the BA; do not re-ground.
@@ -269,6 +286,8 @@ a denial to report. Stop only when the MCP tool fails too.
 - You may APPEND rows to `## Technology decisions`; never edit or delete
   an existing row, never change a Status — only a human flips OPEN to
   DECIDED.
+- A row you append never contradicts a DECIDED row of any mission. A
+  clash goes under `BA-section contradictions`, never into a proposal.
 - A value for a field the document does not carry has exactly two
   homes: `[NEW: D<n>]` when the ticket intends to create or change it,
   or `Open decisions` when the document simply cannot prove it. It

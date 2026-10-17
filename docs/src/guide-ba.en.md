@@ -431,6 +431,9 @@ last one's context. In order: a story held by an open D-row or blocking open que
 change goes through a branch, a PR, green CI and a merge; the merge publishes. A
 second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
 questions, one ticket at a time with `/ba-answer-questions <ticket-id>`, every `qa_interval` seconds.
+A ticket and its mission move together: when a ticket's own D-row or open question
+blocks it, `/ba-ticket-author` settles it and amends the mission in the same PR, and a
+mission amend re-authors the not-done tickets it lists in `Affected` in its PR.
 
 **When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
 `kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.

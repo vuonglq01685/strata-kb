@@ -2397,3 +2397,92 @@ def test_prose_after_a_listed_name_is_not_a_name():
     ):
         report = run_synth([f"- Symbols: {_SYMS} — {tail}"])
         assert errors(report) == [], (tail, errors(report))
+
+
+# ---------------------------------------------------------------------------
+# related DECIDED rows across missions (#128)
+# ---------------------------------------------------------------------------
+
+WEB_MISSION = """# Catalog — mission
+> Mission: M-demo
+
+## Technology decisions
+| # | Decision | Status | Owner | Blocks |
+|---|---|---|---|---|
+| D1 | `GenrePage` loads the first page server-side via `apiFetch` of `apps/web/src/lib/api-client.ts` | OPEN | SA | M-demo-US1 |
+| D2 | Server renders have no session | DECIDED | BA | M-demo-US1 |
+| D3 | `GenreGrid` loads every page client-side via `apiFetch`; respects D26 of `M-auth` | DECIDED | SA | M-demo-US1 |
+"""
+
+AUTH_MISSION = """# Auth — mission
+> Mission: M-auth
+
+## Technology decisions
+| # | Decision | Status | Owner | Blocks |
+|---|---|---|---|---|
+| D20 | Guard reads only `Authorization`; `catalog.controller.ts` needs a Bearer | DECIDED | SA | M-auth-US4 |
+| D26 | No server-side refresh in Next.js; `apiFetch` sends the Bearer from `session.ts` | DECIDED | SA | M-auth-US7 |
+| D27 | `apiFetch` retries once | OPEN | SA | M-auth-US7 |
+"""
+
+
+def missions_of(**texts):
+    return lambda: dict(texts)
+
+
+def related_warnings(report) -> list[str]:
+    return [w for w in warnings(report) if "DECIDED rows already bind" in w]
+
+
+def test_new_decision_sharing_a_symbol_with_a_decided_row_of_another_mission_warns(
+    code_doc,
+):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.web [NEW: D1]"), parent="M-demo")
+    report = ticketcheck.check(
+        text,
+        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
+        load_decisions=decisions_of(WEB_MISSION),
+        load_missions=missions_of(**{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}),
+    )
+    found = related_warnings(report)
+    assert len(found) == 1, report.render("Grounding")
+    # D26 shares `apiFetch`; D3 of the same mission shares it too. D20 shares
+    # nothing, D27 is not DECIDED, D2 has no code span.
+    assert "M-auth D26 (`apiFetch`)" in found[0]
+    assert "M-demo D3 (`apiFetch`)" in found[0]
+    assert "D20" not in found[0] and "D27" not in found[0]
+
+
+def test_a_row_that_already_names_the_related_row_is_not_warned_about(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.web [NEW: D3]"), parent="M-demo")
+    report = ticketcheck.check(
+        text,
+        load_doc=lambda repo, doc: ticketcheck.load_doc_dir(kb_dir / doc, "x"),
+        load_decisions=decisions_of(WEB_MISSION),
+        load_missions=missions_of(**{"M-demo": WEB_MISSION, "M-auth": AUTH_MISSION}),
+    )
+    # D3 names D26 of M-auth already; D1 shares `apiFetch` but is OPEN.
+    assert related_warnings(report) == [], report.render("Grounding")
+
+
+def test_related_rows_are_skipped_without_a_missions_loader(code_doc):
+    kb_dir, rev = code_doc
+    text = ticket(grounding(rev, Externals="int.web [NEW: D1]"), parent="M-demo")
+    report = run(text, kb_dir, load_decisions=decisions_of(WEB_MISSION))
+    assert related_warnings(report) == []
+
+
+def test_decision_anchors_keep_paths_symbols_and_basenames():
+    anchors = ticketcheck.decision_anchors(
+        "`apps/web/src/lib/api-client.ts`, `notFound()`, `GenrePage`, "
+        "`MOVIE`, `limit`, `pnpm -r test`, `titles.type`"
+    )
+    assert anchors == {
+        "apps/web/src/lib/api-client.ts",
+        "api-client.ts",
+        "notFound",
+        "GenrePage",
+        "titles.type",
+    }

@@ -419,6 +419,9 @@ ngữ cảnh của task trước. Thứ tự: story bị chặn bởi D-row mở
 đổi đi qua nhánh, PR, CI xanh rồi merge; merge sẽ publish. Một tiến trình thứ hai, trong
 worktree riêng `.kb/auto/worktrees/qa`, cứ mỗi `qa_interval` giây lại trả lời các câu hỏi
 đang mở của Dev, từng ticket một, bằng `/ba-answer-questions <ticket-id>`.
+Ticket và mission đi cùng nhau: khi D-row hay câu hỏi mở chặn chính ticket,
+`/ba-ticket-author` chốt nó và amend mission trong cùng PR; một lượt amend mission thì
+viết lại các ticket chưa xong mà nó liệt kê trong `Affected`, cũng trong PR đó.
 
 **Khi nào dừng.** Sau hai lần thất bại ở cùng một task (CI vẫn đỏ sau hai vòng sửa thì dừng ngay),
 `kb auto status` hiện lý do. Sửa xong, `kb auto run` chạy tiếp đúng task đó. Ticket không thể tick lại Definition of Ready sẽ bị "đỗ" (parked), không tính là thất bại:

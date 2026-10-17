@@ -724,6 +724,9 @@ async def test_kb_ticket_check_new_marker_reads_the_passed_mission(
     assert "parent mission 'M-demo' not found" in other  # wrong id is ignored
     assert "D1 (DECIDED" in passed
     assert passed.rstrip().endswith("Grounding: PASS")
+    # Without the local mission the tool says it read the hub's copy.
+    assert "parent mission M-demo read from the hub's published plan" in without
+    assert "read from the hub's published plan" not in passed
 
 
 @pytest.mark.anyio
@@ -762,6 +765,29 @@ async def test_kb_ticket_lint_checks_the_back_link_with_ticket_id(fed_hub):
         )
     assert "checks skipped" in skipped
     assert "'M-airspace-filter-US1' is not in the backlog" in failed
+    # No ticket_id: no hub lookup, so no hub-copy warning either.
+    assert "read from the hub's published plan" not in skipped
+    assert "read from the hub's published plan" not in failed
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_warns_when_the_mission_comes_from_the_hub(fed_hub):
+    from tests.test_ticketlint import DEFAULT_TITLE
+
+    text = _build_ticket(
+        _golden_ticket_block(fed_hub),
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+    )
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(
+            await client.call_tool(
+                "kb_ticket_lint",
+                {"ticket_markdown": text, "ticket_id": "M-airspace-filter-US1"},
+            )
+        )
+    assert "[warn] parent mission M-airspace-filter read from the hub's" in out
+    assert "pass that file's text as mission_markdown" in out
 
 
 # --- kb_ticket_stale: `kb ticket stale` over MCP, one file per call ---------

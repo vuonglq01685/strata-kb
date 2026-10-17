@@ -669,3 +669,14 @@ def test_new_on_existing_route_uses_hub_load_at(
     monkeypatch.setattr(ticketstale, "drift_refs", fake("| Method | Path |\n"))
     result = _check_against_hub(text, fed_hub, tmp_path)
     assert "now exists in api.airspace — built since grounding" in result.output
+
+
+def test_related_decided_rows_of_sibling_missions_warn(code_doc, tmp_path):
+    from tests.test_ticketcheck import AUTH_MISSION, WEB_MISSION
+
+    kb_dir, rev = code_doc
+    path = _layout(tmp_path, rev, {"Externals": "int.web [NEW: D1]"})
+    (tmp_path / "missions" / "M-demo.md").write_text(WEB_MISSION, encoding="utf-8")
+    (tmp_path / "missions" / "M-auth.md").write_text(AUTH_MISSION, encoding="utf-8")
+    result = runner.invoke(app, ["ticket", "check", str(path), "--kb-dir", str(kb_dir)])
+    assert "DECIDED rows already bind: M-auth D26 (`apiFetch`)" in result.output

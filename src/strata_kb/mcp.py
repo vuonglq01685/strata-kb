@@ -95,6 +95,26 @@ def _mission_loader(hub, mission_markdown: str | None):
     return load
 
 
+def _hub_mission_note(ticket_markdown: str, mission_markdown: str | None) -> str:
+    """A warning when the ticket's parent mission is read from the hub's
+    published plan: a local amend (a new D-row, a flipped status) is not
+    there yet, so the tool can PASS where CI, which reads missions/, fails."""
+    from strata_kb import mission, ticket
+
+    m = ticket.PARENT_MISSION_RE.search(ticket_markdown)
+    if m is None:
+        return ""
+    if mission_markdown:
+        named = mission.MISSION_LINE_RE.search(mission_markdown)
+        if named is not None and named.group(1) == m.group(1):
+            return ""
+    return (
+        f"[warn] parent mission {m.group(1)} read from the hub's published plan "
+        f"— it can differ from your local missions/{m.group(1)}.md, which CI "
+        "reads; pass that file's text as mission_markdown\n\n"
+    )
+
+
 HUB_DOWN = (
     "hub unreachable — queries need the hub federation; check the network "
     "or the hub path, then try again"
@@ -334,7 +354,12 @@ def create_server(config: ServerConfig) -> MCPServer:
                 ticket_id=ticket_id or None,
                 load_mission=_mission_loader(hub, mission_markdown),
             )
-            return stale_hub_note(hub) + report.render()
+            note = (
+                _hub_mission_note(ticket_markdown, mission_markdown)
+                if ticket_id
+                else ""
+            )
+            return stale_hub_note(hub) + note + report.render()
 
         return await anyio.to_thread.run_sync(_run)
 
@@ -357,7 +382,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         from the hub only — no local fallback."""
 
         def _run() -> str:
-            from strata_kb import ticketcheck, ticketstale
+            from strata_kb import mission, ticketcheck, ticketfetch, ticketstale
 
             hub = _hub()
             if hub is None:
@@ -377,6 +402,15 @@ def create_server(config: ServerConfig) -> MCPServer:
                     return None
                 return ticketcheck.parse_decisions(text, f"mission {mission_id}")
 
+            def load_missions() -> dict[str, str]:
+                # The hub's missions, with the client's local copy winning.
+                out = ticketfetch.missions(hub)
+                if mission_markdown:
+                    m = mission.MISSION_LINE_RE.search(mission_markdown)
+                    if m is not None:
+                        out[m.group(1)] = mission_markdown
+                return out
+
             report = ticketcheck.check(
                 ticket_markdown,
                 load_doc=load_doc,
@@ -386,8 +420,14 @@ def create_server(config: ServerConfig) -> MCPServer:
                 load_at=lambda r, d, rev, ids: ticketstale.drift_refs(
                     hub, r, d, rev, ids
                 ),
+                load_missions=load_missions,
             )
-            return stale_hub_note(hub) + report.render("Grounding")
+            note = (
+                _hub_mission_note(ticket_markdown, mission_markdown)
+                if heading != ticketcheck.SERVICES_HEADING
+                else ""
+            )
+            return stale_hub_note(hub) + note + report.render("Grounding")
 
         return await anyio.to_thread.run_sync(_run)
 

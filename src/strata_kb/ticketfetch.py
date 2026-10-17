@@ -106,6 +106,24 @@ def render(hub: HubHandle, ticket_ref: str) -> str:
     return f"# {title}\n\n{provenance}\n\n{promote_headings(body.strip(chr(10)))}\n"
 
 
+def missions(hub: HubHandle) -> dict[str, str]:
+    """Every mission the hub's plans publish, by id, as `render` restores it.
+    A mission that cannot be read is left out: callers use this for advice
+    (`kb ticket check`'s related-rows warning), never for a verdict."""
+    from strata_kb.mission import MISSION_ID_RE
+
+    out: dict[str, str] = {}
+    for fed, manifest in plan_docs(hub, None):
+        for section in manifest.sections:
+            if section.id in out or not MISSION_ID_RE.match(section.id):
+                continue
+            try:
+                out[section.id] = render(hub, f"{fed.meta.repo_id}:{section.id}")
+            except TicketFetchError:
+                continue
+    return out
+
+
 def split_assets(hub: HubHandle, ticket_ref: str) -> tuple[list[Path], list[str]]:
     """`(found, missing)` for the assets the fetched text references: files
     under the plan document's `assets/`, and the names of those not on disk
