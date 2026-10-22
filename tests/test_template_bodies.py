@@ -1761,6 +1761,7 @@ def test_already_finished_continues_only_its_own_open_pr(template, rev_parse):
     assert "only when a local" in rule
     assert f"`{rev_parse}`" in rule
     assert "equals the `headRefOid`" in rule
+    assert "`git log --format=%H " in rule and "..<headRefOid>` prints nothing" in rule
     assert "--state open --json`" in rule
     assert "do not switch, push, continue or merge it" in rule
     assert "--phase review --pr <url>`" in rule
