@@ -1561,3 +1561,84 @@ def test_claude_copies_carry_the_claim_steps(name):
     if "dev-handover" in name:
         assert "--phase review --pr <url>" in text
         assert "behind origin/" in text
+
+
+# --- ticket claims, fix round 1 -------------------------------------------------
+
+_TAKEOVER_COMMANDS = {
+    "dev-implement-ticket": (
+        "git fetch origin",
+        "git switch auto/<id>",
+        "git switch -c auto/<id> origin/auto/<id>",
+        "git pull origin auto/<id>",
+        "git switch -c auto/<id> origin/<id>",
+    ),
+    "dev-fix-bug": (
+        "git fetch origin",
+        "git switch fix/<BUG-id>",
+        "git switch -c fix/<BUG-id> origin/fix/<BUG-id>",
+        "git pull origin fix/<BUG-id>",
+        "git switch hotfix/<BUG-id>",
+        "git switch -c hotfix/<BUG-id> origin/hotfix/<BUG-id>",
+        "git pull origin hotfix/<BUG-id>",
+    ),
+}
+
+
+@pytest.mark.parametrize(("name", "commands"), _TAKEOVER_COMMANDS.items())
+def test_auto_takeover_uses_only_allowlisted_commands(name, commands):
+    allow, deny = _allow_deny()
+    text = _dev_text(name)
+    bullet = text[text.index("taking over the branch of a free claim") :]
+    bullet = bullet[: bullet.index("Auto decision line")]
+    for command in commands:
+        assert f"`{command}`" in bullet, command
+        assert _permitted(command, allow, deny), command
+    # the manual wording's commands are not Auto commands
+    assert "`git pull --ff-only`" not in bullet
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
+)
+def test_auto_never_retakes_a_lost_claim(name):
+    text = _dev_text(name)
+    assert "`no claim held` here means the claim was lost" in text
+    assert "Never run `kb claim take` in Auto mode" in text
+    assert "AUTO-RESULT: failed claim-lost <ticket-id>" in text
+    assert "run `kb claim take <ticket-id>` first" in _body(
+        f"{name}.md"
+    )  # manual path stays
+
+
+def test_handover_checks_the_claim_before_the_push_and_the_merge():
+    auto = _dev_text("dev-handover")
+    step1 = auto[
+        auto.index("1. Commit the remaining files") : auto.index("2. Open the PR")
+    ]
+    assert "`kb claim update <ticket-id>` right before the push" in step1
+    assert step1.index("kb claim update") < step1.index("git push -u origin HEAD")
+    step2 = auto[auto.index("2. Open the PR") : auto.index("3. Wait for the checks")]
+    assert "Exit `3` → STOP as on entry; no merge." in step2
+    assert "run `kb claim update <ticket-id>` first" in _body("dev-handover.md")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-command-dev-execute.md",
+        "claude-command-dev-handover.md",
+        "claude-command-dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+    ],
+)
+def test_claude_copies_carry_the_fix_round_bullets(name):
+    text = _normal(_auto_section(name))
+    if "implement-ticket" in name:
+        assert "taking over the branch of a free claim" in text
+    else:
+        assert "Never run `kb claim take` in Auto mode" in text
+    if "dev-handover" in name:
+        assert "right before the push" in text and "no merge." in text

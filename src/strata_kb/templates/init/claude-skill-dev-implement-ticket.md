@@ -259,6 +259,7 @@ The runner starts this skill as `/dev-implement-ticket <us-id>`. Nobody answers 
 - **Re-entry: no branch, on the default branch — "offer `git switch -c <ticket-id>`"** → branch at once with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. Do this before the first phase.
 - **Re-entry: the current branch names a different ticket — "two tickets in flight; switch branches first"** → when `git status` is clean, create this ticket's branch the same way and leave the other branch alone. A dirty tree ends `AUTO-RESULT: failed two-tickets-in-flight`.
 - **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD/AC checkboxes for humans"** → `dev-handover` opens the PR and merges it under its own Auto mode. The rest of the rule stands: no work on `main`, no push to `main`, no DoD or AC box ticked.
+- **Intake: taking over the branch of a free claim — the fast-forward pull and the plain switch to a Dev's branch** → the Auto allowlist does not permit them, so take the branch over with allowed commands only: `git fetch origin`, then `git switch auto/<id>` when a local `auto/<id>` exists, otherwise `git switch -c auto/<id> origin/auto/<id>`, then `git pull origin auto/<id>`. A Dev's own branch `<id>` on `origin` (no `auto/<id>` there) is continued on a new auto branch: `git switch -c auto/<id> origin/<id>`. Log whose work it was in an Auto decision line.
 
 ### Result line
 

@@ -107,7 +107,7 @@ as the template's comment counts as empty and fails the check. If the ticket
 changed what a service is responsible for, report `amend needed:
 <repo_id>-svc §svc.<name>` under `## Notes`. Never edit a `reviewed`
 section. **GATE 3** — offered only after A5 comes
-back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
+back clean (run `kb claim update <ticket-id>` first; exit `3` → STOP as on entry) — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
 does neither.** Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the terminal
 phase of the flow, so there is no next automated command; a blocker takes

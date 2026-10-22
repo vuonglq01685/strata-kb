@@ -279,6 +279,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 - **Review contract: "round 3 stops the flow and goes to the Dev"** → a BLOCKER or SUGGESTED finding of A3 or A4 still standing after round 3 ends `AUTO-RESULT: failed task-review <ticket-id>`, naming the task or `A4`. The 3-round cap stays as written here, on purpose: only the design and plan reviews are cut to 2.
 - **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
 - **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+- **Claim: "no claim held ... run `kb claim take <ticket-id>` first"** → in Auto mode the runner holds the claim before this skill starts and drops its local token when it sees the claim lost, so `no claim held` here means the claim was lost: STOP and report it to the orchestrator, which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run, end it yourself). Never run `kb claim take` in Auto mode.
 
 ### Result line
 

@@ -256,6 +256,7 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 - **Handover: "The Dev opens the PR and merges"** → `dev-handover` does both under its own Auto mode, with these bug rules unchanged. For a `hotfix`, rule (d)'s production line is the `hotfix_base` above, `main` when it is empty.
 - **Re-entry: a hotfix with no branch — "ask the Dev for it first"** → the production line comes from `hotfix_base`; never ask.
 - **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD checkboxes for humans"** → `dev-handover` opens the PR and merges it under its own Auto mode. The rest of the rule stands: no work on `main`, no push to `main`, no DoD box ticked.
+- **Intake: taking over the branch of a free claim — the fast-forward pull** → the Auto allowlist does not permit it, so take the branch over with allowed commands only: `git fetch origin`, then `git switch fix/<BUG-id>` when a local `fix/<BUG-id>` exists, otherwise `git switch -c fix/<BUG-id> origin/fix/<BUG-id>`, then `git pull origin fix/<BUG-id>`. A hotfix does the same with `hotfix/<BUG-id>`: `git switch hotfix/<BUG-id>` or `git switch -c hotfix/<BUG-id> origin/hotfix/<BUG-id>`, then `git pull origin hotfix/<BUG-id>`. Log whose work it was in an Auto decision line.
 
 ### Result line
 
