@@ -21,6 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import click
 import typer
 import yaml
 from pydantic import ValidationError
@@ -28,6 +29,7 @@ from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.kinds import HUB_KINDS
+from strata_kb.ticketclaim import PHASES
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -4593,7 +4595,12 @@ def claim_take(
 @claim_app.command("update")
 def claim_update(
     ticket: str = typer.Argument(..., help="Ticket id"),
-    phase: str | None = typer.Option(None, "--phase", help="New phase"),
+    phase: str | None = typer.Option(
+        None,
+        "--phase",
+        click_type=click.Choice(PHASES),
+        help="New phase",
+    ),
     pr: str | None = typer.Option(None, "--pr", help="PR URL"),
     stopped: str | None = typer.Option(
         None, "--stopped", help="Mark the claim stopped, with the reason"

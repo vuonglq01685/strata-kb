@@ -104,6 +104,14 @@ def test_update_sends_fields(fake, tmp_path):
     ]
 
 
+def test_update_invalid_phase_exits_before_any_call(fake, tmp_path):
+    local(tmp_path).put("US1", 4, "ct")
+    result = runner.invoke(app, ["claim", "update", "US1", "--phase", "planning"])
+    assert result.exit_code != 0
+    assert "planning" in result.output
+    assert fake.calls == []
+
+
 def test_update_stopped_sets_state_and_reason(fake, tmp_path):
     local(tmp_path).put("US1", 4, "ct")
     runner.invoke(app, ["claim", "update", "US1", "--stopped", "waiting on QA"])

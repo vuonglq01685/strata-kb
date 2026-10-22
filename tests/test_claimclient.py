@@ -158,3 +158,18 @@ def test_local_claims_roundtrip_and_corrupt_file(tmp_path):
     assert local.get("US1") is None
     local.put("US2", 5, "x")
     assert local.get("US2") == (5, "x")
+
+
+@pytest.mark.parametrize("error", ["bad_request", "ambiguous"])
+def test_400_detail_is_in_the_message(error):
+    http = FakeHttp(400, {"error": error, "detail": "pass <repo>:<id>"})
+    with pytest.raises(
+        KbError, match=f"hub /api/claims returned 400: {error} — pass <repo>:<id>"
+    ):
+        client(http).take("US1", "a")
+
+
+def test_error_without_detail_has_no_dash():
+    with pytest.raises(KbError) as exc:
+        client(FakeHttp(400, {"error": "bad_request"})).take("US1", "a")
+    assert str(exc.value) == "hub /api/claims returned 400: bad_request"

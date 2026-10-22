@@ -126,8 +126,11 @@ class ClaimClient:
                 str(data.get("close_reason", "")), str(data.get("closed_by", ""))
             )
         if not 200 <= code < 300:
+            detail = data.get("detail")
             raise KbError(
-                f"hub {ROUTE} returned {code}" + (f": {reason}" if reason else "")
+                f"hub {ROUTE} returned {code}"
+                + (f": {reason}" if reason else "")
+                + (f" — {detail}" if detail and isinstance(detail, str) else "")
             )
         return data
 
