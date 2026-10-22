@@ -15,15 +15,18 @@ from typing import Literal
 
 import yaml
 
-from strata_kb import cloud, gitio, hubapi
+from strata_kb import claimclient, cloud, gitio, hubapi
 from strata_kb.autorun import claude, picker
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
+from strata_kb.autorun.claimbeat import ClaimBeat
+from strata_kb.autorun.claims import RunnerClaims
 from strata_kb.autorun.done import all_done
 from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run_lock
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
+from strata_kb.claimclient import ClaimRouteMissing
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
@@ -39,6 +42,8 @@ BACKOFF_MAX = 3600
 EXIT_DONE = 0
 AUTO_TASK_ENV = claude.AUTO_TASK_ENV  # set on every task process by run_task
 EXIT_STOPPED = 2
+CLAIMED_SKILLS = ("dev-implement-ticket", "dev-fix-bug")  # tasks that carry a claim
+_BUILD = object()  # run_loop: no `claims` injected, build the real ones
 
 
 class Backoff:
@@ -139,12 +144,22 @@ def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, 
     return entry is not None, bool(entry and entry.auto_merge), ""
 
 
+def _ticket_of(task_key: str | None) -> str | None:
+    """The ticket a stored task key carries a claim for; None for other tasks."""
+    skill, _, arg = (task_key or "").partition(":")
+    return arg if skill in CLAIMED_SKILLS else None
+
+
 def _stop(
     kb_dir: Path,
     state: autostate.AutoState,
     reason: str,
     hint: str = "Fix it, then run `kb auto run` to resume.",
+    claims: RunnerClaims | None = None,
 ) -> Outcome:
+    ticket = _ticket_of(state.task)
+    if claims is not None and ticket:
+        claims.stop(ticket, reason)  # stays held until the Dev resumes it
     autostate.save(kb_dir, replace(state, stop_reason=reason))
     logger.error(
         "auto mode stopped on %s: %s. %s", state.task or "no task", reason, hint
@@ -191,21 +206,57 @@ def _answered(
     return state, True
 
 
+class _Early(KbError):
+    """`run_once` ends now with `outcome`, the claims having decided so. Caught
+    in `run_once` before the generic KbError arm; never leaves it."""
+
+    def __init__(self, outcome: Outcome) -> None:
+        super().__init__(outcome)
+        self.outcome: Outcome = outcome
+
+
+def _claim_pick(
+    root: Path,
+    hub: HubHandle | hubapi.HubApi,
+    state: autostate.AutoState,
+    claims: RunnerClaims,
+) -> Task | None:
+    """The first candidate this Dev wins the claim on; raises `_Early("idle")`
+    when other Devs hold every ready ticket."""
+    held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
+    candidates = picker.dev_candidates(hub, root, skip=state.skipped, held=held)
+    for task in candidates:
+        if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
+            return task
+    if candidates:
+        logger.info("every ready ticket is held by another Dev")
+        raise _Early("idle")
+    return None
+
+
 def _task_for(
     root: Path,
     kb_dir: Path,
     cfg: KBConfig,
     hub: HubHandle | hubapi.HubApi,
     state: autostate.AutoState,
+    claims: RunnerClaims | None = None,
 ) -> Task | None:
     """The stored task (a crash, a retry, an answered question), else a pick.
-    Raises KbError when the pick fails."""
+    With `claims` (dev) the task's ticket is claimed here. Raises KbError when
+    the pick fails, `_Early` when another Dev holds the ticket(s)."""
     if state.task:
         skill, _, arg = state.task.partition(":")
+        if claims is not None and skill in CLAIMED_SKILLS and not claims.claim(arg):
+            autostate.save(kb_dir, replace(state, task=None, attempts=0))
+            logger.info("%s is now held by another Dev; picking again", arg)
+            raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
         return picker.pick_ba(root, kb_dir, skip=state.skipped)
-    return picker.pick_dev(hub, root, skip=state.skipped)
+    if claims is None:
+        return picker.pick_dev(hub, root, skip=state.skipped)
+    return _claim_pick(root, hub, state, claims)
 
 
 def _settle(
@@ -214,6 +265,7 @@ def _settle(
     result: claude.TaskResult,
     backoff: Backoff,
     sleep,
+    claims: RunnerClaims | None = None,
 ) -> Outcome:
     if result.kind == "usage-limit":
         delay = backoff.next()
@@ -237,14 +289,19 @@ def _settle(
         logger.info("blocked on questions %s", list(result.ids))
         return "waiting"
     if result.reason.startswith("ci-red"):
-        return _stop(kb_dir, replace(state, attempts=MAX_ATTEMPTS), result.reason)
+        return _stop(
+            kb_dir,
+            replace(state, attempts=MAX_ATTEMPTS),
+            result.reason,
+            claims=claims,
+        )
     state = replace(state, attempts=state.attempts + 1)
     autostate.save(kb_dir, state)
     logger.warning(
         "task failed (%d/%d): %s", state.attempts, MAX_ATTEMPTS, result.reason
     )
     if state.attempts >= MAX_ATTEMPTS:
-        return _stop(kb_dir, state, result.reason)
+        return _stop(kb_dir, state, result.reason, claims=claims)
     return "ran"
 
 
@@ -308,26 +365,39 @@ def run_once(
     sleep=time.sleep,
     backoff: Backoff | None = None,
     qa_thread: QaThread | None = None,
+    claims: RunnerClaims | None = None,
 ) -> Outcome:
     """One step of the loop. `cfg` is the config as just read (rule 1: a switch
-    flipped between tasks stops the loop at the boundary)."""
+    flipped between tasks stops the loop at the boundary). `claims` (dev repos
+    only) makes the step claim its ticket before working it."""
+    if cfg.kind != "dev":
+        claims = None
     state = autostate.load(kb_dir)
     if qa_thread is not None and qa_thread.failed_twice:
         return _stop(kb_dir, state, f"qa thread: {qa_thread.stop_reason}")
     if not cfg.auto.enabled:
         return _stop(
-            kb_dir, state, "switched off", "Run `kb auto on`, then `kb auto run`."
+            kb_dir,
+            state,
+            "switched off",
+            "Run `kb auto on`, then `kb auto run`.",
+            claims=claims,
         )
     finished = _check_done(cfg, hub, qa)
     if finished is not None:
         return finished
     if state.waiting_on:
+        _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
         if not ready:
             logger.info("waiting on questions %s", list(state.waiting_on))
             return "waiting"
     try:
-        task = _task_for(root, kb_dir, cfg, hub, state)
+        task = _task_for(root, kb_dir, cfg, hub, state, claims)
+    except _Early as early:
+        return early.outcome
+    except ClaimRouteMissing as exc:
+        return _stop(kb_dir, state, str(exc))
     except KbError as exc:
         logger.error("could not pick a task: %s", exc)
         return "idle"
@@ -356,6 +426,13 @@ def run_once(
     if state.task != task.key or state.last_done or state.same_pick:
         state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
+    ticket = task.arg if task.skill in CLAIMED_SKILLS else None
+    beat = None
+    if claims is not None and ticket:
+        if not claims.phase(ticket, "claimed"):
+            return _claim_lost(kb_dir, state, claims, ticket)
+        beat = ClaimBeat(claims, cfg.auto.claim_heartbeat)
+        beat.start(ticket)
     started = now()
     ref = _remember_branch(root)
     try:
@@ -369,8 +446,39 @@ def run_once(
             result = claude.TaskResult("failed", (), f"runner error: {exc}")
     finally:
         _restore_branch(root, ref)
+        if beat is not None:
+            beat.stop()
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
-    return _settle(kb_dir, state, result, backoff or Backoff(), sleep)
+    if claims is not None and ticket:
+        if beat is not None and beat.lost:
+            return _claim_lost(kb_dir, state, claims, ticket)
+        _after_task(claims, ticket, result)
+    return _settle(kb_dir, state, result, backoff or Backoff(), sleep, claims)
+
+
+def _claim_lost(
+    kb_dir: Path, state: autostate.AutoState, claims: RunnerClaims, ticket: str
+) -> Outcome:
+    """Another Dev (or an admin) holds the ticket now: drop it, count no attempt."""
+    autostate.save(kb_dir, replace(state, task=None, attempts=0, waiting_on=()))
+    logger.warning("claim on %s lost: %s", ticket, claims.lost_reason(ticket))
+    return "ran"
+
+
+def _after_task(claims: RunnerClaims, ticket: str, result: claude.TaskResult) -> None:
+    """A finished task is `publishing` (held until its PR merges); one blocked on
+    questions is `waiting-qa`. Any other result leaves the phase the task set."""
+    if result.kind == "done":
+        claims.phase(ticket, "publishing")
+    elif result.kind == "blocked-qa":
+        claims.phase(ticket, "waiting-qa")
+
+
+def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> None:
+    """Keep the claim alive while the loop waits on questions."""
+    ticket = _ticket_of(state.task)
+    if claims is not None and ticket:
+        claims.beat(ticket)
 
 
 def _resolve_hub(
@@ -405,16 +513,40 @@ def build_deps(
     return cfg, _resolve_hub(cfg, kb_dir, hub_flag), qa
 
 
+def build_claims(root: Path, kb_dir: Path, cfg: KBConfig) -> RunnerClaims | None:
+    """The claim tracker for a dev repo; None for any other kind. Raises KbError
+    when the hub env is not set."""
+    if cfg.kind != "dev":
+        return None
+    return RunnerClaims(
+        root, kb_dir, claimclient.from_env(), claimclient.holder_name(root)
+    )
+
+
+def _release_on_exit(
+    kb_dir: Path, state: autostate.AutoState, claims: RunnerClaims | None
+) -> None:
+    """The loop ends with a ticket still in hand: free its claim unless it is
+    past the work (`publishing`, `review`) or marked `stopped`."""
+    ticket = _ticket_of(state.task)
+    if claims is not None and ticket:
+        claims.release_if_working(ticket, "runner stopped")
+
+
 def run_loop(
     root: Path, kb_dir: Path, *, sleep=time.sleep, hub_flag: str = "", **deps
 ) -> int:
     """Repeat `run_once` until done (0) or stopped (2). `deps` (hub, qa,
-    run_task, now) default to the real ones; tests inject fakes. `hub_flag` is
+    run_task, now, claims) default to the real ones; tests inject fakes. `hub_flag` is
     the `--hub` flag (empty = config). A BA repo also runs the Q&A thread (own
     process, own worktree) for the loop's lifetime."""
     resume(kb_dir)
     qa = deps.pop("qa", None) or qa_mod.from_env()
     cfg = load_config(kb_dir)
+    claims = deps.pop("claims", _BUILD)
+    if claims is _BUILD:
+        claims = build_claims(root, kb_dir, cfg)
+    deps["claims"] = claims
     qa_thread = None
     if cfg.kind == "ba":
         run_task = deps.get("run_task", claude.run_task)
@@ -427,6 +559,7 @@ def run_loop(
     finally:
         if qa_thread is not None:
             qa_thread.stop()
+        _release_on_exit(kb_dir, autostate.load(kb_dir), claims)
 
 
 def _repeat(

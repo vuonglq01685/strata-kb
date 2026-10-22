@@ -59,6 +59,7 @@ class AutoConfig(BaseModel):
     qa_interval: int = 300
     idle_interval: int = 600
     hotfix_base: str = ""
+    claim_heartbeat: int = 900  # seconds between claim heartbeats while a task runs
 
 
 class KBConfig(BaseModel):

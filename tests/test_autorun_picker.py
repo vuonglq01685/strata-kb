@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from strata_kb import planstatus
-from strata_kb.autorun.picker import Task, pick_ba, pick_dev
+from strata_kb.autorun.picker import Task, dev_candidates, pick_ba, pick_dev
 from strata_kb.errors import KbError
 from strata_kb.missionnext import StoryStatus
 
@@ -322,3 +322,28 @@ def test_dev_skip_passes_over_a_ready_ticket(tmp_path: Path, monkeypatch):
 def test_dev_skipped_test_workflow_picks_nothing(tmp_path: Path, monkeypatch):
     _hub(monkeypatch, [_dep("US1", "ready")], [])
     assert pick_dev(None, tmp_path, {"dev-test-workflow:"}) is None  # type: ignore[arg-type]
+
+
+def test_dev_candidates_skip_held(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [_status("US1", "ready"), _status("US2", "ready")], [])
+    tasks = dev_candidates(None, tmp_path, held={"US1"})  # type: ignore[arg-type]
+    assert tasks == [Task("dev-implement-ticket", "US2")]
+    assert pick_dev(None, tmp_path, held={"US1"}) == tasks[0]  # type: ignore[arg-type]
+
+
+def test_dev_candidates_keep_pick_order_and_skip(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(
+        monkeypatch,
+        [_status("US1", "ready")],
+        [_status("TAL-1", "ready", ""), _status("BUG-2", "ready", "")],
+    )
+    keys = [t.key for t in dev_candidates(None, tmp_path)]  # type: ignore[arg-type]
+    assert keys == [
+        "dev-fix-bug:BUG-2",
+        "dev-implement-ticket:TAL-1",
+        "dev-implement-ticket:US1",
+    ]
+    skipped = dev_candidates(None, tmp_path, skip=[keys[0]])  # type: ignore[arg-type]
+    assert [t.key for t in skipped] == keys[1:]

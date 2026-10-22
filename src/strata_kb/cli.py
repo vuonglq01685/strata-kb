@@ -1140,7 +1140,13 @@ def auto_run(
                 cfg, handle, qa = runner.build_deps(kb_dir, hub)
                 runner.resume(kb_dir)
                 outcome = runner.run_once(
-                    root, kb_dir, cfg=cfg, hub=handle, qa=qa, run_task=task_runner
+                    root,
+                    kb_dir,
+                    cfg=cfg,
+                    hub=handle,
+                    qa=qa,
+                    run_task=task_runner,
+                    claims=runner.build_claims(root, kb_dir, cfg),
                 )
                 typer.echo(outcome)
                 code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
