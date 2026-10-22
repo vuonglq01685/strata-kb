@@ -2570,6 +2570,7 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
+    from strata_kb import gitio
     from strata_kb import publish as publish_mod
     from strata_kb.config import effective_repo_id, require_hub
     from strata_kb.errors import KbError
@@ -2599,6 +2600,10 @@ def publish(
         _refresh_dev_code(kb_dir)
     if plan.refresh_plan:
         _refresh_ba_plan(kb_dir)
+    # The one point every dev route (snapshot, intake) passes before it
+    # sends anything. The refresh above only rewrites local, derived `-code`.
+    if plan.repo_kind == "dev":
+        publish_mod.ensure_current(gitio.git_root(kb_dir.resolve()))
 
     # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
     # HashSyncError, HubConfigError) reaches the root guard. What is caught
