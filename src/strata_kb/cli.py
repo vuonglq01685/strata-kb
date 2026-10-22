@@ -21,7 +21,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import click
 import typer
 import yaml
 from pydantic import ValidationError
@@ -4609,8 +4608,7 @@ def claim_update(
     phase: str | None = typer.Option(
         None,
         "--phase",
-        click_type=click.Choice(PHASES),
-        help="New phase",
+        help="New phase: " + ", ".join(PHASES),
     ),
     pr: str | None = typer.Option(None, "--pr", help="PR URL"),
     stopped: str | None = typer.Option(
@@ -4622,6 +4620,11 @@ def claim_update(
     """Report phase, PR or stop state for a ticket you hold (exit 3 if lost)."""
     from strata_kb import claimcmd
 
+    # Not click.Choice: typer >= 0.26 vendors click, so a real click type breaks.
+    if phase is not None and phase not in PHASES:
+        raise typer.BadParameter(
+            f"{phase!r} is not one of {', '.join(PHASES)}", param_hint="--phase"
+        )
     _exit_with(claimcmd.update(kb_dir, ticket, phase, pr, stopped, active))
 
 
