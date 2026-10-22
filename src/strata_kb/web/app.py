@@ -31,7 +31,7 @@ from strata_kb.serving.accounts import (
 from strata_kb.serving.auth import SessionAuth, TokenAuthMiddleware
 from strata_kb.serving.config import ServerConfig
 from strata_kb.serving.setupcode import start_setup
-from strata_kb.web import api, planui, qaui, registry_routes, ui
+from strata_kb.web import api, claim_api, planui, qaui, registry_routes, ui
 from strata_kb.web.headers import SecurityHeadersMiddleware
 
 logger = logging.getLogger("strata_kb.web.app")
@@ -99,6 +99,7 @@ def create_app(
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
     routes += planui.plan_routes(config)
     routes += qaui.qa_routes(config)
+    routes += claim_api.build_claim_routes(config)
     routes += registry_routes.build_registry_routes(
         config, intake_cfg, session, push=registry_push
     )
