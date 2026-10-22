@@ -252,6 +252,7 @@ ALLOW = [
     "Bash(git diff*)",
     "Bash(git log*)",
     "Bash(git fetch *)",
+    "Bash(git rev-parse *)",
     "Bash(git pull)",
     "Bash(git pull origin *)",
     "Bash(git switch -c *)",

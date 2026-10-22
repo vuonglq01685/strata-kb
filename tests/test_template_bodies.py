@@ -1712,3 +1712,59 @@ def test_docs_do_not_claim_review_is_set_without_the_dev(path):
     assert "Once the PR is open, `dev-handover` sets" not in text
     assert "Khi PR đã mở, `dev-handover` đặt" not in text
     assert "/dev-handover <id>" in text
+
+
+# --- ticket claims, follow-ups: no skip of the open-PR check; own PRs only -----
+
+_TAKEOVER_MIRRORS = [
+    "claude-skill-dev-implement-ticket.md",
+    "claude-command-dev-implement-ticket.md",
+]
+
+
+@pytest.mark.parametrize("mirror", [None, *_TAKEOVER_MIRRORS])
+def test_auto_takeover_checks_both_branches_with_no_skip(mirror):
+    text = (
+        _dev_text("dev-implement-ticket")
+        if mirror is None
+        else _normal(_auto_section(mirror))
+    )
+    bullet = text[text.index("taking over the branch of a free claim") :]
+    bullet = bullet[: bullet.index("Auto decision line")]
+    assert "Skip this check" not in bullet
+    check = bullet[bullet.index(_PR_FIND_OPEN) : bullet.index("do not take")]
+    assert "`auto/<id>` and `<id>` on `origin`" in check
+    assert "whether or not a local `auto/<id>` exists" in check
+
+
+def test_fix_bug_takeover_has_no_skip():
+    assert "Skip this check" not in _dev_text("dev-fix-bug")
+
+
+_OWN_PR_FILES = {
+    "bodies/dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "claude-skill-dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "claude-command-dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "bodies/dev-fix-bug.md": "git rev-parse fix/<BUG-id>",
+    "bodies/dev-handover.md": "git rev-parse <branch>",
+    "claude-command-dev-handover.md": "git rev-parse <branch>",
+}
+
+
+@pytest.mark.parametrize(("template", "rev_parse"), _OWN_PR_FILES.items())
+def test_already_finished_continues_only_its_own_open_pr(template, rev_parse):
+    allow, deny = _allow_deny()
+    text = _normal(_auto_section(template))
+    rule = text[text.index("**Already finished.**") :]
+    rule = rule[: rule.index("###") if "###" in rule else len(rule)]
+    rule = rule[rule.index("look for an open one") :]
+    assert "only when a local" in rule
+    assert f"`{rev_parse}`" in rule
+    assert "equals the `headRefOid`" in rule
+    assert "--state open --json`" in rule
+    assert "do not switch, push, continue or merge it" in rule
+    assert "--phase review --pr <url>`" in rule
+    assert "end `AUTO-RESULT: done`" in rule
+    # the fallback comes after the crashed-run path
+    assert rule.index("only when a local") < rule.index("do not switch")
+    assert _permitted(rev_parse, allow, deny)
