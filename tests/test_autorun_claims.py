@@ -153,11 +153,21 @@ def test_beat_lost_is_false(kb_dir):
     assert LocalClaims(kb_dir).get("US1") is None
 
 
-def test_release_if_working_releases_a_working_phase(kb_dir):
-    client = FakeClient()
+def claimed(kb_dir, client):
     claims = make(kb_dir, client)
     claims.claim("US1")
-    claims.phase("US1", "execute")
+    client.calls.clear()
+    return claims
+
+
+def released(client) -> bool:
+    return any(c[0] == "release" for c in client.calls)
+
+
+def test_release_if_working_releases_a_working_phase(kb_dir):
+    client = FakeClient()
+    claims = claimed(kb_dir, client)
+    client.held_rows = [claim_dict(phase="execute")]
     claims.release_if_working("US1", "runner stopped")
     assert client.calls[-1] == ("release", 7, "tok", "runner stopped")
     assert LocalClaims(kb_dir).get("US1") is None
@@ -166,20 +176,48 @@ def test_release_if_working_releases_a_working_phase(kb_dir):
 @pytest.mark.parametrize("phase", ["publishing", "review"])
 def test_release_if_working_keeps_publishing_and_review(kb_dir, phase):
     client = FakeClient()
-    claims = make(kb_dir, client)
-    claims.claim("US1")
-    claims.phase("US1", phase)
+    claims = claimed(kb_dir, client)
+    client.held_rows = [claim_dict(phase=phase)]
     claims.release_if_working("US1", "runner stopped")
-    assert not any(c[0] == "release" for c in client.calls)
+    assert not released(client)
+
+
+def test_release_if_working_uses_the_hub_phase_not_the_cache(kb_dir):
+    client = FakeClient()
+    claims = claimed(kb_dir, client)  # the last reply we saw said `claimed`
+    client.held_rows = [claim_dict(phase="review")]  # a skill moved it since
+    claims.release_if_working("US1", "runner stopped")
+    assert not released(client)
 
 
 def test_release_if_working_keeps_a_stopped_claim(kb_dir):
     client = FakeClient()
-    claims = make(kb_dir, client)
-    claims.claim("US1")
-    claims.stop("US1", "ci-red")
+    claims = claimed(kb_dir, client)
+    client.held_rows = [claim_dict(phase="execute", state="stopped")]
     claims.release_if_working("US1", "runner stopped")
-    assert not any(c[0] == "release" for c in client.calls)
+    assert not released(client)
+
+
+def test_release_if_working_keeps_the_claim_when_the_hub_is_unreadable(kb_dir, caplog):
+    client = FakeClient()
+    claims = claimed(kb_dir, client)
+
+    def boom(repo="", ticket=""):
+        raise KbError("hub unreachable")
+
+    client.held = boom  # type: ignore[method-assign]
+    with caplog.at_level(logging.WARNING):
+        claims.release_if_working("US1", "runner stopped")
+    assert not released(client) and "hub unreachable" in caplog.text
+    assert LocalClaims(kb_dir).get("US1") == (7, "tok")
+
+
+def test_release_if_working_ignores_a_claim_that_is_not_ours(kb_dir):
+    client = FakeClient()
+    claims = claimed(kb_dir, client)
+    client.held_rows = [claim_dict(phase="execute", id=99)]
+    claims.release_if_working("US1", "runner stopped")
+    assert not released(client)
 
 
 def test_held_by_others_excludes_mine(kb_dir):
@@ -191,6 +229,40 @@ def test_held_by_others_excludes_mine(kb_dir):
 
 def review_row(pr="https://github.com/o/r/pull/12") -> dict:
     return claim_dict("US1", phase="review", pr=pr)
+
+
+@pytest.fixture(autouse=True)
+def origin(monkeypatch):
+    monkeypatch.setattr(ghrest, "origin_slug", lambda root: ("github.com", "o/r"))
+
+
+def test_held_by_others_skips_prs_of_other_repos(kb_dir, monkeypatch):
+    client = FakeClient()
+    client.held_rows = [review_row("https://github.com/org/B/pull/12")]
+    monkeypatch.setattr(
+        ghrest, "view_pr", lambda root, ref=None: pytest.fail("other repo's PR")
+    )
+    assert make(kb_dir, client).held_by_others(None) == {"US1"}
+    assert client.calls == []
+
+
+def test_held_by_others_matches_the_repo_case_insensitively(kb_dir, monkeypatch):
+    client = FakeClient()
+    client.held_rows = [review_row("https://github.com/O/R/pull/12")]
+    monkeypatch.setattr(ghrest, "view_pr", lambda root, ref=None: {"state": "CLOSED"})
+    make(kb_dir, client).held_by_others(None)
+    assert [c[0] for c in client.calls] == ["pr_closed"]
+
+
+def test_held_by_others_odd_pr_payload_does_not_break_the_pick(kb_dir, monkeypatch):
+    client = FakeClient()
+    client.held_rows = [review_row()]
+
+    def odd(root, ref=None):
+        raise TypeError("odd payload")
+
+    monkeypatch.setattr(ghrest, "view_pr", odd)
+    assert make(kb_dir, client).held_by_others(None) == {"US1"}
 
 
 def test_held_by_others_reports_closed_pr(kb_dir, monkeypatch):

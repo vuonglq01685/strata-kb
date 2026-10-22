@@ -468,10 +468,13 @@ def _claim_lost(
 def _after_task(claims: RunnerClaims, ticket: str, result: claude.TaskResult) -> None:
     """A finished task is `publishing` (held until its PR merges); one blocked on
     questions is `waiting-qa`. Any other result leaves the phase the task set."""
-    if result.kind == "done":
-        claims.phase(ticket, "publishing")
-    elif result.kind == "blocked-qa":
-        claims.phase(ticket, "waiting-qa")
+    phase = {"done": "publishing", "blocked-qa": "waiting-qa"}.get(result.kind)
+    if phase is None:
+        return
+    try:
+        claims.phase(ticket, phase)
+    except KbError as exc:  # transient: the result must still settle
+        logger.warning("claim on %s not moved to %s: %s", ticket, phase, exc)
 
 
 def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> None:

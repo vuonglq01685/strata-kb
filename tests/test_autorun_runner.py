@@ -1097,3 +1097,32 @@ def test_run_loop_dev_builds_claims_from_env(env, monkeypatch):
     _loop_args(env)
     assert run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script()) == 0
     assert built == ["dev"]
+
+
+class FlakyPhase(FakeClaims):
+    """`phase` raises a transient KbError for one phase."""
+
+    def __init__(self, failing_phase):
+        super().__init__()
+        self.failing_phase = failing_phase
+
+    def phase(self, ticket, phase):
+        if phase == self.failing_phase:
+            raise KbError("hub unreachable")
+        return super().phase(ticket, phase)
+
+
+def test_transient_publishing_error_still_settles_done(cenv, caplog):
+    with caplog.at_level(logging.WARNING):
+        out = once(cenv, Script(TaskResult("done")), claims=FlakyPhase("publishing"))
+    assert out == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.last_done, state.task) == ("dev-implement-ticket:US1", None)
+    assert "hub unreachable" in caplog.text
+
+
+def test_transient_waiting_qa_error_still_saves_waiting_on(cenv):
+    out = once(
+        cenv, Script(TaskResult("blocked-qa", (12,))), claims=FlakyPhase("waiting-qa")
+    )
+    assert out == "waiting" and autostate.load(cenv[1]).waiting_on == (12,)
