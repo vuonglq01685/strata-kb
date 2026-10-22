@@ -28,6 +28,7 @@ from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.kinds import HUB_KINDS
+from strata_kb.ticketclaim import PHASES
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -110,6 +111,9 @@ app.add_typer(usage_app, name="usage")
 
 pr_app = typer.Typer(help="Pull requests: the description gate and REST helpers.")
 app.add_typer(pr_app, name="pr")
+
+claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
+app.add_typer(claim_app, name="claim")
 
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
@@ -1135,7 +1139,13 @@ def auto_run(
                 cfg, handle, qa = runner.build_deps(kb_dir, hub)
                 runner.resume(kb_dir)
                 outcome = runner.run_once(
-                    root, kb_dir, cfg=cfg, hub=handle, qa=qa, run_task=task_runner
+                    root,
+                    kb_dir,
+                    cfg=cfg,
+                    hub=handle,
+                    qa=qa,
+                    run_task=task_runner,
+                    claims=runner.build_claims(root, kb_dir, cfg),
                 )
                 typer.echo(outcome)
                 code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
@@ -2559,6 +2569,7 @@ def publish(
     ),
 ) -> None:
     """Mirror .kb/ (L0→L3) to the hub's federation/<repo-id>/ + rebuild the index."""
+    from strata_kb import gitio
     from strata_kb import publish as publish_mod
     from strata_kb.config import effective_repo_id, require_hub
     from strata_kb.errors import KbError
@@ -2588,6 +2599,10 @@ def publish(
         _refresh_dev_code(kb_dir)
     if plan.refresh_plan:
         _refresh_ba_plan(kb_dir)
+    # The one point every dev route (snapshot, intake) passes before it
+    # sends anything. The refresh above only rewrites local, derived `-code`.
+    if plan.repo_kind == "dev":
+        publish_mod.ensure_current(gitio.git_root(kb_dir.resolve()))
 
     # KbError (PublishError, GateError, AssetStoreError, GitError, GHError,
     # HashSyncError, HubConfigError) reaches the root guard. What is caught
@@ -4563,3 +4578,74 @@ def user_hash() -> None:
     typer.echo(pw_hash)
     # Compose expands `$` in .env, so the value must be single-quoted there.
     typer.echo(f"STRATA_KB_BOOTSTRAP_PASSWORD_HASH='{pw_hash}'", err=True)
+
+
+_KB_DIR_OPT = typer.Option(Path(".kb"), help="KB directory")
+
+
+def _exit_with(code: int) -> None:
+    if code:
+        raise typer.Exit(code)
+
+
+@claim_app.command("take")
+def claim_take(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    as_name: str | None = typer.Option(
+        None, "--as", help="Holder name (default: git user.name@hostname)"
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Claim a ticket on the hub (exit 3 if someone else holds it)."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.take(kb_dir, kb_dir.resolve().parent, ticket, as_name))
+
+
+@claim_app.command("update")
+def claim_update(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    phase: str | None = typer.Option(
+        None,
+        "--phase",
+        help="New phase: " + ", ".join(PHASES),
+    ),
+    pr: str | None = typer.Option(None, "--pr", help="PR URL"),
+    stopped: str | None = typer.Option(
+        None, "--stopped", help="Mark the claim stopped, with the reason"
+    ),
+    active: bool = typer.Option(False, "--active", help="Mark the claim active again"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Report phase, PR or stop state for a ticket you hold (exit 3 if lost)."""
+    from strata_kb import claimcmd
+
+    # Not click.Choice: typer >= 0.26 vendors click, so a real click type breaks.
+    if phase is not None and phase not in PHASES:
+        raise typer.BadParameter(
+            f"{phase!r} is not one of {', '.join(PHASES)}", param_hint="--phase"
+        )
+    _exit_with(claimcmd.update(kb_dir, ticket, phase, pr, stopped, active))
+
+
+@claim_app.command("release")
+def claim_release(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    reason: str = typer.Option("released", "--reason", help="Why it is released"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Give a claimed ticket back."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.release(kb_dir, ticket, reason))
+
+
+@claim_app.command("list")
+def claim_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """List the claims currently held on the hub."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.list_(kb_dir, json_output))

@@ -66,7 +66,17 @@ the hub means DoR passed), so its absence is not a stop — then reads the
 ticket's `## Dependencies` (`Blocked by:` / `Blocks:`) and, when a
 `> Parent mission:` line is present, that mission's `## Sequencing` row
 (from the local mission file, else `kb_get_section` `<doc> <M-id>` at `l3`,
-CLI fallback `kb get <doc> <M-id> --level l3`, from the hub), and stops if there is no `kb-context` block to resolve;
+CLI fallback `kb get <doc> <M-id> --level l3`, from the hub), and stops if there is no `kb-context` block to resolve; then **claims** the
+ticket with `kb claim take <id>` (needs `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN`; run again while held, it only refreshes): exit `3`
+→ STOP, "`<id>` is taken by `<holder>` (`<phase>`, updated `<x>` ago). Pick
+another ticket, or ask a hub admin to release it."; exit `1` → STOP and
+show its message (a hub without the route answers `hub server has no
+/api/claims — upgrade it to strata-kb 1.31.0 or later`); a new claim on a
+ticket whose branch (`auto/<id>` or `<id>`) already exists on `origin` →
+`git fetch origin`, switch to that branch, continue there under the
+re-entry rules and log whose work was taken over (in Auto mode a STOP ends
+`AUTO-RESULT: failed claim-lost <id>` or `failed claim-error <message>`);
 **Questions** calls `kb_question_list(ticket=<id>, status=all)` on every entry
 and handles each question by state. The tools work only against the shared
 hub server: when `kb_question_list` answers `Q&A needs the shared hub server —

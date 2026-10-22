@@ -1405,6 +1405,28 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
     )
 
 
+def ensure_current(root: Path) -> None:
+    """Refuse a dev-repo publish from a checkout behind origin/<default>.
+
+    `hist.*` rows of one `-svc` document share one file, and the snapshot
+    mirrors the local `.kb/` into the hub: a stale checkout would drop another
+    machine's newer row. No remote or a failed fetch refuses too -- never a
+    silent publish from a possibly stale tree.
+    """
+    if not gitio.has_remote(root):
+        raise PublishError(
+            "no origin remote — kb publish in a dev repo needs one to check it "
+            "is current"
+        )
+    branch = gitio.default_branch(root)
+    try:
+        gitio.fetch_branch(root, branch)
+    except gitio.GitError as exc:
+        raise PublishError(f"could not fetch origin/{branch}: {exc}") from exc
+    if not gitio.is_ancestor(root, f"origin/{branch}", "HEAD"):
+        raise PublishError(f"behind origin/{branch} — pull, then kb publish")
+
+
 def _can_pr(explicit: str, has_remote: bool, root: Path) -> bool:
     """Ask `gh` only when decide_mode will actually read the answer.
 

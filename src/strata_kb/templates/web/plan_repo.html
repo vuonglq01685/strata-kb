@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_partials/status.html" import plan_counts %}
+{% from "_partials/status.html" import plan_counts, claim_badge %}
 {% block main %}
 <div class="stack-md">
   <div class="page-head">
@@ -8,6 +8,7 @@
     <p class="meta-line"><span>{{ plan.doc }}</span><span class="sep">·</span>
       <span>{{ plan.missions | length }} missions</span></p>
   </div>
+  {% if claim_notice %}<p class="meta-line">{{ claim_notice }}</p>{% endif %}
   {% for n in notes %}<p class="meta-line">note: {{ n }}</p>{% endfor %}
   <div class="panel">
     <div class="panel-head"><h2>Missions</h2></div>
@@ -29,6 +30,7 @@
     <div class="queue-row">
       <a class="cite" href="/ui/tickets/{{ group | urlencode }}/{{ u.us_id | urlencode }}?repo={{ plan.repo | urlencode }}">{{ u.us_id }}</a>
       <span class="file">{{ u.title }}</span>
+      {% if u.status == 'ready' and claim_badges.get(u.us_id) %}{{ claim_badge(claim_badges[u.us_id]) }}{% endif %}
     </div>
     {% endfor %}
   </div>

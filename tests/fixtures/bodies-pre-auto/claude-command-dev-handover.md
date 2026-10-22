@@ -30,6 +30,19 @@ cannot reach the hub. Then run its MCP tool, even where this skill runs
 the CLI first, and carry on: that is the fallback, not a failure and not
 a denial to report. Stop only when the MCP tool fails too.
 
+**Claim.** On entry, before the freshness re-check below, run
+`kb claim update <ticket-id> --phase handover` (`dev-implement-ticket` or
+`dev-fix-bug` took the claim; it keeps another Dev off this ticket). Exit
+`3` → STOP: "your claim on `<ticket-id>` was released by `<closed_by>`
+(`<reason>`); re-run `/dev-implement-ticket <ticket-id>` to claim it
+again." (a bug: `/dev-fix-bug <BUG-id>`). Push nothing after a lost claim.
+Exit `1` with `no claim held for <ticket-id> on this machine` (this phase
+run on its own) → run `kb claim take <ticket-id>` first and stop on its
+exit `3` as `dev-implement-ticket`'s Intake does; any other exit `1` →
+STOP and show its message. In Auto mode report a STOP to the orchestrator,
+which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run,
+end it yourself).
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -94,11 +107,25 @@ as the template's comment counts as empty and fails the check. If the ticket
 changed what a service is responsible for, report `amend needed:
 <repo_id>-svc §svc.<name>` under `## Notes`. Never edit a `reviewed`
 section. **GATE 3** — offered only after A5 comes
-back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
+back clean (run `kb claim update <ticket-id>` first; exit `3` → STOP as on entry) — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
 does neither.** Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the terminal
 phase of the flow, so there is no next automated command; a blocker takes
-its place instead.
+its place instead. Once the Dev says the PR is open, find it yourself:
+`kb pr find --head <branch> --state open --json`, then run
+`kb claim update <ticket-id> --phase review --pr <url>`: the claim then stays
+held through review instead of expiring. No open PR yet → tell the Dev to
+re-run `/dev-handover <ticket-id>` after opening it; that run sets review.
+
+**After the merge** — the Dev publishes (a push to the default branch publishes
+nothing). A squash merge leaves the ticket branch behind
+`origin/<default-branch>`, and `kb publish` in a dev repo refuses to run from it
+with `behind origin/<default-branch> — pull, then kb publish`. So run
+`git fetch origin && git switch <default-branch> && git pull --ff-only origin <default-branch>`
+first (the `hist` row is on the default branch after the merge, so that is
+where it publishes from; edit and commit nothing there), then `kb publish`. On
+a `behind origin/` refusal pull once more and retry once. After the publish,
+run `kb claim update <ticket-id> --phase publishing`.
 
 ## A5 — merge-risk review (before GATE 3)
 

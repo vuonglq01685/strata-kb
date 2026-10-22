@@ -25,6 +25,19 @@ cannot reach the hub. Then run its MCP tool, even where this skill runs
 the CLI first, and carry on: that is the fallback, not a failure and not
 a denial to report. Stop only when the MCP tool fails too.
 
+**Claim.** On entry, before the freshness re-check below, run
+`kb claim update <ticket-id> --phase design` (`dev-implement-ticket` or
+`dev-fix-bug` took the claim; it keeps another Dev off this ticket). Exit
+`3` → STOP: "your claim on `<ticket-id>` was released by `<closed_by>`
+(`<reason>`); re-run `/dev-implement-ticket <ticket-id>` to claim it
+again." (a bug: `/dev-fix-bug <BUG-id>`). Push nothing after a lost claim.
+Exit `1` with `no claim held for <ticket-id> on this machine` (this phase
+run on its own) → run `kb claim take <ticket-id>` first and stop on its
+exit `3` as `dev-implement-ticket`'s Intake does; any other exit `1` →
+STOP and show its message. In Auto mode report a STOP to the orchestrator,
+which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run,
+end it yourself).
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -350,6 +363,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 - **Review contract: "round 3 stops the flow and goes to the Dev"** → the cap is 2 fix rounds here, and what is left ends `AUTO-RESULT: failed design-review`.
 - **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
 - **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
+- **Claim: "no claim held ... run `kb claim take <ticket-id>` first"** → in Auto mode the runner holds the claim before this skill starts and drops its local token when it sees the claim lost, so `no claim held` here means the claim was lost: STOP and report it to the orchestrator, which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run, end it yourself). Never run `kb claim take` in Auto mode.
 
 ### Result line
 

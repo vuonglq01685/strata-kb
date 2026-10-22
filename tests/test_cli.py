@@ -368,10 +368,17 @@ def test_build_bad_effort_literal_is_a_clean_error_not_a_traceback(fixture_kb):
     assert "[error]" in result.output
 
 
-def test_publish_prints_kind_line(git_kb, hub_worktree, monkeypatch):
+def test_publish_prints_kind_line(git_kb, hub_worktree, monkeypatch, run_git, tmp_path):
     from strata_kb import cli as cli_mod
 
     (git_kb["kb"] / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+    # A dev publish checks it is current with origin (needs one).
+    run_git(git_kb["root"], "add", "-A")
+    run_git(git_kb["root"], "commit", "-m", "kind dev")
+    origin = tmp_path / "origin.git"
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(git_kb["root"], "remote", "add", "origin", str(origin))
+    run_git(git_kb["root"], "push", "-u", "origin", "HEAD")
     # `dev` refreshes its -code from the repo before publishing; skip that here.
     monkeypatch.setattr(cli_mod, "_refresh_dev_code", lambda kb_dir: None)
     result = runner.invoke(

@@ -1446,3 +1446,326 @@ def test_no_template_calls_gh_pr():
         if call.search(BASE.joinpath(name).read_text(encoding="utf-8"))
     ]
     assert hits == []
+
+
+# --- ticket claims (1.31.0): the dev skills claim, refresh and hand over --------
+
+_CLAIMING_BODIES = ["dev-implement-ticket.md", "dev-fix-bug.md"]
+_PHASE_CLAIM_BODIES = {
+    "dev-design.md": "design",
+    "dev-plan.md": "plan",
+    "dev-execute.md": "execute",
+    "dev-handover.md": "handover",
+}
+_CLAIM_MIRRORS = [
+    "claude-skill-dev-implement-ticket.md",
+    "claude-command-dev-implement-ticket.md",
+    "claude-command-dev-design.md",
+    "claude-command-dev-plan.md",
+    "claude-command-dev-execute.md",
+    "claude-command-dev-handover.md",
+]
+
+
+def _mirror(name: str) -> str:
+    return " ".join(read_template(name).split())
+
+
+@pytest.mark.parametrize("name", _CLAIMING_BODIES)
+def test_intake_claims_ticket(name):
+    text = _body(name)
+    assert "kb claim take" in text
+    assert "is taken by `<holder>` (`<phase>`, updated `<x>` ago)" in text
+    assert "ask a hub admin to release it" in text
+    assert "upgrade it to strata-kb 1.31.0 or later" in text
+    for branch in (
+        ("`auto/<id>`", "`<id>`")
+        if name == "dev-implement-ticket.md"
+        else ("`fix/<BUG-id>`", "`hotfix/<BUG-id>`")
+    ):
+        assert branch in text, branch
+    assert "whose work was taken over" in text
+
+
+@pytest.mark.parametrize(("name", "phase"), _PHASE_CLAIM_BODIES.items())
+def test_phase_skills_update_claim(name, phase):
+    text = _body(name)
+    assert f"kb claim update <ticket-id> --phase {phase}" in text
+    assert "was released by `<closed_by>`" in text
+    assert "re-run `/dev-implement-ticket <ticket-id>` to claim it again" in text
+    assert "Push nothing after a lost claim" in text
+
+
+def test_execute_refreshes_the_claim_after_each_task_commit():
+    text = _body("dev-execute.md")
+    refresh = "`kb claim update <ticket-id>` (no `--phase`:"
+    assert refresh in text
+    assert text.index(refresh) < text.index("**A3 — independent task review.**")
+
+
+def test_handover_review_and_publishing():
+    text = _body("dev-handover.md")
+    assert "kb claim update <ticket-id> --phase review --pr <url>" in text
+    assert "kb claim update <ticket-id> --phase publishing" in text
+    auto = _dev_text("dev-handover")
+    assert "--phase review --pr <url>" in auto
+    assert "--phase publishing" in auto
+
+
+def test_handover_pulls_before_publish():
+    text = _body("dev-handover.md")
+    assert "behind origin/" in text
+    pull = (
+        "git fetch origin && git switch <default-branch>"
+        " && git pull --ff-only origin <default-branch>"
+    )
+    assert pull in text
+    assert "pull once more and retry once" in text
+    assert "hist" in text and "on the default branch after the merge" in text
+    # Auto never checks the default branch out (`git switch main` is denied):
+    # it merges origin/<default> into the ticket branch instead.
+    auto = _dev_text("dev-handover")
+    merge = "git fetch origin && git merge origin/<default-branch>"
+    assert pull not in auto
+    assert auto.index(merge, auto.index("5. After the merge")) < auto.index(
+        "`kb publish` once", auto.index("5. After the merge")
+    )
+    assert "merge once more and retry once" in auto
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-implement-ticket", "dev-fix-bug", "dev-handover"]
+)
+def test_already_finished_brings_in_the_default_branch_before_publish(name):
+    text = _dev_text(name)
+    merge = "git fetch origin && git merge origin/<default-branch>"
+    assert merge in text
+    assert text.index(merge) < text.index("`kb publish` once")
+    assert "behind origin/" in text
+
+
+@pytest.mark.parametrize("name", _CLAIM_MIRRORS)
+def test_claude_copies_carry_the_claim_steps(name):
+    text = _mirror(name)
+    assert "kb claim" in text
+    if "implement-ticket" in name:
+        assert "kb claim take" in text
+    for skill, phase in (
+        ("dev-design", "design"),
+        ("dev-plan", "plan"),
+        ("dev-execute", "execute"),
+        ("dev-handover", "handover"),
+    ):
+        if skill in name:
+            assert f"--phase {phase}" in text
+    if "dev-handover" in name:
+        assert "--phase review --pr <url>" in text
+        assert "behind origin/" in text
+
+
+# --- ticket claims, fix round 1 -------------------------------------------------
+
+_TAKEOVER_COMMANDS = {
+    "dev-implement-ticket": (
+        "git fetch origin",
+        "git switch auto/<id>",
+        "git switch -c auto/<id> origin/auto/<id>",
+        "git pull origin auto/<id>",
+        "git switch -c auto/<id> origin/<id>",
+    ),
+    "dev-fix-bug": (
+        "git fetch origin",
+        "git switch fix/<BUG-id>",
+        "git switch -c fix/<BUG-id> origin/fix/<BUG-id>",
+        "git pull origin fix/<BUG-id>",
+        "git switch hotfix/<BUG-id>",
+        "git switch -c hotfix/<BUG-id> origin/hotfix/<BUG-id>",
+        "git pull origin hotfix/<BUG-id>",
+    ),
+}
+
+
+@pytest.mark.parametrize(("name", "commands"), _TAKEOVER_COMMANDS.items())
+def test_auto_takeover_uses_only_allowlisted_commands(name, commands):
+    allow, deny = _allow_deny()
+    text = _dev_text(name)
+    bullet = text[text.index("taking over the branch of a free claim") :]
+    bullet = bullet[: bullet.index("Auto decision line")]
+    for command in commands:
+        assert f"`{command}`" in bullet, command
+        assert _permitted(command, allow, deny), command
+    # the manual wording's commands are not Auto commands
+    assert "`git pull --ff-only`" not in bullet
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
+)
+def test_auto_never_retakes_a_lost_claim(name):
+    text = _dev_text(name)
+    assert "`no claim held` here means the claim was lost" in text
+    assert "Never run `kb claim take` in Auto mode" in text
+    assert "AUTO-RESULT: failed claim-lost <ticket-id>" in text
+    assert "run `kb claim take <ticket-id>` first" in _body(
+        f"{name}.md"
+    )  # manual path stays
+
+
+def test_handover_checks_the_claim_before_the_push_and_the_merge():
+    auto = _dev_text("dev-handover")
+    step1 = auto[
+        auto.index("1. Commit the remaining files") : auto.index("2. Open the PR")
+    ]
+    assert "`kb claim update <ticket-id>` right before the push" in step1
+    assert step1.index("kb claim update") < step1.index("git push -u origin HEAD")
+    step2 = auto[auto.index("2. Open the PR") : auto.index("3. Wait for the checks")]
+    assert "Exit `3` → STOP as on entry; no merge." in step2
+    assert "run `kb claim update <ticket-id>` first" in _body("dev-handover.md")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-command-dev-execute.md",
+        "claude-command-dev-handover.md",
+        "claude-command-dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+    ],
+)
+def test_claude_copies_carry_the_fix_round_bullets(name):
+    text = _normal(_auto_section(name))
+    if "implement-ticket" in name:
+        assert "taking over the branch of a free claim" in text
+    else:
+        assert "Never run `kb claim take` in Auto mode" in text
+    if "dev-handover" in name:
+        assert "right before the push" in text and "no merge." in text
+
+
+# --- ticket claims, final fix wave ---------------------------------------------
+
+_PR_FIND_OPEN = "kb pr find --head <branch> --state open --json"
+
+
+def test_manual_gate3_finds_the_pr_and_sets_review():
+    for text in (_body("dev-handover.md"), _mirror("claude-command-dev-handover.md")):
+        gate = text[text.index("**GATE 3**") : text.index("**After the merge**")]
+        gate = " ".join(gate.split())
+        assert _PR_FIND_OPEN in gate
+        assert gate.index(_PR_FIND_OPEN) < gate.index("--phase review --pr <url>")
+        assert "re-run `/dev-handover <ticket-id>`" in gate
+
+
+@pytest.mark.parametrize(
+    ("name", "mirrors"),
+    [
+        (
+            "dev-implement-ticket",
+            [
+                "claude-skill-dev-implement-ticket.md",
+                "claude-command-dev-implement-ticket.md",
+            ],
+        ),
+        ("dev-fix-bug", []),
+    ],
+)
+def test_auto_takeover_does_not_take_a_branch_with_an_open_pr(name, mirrors):
+    allow, deny = _allow_deny()
+    texts = [_dev_text(name), *(_normal(_auto_section(m)) for m in mirrors)]
+    for text in texts:
+        bullet = text[text.index("taking over the branch of a free claim") :]
+        bullet = bullet[: bullet.index("Auto decision line")]
+        assert f"`{_PR_FIND_OPEN}`" in bullet
+        assert "do not take the branch over" in bullet
+        assert "--phase review --pr <url>`" in bullet
+        assert "end `AUTO-RESULT: done`" in bullet
+        assert bullet.index(_PR_FIND_OPEN) < bullet.index("do not take")
+    assert _permitted(_PR_FIND_OPEN, allow, deny)
+    assert _permitted("kb claim update X --phase review --pr U", allow, deny)
+
+
+def test_fix_bug_refreshes_the_claim_between_intake_and_handover():
+    text = " ".join(_body("dev-fix-bug.md").split())
+    reproduce = text[text.index("2. **Reproduce**") : text.index("3. **Root cause**")]
+    fix = text[text.index("4. **Fix**") : text.index("5. **Handover**")]
+    for step in (reproduce, fix):
+        assert "kb claim update <BUG-id> --phase execute" in step
+    assert "Exit `3` → STOP" in reproduce
+    assert "was released by `<closed_by>`" in reproduce
+    assert "Push nothing after a lost claim" in reproduce
+    assert "stop on a lost claim" in fix
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "README.md",
+        "src/strata_kb/templates/init/QUICKSTART-dev.md",
+        "docs/src/guide-dev.en.md",
+        "docs/src/guide-dev.vi.md",
+    ],
+)
+def test_docs_do_not_claim_review_is_set_without_the_dev(path):
+    text = " ".join((Path(__file__).parent.parent / path).read_text("utf-8").split())
+    assert "Once the PR is open, `dev-handover` sets" not in text
+    assert "Khi PR đã mở, `dev-handover` đặt" not in text
+    assert "/dev-handover <id>" in text
+
+
+# --- ticket claims, follow-ups: no skip of the open-PR check; own PRs only -----
+
+_TAKEOVER_MIRRORS = [
+    "claude-skill-dev-implement-ticket.md",
+    "claude-command-dev-implement-ticket.md",
+]
+
+
+@pytest.mark.parametrize("mirror", [None, *_TAKEOVER_MIRRORS])
+def test_auto_takeover_checks_both_branches_with_no_skip(mirror):
+    text = (
+        _dev_text("dev-implement-ticket")
+        if mirror is None
+        else _normal(_auto_section(mirror))
+    )
+    bullet = text[text.index("taking over the branch of a free claim") :]
+    bullet = bullet[: bullet.index("Auto decision line")]
+    assert "Skip this check" not in bullet
+    check = bullet[bullet.index(_PR_FIND_OPEN) : bullet.index("do not take")]
+    assert "`auto/<id>` and `<id>` on `origin`" in check
+    assert "whether or not a local `auto/<id>` exists" in check
+
+
+def test_fix_bug_takeover_has_no_skip():
+    assert "Skip this check" not in _dev_text("dev-fix-bug")
+
+
+_OWN_PR_FILES = {
+    "bodies/dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "claude-skill-dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "claude-command-dev-implement-ticket.md": "git rev-parse auto/<ticket-id>",
+    "bodies/dev-fix-bug.md": "git rev-parse fix/<BUG-id>",
+    "bodies/dev-handover.md": "git rev-parse <branch>",
+    "claude-command-dev-handover.md": "git rev-parse <branch>",
+}
+
+
+@pytest.mark.parametrize(("template", "rev_parse"), _OWN_PR_FILES.items())
+def test_already_finished_continues_only_its_own_open_pr(template, rev_parse):
+    allow, deny = _allow_deny()
+    text = _normal(_auto_section(template))
+    rule = text[text.index("**Already finished.**") :]
+    rule = rule[: rule.index("###") if "###" in rule else len(rule)]
+    rule = rule[rule.index("look for an open one") :]
+    assert "only when a local" in rule
+    assert f"`{rev_parse}`" in rule
+    assert "equals the `headRefOid`" in rule
+    assert "`git log --format=%H " in rule and "..<headRefOid>` prints nothing" in rule
+    assert "--state open --json`" in rule
+    assert "do not switch, push, continue or merge it" in rule
+    assert "--phase review --pr <url>`" in rule
+    assert "end `AUTO-RESULT: done`" in rule
+    # the fallback comes after the crashed-run path
+    assert rule.index("only when a local") < rule.index("do not switch")
+    assert _permitted(rev_parse, allow, deny)

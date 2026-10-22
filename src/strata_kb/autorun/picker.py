@@ -118,13 +118,29 @@ def _dev_tasks(stories, unparented) -> Iterator[Task]:
             yield Task("dev-implement-ticket", s.us_id)
 
 
-def pick_dev(
-    hub: HubHandle | HubApi, root: Path, skip: Collection[str] = ()
-) -> Task | None:
-    """CI workflow first, then a ready bug, then a ready unparented ticket,
-    then the first ready story whose dependencies are done. Tasks whose key
-    is in `skip` are passed over."""
+def dev_candidates(
+    hub: HubHandle | HubApi,
+    root: Path,
+    skip: Collection[str] = (),
+    held: Collection[str] = (),
+) -> list[Task]:
+    """Every task the Dev may take, in pick order: the CI workflow first, then
+    a ready bug, then a ready unparented ticket, then each ready story whose
+    dependencies are done. Tasks whose key is in `skip`, or whose ticket is in
+    `held` (claimed by another Dev), are left out."""
     if not _has_test_workflow(root):
-        return _first([Task("dev-test-workflow", "")], skip)
-    stories, unparented, _notes = plan_next(hub)
-    return _first(_dev_tasks(stories, unparented), skip)
+        tasks: Iterable[Task] = [Task("dev-test-workflow", "")]
+    else:
+        stories, unparented, _notes = plan_next(hub)
+        tasks = _dev_tasks(stories, unparented)
+    return [t for t in tasks if t.key not in skip and t.arg not in held]
+
+
+def pick_dev(
+    hub: HubHandle | HubApi,
+    root: Path,
+    skip: Collection[str] = (),
+    held: Collection[str] = (),
+) -> Task | None:
+    """The first of `dev_candidates`."""
+    return next(iter(dev_candidates(hub, root, skip, held)), None)

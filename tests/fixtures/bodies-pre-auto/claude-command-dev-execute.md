@@ -33,6 +33,19 @@ cannot reach the hub. Then run its MCP tool, even where this skill runs
 the CLI first, and carry on: that is the fallback, not a failure and not
 a denial to report. Stop only when the MCP tool fails too.
 
+**Claim.** On entry, before the freshness re-check below, run
+`kb claim update <ticket-id> --phase execute` (`dev-implement-ticket` or
+`dev-fix-bug` took the claim; it keeps another Dev off this ticket). Exit
+`3` → STOP: "your claim on `<ticket-id>` was released by `<closed_by>`
+(`<reason>`); re-run `/dev-implement-ticket <ticket-id>` to claim it
+again." (a bug: `/dev-fix-bug <BUG-id>`). Push nothing after a lost claim.
+Exit `1` with `no claim held for <ticket-id> on this machine` (this phase
+run on its own) → run `kb claim take <ticket-id>` first and stop on its
+exit `3` as `dev-implement-ticket`'s Intake does; any other exit `1` →
+STOP and show its message. In Auto mode report a STOP to the orchestrator,
+which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run,
+end it yourself).
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -119,7 +132,9 @@ finding for the PR body), and nothing else broke; then **verify** by running
 `cmd.test` and `cmd.lint` (the commands it was handed) and show the output;
 then commit the task's changes and write the full report to
 `docs/impl/<ticket-id>/review/task-<n>-report.md`. The self-review **never
-satisfies A3**: back in the orchestrator, write `git diff <BASE>..HEAD` —
+satisfies A3**: back in the orchestrator, first run `kb claim update
+<ticket-id>` (no `--phase`: it refreshes the claim after the task's commit, and a
+lost claim stops you as on entry), then write `git diff <BASE>..HEAD` —
 `<BASE>` recorded before the dispatch, never `HEAD~1` — to
 `docs/impl/<ticket-id>/review/task-<n>.diff` (creating
 `docs/impl/<ticket-id>/review/` first if it does not exist yet) and dispatch

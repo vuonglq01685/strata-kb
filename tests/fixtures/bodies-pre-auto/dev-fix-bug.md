@@ -56,7 +56,23 @@ a denial to report. Stop only when the MCP tool fails too.
    Environment, Pre-conditions, Steps to reproduce, Expected result,
    Actual result and Impact. When `> Related ticket:` names a ticket
    (not `none`), fetch and read it too — its acceptance criteria say what
-   was promised. Offer the exact branch command and create the branch once the Dev
+   was promised. Then claim the bug: run `kb claim take <BUG-id>` (it needs
+   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; it keeps a second Dev off
+   this bug, and run again while you hold the claim it only refreshes it).
+   Exit `3` → STOP: "`<BUG-id>` is taken by `<holder>` (`<phase>`, updated
+   `<x>` ago). Pick another ticket, or ask a hub admin to release it." (the
+   command prints `taken by <holder> (<phase>, updated <x> ago)`). Exit `1` →
+   STOP and show its message; a hub without the route answers `hub server has
+   no /api/claims — upgrade it to strata-kb 1.31.0 or later`. Exit `0` and
+   the bug's branch (`fix/<BUG-id>` or `hotfix/<BUG-id>`) already exists on
+   `origin` → the claim was free after another Dev left the bug: `git fetch
+   origin`, switch to that branch instead of creating it (`git pull
+   --ff-only` when it also exists here), continue under the re-entry rules
+   below, and log whose work was taken over (the branch's last commit author:
+   `git log -1 --format=%an origin/<branch>`). In Auto mode a STOP here ends
+   `AUTO-RESULT: failed claim-lost <BUG-id>` (exit `3`) or `AUTO-RESULT:
+   failed claim-error <its message>` (exit `1`). Offer the exact branch
+   command and create the branch once the Dev
    agrees: `git switch -c fix/<BUG-id>` from the default branch for a
    `bug`; for a `hotfix`, ask the Dev which production line to branch from
    and offer `git switch -c hotfix/<BUG-id> <production-line>`. Run `kb ticket check`
@@ -79,7 +95,13 @@ a denial to report. Stop only when the MCP tool fails too.
    was tried and what is missing; ask for a sharper bug. No fix without a
    reproduction. The moment the test fails for the right reason, create
    `docs/impl/<id>/rootcause.md` with `Symptom:` (the Actual result in one
-   line) and `Reproduction test:` (path and test name).
+   line) and `Reproduction test:` (path and test name). After the reproduction-test
+   commit run `kb claim update <BUG-id> --phase execute`: it moves the claim to
+   `execute` and refreshes its 4 h clock. Exit `3` → STOP: "your claim on
+   `<BUG-id>` was released by `<closed_by>` (`<reason>`); re-run
+   `/dev-fix-bug <BUG-id>` to claim it again." Push nothing after a lost
+   claim; in Auto mode a STOP here ends `AUTO-RESULT: failed claim-lost
+   <BUG-id>`. Any other exit `1` → STOP and show its message.
 3. **Root cause** — find the cause before you touch the fix. Read the
    error and the stack trace completely; check recent changes (`git log`
    and `git diff` on the files the path touches); trace the bad value
@@ -109,7 +131,8 @@ a denial to report. Stop only when the MCP tool fails too.
    hypothesis: revert it, log it in the hypothesis log as failed with what
    it taught you, clear the `Root cause:` line of `rootcause.md`, and
    return to step 3 (Root cause). Never stack a second fix on top of the
-   first.
+   first. After each fix commit run `kb claim update <BUG-id> --phase execute`
+   and stop on a lost claim as in step 2.
 5. **Handover** — run `/dev-handover` (it runs the full suite, records
    service history and assembles the PR description), with these bug
    rules, which override its story wording:

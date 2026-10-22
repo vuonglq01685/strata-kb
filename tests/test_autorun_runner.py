@@ -14,6 +14,7 @@ from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claude import TaskResult
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
+from strata_kb.claimclient import ClaimRejectedError, ClaimRouteMissing
 from strata_kb.config import AutoConfig, KBConfig
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
@@ -313,7 +314,9 @@ def _loop(env, script, sleep=lambda s: None):
         encoding="utf-8",
         newline="\n",
     )
-    return run_loop(root, kb_dir, sleep=sleep, hub=hub, qa=FakeQa(), run_task=script)
+    return run_loop(
+        root, kb_dir, sleep=sleep, hub=hub, qa=FakeQa(), run_task=script, claims=None
+    )
 
 
 def test_run_loop_rereads_config_so_switch_off_stops(env):
@@ -483,7 +486,7 @@ def _loop_kind(env, kind, monkeypatch):
         f"kind: {kind}\nrepo_id: svc\nintake: http://i\n"
         "auto:\n  enabled: true\n  qa_interval: 7\n",
     )
-    return run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script())
+    return run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script(), claims=None)
 
 
 def test_run_loop_runs_qa_thread_for_ba_and_stops_it(env, monkeypatch):
@@ -530,7 +533,14 @@ def test_run_loop_hub_flag_overrides_config_hub(env, monkeypatch):
     seen = []
     monkeypatch.setattr(runner_mod, "resolve_hub", lambda url: seen.append(url) or hub)
 
-    code = run_loop(root, kb_dir, hub_flag="/flag/hub", qa=FakeQa(), run_task=Script())
+    code = run_loop(
+        root,
+        kb_dir,
+        hub_flag="/flag/hub",
+        qa=FakeQa(),
+        run_task=Script(),
+        claims=None,
+    )
 
     assert code == 0 and seen == ["/flag/hub"]
 
@@ -836,3 +846,307 @@ def test_restore_failure_is_a_warning(git_repo, env, caplog):
         assert once(env, script) == "ran"
     assert gitio.current_branch(root) == "auto/US1"
     assert "could not return" in caplog.text
+
+
+# --- ticket claims (dev kind) -------------------------------------------------
+
+
+class FakeClaims:
+    """A `RunnerClaims` double that records every call."""
+
+    def __init__(self, taken=(), held=(), beat_ok=True):
+        self.calls: list[tuple] = []
+        self.taken, self.held, self.beat_ok = set(taken), set(held), beat_ok
+        self.route_missing = False
+        self.claim_error: KbError | None = None
+
+    def held_by_others(self, mine):
+        self.calls.append(("held", mine))
+        if self.route_missing:
+            raise ClaimRouteMissing
+        return set(self.held)
+
+    def claim(self, ticket):
+        self.calls.append(("claim", ticket))
+        if self.claim_error:
+            raise self.claim_error
+        return ticket not in self.taken
+
+    def begin(self, ticket):
+        self.calls.append(("begin", ticket))
+        return True
+
+    def phase(self, ticket, phase):
+        self.calls.append(("phase", ticket, phase))
+        return True
+
+    def beat(self, ticket):
+        self.calls.append(("beat", ticket))
+        return self.beat_ok
+
+    def stop(self, ticket, reason):
+        self.calls.append(("stop", ticket, reason))
+
+    def release_if_working(self, ticket, reason):
+        self.calls.append(("release", ticket, reason))
+
+    def lost_reason(self, ticket):
+        return "expired by hub"
+
+    def of(self, kind):
+        return [c for c in self.calls if c[0] == kind]
+
+
+@pytest.fixture
+def cenv(env, monkeypatch):
+    """`env` with two ready tickets and a CI workflow, so the real candidate walk runs."""
+    root, kb_dir, hub, tickets = env
+    tickets["stories"] = [S("US1", "ready"), S("US2", "ready")]
+    monkeypatch.setattr(picker, "_has_test_workflow", lambda r: True)
+    return env
+
+
+class FakeBeat:
+    """A `ClaimBeat` double; `lost` is scripted per test."""
+
+    lost = False
+    events: list[tuple] = []
+
+    def __init__(self, claims, interval):
+        FakeBeat.events = [("init", interval)]
+
+    def start(self, ticket):
+        FakeBeat.events.append(("start", ticket))
+
+    def stop(self):
+        FakeBeat.events.append(("stop",))
+
+
+def test_pick_walks_candidates_and_claims_the_first(cenv):
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US1")
+    assert claims.of("claim") == [("claim", "US1")]
+    assert claims.of("held") == [("held", None)]
+
+
+def test_pick_skips_held_tickets(cenv):
+    claims, script = FakeClaims(held={"US1"}), Script(TaskResult("done"))
+    once(cenv, script, claims=claims)
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+
+
+def test_pick_moves_on_after_lost_race(cenv):
+    claims, script = FakeClaims(taken={"US1"}), Script(TaskResult("done"))
+    once(cenv, script, claims=claims)
+    assert claims.of("claim") == [("claim", "US1"), ("claim", "US2")]
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+    assert autostate.load(cenv[1]).last_done == "dev-implement-ticket:US2"
+
+
+def test_all_candidates_taken_is_idle(cenv):
+    claims, script = FakeClaims(taken={"US1", "US2"}), Script()
+    assert once(cenv, script, claims=claims) == "idle"
+    assert script.prompts == [] and autostate.load(cenv[1]).stop_reason is None
+
+
+def test_stored_task_taken_by_other_drops_task(cenv, caplog):
+    autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
+    claims, script = FakeClaims(taken={"M-x-US3"}), Script()
+    with caplog.at_level(logging.INFO):
+        assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts == [] and autostate.load(cenv[1]).task is None
+    assert "M-x-US3 is now held by another Dev; picking again" in caplog.text
+
+
+def test_stored_task_is_reclaimed_and_mine_is_not_held(cenv):
+    autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
+    claims = FakeClaims()
+    once(cenv, Script(TaskResult("done")), claims=claims)
+    assert claims.of("claim") == [("claim", "M-x-US3")] and claims.of("held") == []
+
+
+def test_done_sets_publishing_not_release(cenv):
+    claims = FakeClaims()
+    once(cenv, Script(TaskResult("done")), claims=claims)
+    assert [c for c in claims.calls if c[0] in ("begin", "phase", "release")] == [
+        ("begin", "US1"),
+        ("phase", "US1", "publishing"),
+    ]
+
+
+def test_blocked_qa_sets_waiting_qa_and_beats_while_waiting(cenv):
+    claims, script = FakeClaims(), Script(TaskResult("blocked-qa", (12,)))
+    assert once(cenv, script, claims=claims) == "waiting"
+    assert claims.of("phase")[-1] == ("phase", "US1", "waiting-qa")
+    once(cenv, script, qa=FakeQa({12: "waiting"}), claims=claims)
+    assert claims.of("beat") == [("beat", "US1")]
+
+
+def test_beat_runs_around_the_task(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    claims = FakeClaims()
+    once(
+        cenv, Script(TaskResult("done")), cfg=cfg_of(claim_heartbeat=33), claims=claims
+    )
+    assert FakeBeat.events == [("init", 33), ("start", "US1"), ("stop",)]
+
+
+def test_stop_marks_stopped(cenv):
+    claims = FakeClaims()
+    script = Script(TaskResult("failed", (), "ci-red http://pr/1"))
+    assert once(cenv, script, claims=claims) == "stopped"
+    assert claims.of("stop") == [("stop", "US1", "ci-red http://pr/1")]
+    assert autostate.load(cenv[1]).task == "dev-implement-ticket:US1"  # kept
+
+
+def test_second_failure_marks_stopped(cenv):
+    claims = FakeClaims()
+    script = Script(TaskResult("failed", (), "x"), TaskResult("failed", (), "x"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert claims.of("stop") == []
+    assert once(cenv, script, claims=claims) == "stopped"
+    assert claims.of("stop") == [("stop", "US1", "x")]
+
+
+def test_route_missing_stops_run(cenv):
+    claims = FakeClaims()
+    claims.route_missing = True
+    assert once(cenv, Script(), claims=claims) == "stopped"
+    assert "upgrade it to strata-kb 1.31.0" in autostate.load(cenv[1]).stop_reason
+
+
+def test_bad_request_on_take_stops_run(cenv):
+    claims = FakeClaims()
+    claims.claim_error = ClaimRejectedError(
+        "hub /api/claims returned 400: bad_request — holder is not valid"
+    )
+    assert once(cenv, Script(), claims=claims) == "stopped"
+    reason = autostate.load(cenv[1]).stop_reason
+    assert "400: bad_request — holder is not valid" in reason
+
+
+def test_transient_error_on_take_keeps_idling(cenv):
+    claims = FakeClaims()
+    claims.claim_error = KbError("hub unreachable: refused")
+    assert once(cenv, Script(), claims=claims) == "idle"
+    assert autostate.load(cenv[1]).stop_reason is None
+
+
+def test_lost_during_task_counts_no_attempt(cenv, monkeypatch, caplog):
+    class LostBeat(FakeBeat):
+        lost = True
+
+    monkeypatch.setattr(runner_mod, "ClaimBeat", LostBeat)
+    claims = FakeClaims()
+    with caplog.at_level(logging.WARNING):
+        out = once(cenv, Script(TaskResult("failed", (), "x")), claims=claims)
+    state = autostate.load(cenv[1])
+    assert (out, state.task, state.attempts) == ("ran", None, 0)
+    assert "claim on US1 lost: expired by hub" in caplog.text
+    assert claims.of("stop") == []
+
+
+def test_loop_exit_releases_working_claim_only(cenv):
+    claims = FakeClaims()
+    # a stopped run keeps its task: the loop exit hands it to release_if_working
+    script = Script(TaskResult("failed", (), "ci-red x"))
+    run_loop(
+        *_loop_args(cenv), qa=FakeQa(), run_task=script, claims=claims, hub=cenv[2]
+    )
+    assert claims.of("release") == [("release", "US1", "runner stopped")]
+
+
+def test_loop_exit_after_done_does_not_release(cenv):
+    claims = FakeClaims()
+    script = Script(TaskResult("done"))
+
+    def run_and_finish(root, prompt, *, log_dir):
+        cenv[3]["stories"] = [S("US1", "done"), S("US2", "done")]
+        return script(root, prompt, log_dir=log_dir)
+
+    code = run_loop(
+        *_loop_args(cenv),
+        qa=FakeQa(),
+        run_task=run_and_finish,
+        claims=claims,
+        hub=cenv[2],
+    )
+    assert code == 0 and claims.of("release") == []
+
+
+def _loop_args(env):
+    root, kb_dir, _, _ = env
+    (kb_dir / "config.yaml").write_text(
+        "kind: dev\nrepo_id: svc\nintake: http://intake\nauto:\n  enabled: true\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return root, kb_dir
+
+
+def test_ba_runner_makes_no_claims(env, monkeypatch):
+    ba_task = Task("ba-ticket-author", "US1")
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): ba_task)
+    claims = FakeClaims()
+    assert (
+        once(env, Script(TaskResult("done")), cfg=cfg_of("ba"), claims=claims) == "ran"
+    )
+    assert claims.calls == []
+
+
+def test_test_workflow_task_makes_no_claim(cenv, monkeypatch):
+    monkeypatch.setattr(picker, "_has_test_workflow", lambda r: False)
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-test-workflow")
+    assert [c for c in claims.calls if c[0] != "held"] == []
+
+
+def test_build_claims_only_for_dev(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    assert runner_mod.build_claims(root, kb_dir, cfg_of("ba")) is None
+    monkeypatch.setattr(runner_mod.claimclient, "from_env", lambda: object())
+    monkeypatch.setattr(runner_mod.claimclient, "holder_name", lambda r: "me@m1")
+    assert runner_mod.build_claims(root, kb_dir, cfg_of("dev")) is not None
+
+
+def test_run_loop_dev_builds_claims_from_env(env, monkeypatch):
+    root, kb_dir, hub, tickets = env
+    tickets["stories"] = [S("US3", "done")]
+    built = []
+    monkeypatch.setattr(
+        runner_mod, "build_claims", lambda r, k, c: built.append(c.kind) or None
+    )
+    _loop_args(env)
+    assert run_loop(root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script()) == 0
+    assert built == ["dev"]
+
+
+class FlakyPhase(FakeClaims):
+    """`phase` raises a transient KbError for one phase."""
+
+    def __init__(self, failing_phase):
+        super().__init__()
+        self.failing_phase = failing_phase
+
+    def phase(self, ticket, phase):
+        if phase == self.failing_phase:
+            raise KbError("hub unreachable")
+        return super().phase(ticket, phase)
+
+
+def test_transient_publishing_error_still_settles_done(cenv, caplog):
+    with caplog.at_level(logging.WARNING):
+        out = once(cenv, Script(TaskResult("done")), claims=FlakyPhase("publishing"))
+    assert out == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.last_done, state.task) == ("dev-implement-ticket:US1", None)
+    assert "hub unreachable" in caplog.text
+
+
+def test_transient_waiting_qa_error_still_saves_waiting_on(cenv):
+    out = once(
+        cenv, Script(TaskResult("blocked-qa", (12,))), claims=FlakyPhase("waiting-qa")
+    )
+    assert out == "waiting" and autostate.load(cenv[1]).waiting_on == (12,)
