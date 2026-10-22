@@ -47,6 +47,16 @@ abandoned ticket goes back to the pool.
      decision).
 - After a release or expiry, the next Dev who claims the ticket can continue
   the previous holder's branch.
+- A claim holds the ticket **until the hub's plan shows it `done`**, not
+  just until the code is written. While the holder's PR is open, or its
+  publish is on its way to the hub, the claim does not expire (owner's
+  decision). A PR closed without a merge restarts the 4 h clock.
+- A run that **stops** on a ticket (`MAX_ATTEMPTS`, `ci-red`, any `_stop`)
+  keeps the claim in a `stopped` state: other Devs skip the ticket, the page
+  shows `Stopped: <reason>`, and only an admin release (or the holder) frees
+  it (owner's decision).
+- Concurrent `kb publish` runs from several machines never drop another
+  Dev's `hist.*` row from the hub (owner's decision: in scope).
 
 ## 3. Non-goals
 
@@ -146,13 +156,31 @@ call), one row per claim:
 | `repo`, `ticket` | the ticket, as Q&A keys it (`<repo>:<id>` resolved via `ticketfetch.find`) |
 | `holder` | display name, see §7.4 |
 | `token` | random secret returned to the claimer; required to update or release |
-| `phase` | free text from a short known list (§7.5), last value wins |
+| `phase` | from a short known list (§7.5), last value wins |
+| `state` | `active` or `stopped` |
+| `pr` | the holder's PR URL, once one is open (empty before) |
+| `stop_reason` | why the run stopped, when `state = stopped` |
 | `claimed_at`, `last_seen` | **hub clock only**, never client timestamps |
-| `closed_at`, `closed_by`, `close_reason` | set on release, expiry noticed, or done |
+| `closed_at`, `closed_by`, `close_reason` | set on release, expiry noticed, `pr-closed`, or `done` |
 
-**Open claim** = `closed_at IS NULL AND last_seen > now - claim_ttl`.
+**Held claim** = `closed_at IS NULL` and any of:
+- `state = stopped` (never expires; §7.5 Stop);
+- `phase` is `review` or `publishing` and `pr` is set (never expires while
+  the PR is open or its publish is in flight);
+- `last_seen > now - claim_ttl`.
+
 Expiry is lazy: no background job. A read or a new claim that finds an
-expired open row closes it with `close_reason = expired`.
+unheld open row closes it with `close_reason = expired`. A read that finds
+the ticket `done` in the hub's plan closes its claim with
+`close_reason = done`.
+
+**PR closed without merge.** The hub does not watch GitHub. A Dev machine
+that, while picking, sees a held `review` claim whose `pr` is closed and not
+merged (`kb pr find`, REST) reports it (`POST /api/claims/{id}/pr-closed`);
+the hub moves the claim back to `phase = execute`, clears `pr` and sets
+`last_seen` to the time of the report, so the normal 4 h clock runs from
+there. *(Designer's call; the builder may have the hub check the PR itself
+through its GitHub App when the installation covers the dev repo.)*
 
 **Atomic grant:** inside one transaction (`BEGIN IMMEDIATE`), close an
 expired row for the ticket if any, then insert; a partial unique index on
@@ -170,11 +198,15 @@ heartbeat keeps a live auto run far inside it.)*
   qa_needs_hub_server`-style when the hub does not serve its own checkout.
   Re-claiming a ticket you already hold (same `token` sent) is `200`, so a
   crashed run's retry is harmless.
-- `PATCH /api/claims/{id}` `{token, phase?}` → bumps `last_seen`, sets
-  `phase`. `409 {error: "lost", close_reason, closed_by}` when the claim was
+- `PATCH /api/claims/{id}` `{token, phase?, pr?, state?, stop_reason?}` →
+  bumps `last_seen`, sets the given fields (`state: active` re-opens a
+  `stopped` claim the holder resumes). `409 {error: "lost", close_reason, closed_by}` when the claim was
   closed or expired — the holder must stop and re-claim.
 - `DELETE /api/claims/{id}` `{token, reason}` → release by the holder.
-- `GET /api/claims?repo=&ticket=` → open claims (after lazy expiry).
+- `POST /api/claims/{id}/pr-closed` `{pr}` → any bearer caller; accepted
+  only when `pr` matches the claim's `pr` (see §7.1).
+- `GET /api/claims?repo=&ticket=` → held claims (after lazy expiry), each
+  with `holder`, `phase`, `state`, `pr`, `last_seen`.
 
 Request bodies are JSON with capped size (`web/bodycap`). The route names and
 exact payloads are the builder's, kept consistent with `web/api.py`.
@@ -187,9 +219,12 @@ Over the API, using the same env as `QaClient` (`STRATA_KB_HUB_URL`,
 - `kb claim take <ticket> [--as <name>]` → prints the holder, exits `0`; exit
   `3` with `taken by <holder> (<phase>, updated <x> ago)` when someone else
   holds it.
-- `kb claim update <ticket> --phase <phase>`
+- `kb claim update <ticket> [--phase <phase>] [--pr <url>] [--stopped <reason> | --active]`
+  → exit `3` with `lost: <close_reason> by <closed_by>` when the claim is no
+  longer the caller's.
 - `kb claim release <ticket> [--reason <text>]`
-- `kb claim list [--json]` → open claims for this repo.
+- `kb claim list [--json]` → held claims for this repo (`repo_id` from
+  `.kb/config.yaml`).
 
 The claim `id` and `token` are kept locally in `.kb/auto/claims.json`
 (gitignored with the rest of `.kb/auto/`), keyed by ticket, so `update` and
@@ -223,14 +258,26 @@ cloud where the hostname is random. *(Designer's call: this replaces
   running child is the builder's call — at minimum the result is not merged
   under a lost claim, see §7.6).
 - **Phases** the runner or skills report: `claimed`, `design`, `plan`,
-  `execute`, `handover`, `ci`, `waiting-qa`. The runner sets `waiting-qa` on
-  `blocked-qa` and keeps heartbeating while it waits, so a ticket waiting on
-  the BA is not taken by another Dev.
-- **Release:** on `done` (PR merged; the hub's plan will show `done` after
-  publish), on a stop (`MAX_ATTEMPTS`, `ci-red`, any `_stop`) with the stop
-  reason, and on a clean shutdown of the loop (Ctrl-C) with
-  `reason = runner stopped`. A crash or kill releases nothing; expiry covers
-  it.
+  `execute`, `handover`, `review` (PR open, `pr` set), `publishing` (PR
+  merged, `kb publish` run, waiting for the hub to show `done`),
+  `waiting-qa`. The runner sets `waiting-qa` on `blocked-qa` and keeps
+  heartbeating while it waits, so a ticket waiting on the BA is not taken by
+  another Dev.
+- **Done:** on `AUTO-RESULT: done` the runner does **not** release; it sets
+  `phase = publishing` (the skill has already set `pr`) and moves on. The
+  claim stays held until the hub's plan shows the ticket `done`, which
+  closes it (§7.1). Every picker skips held claims, its own included, which
+  replaces the same-machine wait in `runner._repicked` for this case.
+- **Stop:** on any `_stop` (`MAX_ATTEMPTS`, `ci-red`, …) the runner sets
+  `state = stopped` with the stop reason; it does not release. Other loops
+  skip the ticket. On resume (`kb auto run` after a stop, `runner.resume`)
+  the stored task re-claims with its token: still the caller's (stopped) →
+  back to `state = active` and carry on; released by an admin and taken by
+  someone else → drop the task and pick again, logging who holds it.
+- **Release:** on a clean shutdown of the loop (Ctrl-C) with
+  `reason = runner stopped`, but only for a claim in a working phase
+  (`claimed` … `handover`, `waiting-qa`); a `review`, `publishing` or
+  `stopped` claim stays. A crash or kill releases nothing; expiry covers it.
 - **Hub without claims:** a `404` on the claims route stops the run with
   `hub server has no /api/claims — upgrade it to strata-kb <version> or
   later`. *(Designer's call: no silent fallback to unclaimed picking.)*
@@ -248,11 +295,15 @@ cloud where the hostname is random. *(Designer's call: this replaces
 - `dev-handover`, before opening or merging the PR, runs `kb claim update`;
   a `lost` claim STOPs with "your claim on `<id>` was released by
   `<closed_by>` (`<reason>`); re-run `/dev-implement-ticket <id>` to claim it
-  again" — no push to a branch someone else may now own.
-- **Continuing someone's branch:** when a claim is new and `auto/<id>` or
-  `<id>` exists on `origin`, the skill fetches it and continues there (the
-  existing re-entry rules decide what is done), noting in the log which
-  holder's work it took over. *(Designer's call.)*
+  again" — no push to a branch someone else may now own. Right after the PR
+  opens it runs `kb claim update <id> --phase review --pr <url>`; after the
+  merge and `kb publish`, `--phase publishing`. This holds for a manual Dev
+  too, so a PR waiting days for review keeps the ticket.
+- **Continuing someone's branch:** when a claim is new and the ticket's
+  branch exists on `origin` (`auto/<id>`, `<id>`, or for a bug
+  `fix/<BUG-id>` / `hotfix/<BUG-id>`), the skill fetches it and continues
+  there (the existing re-entry rules decide what is done), noting in the log
+  which holder's work it took over. *(Designer's call.)*
 - `QUICKSTART-dev.md` gains a short "Several Devs" section: claims, the 4 h
   expiry, `kb claim list|release`, the admin Release button.
 
@@ -272,6 +323,29 @@ cloud where the hostname is random. *(Designer's call: this replaces
   Dev knows the ticket was taken over or expired.
 - A missing or unreadable claim store renders the page without claim info
   plus a short notice, never a 500 (the `qaui` pattern).
+- Badges by claim: working phases → `In progress`; `review` →
+  `In review` with the PR link; `publishing` → `Publishing`; `stopped` →
+  `Stopped: <reason>` (the admin Release button is the way out).
+
+### 7.8 Safe concurrent publish (dev repo)
+
+`hist.*` rows for one `-svc` document live in one shared file
+(`svcnote.py`), and `kb publish` mirrors the local `.kb/` into the hub
+(`publish._snapshot`). A machine publishing from a checkout that lacks
+another machine's newer row would drop that row on the hub, turning a
+`done` ticket back to `ready`.
+
+- `kb publish` in a `dev` repo first runs `git fetch origin <default>` and
+  refuses unless `origin/<default>` is an ancestor of `HEAD`
+  (`git merge-base --is-ancestor`): `behind origin/<default> — pull, then
+  kb publish`. No remote, or a fetch failure, is a refusal too, with its
+  reason (never a silent publish from a possibly stale tree).
+- `dev-handover`'s publish step pulls the default branch before
+  `kb publish` and, on the "behind" refusal, pulls and retries once.
+- The hub-side intake keeps its current behaviour; the guard is on the
+  publishing machine. *(Designer's call: other repo kinds have one author
+  per repo and keep today's behaviour; the builder may widen it if it costs
+  nothing.)*
 
 ## 8. Left to the builder
 
@@ -282,7 +356,22 @@ cloud where the hostname is random. *(Designer's call: this replaces
   candidates; how the heartbeat thread signals a lost claim to the loop.
 - Where the hub reads `claim_ttl` (env name, server config field).
 - Wording of badges and messages, within the meaning above.
+- Error shapes that tell "unknown ticket" (404 with an error code) from "hub
+  without the claims route" (bare 404), as `hubapi._json` already does.
 - Tests: the atomic grant under two concurrent claimers, lazy expiry with an
-  injected clock, admin-only release (admin, ba, dev, bearer), runner pick
-  skipping a claimed ticket and moving on after a lost race, heartbeat
-  keeping a 4 h+ task alive, release on done/stop.
+  injected clock, no expiry for `review`/`publishing`/`stopped`, `pr-closed`
+  restarting the clock, close on `done`, admin-only release (admin, ba, dev,
+  bearer), runner pick skipping a held ticket (its own `publishing` one
+  included) and moving on after a lost race, heartbeat keeping a 4 h+ task
+  alive, stop → `stopped` → resume, and `kb publish` refusing when behind.
+
+## 9. Calls made in this document (for the owner to check)
+
+- One `claim_ttl` (4 h) for auto and manual; runner heartbeat 15 min.
+- CLI `kb claim` is the only client; no MCP tool for now.
+- Holder name `<git user.name>@<hostname>`, overridable; replaces `kb-auto`
+  for claims only.
+- No silent fallback when the hub lacks the claims route: the run stops.
+- A new claimer continues the previous holder's branch, bug branches included.
+- `PR closed without merge` is reported by the next Dev machine that sees it.
+- The publish guard applies to `dev` repos only.
