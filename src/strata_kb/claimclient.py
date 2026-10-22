@@ -41,6 +41,10 @@ class ClaimLostError(KbError):
         self.closed_by = closed_by
 
 
+class ClaimRejectedError(KbError):
+    """The hub answered 400: the request itself is wrong, so retrying cannot help."""
+
+
 class ClaimRouteMissing(KbError):
     def __init__(self) -> None:
         super().__init__(
@@ -127,7 +131,7 @@ class ClaimClient:
             )
         if not 200 <= code < 300:
             detail = data.get("detail")
-            raise KbError(
+            raise (ClaimRejectedError if code == 400 else KbError)(
                 f"hub {ROUTE} returned {code}"
                 + (f": {reason}" if reason else "")
                 + (f" — {detail}" if detail and isinstance(detail, str) else "")

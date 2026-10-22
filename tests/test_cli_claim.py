@@ -22,12 +22,18 @@ class FakeClient:
         self.take_error: Exception | None = None
         self.update_error: Exception | None = None
         self.claims: list[dict] = []
+        self.take_state = "active"
 
     def take(self, ticket, holder, claim_token=None):
         self.calls.append(("take", ticket, holder, claim_token))
         if self.take_error:
             raise self.take_error
-        return {"id": 4, "ticket": ticket, "holder": holder}, "ct"
+        return {
+            "id": 4,
+            "ticket": ticket,
+            "holder": holder,
+            "state": self.take_state,
+        }, "ct"
 
     def update(self, claim_id, claim_token, **fields):
         self.calls.append(("update", claim_id, claim_token, fields))
@@ -68,6 +74,19 @@ def test_take_resends_stored_token(fake, tmp_path):
     local(tmp_path).put("US1", 4, "ct")
     runner.invoke(app, ["claim", "take", "US1", "--as", "a@m1"])
     assert fake.calls[0][3] == "ct"
+
+
+def test_take_reactivates_own_stopped_claim(fake, tmp_path):
+    local(tmp_path).put("US1", 4, "ct")
+    fake.take_state = "stopped"
+    result = runner.invoke(app, ["claim", "take", "US1", "--as", "a@m1"])
+    assert result.exit_code == 0, result.output
+    assert fake.calls[-1] == ("update", 4, "ct", {"state": "active"})
+
+
+def test_take_of_an_active_claim_sends_no_update(fake, tmp_path):
+    runner.invoke(app, ["claim", "take", "US1", "--as", "a@m1"])
+    assert [c[0] for c in fake.calls] == ["take"]
 
 
 def test_take_taken_exit_3(fake, tmp_path):

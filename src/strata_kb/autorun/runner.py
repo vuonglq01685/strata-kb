@@ -26,7 +26,7 @@ from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
-from strata_kb.claimclient import ClaimRouteMissing
+from strata_kb.claimclient import ClaimRejectedError, ClaimRouteMissing
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
@@ -396,8 +396,8 @@ def run_once(
         task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
-    except ClaimRouteMissing as exc:
-        return _stop(kb_dir, state, str(exc))
+    except (ClaimRouteMissing, ClaimRejectedError) as exc:
+        return _stop(kb_dir, state, str(exc))  # no retry can fix either
     except KbError as exc:
         logger.error("could not pick a task: %s", exc)
         return "idle"
@@ -429,7 +429,7 @@ def run_once(
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
     beat = None
     if claims is not None and ticket:
-        if not claims.phase(ticket, "claimed"):
+        if not claims.begin(ticket):
             return _claim_lost(kb_dir, state, claims, ticket)
         beat = ClaimBeat(claims, cfg.auto.claim_heartbeat)
         beat.start(ticket)

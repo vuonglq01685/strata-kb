@@ -43,7 +43,7 @@ MAX_REASON = 1000
 MAX_PR = 500
 
 # Phases that stay held, whatever the clock says, while their PR is set.
-_PR_PHASES = ("review", "publishing")
+PR_PHASES = ("review", "publishing")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS claims (
@@ -75,7 +75,7 @@ _COLUMNS = (
 # last seen at or before the cutoff (parameter 1 of the clause).
 _UNHELD = (
     "closed_at IS NULL AND state != 'stopped' "
-    f"AND NOT (phase IN ({', '.join('?' * len(_PR_PHASES))}) AND pr != '') "
+    f"AND NOT (phase IN ({', '.join('?' * len(PR_PHASES))}) AND pr != '') "
     "AND last_seen <= ?"
 )
 
@@ -216,7 +216,7 @@ class ClaimStore:
             "UPDATE claims SET closed_at = ?, closed_by = 'hub', "  # noqa: S608 - fixed fragments
             f"close_reason = 'expired' WHERE {_UNHELD}"
         )
-        conn.execute(sql, (_stamp(now), *_PR_PHASES, cutoff))
+        conn.execute(sql, (_stamp(now), *PR_PHASES, cutoff))
 
     def _load(self, conn: sqlite3.Connection, claim_id: int) -> tuple[Claim, str]:
         row = conn.execute(

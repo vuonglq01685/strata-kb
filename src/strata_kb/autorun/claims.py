@@ -21,7 +21,7 @@ from strata_kb.claimclient import (
     LocalClaims,
 )
 from strata_kb.errors import KbError
-from strata_kb.ticketclaim import WORKING_PHASES
+from strata_kb.ticketclaim import PR_PHASES, WORKING_PHASES
 
 logger = logging.getLogger("strata_kb.autorun.claims")
 
@@ -35,6 +35,7 @@ class RunnerClaims:
         self._root, self._client, self._holder = root, client, holder
         self._local = LocalClaims(kb_dir)
         self._lost: dict[str, str] = {}
+        self._granted_phase: dict[str, str] = {}
         self._lock = threading.Lock()  # the heartbeat thread beats beside the loop
 
     def held_by_others(self, mine: str | None) -> set[str]:
@@ -79,8 +80,16 @@ class RunnerClaims:
             self._lose(ticket, exc)
             return False
         self._local.put(ticket, claim["id"], token)
+        self._granted_phase[ticket] = str(claim.get("phase", ""))
         self._remember(ticket)
         return True
+
+    def begin(self, ticket: str) -> bool:
+        """Mark an attempt as started: `claimed`, unless the claim already waits
+        on a PR (`review`/`publishing`). False when the claim was lost."""
+        if self._granted_phase.get(ticket) in PR_PHASES:
+            return True
+        return self.phase(ticket, "claimed")
 
     def phase(self, ticket: str, phase: str) -> bool:
         """Move the claim to `phase`; False when it was lost."""

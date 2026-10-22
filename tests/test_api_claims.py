@@ -299,7 +299,8 @@ def test_needs_hub_server_503(hub_dir, token, tmp_path, auth):
     with TestClient(create_app(config, token)) as c:
         r = c.get("/api/claims", headers=auth)
     assert r.status_code == 503
-    assert r.json()["error"] == "qa_needs_hub_server"
+    assert r.json()["error"] == "qa_needs_hub_server"  # the spec's key
+    assert r.json()["detail"] == "claims need the shared hub server"
 
 
 @pytest.mark.parametrize("raw", ["abc", "0", "-5", "", "1.5"])

@@ -95,7 +95,13 @@ a denial to report. Stop only when the MCP tool fails too.
    was tried and what is missing; ask for a sharper bug. No fix without a
    reproduction. The moment the test fails for the right reason, create
    `docs/impl/<id>/rootcause.md` with `Symptom:` (the Actual result in one
-   line) and `Reproduction test:` (path and test name).
+   line) and `Reproduction test:` (path and test name). After the reproduction-test
+   commit run `kb claim update <BUG-id> --phase execute`: it moves the claim to
+   `execute` and refreshes its 4 h clock. Exit `3` → STOP: "your claim on
+   `<BUG-id>` was released by `<closed_by>` (`<reason>`); re-run
+   `/dev-fix-bug <BUG-id>` to claim it again." Push nothing after a lost
+   claim; in Auto mode a STOP here ends `AUTO-RESULT: failed claim-lost
+   <BUG-id>`. Any other exit `1` → STOP and show its message.
 3. **Root cause** — find the cause before you touch the fix. Read the
    error and the stack trace completely; check recent changes (`git log`
    and `git diff` on the files the path touches); trace the bad value
@@ -125,7 +131,8 @@ a denial to report. Stop only when the MCP tool fails too.
    hypothesis: revert it, log it in the hypothesis log as failed with what
    it taught you, clear the `Root cause:` line of `rootcause.md`, and
    return to step 3 (Root cause). Never stack a second fix on top of the
-   first.
+   first. After each fix commit run `kb claim update <BUG-id> --phase execute`
+   and stop on a lost claim as in step 2.
 5. **Handover** — run `/dev-handover` (it runs the full suite, records
    service history and assembles the PR description), with these bug
    rules, which override its story wording:

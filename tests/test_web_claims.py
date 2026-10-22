@@ -258,3 +258,40 @@ def test_broken_claim_store_renders_notice(admin_client, plan_hub):
 def test_get_does_not_create_the_claims_db(admin_client, plan_hub):
     assert admin_client.get(PAGE).status_code == 200
     assert not claims_db_path(plan_hub.root).exists()
+
+
+def _mark_done(plan_hub) -> None:
+    svc = plan_hub.root / "federation" / "dev-one" / "dev-svc" / "history.md"
+    svc.write_text(
+        svc.read_text(encoding="utf-8") + f"| {TICKET} | Story 2 | |\n",
+        encoding="utf-8",
+    )
+
+
+def test_done_ticket_page_closes_its_held_claim(admin_client, plan_hub, store):
+    claim, token = store.take(REPO, TICKET, "a@m1")
+    store.update(claim.id, token, phase="publishing", pr=PR)
+    _mark_done(plan_hub)
+    text = admin_client.get(PAGE).text
+    assert "Taken by" not in text and "Publishing" not in text
+    assert "Done — the ticket is" in text
+    assert store.held(REPO, TICKET) == []
+    assert store.last_closed(REPO, TICKET).close_reason == "done"
+
+
+@pytest.mark.parametrize("status", ["draft", "blocked"])
+def test_draft_or_blocked_ticket_page_shows_no_claim(
+    admin_client, store, monkeypatch, status
+):
+    _take(store)
+    monkeypatch.setattr(planui, "_story_status", lambda *_: status)
+    text = admin_client.get(PAGE).text
+    assert "Taken by" not in text and "In progress" not in text
+    assert "Release" not in text
+    assert len(store.held(REPO, TICKET)) == 1  # untouched, only not shown
+
+
+def test_done_ticket_page_does_not_create_the_claims_db(admin_client, plan_hub):
+    _mark_done(plan_hub)
+    assert admin_client.get(PAGE).status_code == 200
+    assert not claims_db_path(plan_hub.root).exists()

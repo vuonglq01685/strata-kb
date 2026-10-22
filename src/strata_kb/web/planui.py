@@ -86,6 +86,16 @@ def _held_by_ticket(
         return {}, CLAIMS_UNAVAILABLE
 
 
+def _story_status(hub: HubHandle, repo: str, story: str) -> str:
+    """The derived status of a story or unparented ticket; "" when unknown."""
+    plans, _notes = planstatus.hub_plans(hub, repo)
+    for plan in plans:
+        for item in (*(s for m in plan.missions for s in m.stories), *plan.unparented):
+            if item.us_id == story:
+                return item.status
+    return ""
+
+
 def plan_routes(
     config: ServerConfig, session: SessionAuth | None = None
 ) -> list[Route]:
@@ -199,11 +209,19 @@ def plan_routes(
         error: str = "",
     ) -> HTMLResponse:
         content_html, toc = uidata.inject_heading_anchors(md_render(ticket.markdown))
-        ctx = claim_ctx(hub, found_repo)
-        claim = ctx["claims"].get(story)
-        last_closed = None
         db = claims_db_path(hub.root)
-        if claim is None and db.exists() and not ctx["claim_notice"]:
+        ticket_status = _story_status(hub, found_repo, story)
+        if ticket_status == "done" and db.exists():  # never create the DB on GET
+            try:
+                ClaimStore(db, ttl=ttl).close_done({(found_repo, story)})
+            except (sqlite3.Error, KbError, OSError):
+                logger.warning("claim store unwritable for %s", story, exc_info=True)
+        ctx = claim_ctx(hub, found_repo)
+        # a draft or blocked ticket shows its status, not a claim
+        shows_claim = ticket_status not in ("draft", "blocked")
+        claim = ctx["claims"].get(story) if shows_claim else None
+        last_closed = None
+        if shows_claim and claim is None and db.exists() and not ctx["claim_notice"]:
             try:  # after `held`: that call already closed any expired claim
                 last_closed = ClaimStore(db, ttl=ttl).last_closed(found_repo, story)
             except (sqlite3.Error, KbError, OSError):

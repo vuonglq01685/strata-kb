@@ -1622,8 +1622,9 @@ the hub prevents that. `/dev-implement-ticket` and `/dev-fix-bug` run
   `dev-handover` update the claim on entry, `dev-execute` after each task commit,
   and `kb auto run` sends a heartbeat every `auto.claim_heartbeat` seconds
   (default `900`, in `.kb/config.yaml`).
-- **Held through review and publishing.** Once the PR is open, `dev-handover` sets
-  `review` with the PR URL; a claim in `review` or `publishing` with a PR never
+- **Held through review and publishing.** Once you have opened the PR, tell
+  `dev-handover` (or re-run `/dev-handover <id>`): it finds the PR and sets `review`
+  with its URL; until then the claim expires after 4 hours. A claim in `review` or `publishing` with a PR never
   expires, so the ticket stays yours while the PR waits. A claim the auto runner
   marked `stopped` (the run stopped with a reason) never expires either, and
   resumes when you run it again.

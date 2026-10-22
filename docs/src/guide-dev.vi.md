@@ -522,8 +522,9 @@ bước Intake, và mỗi pha sau đó làm mới claim.
   `dev-handover` cập nhật claim khi vào pha, `dev-execute` còn cập nhật sau mỗi commit
   của task, và `kb auto run` gửi heartbeat mỗi `auto.claim_heartbeat` giây (mặc định
   `900`, trong `.kb/config.yaml`).
-- **Giữ suốt review và publishing.** Khi PR đã mở, `dev-handover` đặt pha `review` cùng
-  URL của PR; claim ở pha `review` hoặc `publishing` có PR thì không bao giờ hết hạn, nên
+- **Giữ suốt review và publishing.** Sau khi bạn mở PR, báo cho
+  `dev-handover` (hoặc chạy lại `/dev-handover <id>`): nó tự tìm PR và đặt pha `review` cùng
+  URL của PR; trước đó claim hết hạn sau 4 giờ. Claim ở pha `review` hoặc `publishing` có PR thì không bao giờ hết hạn, nên
   ticket vẫn là của bạn trong lúc PR chờ. Claim mà runner tự động đã đánh dấu `stopped`
   (lượt chạy dừng kèm lý do) cũng không hết hạn, và tiếp tục khi bạn chạy lại.
 - **Nhận tiếp việc.** Sau khi claim hết hạn hoặc bị giải phóng, Dev tiếp theo claim ticket

@@ -119,9 +119,11 @@ hub.
   in the Next-step block below is always "Open the PR yourself" with the
   branch name already filled in — this is the terminal phase of the
   flow, so there is no next automated command; a blocker takes its
-  place instead. Once the PR is open (the Dev gives you its URL), run
+  place instead. Once the Dev says the PR is open, find it yourself:
+  `kb pr find --head <branch> --state open --json`, then run
   `kb claim update <ticket-id> --phase review --pr <url>`: the claim then stays
-  held through review instead of expiring.
+  held through review instead of expiring. No open PR yet → tell the Dev to
+  re-run `/dev-handover <ticket-id>` after opening it; that run sets review.
 - **After the merge** — the Dev publishes (a push to the default branch publishes
   nothing). A squash merge leaves the ticket branch behind
   `origin/<default-branch>`, and `kb publish` in a dev repo refuses to run from it

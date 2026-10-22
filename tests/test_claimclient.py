@@ -173,3 +173,14 @@ def test_error_without_detail_has_no_dash():
     with pytest.raises(KbError) as exc:
         client(FakeHttp(400, {"error": "bad_request"})).take("US1", "a")
     assert str(exc.value) == "hub /api/claims returned 400: bad_request"
+
+
+def test_400_is_a_rejection_other_errors_are_not():
+    from strata_kb.claimclient import ClaimRejectedError
+
+    with pytest.raises(ClaimRejectedError):
+        client(FakeHttp(400, {"error": "bad_request"})).take("US1", "a")
+    for code in (403, 500, 503):
+        with pytest.raises(KbError) as exc:
+            client(FakeHttp(code, {"error": "x"})).take("US1", "a")
+        assert not isinstance(exc.value, ClaimRejectedError)

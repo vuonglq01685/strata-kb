@@ -27,7 +27,6 @@ from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
 from strata_kb.web import bodycap
 from strata_kb.web.api import (
     HUB_DOWN_DETAIL,
-    QA_NEEDS_HUB_DETAIL,
     _error,
     hub_handle,
 )
@@ -36,6 +35,7 @@ logger = logging.getLogger("strata_kb.web.claim_api")
 
 MAX_BODY = 8192
 TTL_ENV = "STRATA_KB_CLAIM_TTL"
+CLAIMS_NEED_HUB_DETAIL = "claims need the shared hub server"
 
 Handler = Callable[[Request, dict[str, Any], HubHandle], JSONResponse]
 
@@ -111,7 +111,7 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
 
         def run(request: Request, body: dict[str, Any]) -> JSONResponse:
             if not hub_serves_own_checkout(config):
-                return _error(503, "qa_needs_hub_server", QA_NEEDS_HUB_DETAIL)
+                return _error(503, "qa_needs_hub_server", CLAIMS_NEED_HUB_DETAIL)
             hub = hub_handle(config)
             if hub is None:
                 return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)

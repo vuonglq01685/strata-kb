@@ -45,10 +45,13 @@ def take(kb_dir: Path, root: Path, ticket: str, as_name: str | None) -> int:
     holder = as_name or claimclient.holder_name(root)
     local = LocalClaims(kb_dir)
     known = local.get(ticket)
+    client = claimclient.from_env()
     try:
-        claim, token = claimclient.from_env().take(
-            ticket, holder, known[1] if known else None
-        )
+        claim, token = client.take(ticket, holder, known[1] if known else None)
+        if claim.get("state") == "stopped":  # our own, resumed
+            claim = client.update(claim["id"], token, state="active")
+    except ClaimLostError as exc:
+        return _lost(local, ticket, exc)
     except ClaimTakenError as exc:
         c = exc.claim
         typer.echo(

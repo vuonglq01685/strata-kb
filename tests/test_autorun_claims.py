@@ -336,3 +336,29 @@ def test_claimbeat_sets_lost_and_ends():
         time.sleep(0.005)
     beat.stop()
     assert beat.lost
+
+
+@pytest.mark.parametrize("phase", ["review", "publishing"])
+def test_begin_keeps_a_review_or_publishing_claim(kb_dir, phase):
+    client = FakeClient(phase=phase, pr="https://github.com/a/b/pull/1")
+    claims = make(kb_dir, client)
+    assert claims.claim("US1") is True
+    assert claims.begin("US1") is True
+    assert [c[0] for c in client.calls] == ["take"]
+
+
+@pytest.mark.parametrize("phase", ["claimed", "execute", "waiting-qa"])
+def test_begin_moves_a_working_claim_to_claimed(kb_dir, phase):
+    client = FakeClient(phase=phase)
+    claims = make(kb_dir, client)
+    claims.claim("US1")
+    assert claims.begin("US1") is True
+    assert client.calls[-1] == ("update", 7, "tok", {"phase": "claimed"})
+
+
+def test_begin_reports_a_lost_claim(kb_dir):
+    client = FakeClient()
+    claims = make(kb_dir, client)
+    claims.claim("US1")
+    client.update_error = ClaimLostError("released", "admin")
+    assert claims.begin("US1") is False

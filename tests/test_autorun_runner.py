@@ -14,7 +14,7 @@ from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claude import TaskResult
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
-from strata_kb.claimclient import ClaimRouteMissing
+from strata_kb.claimclient import ClaimRejectedError, ClaimRouteMissing
 from strata_kb.config import AutoConfig, KBConfig
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
@@ -858,6 +858,7 @@ class FakeClaims:
         self.calls: list[tuple] = []
         self.taken, self.held, self.beat_ok = set(taken), set(held), beat_ok
         self.route_missing = False
+        self.claim_error: KbError | None = None
 
     def held_by_others(self, mine):
         self.calls.append(("held", mine))
@@ -867,7 +868,13 @@ class FakeClaims:
 
     def claim(self, ticket):
         self.calls.append(("claim", ticket))
+        if self.claim_error:
+            raise self.claim_error
         return ticket not in self.taken
+
+    def begin(self, ticket):
+        self.calls.append(("begin", ticket))
+        return True
 
     def phase(self, ticket, phase):
         self.calls.append(("phase", ticket, phase))
@@ -962,8 +969,8 @@ def test_stored_task_is_reclaimed_and_mine_is_not_held(cenv):
 def test_done_sets_publishing_not_release(cenv):
     claims = FakeClaims()
     once(cenv, Script(TaskResult("done")), claims=claims)
-    assert [c for c in claims.calls if c[0] in ("phase", "release")] == [
-        ("phase", "US1", "claimed"),
+    assert [c for c in claims.calls if c[0] in ("begin", "phase", "release")] == [
+        ("begin", "US1"),
         ("phase", "US1", "publishing"),
     ]
 
@@ -1007,6 +1014,23 @@ def test_route_missing_stops_run(cenv):
     claims.route_missing = True
     assert once(cenv, Script(), claims=claims) == "stopped"
     assert "upgrade it to strata-kb 1.31.0" in autostate.load(cenv[1]).stop_reason
+
+
+def test_bad_request_on_take_stops_run(cenv):
+    claims = FakeClaims()
+    claims.claim_error = ClaimRejectedError(
+        "hub /api/claims returned 400: bad_request — holder is not valid"
+    )
+    assert once(cenv, Script(), claims=claims) == "stopped"
+    reason = autostate.load(cenv[1]).stop_reason
+    assert "400: bad_request — holder is not valid" in reason
+
+
+def test_transient_error_on_take_keeps_idling(cenv):
+    claims = FakeClaims()
+    claims.claim_error = KbError("hub unreachable: refused")
+    assert once(cenv, Script(), claims=claims) == "idle"
+    assert autostate.load(cenv[1]).stop_reason is None
 
 
 def test_lost_during_task_counts_no_attempt(cenv, monkeypatch, caplog):

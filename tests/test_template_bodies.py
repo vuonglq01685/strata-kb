@@ -1642,3 +1642,73 @@ def test_claude_copies_carry_the_fix_round_bullets(name):
         assert "Never run `kb claim take` in Auto mode" in text
     if "dev-handover" in name:
         assert "right before the push" in text and "no merge." in text
+
+
+# --- ticket claims, final fix wave ---------------------------------------------
+
+_PR_FIND_OPEN = "kb pr find --head <branch> --state open --json"
+
+
+def test_manual_gate3_finds_the_pr_and_sets_review():
+    for text in (_body("dev-handover.md"), _mirror("claude-command-dev-handover.md")):
+        gate = text[text.index("**GATE 3**") : text.index("**After the merge**")]
+        gate = " ".join(gate.split())
+        assert _PR_FIND_OPEN in gate
+        assert gate.index(_PR_FIND_OPEN) < gate.index("--phase review --pr <url>")
+        assert "re-run `/dev-handover <ticket-id>`" in gate
+
+
+@pytest.mark.parametrize(
+    ("name", "mirrors"),
+    [
+        (
+            "dev-implement-ticket",
+            [
+                "claude-skill-dev-implement-ticket.md",
+                "claude-command-dev-implement-ticket.md",
+            ],
+        ),
+        ("dev-fix-bug", []),
+    ],
+)
+def test_auto_takeover_does_not_take_a_branch_with_an_open_pr(name, mirrors):
+    allow, deny = _allow_deny()
+    texts = [_dev_text(name), *(_normal(_auto_section(m)) for m in mirrors)]
+    for text in texts:
+        bullet = text[text.index("taking over the branch of a free claim") :]
+        bullet = bullet[: bullet.index("Auto decision line")]
+        assert f"`{_PR_FIND_OPEN}`" in bullet
+        assert "do not take the branch over" in bullet
+        assert "--phase review --pr <url>`" in bullet
+        assert "end `AUTO-RESULT: done`" in bullet
+        assert bullet.index(_PR_FIND_OPEN) < bullet.index("do not take")
+    assert _permitted(_PR_FIND_OPEN, allow, deny)
+    assert _permitted("kb claim update X --phase review --pr U", allow, deny)
+
+
+def test_fix_bug_refreshes_the_claim_between_intake_and_handover():
+    text = " ".join(_body("dev-fix-bug.md").split())
+    reproduce = text[text.index("2. **Reproduce**") : text.index("3. **Root cause**")]
+    fix = text[text.index("4. **Fix**") : text.index("5. **Handover**")]
+    for step in (reproduce, fix):
+        assert "kb claim update <BUG-id> --phase execute" in step
+    assert "Exit `3` → STOP" in reproduce
+    assert "was released by `<closed_by>`" in reproduce
+    assert "Push nothing after a lost claim" in reproduce
+    assert "stop on a lost claim" in fix
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "README.md",
+        "src/strata_kb/templates/init/QUICKSTART-dev.md",
+        "docs/src/guide-dev.en.md",
+        "docs/src/guide-dev.vi.md",
+    ],
+)
+def test_docs_do_not_claim_review_is_set_without_the_dev(path):
+    text = " ".join((Path(__file__).parent.parent / path).read_text("utf-8").split())
+    assert "Once the PR is open, `dev-handover` sets" not in text
+    assert "Khi PR đã mở, `dev-handover` đặt" not in text
+    assert "/dev-handover <id>" in text

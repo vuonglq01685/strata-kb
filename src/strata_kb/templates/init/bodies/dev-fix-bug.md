@@ -95,7 +95,13 @@ a denial to report. Stop only when the MCP tool fails too.
    was tried and what is missing; ask for a sharper bug. No fix without a
    reproduction. The moment the test fails for the right reason, create
    `docs/impl/<id>/rootcause.md` with `Symptom:` (the Actual result in one
-   line) and `Reproduction test:` (path and test name).
+   line) and `Reproduction test:` (path and test name). After the reproduction-test
+   commit run `kb claim update <BUG-id> --phase execute`: it moves the claim to
+   `execute` and refreshes its 4 h clock. Exit `3` → STOP: "your claim on
+   `<BUG-id>` was released by `<closed_by>` (`<reason>`); re-run
+   `/dev-fix-bug <BUG-id>` to claim it again." Push nothing after a lost
+   claim; in Auto mode a STOP here ends `AUTO-RESULT: failed claim-lost
+   <BUG-id>`. Any other exit `1` → STOP and show its message.
 3. **Root cause** — find the cause before you touch the fix. Read the
    error and the stack trace completely; check recent changes (`git log`
    and `git diff` on the files the path touches); trace the bad value
@@ -125,7 +131,8 @@ a denial to report. Stop only when the MCP tool fails too.
    hypothesis: revert it, log it in the hypothesis log as failed with what
    it taught you, clear the `Root cause:` line of `rootcause.md`, and
    return to step 3 (Root cause). Never stack a second fix on top of the
-   first.
+   first. After each fix commit run `kb claim update <BUG-id> --phase execute`
+   and stop on a lost claim as in step 2.
 5. **Handover** — run `/dev-handover` (it runs the full suite, records
    service history and assembles the PR description), with these bug
    rules, which override its story wording:
@@ -256,7 +263,7 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 - **Handover: "The Dev opens the PR and merges"** → `dev-handover` does both under its own Auto mode, with these bug rules unchanged. For a `hotfix`, rule (d)'s production line is the `hotfix_base` above, `main` when it is empty.
 - **Re-entry: a hotfix with no branch — "ask the Dev for it first"** → the production line comes from `hotfix_base`; never ask.
 - **Hard rule "Never work on the default branch; never push to a protected branch; never merge; never tick DoD checkboxes for humans"** → `dev-handover` opens the PR and merges it under its own Auto mode. The rest of the rule stands: no work on `main`, no push to `main`, no DoD box ticked.
-- **Intake: taking over the branch of a free claim — the fast-forward pull** → the Auto allowlist does not permit it, so take the branch over with allowed commands only: `git fetch origin`, then `git switch fix/<BUG-id>` when a local `fix/<BUG-id>` exists, otherwise `git switch -c fix/<BUG-id> origin/fix/<BUG-id>`, then `git pull origin fix/<BUG-id>`. A hotfix does the same with `hotfix/<BUG-id>`: `git switch hotfix/<BUG-id>` or `git switch -c hotfix/<BUG-id> origin/hotfix/<BUG-id>`, then `git pull origin hotfix/<BUG-id>`. Log whose work it was in an Auto decision line.
+- **Intake: taking over the branch of a free claim — the fast-forward pull** → the Auto allowlist does not permit it, so take the branch over with allowed commands only: `git fetch origin`, then `git switch fix/<BUG-id>` when a local `fix/<BUG-id>` exists, otherwise `git switch -c fix/<BUG-id> origin/fix/<BUG-id>`, then `git pull origin fix/<BUG-id>`. A hotfix does the same with `hotfix/<BUG-id>`: `git switch hotfix/<BUG-id>` or `git switch -c hotfix/<BUG-id> origin/hotfix/<BUG-id>`, then `git pull origin hotfix/<BUG-id>`. Before continuing someone's branch, run `kb pr find --head <branch> --state open --json` for the branch you would take over (`fix/<BUG-id>`, or `hotfix/<BUG-id>`). An open PR means the bug waits on that PR: do not take the branch over. Run `kb claim update <BUG-id> --phase review --pr <url>` and end `AUTO-RESULT: done`. Skip this check when a local `fix/<BUG-id>` already exists: that is this machine's crashed run, which `Already finished` continues. Log whose work it was in an Auto decision line.
 
 ### Result line
 
