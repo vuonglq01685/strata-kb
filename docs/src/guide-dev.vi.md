@@ -505,6 +505,49 @@ Vòng lặp kết thúc, thoát mã `0`, khi mọi story, mọi ticket không th
 `done`.
 Nhánh mặc định phải là `main`.
 
+## 4.8 Nhiều Dev trên cùng một repo
+
+Hai Dev cùng nhận một ticket trên hub sẽ làm trùng việc. **Claim ticket** trên hub
+ngăn điều đó. `/dev-implement-ticket` và `/dev-fix-bug` chạy `kb claim take <id>` ở
+bước Intake, và mỗi pha sau đó làm mới claim.
+
+- **Mỗi ticket một người giữ.** Claim ghi tên người giữ (`<git user.name>@<hostname>`,
+  hoặc `STRATA_KB_CLAIM_AS` / `--as`) và pha hiện tại: `claimed`, `design`, `plan`,
+  `execute`, `handover`, `review`, `publishing`, `waiting-qa`. Dev thứ hai chạy cùng ticket
+  nhận `taken by <holder> (<phase>, updated <x> ago)` (mã thoát `3`) và skill dừng:
+  hãy chọn ticket khác, hoặc nhờ admin của hub giải phóng. Repo BA không có claim, và
+  `dev-test-workflow` cũng không mang claim.
+- **Hết hạn sau 4 giờ không cập nhật.** Biến môi trường `STRATA_KB_CLAIM_TTL` của hub
+  (giây, mặc định `14400`) đặt thời hạn này. `dev-design`, `dev-plan`, `dev-execute` và
+  `dev-handover` cập nhật claim khi vào pha, `dev-execute` còn cập nhật sau mỗi commit
+  của task, và `kb auto run` gửi heartbeat mỗi `auto.claim_heartbeat` giây (mặc định
+  `900`, trong `.kb/config.yaml`).
+- **Giữ suốt review và publishing.** Khi PR đã mở, `dev-handover` đặt pha `review` cùng
+  URL của PR; claim ở pha `review` hoặc `publishing` có PR thì không bao giờ hết hạn, nên
+  ticket vẫn là của bạn trong lúc PR chờ. Claim mà runner tự động đã đánh dấu `stopped`
+  (lượt chạy dừng kèm lý do) cũng không hết hạn, và tiếp tục khi bạn chạy lại.
+- **Nhận tiếp việc.** Sau khi claim hết hạn hoặc bị giải phóng, Dev tiếp theo claim ticket
+  mà thấy branch của nó trên `origin` (`auto/<id>`, `<id>`, `fix/<BUG-id>`, `hotfix/<BUG-id>`)
+  sẽ làm tiếp trên branch đó và ghi lại đã nhận việc của ai. Nếu claim của bạn bị giải
+  phóng khi đang làm, lần cập nhật kế tiếp thoát mã `3` (`lost: <reason> by <who>`) và
+  skill dừng, không push.
+- **Xem và giải phóng.** `kb claim list [--json]` cho thấy claim đang giữ;
+  `kb claim release <ticket> [--reason TEXT]` trả lại claim của bạn. Admin của hub có
+  thể giải phóng claim của bất kỳ ai bằng nút **Release** (kèm lý do) trên trang ticket
+  ở menu Ticket. Menu hiển thị claim là *In progress*, *In review*, *Publishing* hoặc
+  *Stopped: <reason>*.
+- **Nâng cấp hub trước.** Các lệnh cần `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` và
+  hub từ 1.31.0 trở lên. Hub cũ không có `/api/claims`: `kb claim` thoát mã `1` với
+  `hub server has no /api/claims — upgrade it to strata-kb 1.31.0 or later`, và
+  `kb auto run` dừng. Hãy nâng cấp hub, rồi CLI, rồi chạy lại `kb init --kind dev`.
+- **Chốt chặn khi publish.** Trong repo dev, `kb publish` từ chối chạy từ checkout đang
+  lùi so với `origin/<default>` (`behind origin/<default> — pull, then kb publish`; còn có
+  `no origin remote — …` và `could not fetch origin/<default>: …`), vì snapshot sẽ làm
+  mất dòng `hist` mới hơn của máy khác. Squash merge để lại branch của ticket ở phía sau,
+  nên sau khi merge hãy chuyển sang nhánh mặc định, pull, rồi publish:
+  `git fetch origin && git switch <default> && git pull --ff-only origin <default>`,
+  sau đó `kb publish`. `dev-handover` cũng nói như vậy.
+
 ---
 
 # 5. Cái gì được máy bảo đảm, cái gì chỉ là lời nhắc
@@ -876,6 +919,7 @@ thật.
 | `kb impl tidy [--impl-dir]` | Dời layout phẳng cũ `docs/impl/<id>-*` vào `docs/impl/<id>/`; chạy lại không đổi gì, không bao giờ ghi đè | `0` sau khi in báo cáo, `1` khi thư mục không tồn tại |
 | `kb pr lint <file>` | Cổng bằng chứng cho PR | `0` PASS, `1` FAIL |
 | `kb auto on\|off\|status\|run` | Chế độ tự động hoàn toàn: bật/tắt công tắc `auto:`, xem trạng thái runner, chạy vòng lặp (`run [--once] [--model] [--effort]`) | `0` ổn hoặc xong, `2` đã dừng, `1` bị từ chối hoặc lỗi |
+| `kb claim take\|update\|release\|list` | Claim ticket trên hub: mỗi ticket một Dev, hết hạn sau `4 h`, giữ suốt review và publishing | `0` ok, `1` lỗi, `3` đã bị giữ hoặc đã mất |
 
 **Slash command:** `/dev-implement-ticket`, `/dev-design`, `/dev-plan`,
 `/dev-execute`, `/dev-handover`, `/dev-code-seed`, `/dev-fix-bug`, `/dev-sa`,

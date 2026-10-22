@@ -305,6 +305,7 @@ that follows it.
 | `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb usage` | Token/cost measurement: ingest transcripts, record rows, render a report |
+| `kb claim` | Ticket claims on the hub, for several Devs on one `dev` repo. `take <ticket> [--as NAME]` claims it; `update <ticket> [--phase P] [--pr URL] [--stopped REASON \| --active]` moves it (`--phase`: `claimed`, `design`, `plan`, `execute`, `handover`, `review`, `publishing`, `waiting-qa`); `release <ticket> [--reason TEXT]` gives it back; `list [--json]` shows what is held. Needs `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` and a hub 1.31.0 or later. Exit `0` ok, `1` error, `3` taken or lost. See [Several Devs on one repo](#several-devs-on-one-repo) |
 | `kb auto` | Full-auto mode for `ba` and `dev` repos. `on` / `off` flip the `auto:` switch in `.kb/config.yaml` (`on` prints the admin-merge warning first); `status [--json]` shows the switch and the runner's task, attempts, waiting questions and stop reason; `run [--once] [--hub URL] [--model ID] [--effort LEVEL]` runs the loop (`--model` defaults to `opus`, `""` = claude's default; exit `0` done, `2` stopped, `1` refused); `wait [--max 6600] [--interval 30]` blocks until the loop ends or changes. See [Full-auto mode](#full-auto-mode) |
 
 `kb usage` records what each ticket cost from Claude Code's own transcripts,
@@ -1604,6 +1605,51 @@ nothing: the intake accepts a publish only from a `kb-publish/*` tag, so a dev
 repo publishes with `kb publish` after a merge, like a `ba` repo. `--scaffold-svc` is deliberately never passed in CI — CI
 must never create `pending` content, since that would fail its own build step.
 
+### Several Devs on one repo
+
+Two Devs who pick the same hub ticket would build it twice. A **ticket claim** on
+the hub prevents that. `/dev-implement-ticket` and `/dev-fix-bug` run
+`kb claim take <id>` in Intake, and every later phase refreshes the claim.
+
+- **One holder per ticket.** The claim names its holder (`<git user.name>@<hostname>`,
+  or `STRATA_KB_CLAIM_AS` / `--as`) and its phase: `claimed`, `design`, `plan`,
+  `execute`, `handover`, `review`, `publishing`, `waiting-qa`. A second Dev who runs
+  the same ticket gets `taken by <holder> (<phase>, updated <x> ago)` (exit `3`)
+  and the skill stops: pick another ticket, or ask a hub admin to release it.
+  A BA repo has no claims, and `dev-test-workflow` carries none.
+- **It expires after 4 hours without an update.** The hub env `STRATA_KB_CLAIM_TTL`
+  (seconds, default `14400`) sets it. `dev-design`, `dev-plan`, `dev-execute` and
+  `dev-handover` update the claim on entry, `dev-execute` after each task commit,
+  and `kb auto run` sends a heartbeat every `auto.claim_heartbeat` seconds
+  (default `900`, in `.kb/config.yaml`).
+- **Held through review and publishing.** Once the PR is open, `dev-handover` sets
+  `review` with the PR URL; a claim in `review` or `publishing` with a PR never
+  expires, so the ticket stays yours while the PR waits. A claim the auto runner
+  marked `stopped` (the run stopped with a reason) never expires either, and
+  resumes when you run it again.
+- **Taking over.** After an expiry or a release, the next Dev who claims the ticket
+  and finds its branch on `origin` (`auto/<id>`, `<id>`, `fix/<BUG-id>`,
+  `hotfix/<BUG-id>`) continues on that branch and logs whose work it took over.
+  If your claim was released while you work, the next update exits `3` (`lost:
+  <reason> by <who>`) and the skill stops without pushing.
+- **Look and release.** `kb claim list [--json]` shows what is held;
+  `kb claim release <ticket> [--reason TEXT]` gives yours back. A hub admin can
+  release anyone's claim with the **Release** button (and a reason) on the ticket
+  page of the Ticket menu. The menu shows the claim as *In progress*, *In review*,
+  *Publishing* or *Stopped: <reason>*.
+- **Hub first.** The commands need `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`
+  and a hub that is 1.31.0 or later. An older hub has no `/api/claims`: `kb claim`
+  exits `1` with `hub server has no /api/claims — upgrade it to strata-kb 1.31.0 or
+  later`, and `kb auto run` stops. Upgrade the hub, then the CLI, then re-run
+  `kb init --kind dev`.
+- **The publish guard.** In a dev repo `kb publish` refuses to run from a checkout
+  that is behind `origin/<default>` (`behind origin/<default> — pull, then kb
+  publish`; also `no origin remote — …` and `could not fetch origin/<default>: …`),
+  because the snapshot would drop another machine's newer `hist` row. A squash merge
+  leaves the ticket branch behind, so after the merge switch to the default branch,
+  pull, then publish: `git fetch origin && git switch <default> && git pull --ff-only
+  origin <default>`, then `kb publish`. `dev-handover` says the same.
+
 ### Full-auto mode
 
 A switch per `ba` and `dev` repo that lets the two repos run on their own, on
@@ -1994,6 +2040,8 @@ second PR *there*, and merging that one is what makes it live.
 | `STRATA_KB_GH_APP_ID` / `STRATA_KB_GH_APP_KEY` | GitHub App credentials for the intake service, and for `hub-sync`'s `kb-code-sync` issue (needs `issues: write`, `pull_requests: read`, `contents: read`) |
 | `STRATA_KB_GH_TOKEN` | Token for `hub-sync`'s issue calls when no GitHub App is configured (needs `issues: write`, `pull_requests: read`, `contents: read` on the hub repo) |
 | `STRATA_KB_CODE_SYNC_INTERVAL` | Seconds between `hub-sync` scans (default `86400`) |
+| `STRATA_KB_CLAIM_TTL` | HTTP server only: seconds a ticket claim lives without an update (default `14400`, 4 h); claims in `review`/`publishing` with a PR, and `stopped` ones, never expire |
+| `STRATA_KB_CLAIM_AS` | Holder name `kb claim take` uses when `--as` is not given (default `<git user.name>@<hostname>`) |
 
 ---
 
@@ -2004,6 +2052,7 @@ second PR *there*, and merging that one is what makes it live.
 | `0` | Success |
 | `1` | error — including a misconfiguration (bad flag combination, missing required setting) |
 | `2` | citation stale — `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale`, `kb mission lint --fail-on-stale`; `kb doctor` also exits 2, with or without `--context`, when the hub cache itself is stale (a failed pull) |
+| `3` | ticket claim taken by another Dev, or lost — `kb claim take`, `update`, `release` |
 
 Caveat: the CLI framework emits `2` of its own accord for an unrecognised flag or
 a bad parameter type. A CI script that must distinguish "stale" from "you called

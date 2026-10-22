@@ -69,6 +69,21 @@ edit above it.
   <doc> <M-id> --level l3`, from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
+  Then claim the ticket: run `kb claim take <id>` (it needs
+  `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; it keeps a second Dev off
+  this ticket, and run again while you hold the claim it only refreshes it).
+  Exit `3` → STOP: "`<id>` is taken by `<holder>` (`<phase>`, updated `<x>`
+  ago). Pick another ticket, or ask a hub admin to release it." (the command
+  prints `taken by <holder> (<phase>, updated <x> ago)`). Exit `1` → STOP and
+  show its message; a hub without the route answers `hub server has no
+  /api/claims — upgrade it to strata-kb 1.31.0 or later`. Exit `0` and the
+  ticket's branch (`auto/<id>` or `<id>`) already exists on `origin` → the
+  claim was free after another Dev left the ticket: `git fetch origin`, switch
+  to that branch (`git pull --ff-only` when it also exists here), continue
+  there under the re-entry rules below, and log whose work was taken over (the
+  branch's last commit author: `git log -1 --format=%an origin/<branch>`). In
+  Auto mode a STOP here ends `AUTO-RESULT: failed claim-lost <id>` (exit `3`)
+  or `AUTO-RESULT: failed claim-error <its message>` (exit `1`).
 - **Questions** — on every entry, for the ticket in flight, call
   `kb_question_list(ticket=<id>, status=all)` and handle each question by
   its state. The tools have no CLI twin and work only against the shared
@@ -229,7 +244,7 @@ The runner starts this skill as `/dev-implement-ticket <us-id>`. Nobody answers 
 
 **A real blocker is a BA question.** A blocker is something only the BA can settle: a broken citation, a ticket with no `kb-context`, a failed grounding check, a stale citation that changes an AC, or an unmerged dependency this story needs. Call `kb_question_ask(ticket, question, asked_by, context, blocks)`: `asked_by` is `kb-auto`; `blocks` names the AC ids the blocker touches (every AC when it stops the whole ticket). Skip the call when `kb_question_list` already shows the same question. Then end `AUTO-RESULT: blocked-qa Q<id>`, with every other blocking id from `kb_question_list`. When Q&A is unavailable, end `AUTO-RESULT: failed qa-unavailable` instead.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head auto/<ticket-id> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>`, then `git pull origin auto/<ticket-id>`, check what the branch already holds, and continue at the CI step of `dev-handover`'s branch rule.
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head auto/<ticket-id> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run `git fetch origin && git merge origin/<default-branch>` (`<default-branch>` is `default_branch` in `kb auto status --json`: the squash merge leaves the ticket branch behind `origin/<default-branch>`, and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it in here), then `kb publish` once (on a `behind origin/` refusal merge once more and retry once), then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>`, then `git pull origin auto/<ticket-id>`, check what the branch already holds, and continue at the CI step of `dev-handover`'s branch rule.
 
 - **Intake: "if this story is blocked by something unmerged, say so and let the Dev decide"** → decide. Read the blocker's status (`kb mission next --from-hub --json`) and look for its deliverable in the codebase. Proceed when the blocker is `done`, when its code is already here, or when this story does not touch it, and log an Auto decision line. A blocker whose code this story needs and the codebase lacks is a real blocker.
 - **Intake: no `kb-context` block — "No `kb-context` block" means stop, the ticket is not Ready** → a real blocker: ask the BA.
@@ -251,4 +266,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs this task once the questions are answered.
-- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `design-review`, `plan-review`, `tests-red task <n>`, `plan-defect task <n>`, `qa-unavailable`, `merged-without-history <pr-url>`, `two-tickets-in-flight`, or `command-denied <command>`. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `design-review`, `plan-review`, `tests-red task <n>`, `plan-defect task <n>`, `qa-unavailable`, `merged-without-history <pr-url>`, `two-tickets-in-flight`, `claim-lost <ticket-id>`, `claim-error <message>`, or `command-denied <command>`. The reason goes on the same line.

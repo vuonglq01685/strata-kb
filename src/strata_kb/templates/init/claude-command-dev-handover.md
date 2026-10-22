@@ -30,6 +30,19 @@ cannot reach the hub. Then run its MCP tool, even where this skill runs
 the CLI first, and carry on: that is the fallback, not a failure and not
 a denial to report. Stop only when the MCP tool fails too.
 
+**Claim.** On entry, before the freshness re-check below, run
+`kb claim update <ticket-id> --phase handover` (`dev-implement-ticket` or
+`dev-fix-bug` took the claim; it keeps another Dev off this ticket). Exit
+`3` → STOP: "your claim on `<ticket-id>` was released by `<closed_by>`
+(`<reason>`); re-run `/dev-implement-ticket <ticket-id>` to claim it
+again." (a bug: `/dev-fix-bug <BUG-id>`). Push nothing after a lost claim.
+Exit `1` with `no claim held for <ticket-id> on this machine` (this phase
+run on its own) → run `kb claim take <ticket-id>` first and stop on its
+exit `3` as `dev-implement-ticket`'s Intake does; any other exit `1` →
+STOP and show its message. In Auto mode report a STOP to the orchestrator,
+which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run,
+end it yourself).
+
 ## Freshness re-check (run this FIRST, every time)
 
 Cheap check first: `kb resolve --status-only --cache
@@ -98,7 +111,19 @@ back clean — the Dev opens the PR; **GATE 4** the Dev merges. **The agent
 does neither.** Option 1 in the Next-step block below is always "Open the PR
 yourself" with the branch name already filled in — this is the terminal
 phase of the flow, so there is no next automated command; a blocker takes
-its place instead.
+its place instead. Once the PR is open (the Dev gives you its URL), run
+`kb claim update <ticket-id> --phase review --pr <url>`: the claim then stays
+held through review instead of expiring.
+
+**After the merge** — the Dev publishes (a push to the default branch publishes
+nothing). A squash merge leaves the ticket branch behind
+`origin/<default-branch>`, and `kb publish` in a dev repo refuses to run from it
+with `behind origin/<default-branch> — pull, then kb publish`. So run
+`git fetch origin && git switch <default-branch> && git pull --ff-only origin <default-branch>`
+first (the `hist` row is on the default branch after the merge, so that is
+where it publishes from; edit and commit nothing there), then `kb publish`. On
+a `behind origin/` refusal pull once more and retry once. After the publish,
+run `kb claim update <ticket-id> --phase publishing`.
 
 ## A5 — merge-risk review (before GATE 3)
 
@@ -228,7 +253,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>` (a bug: `fix/<BUG-id>` or `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at step 3 of the branch rule below (the CI step).
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run `git fetch origin && git merge origin/<default-branch>` (`<default-branch>` is `default_branch` in `kb auto status --json`: the squash merge leaves the ticket branch behind `origin/<default-branch>`, and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it in here), then `kb publish` once (on a `behind origin/` refusal merge once more and retry once), then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch auto/<ticket-id>` (a bug: `fix/<BUG-id>` or `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at step 3 of the branch rule below (the CI step).
 
 - **Re-check freshness: `stale` — "humans decide"** → decide as `dev-implement-ticket` does in its Auto mode: when the difference changes no AC this story implements, continue and report it under `## Notes`. Otherwise ask the BA with `kb_question_ask` and report the `Q<id>` to the orchestrator, which ends `AUTO-RESULT: blocked-qa Q<id>` (on a direct run, end it yourself).
 - **Review contract: a finding that contradicts the design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
@@ -241,10 +266,10 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 **The branch rule.** The ticket branch already exists. Check with `git branch --show-current` that you are on it and not on `main`.
 
 1. Commit the remaining files (stage them by name, including `docs/impl/<ticket-id>/` and the `kb svc note` rows) with a message `<type>: <description>`, then `git push -u origin HEAD`.
-2. Open the PR with `kb pr open --title "<ticket-id>: <short description>" --body "<the assembled PR description>"`. For a `hotfix` whose `hotfix_base` in `kb auto status --json` is not empty, add `--base <hotfix_base>`; for every other ticket the PR targets the default branch.
+2. Open the PR with `kb pr open --title "<ticket-id>: <short description>" --body "<the assembled PR description>"`. For a `hotfix` whose `hotfix_base` in `kb auto status --json` is not empty, add `--base <hotfix_base>`; for every other ticket the PR targets the default branch. Then run `kb claim update <ticket-id> --phase review --pr <url>` with the URL `kb pr open` printed.
 3. Wait for the checks with `kb pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`) and fix it, commit, `git push origin HEAD`, and watch again: up to 2 rounds in all. A red `kb-pr-lint` caused by the PR text is fixed with `kb pr edit` and costs no round. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
 4. Every check green: `kb pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `kb pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
-5. After the merge, run `kb publish` once. It mirrors `.kb/`, so the `hist` row reaches the hub. When it prints a hub PR URL, name it in the reply. When it fails, end `AUTO-RESULT: failed publish <reason>`.
+5. After the merge, run `git fetch origin && git merge origin/<default-branch>`: the squash merge leaves the ticket branch behind `origin/<default-branch>` (`default_branch` in `kb auto status --json`), and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it into the ticket branch. Then run `kb publish` once. On a `behind origin/` refusal merge once more and retry once. It mirrors `.kb/`, so the `hist` row reaches the hub. After it succeeds, run `kb claim update <ticket-id> --phase publishing`. When it prints a hub PR URL, name it in the reply. When it fails, end `AUTO-RESULT: failed publish <reason>`.
 
 ### Result line
 
@@ -252,4 +277,4 @@ You run as the last phase of `/dev-implement-ticket` or `/dev-fix-bug`, which en
 
 - `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a stale citation changes an AC and the BA must settle it.
-- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `merge-risk <ticket-id>`, `publish <reason>`, or `merged-without-history <pr-url>`. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `merge-risk <ticket-id>`, `publish <reason>`, `claim-lost <ticket-id>`, or `merged-without-history <pr-url>`. The reason goes on the same line.

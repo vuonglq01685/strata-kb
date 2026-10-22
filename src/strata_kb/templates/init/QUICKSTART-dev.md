@@ -233,6 +233,51 @@ done when its steps no longer reproduce the wrong result. Run
 5. **Handover** — `/dev-handover` with bug rules: no design or plan, the
    reproduction test and the root cause replace them.
 
+## Several Devs on one repo
+
+Two Devs who pick the same hub ticket would build it twice. A **ticket claim** on
+the hub prevents that. `/dev-implement-ticket` and `/dev-fix-bug` run
+`kb claim take <id>` in Intake, and every later phase refreshes the claim.
+
+- **One holder per ticket.** The claim names its holder (`<git user.name>@<hostname>`,
+  or `STRATA_KB_CLAIM_AS` / `--as`) and its phase: `claimed`, `design`, `plan`,
+  `execute`, `handover`, `review`, `publishing`, `waiting-qa`. A second Dev who runs
+  the same ticket gets `taken by <holder> (<phase>, updated <x> ago)` (exit `3`)
+  and the skill stops: pick another ticket, or ask a hub admin to release it.
+  A BA repo has no claims, and `dev-test-workflow` carries none.
+- **It expires after 4 hours without an update.** The hub env `STRATA_KB_CLAIM_TTL`
+  (seconds, default `14400`) sets it. `dev-design`, `dev-plan`, `dev-execute` and
+  `dev-handover` update the claim on entry, `dev-execute` after each task commit,
+  and `kb auto run` sends a heartbeat every `auto.claim_heartbeat` seconds
+  (default `900`, in `.kb/config.yaml`).
+- **Held through review and publishing.** Once the PR is open, `dev-handover` sets
+  `review` with the PR URL; a claim in `review` or `publishing` with a PR never
+  expires, so the ticket stays yours while the PR waits. A claim the auto runner
+  marked `stopped` (the run stopped with a reason) never expires either, and
+  resumes when you run it again.
+- **Taking over.** After an expiry or a release, the next Dev who claims the ticket
+  and finds its branch on `origin` (`auto/<id>`, `<id>`, `fix/<BUG-id>`,
+  `hotfix/<BUG-id>`) continues on that branch and logs whose work it took over.
+  If your claim was released while you work, the next update exits `3` (`lost:
+  <reason> by <who>`) and the skill stops without pushing.
+- **Look and release.** `kb claim list [--json]` shows what is held;
+  `kb claim release <ticket> [--reason TEXT]` gives yours back. A hub admin can
+  release anyone's claim with the **Release** button (and a reason) on the ticket
+  page of the Ticket menu. The menu shows the claim as *In progress*, *In review*,
+  *Publishing* or *Stopped: <reason>*.
+- **Hub first.** The commands need `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`
+  and a hub that is 1.31.0 or later. An older hub has no `/api/claims`: `kb claim`
+  exits `1` with `hub server has no /api/claims — upgrade it to strata-kb 1.31.0 or
+  later`, and `kb auto run` stops. Upgrade the hub, then the CLI, then re-run
+  `kb init --kind dev`.
+- **The publish guard.** In a dev repo `kb publish` refuses to run from a checkout
+  that is behind `origin/<default>` (`behind origin/<default> — pull, then kb
+  publish`; also `no origin remote — …` and `could not fetch origin/<default>: …`),
+  because the snapshot would drop another machine's newer `hist` row. A squash merge
+  leaves the ticket branch behind, so after the merge switch to the default branch,
+  pull, then publish: `git fetch origin && git switch <default> && git pull --ff-only
+  origin <default>`, then `kb publish`. `dev-handover` says the same.
+
 ## Where work lives
 
 - `docs/impl/<ticket-id>/design.md` — the design produced by `dev-design`.
@@ -697,6 +742,8 @@ tiering change shows up in the report the next ticket generates.
   otherwise it clones the git hub from `hub:` / `--hub <url>`
 - `kb auto on|off|status|run` — full-auto mode: the `auto:` switch in
   `.kb/config.yaml`, the runner's state, and the loop (`run [--once]`)
+- `kb claim take|update|release|list` — ticket claims on the hub (see
+  "Several Devs on one repo")
 - `kb usage report [--ticket <id>] [--md]` — token and cost totals for this
   repo's tickets
 - `kb usage ingest-transcript <path>` — backfill usage from a Claude Code

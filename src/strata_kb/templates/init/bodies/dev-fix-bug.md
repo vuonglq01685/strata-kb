@@ -56,7 +56,23 @@ a denial to report. Stop only when the MCP tool fails too.
    Environment, Pre-conditions, Steps to reproduce, Expected result,
    Actual result and Impact. When `> Related ticket:` names a ticket
    (not `none`), fetch and read it too — its acceptance criteria say what
-   was promised. Offer the exact branch command and create the branch once the Dev
+   was promised. Then claim the bug: run `kb claim take <BUG-id>` (it needs
+   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; it keeps a second Dev off
+   this bug, and run again while you hold the claim it only refreshes it).
+   Exit `3` → STOP: "`<BUG-id>` is taken by `<holder>` (`<phase>`, updated
+   `<x>` ago). Pick another ticket, or ask a hub admin to release it." (the
+   command prints `taken by <holder> (<phase>, updated <x> ago)`). Exit `1` →
+   STOP and show its message; a hub without the route answers `hub server has
+   no /api/claims — upgrade it to strata-kb 1.31.0 or later`. Exit `0` and
+   the bug's branch (`fix/<BUG-id>` or `hotfix/<BUG-id>`) already exists on
+   `origin` → the claim was free after another Dev left the bug: `git fetch
+   origin`, switch to that branch instead of creating it (`git pull
+   --ff-only` when it also exists here), continue under the re-entry rules
+   below, and log whose work was taken over (the branch's last commit author:
+   `git log -1 --format=%an origin/<branch>`). In Auto mode a STOP here ends
+   `AUTO-RESULT: failed claim-lost <BUG-id>` (exit `3`) or `AUTO-RESULT:
+   failed claim-error <its message>` (exit `1`). Offer the exact branch
+   command and create the branch once the Dev
    agrees: `git switch -c fix/<BUG-id>` from the default branch for a
    `bug`; for a `hotfix`, ask the Dev which production line to branch from
    and offer `git switch -c hotfix/<BUG-id> <production-line>`. Run `kb ticket check`
@@ -223,9 +239,9 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 
 **A denied command.** A command the permission system denies ends the run with `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run it once, then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json` for the bug's branch. A merged PR means the fix is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this bug id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run `git fetch origin && git merge origin/<default-branch>` (`<default-branch>` is `default_branch` in `kb auto status --json`: the squash merge leaves the ticket branch behind `origin/<default-branch>`, and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it in here), then `kb publish` once (on a `behind origin/` refusal merge once more and retry once), then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR means a crashed run: `git fetch origin && git switch fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at the CI step of `dev-handover`'s branch rule. A local `fix/<BUG-id>` (a hotfix: `hotfix/<BUG-id>`) that exists with no PR yet is a crashed run too: `git switch fix/<BUG-id>`, check what it holds, and carry on from there; the branch step below is then skipped.
 
-**The branch and its base.** Only when no branch for this bug exists yet (see above). Read `hotfix_base` from `kb auto status --json`. Branch at once, from the remote default branch, and never check out `main`:
+**The branch and its base.** Only when no branch for this bug exists yet, here or on `origin` (see above and the claim in Intake). Read `hotfix_base` from `kb auto status --json`. Branch at once, from the remote default branch, and never check out `main`:
 
 - a `bug`: `git fetch origin main && git switch -c fix/<BUG-id> FETCH_HEAD`;
 - a `hotfix` with an empty `hotfix_base`: `git fetch origin main && git switch -c hotfix/<BUG-id> FETCH_HEAD`;
@@ -247,4 +263,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks the fix: the bug did not reproduce, or a pinned citation is broken. The runner re-runs this task once the questions are answered.
-- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `architecture <BUG-id>`, `qa-unavailable`, `tests-red`, `merged-without-history <pr-url>`, or `command-denied <command>`. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `architecture <BUG-id>`, `qa-unavailable`, `tests-red`, `merged-without-history <pr-url>`, `claim-lost <BUG-id>`, `claim-error <message>`, or `command-denied <command>`. The reason goes on the same line.

@@ -69,6 +69,21 @@ edit above it.
   <doc> <M-id> --level l3`, from the hub); if this story is blocked by something
   unmerged, say so and let the Dev decide. No `kb-context` block → stop,
   the ticket is not Ready.
+  Then claim the ticket: run `kb claim take <id>` (it needs
+  `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; it keeps a second Dev off
+  this ticket, and run again while you hold the claim it only refreshes it).
+  Exit `3` → STOP: "`<id>` is taken by `<holder>` (`<phase>`, updated `<x>`
+  ago). Pick another ticket, or ask a hub admin to release it." (the command
+  prints `taken by <holder> (<phase>, updated <x> ago)`). Exit `1` → STOP and
+  show its message; a hub without the route answers `hub server has no
+  /api/claims — upgrade it to strata-kb 1.31.0 or later`. Exit `0` and the
+  ticket's branch (`auto/<id>` or `<id>`) already exists on `origin` → the
+  claim was free after another Dev left the ticket: `git fetch origin`, switch
+  to that branch (`git pull --ff-only` when it also exists here), continue
+  there under the re-entry rules below, and log whose work was taken over (the
+  branch's last commit author: `git log -1 --format=%an origin/<branch>`). In
+  Auto mode a STOP here ends `AUTO-RESULT: failed claim-lost <id>` (exit `3`)
+  or `AUTO-RESULT: failed claim-error <its message>` (exit `1`).
 - **Questions** — on every entry, for the ticket in flight, call
   `kb_question_list(ticket=<id>, status=all)` and handle each question by
   its state. The tools have no CLI twin and work only against the shared

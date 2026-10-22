@@ -56,7 +56,23 @@ a denial to report. Stop only when the MCP tool fails too.
    Environment, Pre-conditions, Steps to reproduce, Expected result,
    Actual result and Impact. When `> Related ticket:` names a ticket
    (not `none`), fetch and read it too — its acceptance criteria say what
-   was promised. Offer the exact branch command and create the branch once the Dev
+   was promised. Then claim the bug: run `kb claim take <BUG-id>` (it needs
+   `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`; it keeps a second Dev off
+   this bug, and run again while you hold the claim it only refreshes it).
+   Exit `3` → STOP: "`<BUG-id>` is taken by `<holder>` (`<phase>`, updated
+   `<x>` ago). Pick another ticket, or ask a hub admin to release it." (the
+   command prints `taken by <holder> (<phase>, updated <x> ago)`). Exit `1` →
+   STOP and show its message; a hub without the route answers `hub server has
+   no /api/claims — upgrade it to strata-kb 1.31.0 or later`. Exit `0` and
+   the bug's branch (`fix/<BUG-id>` or `hotfix/<BUG-id>`) already exists on
+   `origin` → the claim was free after another Dev left the bug: `git fetch
+   origin`, switch to that branch instead of creating it (`git pull
+   --ff-only` when it also exists here), continue under the re-entry rules
+   below, and log whose work was taken over (the branch's last commit author:
+   `git log -1 --format=%an origin/<branch>`). In Auto mode a STOP here ends
+   `AUTO-RESULT: failed claim-lost <BUG-id>` (exit `3`) or `AUTO-RESULT:
+   failed claim-error <its message>` (exit `1`). Offer the exact branch
+   command and create the branch once the Dev
    agrees: `git switch -c fix/<BUG-id>` from the default branch for a
    `bug`; for a `hotfix`, ask the Dev which production line to branch from
    and offer `git switch -c hotfix/<BUG-id> <production-line>`. Run `kb ticket check`

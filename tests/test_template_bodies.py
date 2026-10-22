@@ -1446,3 +1446,118 @@ def test_no_template_calls_gh_pr():
         if call.search(BASE.joinpath(name).read_text(encoding="utf-8"))
     ]
     assert hits == []
+
+
+# --- ticket claims (1.31.0): the dev skills claim, refresh and hand over --------
+
+_CLAIMING_BODIES = ["dev-implement-ticket.md", "dev-fix-bug.md"]
+_PHASE_CLAIM_BODIES = {
+    "dev-design.md": "design",
+    "dev-plan.md": "plan",
+    "dev-execute.md": "execute",
+    "dev-handover.md": "handover",
+}
+_CLAIM_MIRRORS = [
+    "claude-skill-dev-implement-ticket.md",
+    "claude-command-dev-implement-ticket.md",
+    "claude-command-dev-design.md",
+    "claude-command-dev-plan.md",
+    "claude-command-dev-execute.md",
+    "claude-command-dev-handover.md",
+]
+
+
+def _mirror(name: str) -> str:
+    return " ".join(read_template(name).split())
+
+
+@pytest.mark.parametrize("name", _CLAIMING_BODIES)
+def test_intake_claims_ticket(name):
+    text = _body(name)
+    assert "kb claim take" in text
+    assert "is taken by `<holder>` (`<phase>`, updated `<x>` ago)" in text
+    assert "ask a hub admin to release it" in text
+    assert "upgrade it to strata-kb 1.31.0 or later" in text
+    for branch in (
+        ("`auto/<id>`", "`<id>`")
+        if name == "dev-implement-ticket.md"
+        else ("`fix/<BUG-id>`", "`hotfix/<BUG-id>`")
+    ):
+        assert branch in text, branch
+    assert "whose work was taken over" in text
+
+
+@pytest.mark.parametrize(("name", "phase"), _PHASE_CLAIM_BODIES.items())
+def test_phase_skills_update_claim(name, phase):
+    text = _body(name)
+    assert f"kb claim update <ticket-id> --phase {phase}" in text
+    assert "was released by `<closed_by>`" in text
+    assert "re-run `/dev-implement-ticket <ticket-id>` to claim it again" in text
+    assert "Push nothing after a lost claim" in text
+
+
+def test_execute_refreshes_the_claim_after_each_task_commit():
+    text = _body("dev-execute.md")
+    refresh = "`kb claim update <ticket-id>` (no `--phase`:"
+    assert refresh in text
+    assert text.index(refresh) < text.index("**A3 — independent task review.**")
+
+
+def test_handover_review_and_publishing():
+    text = _body("dev-handover.md")
+    assert "kb claim update <ticket-id> --phase review --pr <url>" in text
+    assert "kb claim update <ticket-id> --phase publishing" in text
+    auto = _dev_text("dev-handover")
+    assert "--phase review --pr <url>" in auto
+    assert "--phase publishing" in auto
+
+
+def test_handover_pulls_before_publish():
+    text = _body("dev-handover.md")
+    assert "behind origin/" in text
+    pull = (
+        "git fetch origin && git switch <default-branch>"
+        " && git pull --ff-only origin <default-branch>"
+    )
+    assert pull in text
+    assert "pull once more and retry once" in text
+    assert "hist" in text and "on the default branch after the merge" in text
+    # Auto never checks the default branch out (`git switch main` is denied):
+    # it merges origin/<default> into the ticket branch instead.
+    auto = _dev_text("dev-handover")
+    merge = "git fetch origin && git merge origin/<default-branch>"
+    assert pull not in auto
+    assert auto.index(merge, auto.index("5. After the merge")) < auto.index(
+        "`kb publish` once", auto.index("5. After the merge")
+    )
+    assert "merge once more and retry once" in auto
+
+
+@pytest.mark.parametrize(
+    "name", ["dev-implement-ticket", "dev-fix-bug", "dev-handover"]
+)
+def test_already_finished_brings_in_the_default_branch_before_publish(name):
+    text = _dev_text(name)
+    merge = "git fetch origin && git merge origin/<default-branch>"
+    assert merge in text
+    assert text.index(merge) < text.index("`kb publish` once")
+    assert "behind origin/" in text
+
+
+@pytest.mark.parametrize("name", _CLAIM_MIRRORS)
+def test_claude_copies_carry_the_claim_steps(name):
+    text = _mirror(name)
+    assert "kb claim" in text
+    if "implement-ticket" in name:
+        assert "kb claim take" in text
+    for skill, phase in (
+        ("dev-design", "design"),
+        ("dev-plan", "plan"),
+        ("dev-execute", "execute"),
+        ("dev-handover", "handover"),
+    ):
+        if skill in name:
+            assert f"--phase {phase}" in text
+    if "dev-handover" in name:
+        assert "--phase review --pr <url>" in text
+        assert "behind origin/" in text
