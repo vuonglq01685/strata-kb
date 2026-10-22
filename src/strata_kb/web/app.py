@@ -97,7 +97,7 @@ def create_app(
         setup=setup,
     )
     # planui builds on ui's page helpers, so it is wired here, not inside ui.
-    routes += planui.plan_routes(config)
+    routes += planui.plan_routes(config, session)
     routes += qaui.qa_routes(config)
     routes += claim_api.build_claim_routes(config)
     routes += registry_routes.build_registry_routes(

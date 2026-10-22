@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_partials/status.html" import plan_status %}
+{% from "_partials/status.html" import plan_status, claim_badge %}
 {% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="stack-md">
@@ -10,6 +10,7 @@
     <h1 style="font-size:26px">{{ mission.title }}</h1>
     {% if mission.summary %}<p class="lede">{{ mission.summary }}</p>{% endif %}
   </div>
+  {% if claim_notice %}<p class="meta-line">{{ claim_notice }}</p>{% endif %}
   <div class="panel sec-table">
     <div class="sec-grid head">
       <span>Story</span><span>Title</span><span>Reason</span>
@@ -20,7 +21,7 @@
       <span class="sid">{{ s.us_id }}</span>
       <span class="title">{{ s.title }}</span>
       <span class="sum">{{ s.reasons | join('; ') }}</span>
-      <span>{{ plan_status(s.status) }}</span>
+      <span>{{ plan_status(s.status) }}{% if s.status == 'ready' and claim_badges.get(s.us_id) %} {{ claim_badge(claim_badges[s.us_id]) }}{% endif %}</span>
       <span class="tk">{% if s.us_id in mission.tickets %}<a href="/ui/tickets/{{ mission.mission_id | urlencode }}/{{ s.us_id | urlencode }}?repo={{ mission.repo | urlencode }}">open</a>{% else %}—{% endif %}</span>
     </div>
     {% else %}

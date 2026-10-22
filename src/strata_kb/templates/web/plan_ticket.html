@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_partials/status.html" import claim_badge as claim_badge_tag %}
 {% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="reader">
@@ -9,6 +10,26 @@
       <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
     <h1 style="font-size:26px">{{ ticket.title }}</h1>
     {% if unresolved %}<p class="meta-line"><a href="/ui/questions/ticket?repo={{ repo | urlencode }}&amp;ticket={{ ticket_id | urlencode }}">{{ unresolved }} unresolved question{{ '' if unresolved == 1 else 's' }}</a></p>{% endif %}
+    {% if claim_notice %}<p class="meta-line">{{ claim_notice }}</p>{% endif %}
+    {% if error %}<div class="error-banner" role="alert">{{ error }}</div>{% endif %}
+    {% if claim %}
+    <p class="meta-line">{{ claim_badge_tag(claim_badge) }}
+      <span>Taken by {{ claim.holder }}</span><span class="sep">·</span>
+      <span>{{ claim.phase }}</span><span class="sep">·</span>
+      <span>updated {{ claim_age }} ago</span><span class="sep">·</span>
+      <span>since {{ claim.claimed_at }}</span>
+      {% if pr_url %}<span class="sep">·</span><a href="{{ pr_url }}" rel="noopener noreferrer">PR</a>{% endif %}</p>
+    {% if can_release %}
+    <form method="post" action="/ui/tickets/{{ group | urlencode }}/{{ ticket_id | urlencode }}/release?repo={{ repo | urlencode }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="claim_id" value="{{ claim.id }}">
+      <label>Reason <input type="text" name="reason" maxlength="1000" required></label>
+      <button type="submit" class="btn btn-quiet">Release</button>
+    </form>
+    {% endif %}
+    {% elif last_closed %}
+    <p class="meta-line">{{ last_closed_line }} · {{ last_closed.closed_at }}</p>
+    {% endif %}
   </div>
   <article class="reader-body md-body">{{ content_html | safe }}</article>
 </div>
