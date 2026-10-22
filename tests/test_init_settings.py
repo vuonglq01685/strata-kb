@@ -280,6 +280,7 @@ ALLOW = [
     "Bash(kb impl *)",
     "Bash(kb plan *)",
     "Bash(kb pr *)",
+    "Bash(kb claim *)",
     "Bash(kb resolve *)",
     "Bash(kb context *)",
     "Bash(kb query *)",

@@ -111,6 +111,9 @@ app.add_typer(usage_app, name="usage")
 pr_app = typer.Typer(help="Pull requests: the description gate and REST helpers.")
 app.add_typer(pr_app, name="pr")
 
+claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
+app.add_typer(claim_app, name="claim")
+
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
 )
@@ -4563,3 +4566,65 @@ def user_hash() -> None:
     typer.echo(pw_hash)
     # Compose expands `$` in .env, so the value must be single-quoted there.
     typer.echo(f"STRATA_KB_BOOTSTRAP_PASSWORD_HASH='{pw_hash}'", err=True)
+
+
+_KB_DIR_OPT = typer.Option(Path(".kb"), help="KB directory")
+
+
+def _exit_with(code: int) -> None:
+    if code:
+        raise typer.Exit(code)
+
+
+@claim_app.command("take")
+def claim_take(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    as_name: str | None = typer.Option(
+        None, "--as", help="Holder name (default: git user.name@hostname)"
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Claim a ticket on the hub (exit 3 if someone else holds it)."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.take(kb_dir, kb_dir.resolve().parent, ticket, as_name))
+
+
+@claim_app.command("update")
+def claim_update(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    phase: str | None = typer.Option(None, "--phase", help="New phase"),
+    pr: str | None = typer.Option(None, "--pr", help="PR URL"),
+    stopped: str | None = typer.Option(
+        None, "--stopped", help="Mark the claim stopped, with the reason"
+    ),
+    active: bool = typer.Option(False, "--active", help="Mark the claim active again"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Report phase, PR or stop state for a ticket you hold (exit 3 if lost)."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.update(kb_dir, ticket, phase, pr, stopped, active))
+
+
+@claim_app.command("release")
+def claim_release(
+    ticket: str = typer.Argument(..., help="Ticket id"),
+    reason: str = typer.Option("released", "--reason", help="Why it is released"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Give a claimed ticket back."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.release(kb_dir, ticket, reason))
+
+
+@claim_app.command("list")
+def claim_list(
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """List the claims currently held on the hub."""
+    from strata_kb import claimcmd
+
+    _exit_with(claimcmd.list_(kb_dir, json_output))
