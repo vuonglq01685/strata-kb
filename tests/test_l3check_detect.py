@@ -1,6 +1,7 @@
 from strata_kb import quality
 from strata_kb.ingest.sectioner import Fallback, Inversion, SectioningNotes
 from strata_kb.l3check.detect import (
+    EVIDENCE_CHARS,
     MIN_RUN,
     SectionInput,
     break_findings,
@@ -135,10 +136,42 @@ def test_break_detected_when_pdf_is_contiguous():
     assert findings[0].kind == "break"
     assert findings[0].page == 1
     assert findings[0].evidence == {
-        "l3": "agreed that the new",
-        "next": "policy should apply to",
-        "pdf": "agreed that the new policy should apply to",
+        "l3": "The committee reviewed the annual budget and agreed that the new",
+        "next": "policy should apply to every department across the whole organisation.",
+        "pdf": _BREAK_PDF.rstrip("."),
     }
+
+
+def _long_break(n: int = 80) -> tuple[str, list[str], list[str], str]:
+    a = [f"aa{i}x" for i in range(n)]
+    b = [f"bb{i}x" for i in range(n)]
+    l3 = " ".join(a) + "\n\n" + " ".join(b) + "."
+    words = a + b
+    pdf = "\n".join(" ".join(words[i : i + 10]) for i in range(0, len(words), 10))
+    return l3, a, b, pdf
+
+
+def test_break_evidence_is_raw_paragraph_ends_and_pdf_window_around_the_join():
+    l3, a, b, pdf = _long_break()
+    (finding,) = break_findings(_sec(l3), {1: pdf})
+    assert finding.evidence["l3"].split() == a[-40:]
+    assert finding.evidence["next"].split() == b[:40]
+    assert finding.evidence["pdf"].split() == a[-60:] + b[:60]
+    assert "\n" in finding.evidence["pdf"]  # line structure kept for the judge
+
+
+def test_break_evidence_is_size_capped():
+    l3, a, b, _ = _long_break(8)
+    pdf = (" " * 3000).join(a + b)
+    (finding,) = break_findings(_sec(l3), {1: pdf})
+    assert len(finding.evidence["pdf"]) <= 2 * EVIDENCE_CHARS
+
+
+def test_break_page_is_the_page_of_the_join():
+    l3, a, b, _ = _long_break(8)
+    pdf = {1: "filler words that fill the first page", 2: " ".join(a + b)}
+    (finding,) = break_findings(_sec(l3, page=1, end_page=2), pdf)
+    assert finding.page == 2
 
 
 def test_break_not_flagged_after_full_stop():

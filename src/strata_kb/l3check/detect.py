@@ -22,6 +22,9 @@ MIN_RUN = 5  # shortest missing/extra run reported
 SNIPPET_WORDS = 25  # evidence cap
 TERMINAL = '.!?:;…)"”’]'  # a paragraph ending in one of these ended on purpose
 JOIN_WORDS = 4  # words taken from each side of a suspected paragraph break
+BREAK_L3_WORDS = 40  # words of each L3 paragraph quoted as break evidence
+BREAK_PDF_WORDS = 60  # PDF words kept each side of the join
+EVIDENCE_CHARS = 1000  # cap per side of the quoted PDF window
 
 _HYPHEN_BREAK = re.compile(r"(\w)-[^\S\n]*\n\s*(\w)")
 _WORD = re.compile(r"[^\W_]+")
@@ -32,6 +35,8 @@ _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _NON_PROSE = re.compile(r"[ \t]*(#|\||!\[|[-*+][ \t]|\d+[.)][ \t])")
 _SUBHEADING = re.compile(r"^### (\S+)", re.MULTILINE)
+# a word as written, hyphenated line breaks included: normalise_words rejoins them
+_RAW_WORD = re.compile(r"[^\W_]+(?:-[^\S\n]*\n\s*[^\W_]+)*")
 _EMPHASIS = re.compile(r"\*+|(?<!\w)_+|_+(?!\w)")
 
 
@@ -212,11 +217,35 @@ def _prose_blocks(l3: str) -> list[str | None]:
     return blocks
 
 
+def _raw_window(texts: list[str], join: int, expected: int) -> str | None:
+    """The raw text (newlines kept) around word `join` of the pages' joined word
+    stream. None when the raw tokens do not line up with the `expected` words."""
+    spans: list[tuple[int, int]] = []
+    base = 0
+    for text in texts:
+        for m in _RAW_WORD.finditer(text):
+            spans += [(base + m.start(), base + m.end())] * len(
+                normalize_words(m.group())
+            )
+        base += len(text) + 1
+    if len(spans) != expected:
+        return None
+    raw = "\n".join(texts)
+    low = spans[max(join - BREAK_PDF_WORDS, 0)][0]
+    high = spans[min(join + BREAK_PDF_WORDS, len(spans)) - 1][1]
+    left, right = raw[low : spans[join][0]], raw[spans[join][0] : high]
+    return left[-EVIDENCE_CHARS:] + right[:EVIDENCE_CHARS]
+
+
 def break_findings(sec: SectionInput, pdf_pages: dict[int, str]) -> list[Finding]:
     """Paragraph split mid-sentence in L3 where the PDF text runs on unbroken."""
+    pages = _span_pages(sec, pdf_pages)
     stream: list[str] = []
-    for p in _span_pages(sec, pdf_pages):
-        stream += normalize_words(pdf_pages[p])
+    word_pages: list[int] = []
+    for p in pages:
+        words = normalize_words(pdf_pages[p])
+        stream += words
+        word_pages += [p] * len(words)
     findings: list[Finding] = []
     blocks = _prose_blocks(sec.l3)
     for first, second in zip(blocks, blocks[1:], strict=False):
@@ -226,11 +255,22 @@ def break_findings(sec: SectionInput, pdf_pages: dict[int, str]) -> list[Finding
             continue
         tail = normalize_words(strip_markdown(first))[-JOIN_WORDS:]
         head = normalize_words(strip_markdown(second))[:JOIN_WORDS]
-        if len(tail) < 2 or len(head) < 2 or _find_run(stream, tail + head) < 0:
+        at = _find_run(stream, tail + head) if len(tail) > 1 < len(head) else -1
+        if at < 0:
             continue
-        evidence = {"l3": " ".join(tail), "next": " ".join(head)}
-        evidence["pdf"] = " ".join(tail + head)
-        findings.append(Finding(kind="break", page=sec.page, evidence=evidence))
+        join = at + len(tail)
+        window = _raw_window([pdf_pages[p] for p in pages], join, len(stream))
+        if window is None:  # raw tokens misaligned: fall back to the normalised words
+            window = " ".join(
+                stream[max(join - BREAK_PDF_WORDS, 0) : join + BREAK_PDF_WORDS]
+            )
+        evidence = {
+            "l3": " ".join(strip_markdown(first).split()[-BREAK_L3_WORDS:]),
+            "next": " ".join(strip_markdown(second).split()[:BREAK_L3_WORDS]),
+            "pdf": window,
+        }
+        page = word_pages[join - 1]
+        findings.append(Finding(kind="break", page=page, evidence=evidence))
     return findings
 
 
