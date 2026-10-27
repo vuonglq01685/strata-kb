@@ -1,7 +1,7 @@
 # L3 fidelity check with reviewer gate — design (v1.31.1)
 
 Date: 2026-10-27
-Status: draft, awaiting owner approval
+Status: draft, awaiting owner approval (builder check done)
 
 ## 1. Intent
 
@@ -160,9 +160,16 @@ sections:
     confirmed: null            # or {by: <git user.name>, at: <ts>, l3_sha256: <sha>}
 ```
 
-Only sections with findings appear. The file is local review state and is
-**not published** to the hub (excluded from what `kb publish` /
-`kb ci-publish` send).
+Only sections with findings appear. The file is **committed** in the child
+repo (owner decision), so teammates see each other's confirmations and the
+`kb ci-publish` gate works in CI. It is **not sent to the hub**: 1.31.1
+excludes it from what `kb publish` / `kb ci-publish` upload
+(`hashsync.build_manifest` currently walks all of `.kb/`).
+
+Upgrade note (CHANGELOG + QUICKSTART): bump the CI pin to
+`strata-kb==1.31.1`. A CI still on 1.31.0 has no gate and would upload the
+file (reviewer names, snippets) to the hub; `kb doctor` already warns on pin
+drift.
 
 ### 7.5 Reviewer commands
 
@@ -219,7 +226,7 @@ ingest → summarize flow mention the review step (`kb l3 report`,
 
 ## 8. Decisions made by Claude (owner to check)
 
-- Findings file is local and not published.
+- Findings file is not sent to the hub (committed in the child repo is the owner's decision).
 - Pre-1.31.1 documents are not gated.
 - No standalone re-check command; re-ingest re-checks.
 - Agent judges `break` findings only; it runs inside ingest and is skipped
@@ -239,6 +246,10 @@ ingest → summarize flow mention the review step (`kb l3 report`,
 - Exact normalisation details and threshold values, tuned on test PDFs so a
   clean document gives zero findings.
 - How publish excludes `_l3check.yaml`.
+- Acceptance: the owner tests on real defective PDFs locally (they cannot
+  be shared). The builder's own proof is synthetic: small generated PDFs /
+  item streams that reproduce each defect, plus `docs/strata-*.pdf` and
+  `tests/fixtures/mono-diagram.pdf` producing zero findings.
 - Tests: one per finding kind on small synthetic PDFs/items, the gate on
   each command, confirmation invalidation by `l3_sha256`, agent output
   parsing (valid, invalid, runner error).
