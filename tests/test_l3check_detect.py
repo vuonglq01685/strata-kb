@@ -299,3 +299,41 @@ def test_check_document_drops_boundary_page_duplicates():
         s.id for s in out for f in s.findings if f.evidence.get("pdf") == extra
     ]
     assert ids_with_extra == ["1"]
+
+
+_X = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+_Y = "kilo lima mike november oscar papa quebec romeo sierra tango"
+_Z = "uniform victor whiskey xray yankee zulu amber bronze copper dune"
+
+
+def test_check_document_three_units_sharing_a_boundary_page_are_clean():
+    secs = [
+        SectionInput("1", "A", 1, 2, _X),
+        SectionInput("2", "A", 2, 2, _Y),
+        SectionInput("3", "A", 2, 2, _Z),
+    ]
+    pdf = {1: _X, 2: _Y + " " + _Z}
+    assert check_document(secs, {}, pdf, {}, SectioningNotes()) == []
+
+
+def test_check_document_lost_text_after_a_later_heading_is_flagged_on_that_unit():
+    lost = "vanished sentence about holding fixes and their radius limits"
+    secs = [
+        SectionInput("5", "A", 1, 2, "5.0 NAVIGATION DATA " + _X),
+        SectionInput("6", "A", 2, 2, "6.0 ROUTES " + _Y),
+    ]
+    pdf = {1: "5.0 NAVIGATION DATA " + _X, 2: "6.0 ROUTES " + _Y + " " + lost}
+    titles = {"5": "5.0 NAVIGATION DATA", "6": "6.0 ROUTES"}
+    out = check_document(secs, titles, pdf, {}, SectioningNotes())
+    assert [(c.id, [f.evidence for f in c.findings]) for c in out] == [
+        ("6", [{"pdf": lost}])
+    ]
+
+
+def test_order_ignores_a_title_repeated_in_page_furniture():
+    pdf = {2: "Beta Heading\nAlpha Heading intro text\nBeta Heading more text"}
+    secs = [SectionInput("1", "A", 2, 2, "x"), SectionInput("2", "A", 2, 2, "x")]
+    titles = {"1": "Alpha Heading", "2": "Beta Heading"}
+    furniture = {2: ["Beta Heading"]}
+    out = order_findings(secs, titles, pdf, SectioningNotes(), furniture)
+    assert out == {}

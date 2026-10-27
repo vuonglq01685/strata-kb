@@ -274,8 +274,8 @@ def test_sections_reingest_keeps_other_chapters_and_flags_nothing_new(
         pdftext,
         "page_texts",
         lambda pdf: {
-            1: f"5.0 NAVIGATION DATA\n{BODY}",
-            2: f"6.0 ROUTES\n{other}\n{DROPPED}",  # lost sentence, flagged on 5 (span 1-2)
+            1: f"5.0 NAVIGATION DATA\n{BODY}\n{DROPPED}",  # lost sentence, flagged on 5
+            2: f"6.0 ROUTES\n{other}",
         },
     )
     (tmp_path / "doc.pdf").write_bytes(b"%PDF-fake")

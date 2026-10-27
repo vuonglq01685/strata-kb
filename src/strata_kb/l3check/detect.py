@@ -70,6 +70,18 @@ def _page_words(text: str, furniture: list[str]) -> list[str]:
     return words
 
 
+def _stream(
+    pdf_pages: dict[int, str], furniture: dict[int, list[str]]
+) -> tuple[list[str], dict[int, int]]:
+    """Every page's words (furniture removed) in page order, and each page's start index."""
+    words: list[str] = []
+    starts: dict[int, int] = {}
+    for p in sorted(pdf_pages):
+        starts[p] = len(words)
+        words += _page_words(pdf_pages[p], furniture.get(p, []))
+    return words, starts
+
+
 def _shingles(words: list[str]) -> set[tuple[str, ...]]:
     return {tuple(words[i : i + SHINGLE]) for i in range(len(words) - SHINGLE + 1)}
 
@@ -107,33 +119,55 @@ def _snippet(run: list[str]) -> str:
     return " ".join(run[:SNIPPET_WORDS])
 
 
-def content_findings(
+def _content_runs(
     sec: SectionInput,
     l3_neighbours: str,
     pdf_pages: dict[int, str],
     furniture: dict[int, list[str]],
-) -> list[Finding]:
+    starts: dict[int, int],
+) -> list[tuple[int | None, Finding]]:
+    """Content findings, each with the document-wide word index of a missing run
+    (None for an extra run in L3)."""
     pages = _span_pages(sec, pdf_pages)
     if not pages:
         return []
     # one word list over the whole span, so a run is not cut at a page break
     span_words: list[str] = []
     word_pages: list[int] = []
+    word_index: list[int] = []
     for p in pages:
         words = _page_words(pdf_pages[p], furniture.get(p, []))
         span_words += words
         word_pages += [p] * len(words)
+        word_index += range(starts[p], starts[p] + len(words))
     l3_words = normalize_words(strip_markdown(sec.l3))
     present = l3_words + normalize_words(strip_markdown(l3_neighbours))
-    findings = [
-        Finding(kind="content", page=word_pages[start], evidence={"pdf": _snippet(run)})
+    found: list[tuple[int | None, Finding]] = [
+        (
+            word_index[start],
+            Finding(
+                kind="content", page=word_pages[start], evidence={"pdf": _snippet(run)}
+            ),
+        )
         for start, run in _uncovered_runs(span_words, present)
     ]
-    findings += [
-        Finding(kind="content", page=sec.page, evidence={"l3": _snippet(run)})
+    found += [
+        (None, Finding(kind="content", page=sec.page, evidence={"l3": _snippet(run)}))
         for _, run in _uncovered_runs(l3_words, span_words)
     ]
-    return findings
+    return found
+
+
+def content_findings(
+    sec: SectionInput,
+    l3_neighbours: str,
+    pdf_pages: dict[int, str],
+    furniture: dict[int, list[str]],
+) -> list[Finding]:
+    """`l3_neighbours`: the L3 of every other unit whose span overlaps `sec`'s."""
+    _, starts = _stream(pdf_pages, furniture)
+    runs = _content_runs(sec, l3_neighbours, pdf_pages, furniture, starts)
+    return [finding for _, finding in runs]
 
 
 def unverifiable(sec: SectionInput, pdf_pages: dict[int, str]) -> Finding | None:
@@ -215,15 +249,15 @@ def _add(out: dict[str, list[Finding]], sid: str, finding: Finding) -> None:
 
 
 def _title_positions(
-    sections: list[SectionInput], titles: dict[str, str], pdf_pages: dict[int, str]
+    sections: list[SectionInput],
+    titles: dict[str, str],
+    pdf_pages: dict[int, str],
+    furniture: dict[int, list[str]],
 ) -> list[tuple[str, int]]:
     """(section id, global word index of its title) for each title found from
-    its start page on, in section order."""
-    stream: list[str] = []
-    page_start: dict[int, int] = {}
-    for p in sorted(pdf_pages):
-        page_start[p] = len(stream)
-        stream += normalize_words(pdf_pages[p])
+    its start page on, in section order. Furniture is out of the stream, so a
+    running header repeating a title cannot be mistaken for the heading."""
+    stream, page_start = _stream(pdf_pages, furniture)
     pages = sorted(page_start)
     located: list[tuple[str, int]] = []
     for sec in sections:
@@ -243,6 +277,7 @@ def order_findings(
     titles: dict[str, str],
     pdf_pages: dict[int, str],
     notes: SectioningNotes,
+    furniture: dict[int, list[str]] | None = None,
 ) -> dict[str, list[Finding]]:
     out: dict[str, list[Finding]] = {}
     prev: SectionInput | None = None
@@ -254,7 +289,7 @@ def order_findings(
             _add(out, sec.id, finding)
         prev = sec
     by_id = {sec.id: sec for sec in sections}
-    located = _title_positions(sections, titles, pdf_pages)
+    located = _title_positions(sections, titles, pdf_pages, furniture or {})
     for (prev_id, prev_pos), (sid, pos) in zip(located, located[1:], strict=False):
         if pos < prev_pos:
             finding = Finding(
@@ -290,20 +325,37 @@ def fallback_findings(
     return out
 
 
-def _content_and_break(
+def _overlapping(
+    sections: list[SectionInput], pdf_pages: dict[int, str]
+) -> list[list[int]]:
+    """For each section, the indexes of the other sections whose page span shares a page."""
+    on_page: dict[int, list[int]] = {}
+    for i, sec in enumerate(sections):
+        for p in _span_pages(sec, pdf_pages):
+            on_page.setdefault(p, []).append(i)
+    return [
+        sorted({j for p in _span_pages(sec, pdf_pages) for j in on_page[p]} - {i})
+        for i, sec in enumerate(sections)
+    ]
+
+
+_Key = tuple[int | None, tuple[tuple[str, str], ...]]
+
+
+def _owner(
+    reporters: list[tuple[int, int | None]],
     sections: list[SectionInput],
-    i: int,
-    pdf_pages: dict[int, str],
-    furniture: dict[int, list[str]],
-) -> list[Finding]:
-    sec = sections[i]
-    unverified = unverifiable(sec, pdf_pages)
-    if unverified is not None:
-        return [unverified]
-    near = [s.l3 for s in sections[max(i - 1, 0) : i] + sections[i + 1 : i + 2]]
-    return content_findings(sec, "\n\n".join(near), pdf_pages, furniture) + (
-        break_findings(sec, pdf_pages)
-    )
+    title_at: dict[str, int],
+) -> int:
+    """The section a gap belongs to: the last one whose title precedes the gap,
+    else the first section that reported it."""
+    at = next((pos for _, pos in reporters if pos is not None), None)
+    best: tuple[int, int] | None = None  # (title position, section index)
+    for i, _ in reporters:
+        title = title_at.get(sections[i].id)
+        if at is not None and title is not None and title <= at:
+            best = max(best or (title, i), (title, i))
+    return best[1] if best else reporters[0][0]
 
 
 def check_document(
@@ -313,25 +365,31 @@ def check_document(
     furniture: dict[int, list[str]],
     notes: SectioningNotes,
 ) -> list[SectionCheck]:
-    order = order_findings(sections, titles, pdf_pages, notes)
+    order = order_findings(sections, titles, pdf_pages, notes, furniture)
     fallbacks = fallback_findings(sections, notes)
-    seen: set[tuple[int | None, tuple[tuple[str, str], ...]]] = set()
+    title_at = dict(_title_positions(sections, titles, pdf_pages, furniture))
+    _, starts = _stream(pdf_pages, furniture)
+    overlaps = _overlapping(sections, pdf_pages)
+    content: list[list[tuple[_Key, Finding]]] = []
+    reporters: dict[_Key, list[tuple[int, int | None]]] = {}
+    for i, sec in enumerate(sections):
+        near = "\n\n".join(sections[j].l3 for j in overlaps[i])
+        keyed = []
+        for pos, f in _content_runs(sec, near, pdf_pages, furniture, starts):
+            key = (f.page, tuple(sorted(f.evidence.items())))
+            keyed.append((key, f))
+            reporters.setdefault(key, []).append((i, pos))
+        content.append(keyed)
+    # adjacent sections share boundary pages, so the same gap shows up on several
+    owner = {key: _owner(r, sections, title_at) for key, r in reporters.items()}
     checks: list[SectionCheck] = []
     for i, sec in enumerate(sections):
-        own = _content_and_break(sections, i, pdf_pages, furniture)
-        keys = {
-            (f.page, tuple(sorted(f.evidence.items())))
-            for f in own
-            if f.kind == "content"
-        }
-        # adjacent sections share boundary pages, so the same gap shows up twice
-        findings = [
-            f
-            for f in own
-            if f.kind != "content"
-            or (f.page, tuple(sorted(f.evidence.items()))) not in seen
-        ]
-        seen |= keys
+        unverified = unverifiable(sec, pdf_pages)
+        if unverified is not None:
+            findings = [unverified]
+        else:
+            findings = [f for key, f in content[i] if owner[key] == i]
+            findings += break_findings(sec, pdf_pages)
         findings += order.get(sec.id, []) + fallbacks.get(sec.id, [])
         if findings:
             checks.append(
