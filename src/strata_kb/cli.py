@@ -4829,6 +4829,12 @@ def l3_confirm(
         confirmed = report.confirm(
             kb_dir, doc_id, None if all_flagged else list(section), by=reviewer
         )
+    except (
+        yaml.YAMLError,
+        ValidationError,
+        OSError,
+    ) as exc:  # digests read the manifest
+        _invalid_yaml_exit(kb_dir / doc_id / "_manifest.yaml", exc)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None

@@ -145,6 +145,21 @@ def test_corrupt_l3check_is_one_clean_line(tmp_path):
         assert "Traceback" not in result.output, args
 
 
+def test_confirm_with_corrupt_manifest_is_one_clean_line(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1")
+    (kb / "doc" / "_manifest.yaml").write_text("sections: [oops", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["l3", "confirm", "doc", "--all", "--yes", "--by", "r", "--kb-dir", str(kb)],
+    )
+
+    assert result.exit_code == 1
+    assert "_manifest.yaml is invalid" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
 def test_report_empty_kb_exits_0(tmp_path):
     result = _invoke(tmp_path / ".kb", "report")
 

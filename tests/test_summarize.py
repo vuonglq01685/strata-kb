@@ -223,6 +223,17 @@ def test_summarize_skips_blocked_doc(tmp_path):
     assert "TODO:summarize" in (kb / "d1" / "ch1.md").read_text(encoding="utf-8")
 
 
+def test_summarize_blocked_doc_missing_heading_is_not_a_failure(tmp_path):
+    kb = make_kb(tmp_path, {})
+    _flag(kb, "1.1", doc="d1")
+    (kb / "d1" / "ch1.raw.md").write_text("## 1.1 Alpha\n\nbody\n", encoding="utf-8")
+
+    report = summarize.summarize_kb(kb, FakeRunner(), max_workers=1)
+
+    assert report.blocked == ["d1"]
+    assert report.failed == []  # d1 is skipped whole; a re-run hint would mislead
+
+
 def test_summarize_doc_id_ignores_other_docs_blocking(tmp_path):
     kb = make_kb(tmp_path, {})
     _add_doc_copy(kb, "d2")

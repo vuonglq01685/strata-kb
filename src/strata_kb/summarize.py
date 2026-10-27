@@ -354,9 +354,16 @@ def summarize_kb(
     for d, ids in blocked.items():
         report.blocked.append(d)
         say(f"[skip] {d}: L3 review pending ({len(ids)} section(s)) — kb l3 report {d}")
+
+    def _missing(
+        msg: str,
+    ) -> None:  # "<doc>/<section>: ..."; a skipped doc is no failure
+        if msg.split("/", 1)[0] not in blocked:
+            report.failed.append(msg)
+
     pending = [
         s
-        for s in collect_pending(kb_dir, doc_id, on_missing=report.failed.append)
+        for s in collect_pending(kb_dir, doc_id, on_missing=_missing)
         if s.doc_id not in blocked
     ]
     results: dict[tuple[str, int], dict[str, str]] = {}
