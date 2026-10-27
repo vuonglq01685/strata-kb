@@ -169,3 +169,29 @@ def test_confirm_without_file_raises(tmp_path):
 
 def test_doc_without_file_not_blocked(tmp_path):
     assert report.blocked_docs(_kb(tmp_path)) == []
+
+
+def test_repeated_id_edit_of_earlier_occurrence_reblocks(tmp_path):
+    kb = _kb(tmp_path)
+    doc = kb / "doc"
+    sections = [models.SectionEntry(id="1", title="A", file="a") for _ in range(2)]
+    models.save_yaml_model(
+        doc / "_manifest.yaml", models.Manifest(id="doc", title="D", sections=sections)
+    )
+    raw = doc / "a.raw.md"
+    text = "## 1 A\n\nfirst body\n\n## 1 A again\n\nsecond body\n"
+    raw.write_text(text, encoding="utf-8")
+    _flag(kb, "1")
+    report.confirm(kb, "doc", ["1"], by="r")
+    assert report.blocked_docs(kb) == []
+    raw.write_text(text.replace("first", "FIRST"), encoding="utf-8")
+    assert report.blocked_docs(kb) == [("doc", ["1"])]
+
+
+def test_confirm_section_gone_from_l3_raises(tmp_path):
+    kb = _kb(tmp_path)
+    _flag(kb, "1")
+    (kb / "doc" / "a.raw.md").unlink()
+    with pytest.raises(ValueError, match="re-ingest doc"):
+        report.confirm(kb, "doc", ["1"], by="r")
+    assert report.load(kb / "doc").sections[0].confirmed is None  # type: ignore[union-attr]

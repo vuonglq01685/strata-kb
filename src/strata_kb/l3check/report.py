@@ -78,22 +78,31 @@ def save(doc_dir: Path, check: L3Check) -> None:
 
 def current_digests(kb_dir: Path, doc_id: str) -> dict[str, str]:
     """Section id -> digest of its L3 slice now (what `build` compares
-    `l3_sha256` against). A missing file or slice leaves the id out."""
+    `l3_sha256` against). A missing file or slice leaves the id out. An id
+    repeated in the manifest digests all its slices joined, so an edit of any
+    occurrence changes it."""
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
     if not manifest_path.exists():
         return {}
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     occurrences = heading_occurrences(manifest.sections)
     raws: dict[str, str] = {}
-    out: dict[str, str] = {}
+    slices: dict[str, list[str]] = {}
+    missing: set[str] = set()
     for sec, occ in zip(manifest.sections, occurrences, strict=True):
         if sec.file not in raws:
             raw = kb_dir / doc_id / f"{sec.file}.raw.md"
             raws[sec.file] = raw.read_text(encoding="utf-8") if raw.exists() else ""
         piece = slice_section(raws[sec.file], sec.id, occurrence=occ)
-        if piece is not None:
-            out[sec.id] = quality.digest(piece)
-    return out
+        if piece is None:
+            missing.add(sec.id)
+        else:
+            slices.setdefault(sec.id, []).append(piece)
+    return {
+        sid: quality.digest("\n\n".join(pieces))
+        for sid, pieces in slices.items()
+        if sid not in missing
+    }
 
 
 def unconfirmed(check: L3Check, digests: dict[str, str]) -> list[SectionCheck]:
@@ -136,6 +145,7 @@ def merge(previous: L3Check | None, fresh: L3Check, rechecked: set[str]) -> L3Ch
             and prev.l3_sha256 == sec.l3_sha256
             and _bare(prev.findings) == _bare(sec.findings)
         ):
+            # fresh check output never carries agent verdicts, so keep the previous
             findings = [
                 f.model_copy(update={"agent": p.agent or f.agent})
                 for p, f in zip(prev.findings, sec.findings, strict=True)
@@ -163,14 +173,13 @@ def confirm(
             f"(flagged: {', '.join(valid)})"
         )
     digests = current_digests(kb_dir, doc_id)
+    for sid in wanted:
+        if sid not in digests:
+            raise ValueError(f"§{sid}: section not found in L3 — re-ingest {doc_id}")
     at = _now()
     sections = [
         s.model_copy(
-            update={
-                "confirmed": Confirmation(
-                    by=by, at=at, l3_sha256=digests.get(s.id, s.l3_sha256)
-                )
-            }
+            update={"confirmed": Confirmation(by=by, at=at, l3_sha256=digests[s.id])}
         )
         if s.id in wanted
         else s
