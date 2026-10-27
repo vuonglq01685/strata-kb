@@ -78,3 +78,32 @@ def test_scanned_pages_unverifiable():
     assert unverifiable(sec, {2: "", 3: PAGE}) is None
     assert unverifiable(_sec("x", page=None, end_page=None), {}) is None
     assert content_findings(_sec("x", page=None, end_page=None), "", {}, {}) == []
+
+
+def test_run_spanning_page_break_is_one_finding():
+    a, b = "alpha bravo charlie delta", "echo foxtrot golf hotel"
+    pdf = {1: PAGE + " " + a, 2: b + " " + PAGE}
+    findings = content_findings(_sec(PAGE + " " + PAGE, end_page=2), "", pdf, {})
+    assert [(f.page, f.evidence) for f in findings] == [(1, {"pdf": f"{a} {b}"})]
+
+
+def test_run_starting_on_second_page_reports_that_page():
+    extra = "alpha bravo charlie delta echo foxtrot"
+    pdf = {1: PAGE, 2: extra + " " + PAGE}
+    findings = content_findings(_sec(PAGE + " " + PAGE, end_page=2), "", pdf, {})
+    assert [(f.page, f.evidence) for f in findings] == [(2, {"pdf": extra})]
+
+
+def test_markdown_link_keeps_text_not_url():
+    assert normalize_words(strip_markdown("see [the doc](https://x.com/a.pdf) now")) == [
+        "see", "the", "doc", "now",
+    ]  # fmt: skip
+    l3 = PAGE + " [guide](https://www.example.com/path/to/doc.pdf)"
+    assert content_findings(_sec(l3), "", {1: PAGE + " guide"}, {}) == []
+
+
+def test_short_side_falls_back_to_word_presence():
+    findings = content_findings(_sec("hi"), "", {1: "one two three four five"}, {})
+    assert [(f.page, f.evidence) for f in findings] == [
+        (1, {"pdf": "one two three four five"})
+    ]

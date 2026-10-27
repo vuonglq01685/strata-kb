@@ -24,6 +24,7 @@ _FENCE = re.compile(r"^[ \t]*(```|~~~).*$", re.MULTILINE)
 _HEADING = re.compile(r"^[ \t]*#{1,6}[ \t]+", re.MULTILINE)
 _TABLE_SEPARATOR = re.compile(r"^[ \t]*\|?[ \t]*:?-+:?[ \t:|-]*$", re.MULTILINE)
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _EMPHASIS = re.compile(r"\*+|(?<!\w)_+|_+(?!\w)")
 
 
@@ -46,6 +47,7 @@ def strip_markdown(md: str) -> str:
     md = _TABLE_SEPARATOR.sub("", md)
     md = _HEADING.sub("", md)
     md = _IMAGE.sub(r"\1", md)
+    md = _LINK.sub(r"\1", md)
     return _EMPHASIS.sub("", md).replace("|", " ")
 
 
@@ -65,8 +67,8 @@ def _shingles(words: list[str]) -> set[tuple[str, ...]]:
     return {tuple(words[i : i + SHINGLE]) for i in range(len(words) - SHINGLE + 1)}
 
 
-def _uncovered_runs(words: list[str], other: list[str]) -> list[list[str]]:
-    """Maximal runs of at least MIN_RUN words of `words` not covered by `other`."""
+def _uncovered_runs(words: list[str], other: list[str]) -> list[tuple[int, list[str]]]:
+    """(start index, words) of maximal runs of >= MIN_RUN words not covered by `other`."""
     if len(words) < SHINGLE or len(other) < SHINGLE:
         vocabulary = set(other)
         covered = [w in vocabulary for w in words]
@@ -76,17 +78,14 @@ def _uncovered_runs(words: list[str], other: list[str]) -> list[list[str]]:
         for i in range(len(words) - SHINGLE + 1):
             if tuple(words[i : i + SHINGLE]) in known:
                 covered[i : i + SHINGLE] = [True] * SHINGLE
-    runs: list[list[str]] = []
-    run: list[str] = []
-    for word, ok in zip(words, covered, strict=True):
+    runs: list[tuple[int, list[str]]] = []
+    start = 0
+    for i, ok in enumerate([*covered, True]):  # sentinel closes a trailing run
         if not ok:
-            run.append(word)
             continue
-        if len(run) >= MIN_RUN:
-            runs.append(run)
-        run = []
-    if len(run) >= MIN_RUN:
-        runs.append(run)
+        if i - start >= MIN_RUN:
+            runs.append((start, words[start:i]))
+        start = i + 1
     return runs
 
 
@@ -110,18 +109,22 @@ def content_findings(
     pages = _span_pages(sec, pdf_pages)
     if not pages:
         return []
-    words_by_page = {p: _page_words(pdf_pages[p], furniture.get(p, [])) for p in pages}
+    # one word list over the whole span, so a run is not cut at a page break
+    span_words: list[str] = []
+    word_pages: list[int] = []
+    for p in pages:
+        words = _page_words(pdf_pages[p], furniture.get(p, []))
+        span_words += words
+        word_pages += [p] * len(words)
     l3_words = normalize_words(strip_markdown(sec.l3))
     present = l3_words + normalize_words(strip_markdown(l3_neighbours))
     findings = [
-        Finding(kind="content", page=p, evidence={"pdf": _snippet(run)})
-        for p in pages
-        for run in _uncovered_runs(words_by_page[p], present)
+        Finding(kind="content", page=word_pages[start], evidence={"pdf": _snippet(run)})
+        for start, run in _uncovered_runs(span_words, present)
     ]
-    span_words = [w for p in pages for w in words_by_page[p]]
     findings += [
         Finding(kind="content", page=sec.page, evidence={"l3": _snippet(run)})
-        for run in _uncovered_runs(l3_words, span_words)
+        for _, run in _uncovered_runs(l3_words, span_words)
     ]
     return findings
 
