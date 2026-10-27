@@ -198,7 +198,19 @@ findings and no valid confirmation.
 - Existing repos that already have `llm.model: sonnet-5` in their
   `index.yaml` are **not** rewritten: that is a value the owner chose.
 
-### 7.8 Release
+### 7.8 Hub web UI tweaks (owner request, same patch)
+
+- Left rail wider: `.columns` grid in `templates/web/static/style.css`
+  goes from `248px` to `288px` in both the default and the ≤ 1279px
+  breakpoint (≤ 899px still hides it).
+- Reader opens L3 by default: the section route in `web/ui.py` defaults
+  `level` to `"l3"` (and falls back to `"l3"` on an invalid value). Every
+  link without `?level=` (doc section list, left-rail tree, overview cites,
+  pager prev/next) therefore opens L3. Pager prev/next always open L3, even
+  when the reader had switched to L2. The L2/L3 toggle keeps working.
+- The JSON API (`web/api.py`) default stays `l2`; only the UI changes.
+
+### 7.9 Release
 
 Version `1.31.1` in `pyproject.toml`, CHANGELOG entry, and the Claude /
 Copilot / Cursor templates under `templates/init/` that describe the
