@@ -168,6 +168,30 @@ def test_list_items_not_flagged_as_break():
     assert break_findings(_sec(l3), pdf) == []
 
 
+def test_break_not_flagged_across_tight_list():
+    l3 = "Steps are:\n- open the valve\n- close the door\n\nAfter that the system restarts."
+    pdf = {1: "open the valve close the door After that the system restarts"}
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def test_break_not_flagged_across_tight_heading():
+    l3 = "Body ends here\n## 2 Scope\n\nThis section covers scope."
+    pdf = {1: "Body ends here 2 Scope This section covers scope."}
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def test_break_not_flagged_after_emphasised_full_stop():
+    l3 = "Applies to *all users.*\n\nPolicy applies here today."
+    pdf = {1: "Applies to all users. Policy applies here today."}
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def test_break_not_flagged_around_unclosed_fence():
+    l3 = "Intro text that goes on\n\n```\nand then more words follow here\n\nstill code here"
+    pdf = {1: "Intro text that goes on and then more words follow here"}
+    assert break_findings(_sec(l3), pdf) == []
+
+
 def _units() -> list[SectionInput]:
     return [
         SectionInput("1", "A", 1, 2, "## 1 First\n\nbody"),
@@ -227,9 +251,16 @@ def test_front_matter_fallback_not_flagged():
 
 
 def test_part_root_fallback_not_flagged():
-    secs = [SectionInput("appendix-a", "A", 3, 4, "### x1 Notes")]
+    secs = [SectionInput("appendix-a", "appendix-a", 3, 4, "### x1 Notes")]
     notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
     assert fallback_findings(secs, notes) == {}
+
+
+def test_fallback_inside_normal_appendix_unit_is_flagged():
+    secs = [SectionInput("appendix-a.2", "appendix-a", 3, 4, "### x1 Notes")]
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    out = fallback_findings(secs, notes)
+    assert list(out) == ["appendix-a.2"]
 
 
 def test_enclosing_unit_maps_units_and_folded_ids():

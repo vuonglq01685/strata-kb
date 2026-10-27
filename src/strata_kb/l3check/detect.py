@@ -14,7 +14,7 @@ from bisect import bisect_left
 from dataclasses import dataclass
 
 from strata_kb import quality
-from strata_kb.ingest.sectioner import SectioningNotes, _is_part_root
+from strata_kb.ingest.sectioner import SectioningNotes
 from strata_kb.l3check.report import Finding, SectionCheck
 
 SHINGLE = 4  # words per shingle
@@ -30,8 +30,6 @@ _HEADING = re.compile(r"^[ \t]*#{1,6}[ \t]+", re.MULTILINE)
 _TABLE_SEPARATOR = re.compile(r"^[ \t]*\|?[ \t]*:?-+:?[ \t:|-]*$", re.MULTILINE)
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_BLOCK_SPLIT = re.compile(r"\n[ \t]*\n")
-_FENCED = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$", re.MULTILINE | re.DOTALL)
 _NON_PROSE = re.compile(r"[ \t]*(#|\||!\[|[-*+][ \t]|\d+[.)][ \t])")
 _SUBHEADING = re.compile(r"^### (\S+)", re.MULTILINE)
 _EMPHASIS = re.compile(r"\*+|(?<!\w)_+|_+(?!\w)")
@@ -156,10 +154,28 @@ def _find_run(stream: list[str], needle: list[str], start: int = 0) -> int:
 
 
 def _prose_blocks(l3: str) -> list[str | None]:
-    """Blank-line-separated blocks; None stands for a non-prose block (heading,
-    table, fence, image, list item), so a pair across it is never adjacent."""
-    blocks = _BLOCK_SPLIT.split(_FENCED.sub("\n\n", l3))
-    return [None if not b.strip() or _NON_PROSE.match(b) else b.strip() for b in blocks]
+    """Paragraphs as blocks of pure prose lines. A blank line ends a block; a
+    non-prose line (heading, table row, image, list item, fence and what it
+    fences, an unclosed fence running to the end) ends it too and leaves None,
+    so a pair is only ever two adjacent pure-prose blocks."""
+    blocks: list[str | None] = []
+    current: list[str] = []
+    fenced = False
+    for line in l3.splitlines():
+        is_fence = _FENCE.match(line) is not None
+        if is_fence:
+            fenced = not fenced
+        if fenced or is_fence or _NON_PROSE.match(line):
+            blocks += ["\n".join(current), None] if current else [None]
+            current = []
+        elif line.strip():
+            current.append(line.strip())
+        elif current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
 
 
 def break_findings(sec: SectionInput, pdf_pages: dict[int, str]) -> list[Finding]:
@@ -170,7 +186,9 @@ def break_findings(sec: SectionInput, pdf_pages: dict[int, str]) -> list[Finding
     findings: list[Finding] = []
     blocks = _prose_blocks(sec.l3)
     for first, second in zip(blocks, blocks[1:], strict=False):
-        if first is None or second is None or first[-1] in TERMINAL:
+        if first is None or second is None:
+            continue
+        if strip_markdown(first).rstrip()[-1:] in {*TERMINAL, ""}:
             continue
         tail = normalize_words(strip_markdown(first))[-JOIN_WORDS:]
         head = normalize_words(strip_markdown(second))[:JOIN_WORDS]
@@ -263,8 +281,8 @@ def fallback_findings(
     out: dict[str, list[Finding]] = {}
     for fb in notes.fallbacks:
         unit = owner.get(fb.id)
-        if unit is None or chapter[unit] == "front-matter" or _is_part_root(unit):
-            continue
+        if unit is None or chapter[unit] == "front-matter" or chapter[unit] == unit:
+            continue  # front matter, or a part's root unit (its title heading)
         finding = Finding(
             kind="fallback", page=fb.page, evidence={"heading": fb.heading}
         )
