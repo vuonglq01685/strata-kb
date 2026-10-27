@@ -33,6 +33,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
+    from strata_kb.l3check.report import Finding
     from strata_kb.resolve import ResolvedRef
     from strata_kb.usage.ingest import IngestResult
 
@@ -114,6 +115,9 @@ app.add_typer(pr_app, name="pr")
 
 claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
 app.add_typer(claim_app, name="claim")
+
+l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
+app.add_typer(l3_app, name="l3")
 
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
@@ -1738,6 +1742,8 @@ def status(
         index = models.load_yaml_model(index_path, models.KBIndex)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         _invalid_yaml_exit(index_path, exc)
+    from strata_kb.l3check import report as l3report
+
     total_pending = 0
     for entry in index.docs:
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
@@ -1752,6 +1758,13 @@ def status(
         typer.echo(
             f"{entry.id}: {len(pending)}/{len(manifest.sections)} section pending"
         )
+        check = l3report.load(kb_dir / entry.id)
+        if check is not None:
+            flagged = l3report.unconfirmed(
+                check, l3report.current_digests(kb_dir, entry.id)
+            )
+            if flagged:
+                typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Total: {total_pending} section(s) pending.")
@@ -4680,3 +4693,95 @@ def claim_list(
     from strata_kb import claimcmd
 
     _exit_with(claimcmd.list_(kb_dir, json_output))
+
+
+_L3_EVIDENCE_KEYS = ("l3", "next", "pdf", "heading", "other")
+
+
+def _l3_finding_lines(finding: Finding) -> list[str]:
+    evidence = " | ".join(
+        f"{k}: {finding.evidence[k]}"
+        for k in _L3_EVIDENCE_KEYS
+        if k in finding.evidence
+    )
+    page = "?" if finding.page is None else finding.page
+    lines = [f"  [{finding.kind}] p.{page} {evidence}"]
+    if finding.agent is not None:
+        lines.append(f"    agent: {finding.agent.verdict} — {finding.agent.reason}")
+    return lines
+
+
+@l3_app.command("report")
+def l3_report(
+    doc_id: str = typer.Argument(
+        "", help="Document ID (default: every doc awaiting review)"
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """List the L3 sections awaiting review, with evidence and agent verdicts (exit 1 if any)."""
+    from strata_kb.l3check import report
+
+    doc_ids = [doc_id] if doc_id else [d for d, _ in report.blocked_docs(kb_dir)]
+    total = 0
+    for did in doc_ids:
+        check = report.load(kb_dir / did)
+        if check is None:
+            continue
+        pending = report.unconfirmed(check, report.current_digests(kb_dir, did))
+        if not pending:
+            continue
+        total += len(pending)
+        typer.echo(did)
+        for sec in pending:
+            typer.echo(f"§{sec.id}")
+            for finding in sec.findings:
+                for line in _l3_finding_lines(finding):
+                    typer.echo(line)
+    if total == 0:
+        typer.echo("L3 check: nothing awaiting review.")
+        return
+    typer.echo(f"{total} section(s) awaiting review.")
+    raise typer.Exit(1)
+
+
+@l3_app.command("confirm")
+def l3_confirm(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    section: list[str] = typer.Option(
+        [], "--section", help="Flagged section ID to confirm (repeatable)"
+    ),
+    all_flagged: bool = typer.Option(
+        False, "--all", help="Confirm every flagged section of the doc"
+    ),
+    by: str = typer.Option(
+        "",
+        "--by",
+        help="Reviewer identity 'name <email>' (default: git user.name/email)",
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip the --all confirmation"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Record that a reviewer checked flagged L3 sections; unblocks summarize/build/publish."""
+    from strata_kb import gitio
+    from strata_kb.l3check import report
+    from strata_kb.review import resolve_reviewer
+
+    if bool(section) == all_flagged:
+        typer.secho(
+            "pass either --section ID (repeatable) or --all", fg=typer.colors.RED
+        )
+        raise typer.Exit(2)
+    try:
+        reviewer = resolve_reviewer(gitio.git_root(kb_dir.resolve()), by or None)
+        if all_flagged and not yes:
+            check = report.load(kb_dir / doc_id)
+            n = len(check.sections) if check else 0
+            if not typer.confirm(f"Confirm all {n} flagged section(s) of {doc_id}?"):
+                raise typer.Abort()
+        confirmed = report.confirm(
+            kb_dir, doc_id, None if all_flagged else list(section), by=reviewer
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo("confirmed: " + ", ".join(f"§{i}" for i in confirmed))

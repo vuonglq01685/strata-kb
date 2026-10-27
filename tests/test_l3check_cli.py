@@ -1,0 +1,128 @@
+import subprocess
+
+from typer.testing import CliRunner
+
+from strata_kb.cli import app
+from strata_kb.l3check import report
+from strata_kb.l3check.report import AgentVerdict, Finding, L3Check, SectionCheck
+from tests.test_l3check_report import _flag, _kb
+
+runner = CliRunner()
+
+
+def _git_kb(tmp_path):
+    # `kb l3 confirm` resolves the reviewer from the enclosing git repo
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    return _kb(tmp_path)
+
+
+def _invoke(kb, *args):
+    return runner.invoke(app, ["l3", *args, "--kb-dir", str(kb)])
+
+
+def test_report_lists_findings_and_exits_1(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    finding = Finding(
+        kind="order",
+        page=3,
+        evidence={"other": "z", "pdf": "p text", "l3": "l text"},
+        agent=AgentVerdict(verdict="unsure", reason="cannot tell"),
+    )
+    report.save(
+        kb / "doc",
+        L3Check(
+            checked_at="t",
+            sections=[
+                SectionCheck(id="1", l3_sha256=digests["1"], findings=[finding]),
+                SectionCheck(
+                    id="2",
+                    l3_sha256=digests["2"],
+                    findings=[Finding(kind="content")],
+                ),
+            ],
+        ),
+    )
+
+    result = _invoke(kb, "report")
+
+    assert result.exit_code == 1
+    lines = result.output.splitlines()
+    assert "§1" in lines
+    assert "  [order] p.3 l3: l text | pdf: p text | other: z" in lines
+    assert "    agent: unsure — cannot tell" in lines
+    assert "  [content] p.? " in result.output
+    assert "2 section(s) awaiting review." in result.output
+
+
+def test_report_clean_exits_0(tmp_path):
+    kb = _git_kb(tmp_path)
+
+    result = _invoke(kb, "report", "doc")
+
+    assert result.exit_code == 0
+    assert "L3 check: nothing awaiting review." in result.output
+
+
+def test_confirm_section_then_report_clean(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1")
+
+    result = _invoke(kb, "confirm", "doc", "--section", "1", "--by", "Rev <r@x>")
+
+    assert result.exit_code == 0
+    assert "confirmed: §1" in result.output
+    assert _invoke(kb, "report").exit_code == 0
+
+
+def test_confirm_all_requires_yes_or_prompt(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1", "2")
+
+    declined = runner.invoke(
+        app,
+        ["l3", "confirm", "doc", "--all", "--by", "r", "--kb-dir", str(kb)],
+        input="n\n",
+    )
+    assert declined.exit_code != 0
+    assert "Confirm all 2 flagged section(s) of doc?" in declined.output
+    assert report.blocked_docs(kb) == [("doc", ["1", "2"])]
+
+    accepted = _invoke(kb, "confirm", "doc", "--all", "--by", "r", "--yes")
+    assert accepted.exit_code == 0
+    assert "confirmed: §1, §2" in accepted.output
+    assert report.blocked_docs(kb) == []
+
+
+def test_confirm_requires_section_or_all(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1")
+
+    neither = _invoke(kb, "confirm", "doc", "--by", "r")
+    both = _invoke(
+        kb, "confirm", "doc", "--section", "1", "--all", "--yes", "--by", "r"
+    )
+
+    assert neither.exit_code == 2
+    assert both.exit_code == 2
+    assert report.blocked_docs(kb) == [("doc", ["1"])]
+
+
+def test_confirm_unknown_section_exit_1(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1")
+
+    result = _invoke(kb, "confirm", "doc", "--section", "9", "--by", "r")
+
+    assert result.exit_code == 1
+    assert "no flagged section 9" in result.output
+
+
+def test_status_shows_l3_line(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1", "2")
+
+    result = runner.invoke(app, ["status", "--kb-dir", str(kb)])
+
+    assert result.exit_code == 0
+    assert "  L3 check: 2 section(s) awaiting review" in result.output
