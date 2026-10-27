@@ -910,6 +910,13 @@ def ingest(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
+    if report.l3_flagged:
+        typer.echo(
+            "Summarize skipped until the L3 review is confirmed: "
+            f"kb l3 report {report.doc_id}, then "
+            f"kb l3 confirm {report.doc_id} --section <id> | --all"
+        )
+        return
     if no_summarize or llm == "none":
         typer.echo(
             "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "

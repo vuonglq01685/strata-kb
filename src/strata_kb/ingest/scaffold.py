@@ -264,6 +264,7 @@ class ScaffoldReport:
     files: list[str]
     n_sections: int
     token_stats: TokenStats | None = None
+    l3_flagged: int = 0  # unconfirmed sections in _l3check.yaml; set by ingestcmd
 
 
 def scaffold_doc(

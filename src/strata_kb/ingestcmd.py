@@ -8,13 +8,16 @@ the CLI parses flags and prints; the pipeline lives here.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from strata_kb import authored, models
-from strata_kb.ingest import parser, scaffold, sectioner
+from strata_kb import authored, mdutils, models, review
+from strata_kb.ingest import parser, pdftext, scaffold, sectioner
 from strata_kb.ingest.scaffold import ScaffoldReport
+from strata_kb.l3check import detect
+from strata_kb.l3check import report as l3report
 
 
 @dataclass
@@ -128,6 +131,105 @@ def _echo_token_stats(
     )
 
 
+def _chapter_filter(sections: str) -> set[str] | None:
+    return {s.strip() for s in sections.split(",") if s.strip()} or None
+
+
+def l3_check(
+    opts: IngestOptions,
+    doc,
+    units: list[sectioner.SectionUnit],
+    notes: sectioner.SectioningNotes,
+) -> l3report.L3Check | None:
+    """Check the L3 just written against the PDF's text layer and merge the
+    result into the previous `_l3check.yaml`. None when the PDF has no
+    readable text layer (nothing to compare against). Writes nothing."""
+    pdf_pages = pdftext.page_texts(opts.pdf)
+    if not pdf_pages:
+        return None
+    chapters = _chapter_filter(opts.sections)
+    checked = [u for u in units if chapters is None or u.chapter in chapters]
+    doc_dir = opts.kb_dir / opts.doc_id
+    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    # shortcut: the k-th unit of an id takes the k-th manifest row of that id;
+    # an id repeated across chapters on a --sections run may pair wrongly
+    slices: dict[str, list[str]] = {}
+    raws: dict[str, str] = {}
+    for sec, occ in zip(
+        manifest.sections, mdutils.heading_occurrences(manifest.sections), strict=True
+    ):
+        if sec.file not in raws:
+            raw = doc_dir / f"{sec.file}.raw.md"
+            raws[sec.file] = raw.read_text(encoding="utf-8") if raw.exists() else ""
+        slices.setdefault(sec.id, []).append(
+            mdutils.slice_section(raws[sec.file], sec.id, occurrence=occ) or ""
+        )
+    taken: Counter[str] = Counter()
+    inputs: list[detect.SectionInput] = []
+    for i, unit in enumerate(checked):
+        end_page = None
+        if unit.page is not None:
+            end_page = checked[i + 1].page if i + 1 < len(checked) else max(pdf_pages)
+        l3 = slices.get(unit.id, [])
+        piece = l3[taken[unit.id]] if taken[unit.id] < len(l3) else ""
+        taken[unit.id] += 1
+        inputs.append(
+            detect.SectionInput(unit.id, unit.chapter, unit.page, end_page, piece)
+        )
+    found = detect.check_document(
+        inputs,
+        {u.id: u.title for u in checked},
+        pdf_pages,
+        parser.furniture_by_page(doc),
+        notes,
+    )
+    digests = l3report.current_digests(opts.kb_dir, opts.doc_id)
+    fresh = l3report.L3Check(
+        checked_at=review._now(),
+        source_sha256=manifest.source_sha256,
+        sections=[
+            c.model_copy(update={"l3_sha256": digests.get(c.id, c.l3_sha256)})
+            for c in found
+        ],
+    )
+    merged = l3report.merge(
+        l3report.load(doc_dir), fresh, rechecked={u.id for u in checked}
+    )
+    live = {s.id for s in manifest.sections}
+    return merged.model_copy(
+        update={"sections": [s for s in merged.sections if s.id in live]}
+    )
+
+
+def _echo_l3_check(
+    check: l3report.L3Check | None,
+    opts: IngestOptions,
+    echo: Callable[[str], None],
+) -> int:
+    """Save the check, echo its outcome, return the unconfirmed section count."""
+    if check is None:
+        echo("L3 check skipped: PDF text layer unreadable")
+        return 0
+    doc_dir = opts.kb_dir / opts.doc_id
+    l3report.save(doc_dir, check)
+    pending = l3report.unconfirmed(
+        check, l3report.current_digests(opts.kb_dir, opts.doc_id)
+    )
+    if not pending:
+        echo("L3 check: clean")
+        return 0
+    kinds = Counter(f.kind for s in pending for f in s.findings)
+    counts = ", ".join(
+        f"{kind} {kinds[kind]}"
+        for kind in ("fallback", "order", "content", "break", "unverifiable")
+    )
+    echo(
+        f"L3 check: {len(pending)} section(s) flagged ({counts}) — "
+        f"review: kb l3 report {opts.doc_id}"
+    )
+    return len(pending)
+
+
 def run_ingest(
     opts: IngestOptions,
     echo: Callable[[str], None],
@@ -188,7 +290,7 @@ def _run_ingest(
         for warning in parser.crosscheck({u.id for u in units}, bm_ids):
             warn(warning)
 
-    chapters = {s.strip() for s in opts.sections.split(",") if s.strip()} or None
+    chapters = _chapter_filter(opts.sections)
     if chapters and not any(u.chapter in chapters for u in units):
         # This is a delete, not a no-op, when the chapter previously
         # existed: scaffold_doc() drops any manifest entry whose stem
@@ -218,4 +320,5 @@ def _run_ingest(
         used_bookmarks=bool(parts),
     )
     _echo_token_stats(report, len(notes.fallbacks), echo)
-    return report
+    flagged = _echo_l3_check(l3_check(opts, doc, units, notes), opts, echo)
+    return replace(report, l3_flagged=flagged)
