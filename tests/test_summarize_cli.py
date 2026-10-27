@@ -155,6 +155,21 @@ def test_redo_include_reviewed_with_yes_resets_and_resummarizes(tmp_path, monkey
     assert all(s.status == "summarized" and s.reviewed is None for s in m.sections)
 
 
+def test_redo_of_a_blocked_doc_is_refused_and_changes_nothing(tmp_path, monkeypatch):
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "summarized"})
+    _flag(kb, "1.1", doc="d1")
+    _patch_detect(monkeypatch, FakeRunner())
+    files = [kb / "d1" / "_manifest.yaml", kb / "d1" / "ch1.md"]
+    before = [f.read_bytes() for f in files]
+    result = runner.invoke(
+        app, ["summarize", "d1", "--redo", "--yes", "--kb-dir", str(kb)]
+    )
+    assert result.exit_code == 1
+    assert "d1: L3 review pending — kb l3 report d1" in result.output
+    assert "redo:" not in result.output
+    assert [f.read_bytes() for f in files] == before
+
+
 def test_redo_dry_run_writes_nothing(tmp_path, monkeypatch):
     kb = _reviewed_kb(tmp_path)
     _patch_detect(monkeypatch, FakeRunner())

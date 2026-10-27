@@ -1673,6 +1673,7 @@ def _redo_or_exit(
     """Preview and (unless --dry-run) apply a `--redo` plan before the
     real summarize run. Resolves the runner FIRST: a redo must never wipe
     summaries when the subsequent run can't happen anyway."""
+    from strata_kb.l3check.report import blocked_docs
     from strata_kb.summarize import plan_redo
 
     _validate_redo_flags(doc_id, all_docs, sections)
@@ -1685,6 +1686,13 @@ def _redo_or_exit(
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
+    # summarize skips a blocked doc, so resetting it would wipe prose nothing refills
+    targets = {item.doc_id for item in plan.items}
+    stuck = [d for d, _ in blocked_docs(kb_dir) if d in targets]
+    for d in stuck:
+        typer.secho(f"{d}: L3 review pending — kb l3 report {d}", fg=typer.colors.RED)
+    if stuck:
+        raise typer.Exit(1)
     _echo_redo_plan(doc_id, plan)
     if dry_run:
         return
