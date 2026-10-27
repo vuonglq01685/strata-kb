@@ -114,11 +114,15 @@ Each finding has: `kind`, `section` id, `page` (or range), `evidence`
 
 | kind | Detection |
 |---|---|
-| `fallback` | Taken from `SectioningNotes.fallbacks`: the section whose id was synthesised. Evidence: the raw heading text. |
+| `fallback` | Taken from `SectioningNotes.fallbacks`, **excluding** fallbacks inside front matter and bookmark-part roots (FOREWORD, Introduction, Glossary, part titles are unnumbered on purpose). Evidence: the raw heading text. |
 | `order` | Section start pages must not decrease in L3 order; additionally each section heading is located in the PDF text layer and the (page, offset) sequence must increase. Inversions already recorded in `SectioningNotes.inversions` with `reordered=False` are included. Evidence: the two section ids and their PDF positions. |
 | `content` | Per section, compare L3 words against the PDF text of the section's page span (start page to the next section's start page; boundary pages shared with the neighbour). Normalise both sides: NFKC, casefold, collapse whitespace, re-join end-of-line hyphenation, strip Markdown syntax (table pipes, image links, fences, emphasis). Ignore page-furniture text docling labelled `page_header` / `page_footer` (taken from the docling doc). Flag runs of ≥ 5 consecutive PDF words absent from L3 (**missing**) and runs of ≥ 5 L3 words absent from the PDF span (**extra/garbled**). Evidence: the run, its page. |
 | `break` | Inside one section, two consecutive L3 paragraphs where the first does not end in terminal punctuation, and the tail of the first plus the head of the second appear contiguous (whitespace/newline only between them) in the PDF text. Evidence: both snippets and the PDF join. |
 | `unverifiable` | Every page of the section has no text layer (scanned). One finding per such section, so the reviewer knows it was not checked. |
+
+Every finding is attached to the **enclosing manifest unit**: a fallback or
+heading folded into its parent unit (`### x1 …`) reports under the parent's
+id, so `kb l3 confirm --section` and `l3_sha256` always have a real unit.
 
 Thresholds (run length, snippet caps) are constants in the module; the
 builder tunes them on the test PDFs so a clean document yields zero
@@ -209,6 +213,11 @@ ingest → summarize flow mention the review step (`kb l3 report`,
 - Agent judges `break` findings only; it runs inside ingest and is skipped
   with `--no-llm-review` or when no runner exists.
 - `kb build` blocks regardless of `--strict`.
+- Fallbacks in front matter / bookmark-part roots are not flagged; findings
+  attach to the enclosing manifest unit.
+- No per-runner model mapping: `copilot --model sonnet` may be rejected, but
+  today's `sonnet-5` is not a Copilot model name either, so this is no
+  regression. Copilot users set `llm.model` explicitly.
 
 ## 9. Left to the builder
 
