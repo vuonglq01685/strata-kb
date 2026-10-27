@@ -1,11 +1,19 @@
+from strata_kb import quality
+from strata_kb.ingest.sectioner import Fallback, Inversion, SectioningNotes
 from strata_kb.l3check.detect import (
     MIN_RUN,
     SectionInput,
+    break_findings,
+    check_document,
     content_findings,
+    enclosing_unit,
+    fallback_findings,
     normalize_words,
+    order_findings,
     strip_markdown,
     unverifiable,
 )
+from strata_kb.l3check.report import Finding
 
 PAGE = (
     "The quick brown fox jumps over the lazy dog while the "
@@ -107,3 +115,156 @@ def test_short_side_falls_back_to_word_presence():
     assert [(f.page, f.evidence) for f in findings] == [
         (1, {"pdf": "one two three four five"})
     ]
+
+
+# --- break / order / fallback / whole document ---
+
+_BREAK_PDF = (
+    "The committee reviewed the annual budget and agreed that the new "
+    "policy should apply to every department across the whole organisation."
+)
+
+
+def test_break_detected_when_pdf_is_contiguous():
+    l3 = (
+        "The committee reviewed the annual budget and agreed that the new\n\n"
+        "policy should apply to every department across the whole organisation."
+    )
+    findings = break_findings(_sec(l3), {1: _BREAK_PDF})
+    assert len(findings) == 1
+    assert findings[0].kind == "break"
+    assert findings[0].page == 1
+    assert findings[0].evidence == {
+        "l3": "agreed that the new",
+        "next": "policy should apply to",
+        "pdf": "agreed that the new policy should apply to",
+    }
+
+
+def test_break_not_flagged_after_full_stop():
+    l3 = "The committee reviewed the annual budget.\n\nPolicy should apply to every department."
+    pdf = {
+        1: "The committee reviewed the annual budget. Policy should apply to every department."
+    }
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def test_break_not_flagged_when_pdf_has_a_real_gap():
+    l3 = (
+        "The committee reviewed the annual budget and agreed that the new\n\n"
+        "policy should apply to every department across the whole organisation."
+    )
+    pdf = {
+        1: "agreed that the new\nUnrelated footer text\npolicy should apply to every"
+    }
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def test_list_items_not_flagged_as_break():
+    l3 = "Steps follow and then\n\n- policy should apply to every department\n\n1. more words here today"
+    pdf = {
+        1: "Steps follow and then policy should apply to every department more words here today"
+    }
+    assert break_findings(_sec(l3), pdf) == []
+
+
+def _units() -> list[SectionInput]:
+    return [
+        SectionInput("1", "A", 1, 2, "## 1 First\n\nbody"),
+        SectionInput("2", "A", 3, 4, "## 2 Second\n\nbody\n\n### x1 Notes\n\nmore"),
+        SectionInput("3", "A", 5, 5, "## 3 Third\n\nbody"),
+    ]
+
+
+def test_order_page_regression_flagged():
+    secs = _units()
+    secs[2] = SectionInput("3", "A", 2, 2, "## 3 Third\n\nbody")
+    out = order_findings(secs, {}, {}, SectioningNotes())
+    assert out == {"3": [Finding(kind="order", page=2, evidence={"other": "2"})]}
+
+
+def test_order_title_positions_must_increase():
+    pdf = {
+        1: "Alpha Heading text here",
+        2: "Beta Heading text here",
+        3: "Gamma Heading text here",
+    }
+    secs = [
+        SectionInput("1", "A", 1, 1, "x"),
+        SectionInput("2", "A", 1, 3, "x"),
+        SectionInput("3", "A", 1, 3, "x"),
+    ]
+    titles = {"1": "Alpha Heading", "2": "Gamma Heading", "3": "Beta Heading"}
+    out = order_findings(secs, titles, pdf, SectioningNotes())
+    assert out == {"3": [Finding(kind="order", page=1, evidence={"other": "2"})]}
+
+
+def test_order_unrepaired_inversion_attached_to_enclosing_unit():
+    notes = SectioningNotes(inversions=[Inversion(3, "x1", "x2", False)])
+    secs = _units()
+    secs[1] = SectionInput("2", "A", 3, 4, "## 2 Second\n\n### x1 A\n\n### x2 B\n")
+    out = order_findings(secs, {}, {}, notes)
+    assert out == {"2": [Finding(kind="order", page=3, evidence={"other": "x1"})]}
+
+
+def test_order_repaired_inversion_not_flagged():
+    notes = SectioningNotes(inversions=[Inversion(3, "2.1", "2.2", True)])
+    assert order_findings(_units(), {}, {}, notes) == {}
+
+
+def test_folded_fallback_reported_on_parent_unit():
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    out = fallback_findings(_units(), notes)
+    assert out == {
+        "2": [Finding(kind="fallback", page=3, evidence={"heading": "Notes"})]
+    }
+
+
+def test_front_matter_fallback_not_flagged():
+    secs = [SectionInput("2", "front-matter", 3, 4, "### x1 Notes")]
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    assert fallback_findings(secs, notes) == {}
+
+
+def test_part_root_fallback_not_flagged():
+    secs = [SectionInput("appendix-a", "A", 3, 4, "### x1 Notes")]
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    assert fallback_findings(secs, notes) == {}
+
+
+def test_enclosing_unit_maps_units_and_folded_ids():
+    assert enclosing_unit(_units()) == {"1": "1", "2": "2", "x1": "2", "3": "3"}
+
+
+def test_check_document_clean_doc_has_no_sections():
+    secs = [SectionInput("1", "A", 1, 1, PAGE)]
+    assert check_document(secs, {}, {1: PAGE}, {}, SectioningNotes()) == []
+
+
+def test_check_document_reports_flagged_sections_with_digest():
+    secs = [SectionInput("1", "A", 1, 1, PAGE)]
+    pdf = {1: PAGE + " alpha bravo charlie delta echo foxtrot golf hotel"}
+    out = check_document(secs, {}, pdf, {}, SectioningNotes())
+    assert [s.id for s in out] == ["1"]
+    assert out[0].l3_sha256 == quality.digest(PAGE)
+    assert out[0].findings[0].kind == "content"
+
+
+def test_check_document_unverifiable_skips_content():
+    secs = [SectionInput("1", "A", 1, 1, PAGE)]
+    out = check_document(secs, {}, {1: "  "}, {}, SectioningNotes())
+    assert [f.kind for f in out[0].findings] == ["unverifiable"]
+
+
+def test_check_document_drops_boundary_page_duplicates():
+    extra = "alpha bravo charlie delta echo foxtrot golf hotel"
+    secs = [
+        SectionInput("1", "A", 1, 2, PAGE),
+        SectionInput("2", "A", 2, 2, PAGE),
+    ]
+    pdf = {1: PAGE, 2: PAGE + " " + PAGE + " " + extra}
+    out = check_document(secs, {}, pdf, {}, SectioningNotes())
+    ids_with_extra = [
+        s.id for s in out for f in s.findings if f.evidence.get("pdf") == extra
+    ]
+    assert ids_with_extra == ["1"]
