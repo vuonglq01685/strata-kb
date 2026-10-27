@@ -323,7 +323,18 @@ def _iterate(doc):
 def furniture_by_page(doc) -> dict[int, list[str]]:
     """Running header/footer text per page: what the L3 check must ignore."""
     out: dict[int, list[str]] = {}
-    for item, _level in _iterate(doc):
+    try:  # docling files page_header/page_footer in FURNITURE; the default walk is BODY only
+        from docling_core.types.doc import (  # pyright: ignore[reportMissingImports]
+            ContentLayer,
+        )
+
+        layers = {ContentLayer.BODY, ContentLayer.FURNITURE}
+        walk = list(
+            doc.iterate_items(traverse_pictures=True, included_content_layers=layers)
+        )
+    except (ImportError, TypeError):
+        walk = _iterate(doc)
+    for item, _level in walk:
         page = _page_of(item)
         text = (getattr(item, "text", "") or "").strip()
         if page is not None and text and _label_value(item) in _SKIP_LABELS:
