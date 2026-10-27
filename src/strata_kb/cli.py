@@ -33,7 +33,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
-    from strata_kb.l3check.report import Finding
+    from strata_kb.l3check.report import Finding, SectionCheck
     from strata_kb.resolve import ResolvedRef
     from strata_kb.usage.ingest import IngestResult
 
@@ -1742,8 +1742,6 @@ def status(
         index = models.load_yaml_model(index_path, models.KBIndex)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         _invalid_yaml_exit(index_path, exc)
-    from strata_kb.l3check import report as l3report
-
     total_pending = 0
     for entry in index.docs:
         manifest_path = kb_dir / entry.id / "_manifest.yaml"
@@ -1758,13 +1756,9 @@ def status(
         typer.echo(
             f"{entry.id}: {len(pending)}/{len(manifest.sections)} section pending"
         )
-        check = l3report.load(kb_dir / entry.id)
-        if check is not None:
-            flagged = l3report.unconfirmed(
-                check, l3report.current_digests(kb_dir, entry.id)
-            )
-            if flagged:
-                typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
+        flagged = _l3_pending(kb_dir, entry.id)
+        if flagged:
+            typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Total: {total_pending} section(s) pending.")
@@ -4698,6 +4692,22 @@ def claim_list(
 _L3_EVIDENCE_KEYS = ("l3", "next", "pdf", "heading", "other")
 
 
+def _l3_pending(kb_dir: Path, doc_id: str) -> list[SectionCheck]:
+    """The doc's flagged-and-unconfirmed sections; exit 1 on an unreadable file."""
+    from strata_kb.l3check import report
+
+    path = kb_dir / doc_id / report.FILE_NAME
+    try:
+        check = report.load(kb_dir / doc_id)
+        if check is None:
+            return []
+        path = kb_dir / doc_id / "_manifest.yaml"
+        return report.unconfirmed(check, report.current_digests(kb_dir, doc_id))
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return []
+
+
 def _l3_finding_lines(finding: Finding) -> list[str]:
     evidence = " | ".join(
         f"{k}: {finding.evidence[k]}"
@@ -4705,7 +4715,7 @@ def _l3_finding_lines(finding: Finding) -> list[str]:
         if k in finding.evidence
     )
     page = "?" if finding.page is None else finding.page
-    lines = [f"  [{finding.kind}] p.{page} {evidence}"]
+    lines = [" ".join(filter(None, [f"  [{finding.kind}] p.{page}", evidence]))]
     if finding.agent is not None:
         lines.append(f"    agent: {finding.agent.verdict} — {finding.agent.reason}")
     return lines
@@ -4719,15 +4729,21 @@ def l3_report(
     kb_dir: Path = _KB_DIR_OPT,
 ) -> None:
     """List the L3 sections awaiting review, with evidence and agent verdicts (exit 1 if any)."""
-    from strata_kb.l3check import report
-
-    doc_ids = [doc_id] if doc_id else [d for d, _ in report.blocked_docs(kb_dir)]
+    if doc_id:
+        doc_ids = [doc_id]
+    else:
+        index_path = kb_dir / "index.yaml"
+        if not index_path.exists():
+            typer.echo("KB is empty — no index.yaml yet.")
+            raise typer.Exit(0)
+        try:
+            index = models.load_yaml_model(index_path, models.KBIndex)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(index_path, exc)
+        doc_ids = [e.id for e in index.docs]
     total = 0
     for did in doc_ids:
-        check = report.load(kb_dir / did)
-        if check is None:
-            continue
-        pending = report.unconfirmed(check, report.current_digests(kb_dir, did))
+        pending = _l3_pending(kb_dir, did)
         if not pending:
             continue
         total += len(pending)
@@ -4773,11 +4789,25 @@ def l3_confirm(
         raise typer.Exit(2)
     try:
         reviewer = resolve_reviewer(gitio.git_root(kb_dir.resolve()), by or None)
-        if all_flagged and not yes:
-            check = report.load(kb_dir / doc_id)
-            n = len(check.sections) if check else 0
-            if not typer.confirm(f"Confirm all {n} flagged section(s) of {doc_id}?"):
-                raise typer.Abort()
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    try:
+        check = report.load(kb_dir / doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(kb_dir / doc_id / report.FILE_NAME, exc)
+    if check is None:
+        typer.secho(f"no {report.FILE_NAME} for {doc_id}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if (
+        all_flagged
+        and not yes
+        and not typer.confirm(
+            f"Confirm all {len(check.sections)} flagged section(s) of {doc_id}?"
+        )
+    ):
+        raise typer.Abort()
+    try:
         confirmed = report.confirm(
             kb_dir, doc_id, None if all_flagged else list(section), by=reviewer
         )

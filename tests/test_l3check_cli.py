@@ -51,7 +51,7 @@ def test_report_lists_findings_and_exits_1(tmp_path):
     assert "§1" in lines
     assert "  [order] p.3 l3: l text | pdf: p text | other: z" in lines
     assert "    agent: unsure — cannot tell" in lines
-    assert "  [content] p.? " in result.output
+    assert "  [content] p.?" in lines
     assert "2 section(s) awaiting review." in result.output
 
 
@@ -84,7 +84,7 @@ def test_confirm_all_requires_yes_or_prompt(tmp_path):
         ["l3", "confirm", "doc", "--all", "--by", "r", "--kb-dir", str(kb)],
         input="n\n",
     )
-    assert declined.exit_code != 0
+    assert declined.exit_code == 1
     assert "Confirm all 2 flagged section(s) of doc?" in declined.output
     assert report.blocked_docs(kb) == [("doc", ["1", "2"])]
 
@@ -126,3 +126,50 @@ def test_status_shows_l3_line(tmp_path):
 
     assert result.exit_code == 0
     assert "  L3 check: 2 section(s) awaiting review" in result.output
+
+
+def test_corrupt_l3check_is_one_clean_line(tmp_path):
+    kb = _git_kb(tmp_path)
+    (kb / "doc" / report.FILE_NAME).write_text("sections: [oops", encoding="utf-8")
+    cases = (
+        ["status"],
+        ["l3", "report"],
+        ["l3", "confirm", "doc", "--all", "--yes", "--by", "r"],
+    )
+
+    for args in cases:
+        result = runner.invoke(app, [*args, "--kb-dir", str(kb)])
+
+        assert result.exit_code == 1, args
+        assert f"{report.FILE_NAME} is invalid" in result.output, args
+        assert "Traceback" not in result.output, args
+
+
+def test_report_empty_kb_exits_0(tmp_path):
+    result = _invoke(tmp_path / ".kb", "report")
+
+    assert result.exit_code == 0
+    assert "KB is empty — no index.yaml yet." in result.output
+
+
+def test_confirm_all_without_l3check_file_fails_before_prompting(tmp_path):
+    kb = _git_kb(tmp_path)
+
+    result = runner.invoke(
+        app, ["l3", "confirm", "doc", "--all", "--by", "r", "--kb-dir", str(kb)]
+    )
+
+    assert result.exit_code == 1
+    assert f"no {report.FILE_NAME} for doc" in result.output
+    assert "Confirm all" not in result.output
+
+
+def test_confirm_section_gone_from_l3_exit_1(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag(kb, "1")
+    (kb / "doc" / "a.raw.md").unlink()
+
+    result = _invoke(kb, "confirm", "doc", "--section", "1", "--by", "r")
+
+    assert result.exit_code == 1
+    assert "section not found in L3" in result.output
