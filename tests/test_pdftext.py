@@ -60,3 +60,14 @@ def test_page_no_below_one_returns_none(caplog):
     with caplog.at_level("WARNING", logger="strata_kb.ingest.pdftext"):
         assert pdftext.region_text(FIXTURE, 0, _page_box(), mono=True) is None
     assert caplog.records == []  # rejected up front, not "failed": no warning
+
+
+def test_page_texts_reads_fixture():
+    pytest.importorskip("pypdfium2")
+    texts = pdftext.page_texts(FIXTURE)
+    assert "Nền" in texts[1]
+    assert "\r" not in texts[1]
+
+
+def test_page_texts_missing_file_returns_empty(tmp_path):
+    assert pdftext.page_texts(tmp_path / "nope.pdf") == {}

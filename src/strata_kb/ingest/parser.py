@@ -320,6 +320,17 @@ def _iterate(doc):
         return list(doc.iterate_items())
 
 
+def furniture_by_page(doc) -> dict[int, list[str]]:
+    """Running header/footer text per page: what the L3 check must ignore."""
+    out: dict[int, list[str]] = {}
+    for item, _level in _iterate(doc):
+        page = _page_of(item)
+        text = (getattr(item, "text", "") or "").strip()
+        if page is not None and text and _label_value(item) in _SKIP_LABELS:
+            out.setdefault(page, []).append(text)
+    return out
+
+
 def _resolve(ref, doc):
     """docling children are RefItems; the stubs in tests hold the node itself.
     None on a bad ref -- a lost figure caption must never abort ingest."""

@@ -106,6 +106,17 @@ def test_doc_to_items_maps_labels():
     assert "| A | B |" in items[2].text
 
 
+def test_furniture_by_page():
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("page_header"), text="ICAO Doc", prov=[_StubProv(2)]),
+            _StubItem(_StubLabel("text"), text="Body.", prov=[_StubProv(2)]),
+            _StubItem(_StubLabel("page_footer"), text="Page 2", prov=[_StubProv(2)]),
+        ]
+    )
+    assert parser.furniture_by_page(doc) == {2: ["ICAO Doc", "Page 2"]}
+
+
 def test_doc_to_items_carries_page_numbers():
     doc = _StubDoc(
         items=[
