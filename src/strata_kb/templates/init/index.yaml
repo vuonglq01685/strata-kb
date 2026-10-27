@@ -1,7 +1,7 @@
 docs: []
 llm:
   runner: auto        # auto | claude | copilot | none
-  model: sonnet-5
+  model: sonnet
   effort: high
   max_workers: 5
   timeout: 300

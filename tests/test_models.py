@@ -66,7 +66,7 @@ def test_kbindex_without_llm_block_gets_defaults(tmp_path):
     p.write_text("docs: []\n", encoding="utf-8")
     index = models.load_yaml_model(p, models.KBIndex)
     assert index.llm.runner == "auto"
-    assert index.llm.model == "sonnet-5"
+    assert index.llm.model == "sonnet"
     assert index.llm.effort == "high"
     assert index.llm.max_workers == 5
     assert index.llm.timeout == 300
