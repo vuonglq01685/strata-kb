@@ -151,7 +151,7 @@ Sau khi ghi L3, `kb ingest` so từng section với lớp văn bản của chín
 kết quả vào `.kb/<id>/_l3check.yaml` (hãy commit file này). Một section bị đánh
 dấu khi id của nó là id dự phòng, sai thứ tự, thiếu, thừa hoặc lỗi chữ, một
 đoạn bị ngắt giữa chừng, hoặc các trang không có lớp văn bản để kiểm tra. Một
-agent Sonnet thêm nhận định cho mỗi phát hiện về đoạn bị ngắt (`--no-llm-review`
+agent LLM (`llm.model` đã cấu hình, mặc định Sonnet) thêm nhận định cho mỗi phát hiện về đoạn bị ngắt (`--no-llm-review`
 để bỏ qua); agent không bao giờ gỡ dấu hay sửa L3.
 
 Tài liệu còn phát hiện chưa xác nhận không đi tiếp được: `kb summarize` bỏ qua

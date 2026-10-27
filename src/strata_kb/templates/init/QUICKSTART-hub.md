@@ -54,6 +54,9 @@ into it; merging their PRs here is the review gate.
    still succeeds and the PR opens, but the dev CLI will time out waiting
    for a PR that actually opened, and uploads lose incrementality (every
    publish becomes a full upload).
+   Upgrading to 1.31.1: tell child repos to bump their CI pin to
+   `strata-kb==1.31.1`; an older CI has no L3 review gate (the hub intake
+   never receives `_l3check.yaml` either way).
 5. **Create the first admin account** — people sign in to the web UI with a
    username and password; the bearer token is for `/api`, `/mcp` and CI. The
    accounts live in `.kb-auth/` (`users.db` and `session.key`) in the hub
@@ -162,7 +165,7 @@ configures asset storage of its own.
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
 - `kb l3 report [<doc-id>]` / `kb l3 confirm <doc-id> --section <id> | --all` —
-  list the L3 sections the fidelity check flagged, then record the reviewer's
+  list the L3 sections awaiting review, then record the reviewer's
   confirmation; run both between `kb ingest` and `kb summarize`
 - `kb summarize` — fill pending summaries via a headless LLM CLI
   (in your assistant: `/kb-summarize`)

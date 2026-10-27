@@ -152,7 +152,7 @@ After writing L3, `kb ingest` compares every section with the PDF's own text
 layer and writes what it finds to `.kb/<id>/_l3check.yaml` (commit it). It flags
 a section when its id is a fallback, it is out of order, text is missing, extra
 or garbled, a paragraph is broken in the middle, or the pages have no text layer
-to check. A Sonnet agent adds a verdict to each broken-paragraph finding
+to check. An LLM agent (the configured `llm.model`, Sonnet by default) adds a verdict to each broken-paragraph finding
 (`--no-llm-review` skips it); it never clears a flag or edits L3.
 
 A document with unconfirmed findings cannot move on: `kb summarize` skips it

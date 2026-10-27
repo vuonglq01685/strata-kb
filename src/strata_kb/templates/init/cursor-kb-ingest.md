@@ -48,7 +48,8 @@ missing ones. "none" is a valid answer for tags and revision.
    run `kb l3 report <id>` and show the user every flagged section with
    its evidence and agent verdict. Only the user confirms: after they
    have checked a section, run `kb l3 confirm <id> --section <section-id>`
-   (repeatable), or `--all` when they say every flag is fine. Never
+   (repeatable), or `--all --yes` when they say every flag is fine (their answer is the
+   confirmation; without `--yes` the prompt aborts in an agent shell). Never
    confirm on your own, and never edit L3 to clear a flag. Then run
    `kb summarize` (or follow the summarize step). With Docker, prefix the
    commands with `docker compose run --rm hub`.

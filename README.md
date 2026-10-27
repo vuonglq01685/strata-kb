@@ -273,7 +273,7 @@ that follows it.
 | `kb docker-setup` | Prepare the repo for Docker (hub: `.env` + token + start; child: pull image) |
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
-| `kb l3 report [DOC]` | List the L3 sections the fidelity check flagged, with evidence and agent verdicts. Exit `1` while any is unconfirmed |
+| `kb l3 report [DOC]` | List the L3 sections awaiting review (flagged and not yet confirmed), with evidence and agent verdicts. Exit `1` while any is listed |
 | `kb l3 confirm DOC` | Record that a reviewer checked flagged L3 sections: `--section ID` (repeatable) or `--all` (asks first; `--yes` skips it); `--by 'name <email>'` (default: git `user.name`/`user.email`). Unblocks summarize, build and publish |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
@@ -351,7 +351,7 @@ kb ingest source/employee-handbook.pdf \
 | `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides for pattern splitting (defaults `Chapter N` / `Appendix X` / `Attachment N`; remembered between runs) | no |
 | `--no-bookmarks` | Ignore the PDF outline and split by heading pattern instead | no |
 | `--no-summarize` / `--llm none` | Skip the automatic summarize pass | no |
-| `--no-llm-review` | Skip the Sonnet verdicts on broken-paragraph findings of the L3 check | no |
+| `--no-llm-review` | Skip the LLM verdicts on broken-paragraph findings of the L3 check | no |
 
 By default the split follows the PDF's own **bookmarks/outline**, so parts are
 named after the document's own structure (`APPENDIX N` → `appendix-N`,
@@ -399,7 +399,7 @@ never sent to the hub. A finding has a kind:
 | `break` | A paragraph is broken in the middle |
 | `unverifiable` | The pages have no text layer (scanned), so nothing was checked |
 
-For `break` findings, a Sonnet agent adds a verdict (`spurious`, `intentional`
+For `break` findings, an LLM agent (the configured `llm.model`, Sonnet by default) adds a verdict (`spurious`, `intentional`
 or `unsure`) when an LLM CLI is available; `--no-llm-review` skips it. It only
 judges: it never clears a flag and never edits L3.
 
