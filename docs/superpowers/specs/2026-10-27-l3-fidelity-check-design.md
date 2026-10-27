@@ -162,14 +162,14 @@ sections:
 
 Only sections with findings appear. The file is **committed** in the child
 repo (owner decision), so teammates see each other's confirmations and the
-`kb ci-publish` gate works in CI. It is **not sent to the hub**: 1.31.1
-excludes it from what `kb publish` / `kb ci-publish` upload
-(`hashsync.build_manifest` currently walks all of `.kb/`).
+`kb ci-publish` gate works in CI. It is **not sent to the hub**: `pubgate.is_kb_artifact` already refuses
+it on the child side and in the hub's intake (correction after the builder
+check: there *is* an allowlist). 1.31.1 only keeps it out of the publish
+"skipped" warning.
 
 Upgrade note (CHANGELOG + QUICKSTART): bump the CI pin to
-`strata-kb==1.31.1`. A CI still on 1.31.0 has no gate and would upload the
-file (reviewer names, snippets) to the hub; `kb doctor` already warns on pin
-drift.
+`strata-kb==1.31.1`. A CI still on 1.31.0 simply has no gate; `kb doctor`
+already warns on pin drift.
 
 ### 7.5 Reviewer commands
 
