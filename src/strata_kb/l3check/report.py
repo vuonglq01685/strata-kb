@@ -76,33 +76,41 @@ def save(doc_dir: Path, check: L3Check) -> None:
         path.unlink(missing_ok=True)
 
 
-def current_digests(kb_dir: Path, doc_id: str) -> dict[str, str]:
-    """Section id -> digest of its L3 slice now (what `build` compares
-    `l3_sha256` against). A missing file or slice leaves the id out. An id
-    repeated in the manifest digests all its slices joined, so an edit of any
-    occurrence changes it."""
+def l3_slices(kb_dir: Path, doc_id: str) -> dict[str, list[str | None]]:
+    """Section id -> its L3 slice per manifest row, in manifest order (an id may
+    repeat). None where the `.raw.md` file or the slice is missing."""
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
     if not manifest_path.exists():
         return {}
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    occurrences = heading_occurrences(manifest.sections)
     raws: dict[str, str] = {}
-    slices: dict[str, list[str]] = {}
-    missing: set[str] = set()
-    for sec, occ in zip(manifest.sections, occurrences, strict=True):
+    out: dict[str, list[str | None]] = {}
+    for sec, occ in zip(
+        manifest.sections, heading_occurrences(manifest.sections), strict=True
+    ):
         if sec.file not in raws:
             raw = kb_dir / doc_id / f"{sec.file}.raw.md"
             raws[sec.file] = raw.read_text(encoding="utf-8") if raw.exists() else ""
-        piece = slice_section(raws[sec.file], sec.id, occurrence=occ)
-        if piece is None:
-            missing.add(sec.id)
-        else:
-            slices.setdefault(sec.id, []).append(piece)
+        out.setdefault(sec.id, []).append(
+            slice_section(raws[sec.file], sec.id, occurrence=occ)
+        )
+    return out
+
+
+def digest_slices(slices: dict[str, list[str | None]]) -> dict[str, str]:
+    """An id repeated in the manifest digests all its slices joined, so an edit
+    of any occurrence changes it. An id with a missing slice is left out."""
     return {
-        sid: quality.digest("\n\n".join(pieces))
+        sid: quality.digest("\n\n".join(p for p in pieces if p is not None))
         for sid, pieces in slices.items()
-        if sid not in missing
+        if None not in pieces
     }
+
+
+def current_digests(kb_dir: Path, doc_id: str) -> dict[str, str]:
+    """Section id -> digest of its L3 slice now (what `build` compares
+    `l3_sha256` against)."""
+    return digest_slices(l3_slices(kb_dir, doc_id))
 
 
 def unconfirmed(check: L3Check, digests: dict[str, str]) -> list[SectionCheck]:

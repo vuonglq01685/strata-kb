@@ -243,3 +243,51 @@ def test_reingest_unchanged_keeps_confirmation(tmp_path, monkeypatch):
     assert "L3 check: clean" in result.output
     check = l3report.load(kb_dir / "demo")
     assert check is not None and check.sections[0].confirmed is not None
+
+
+def test_sections_reingest_keeps_other_chapters_and_flags_nothing_new(
+    tmp_path, monkeypatch
+):
+    from strata_kb.ingest import parser, pdftext
+
+    other = "Route segments connect the published waypoints in the listed order."
+    fake_doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="5.0 NAVIGATION DATA",
+                level=1,
+                prov=[_StubProv(page_no=1)],
+            ),
+            _StubItem(_StubLabel("text"), text=BODY, prov=[_StubProv(page_no=1)]),
+            _StubItem(
+                _StubLabel("section_header"),
+                text="6.0 ROUTES",
+                level=1,
+                prov=[_StubProv(page_no=2)],
+            ),
+            _StubItem(_StubLabel("text"), text=other, prov=[_StubProv(page_no=2)]),
+        ]
+    )
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: fake_doc)
+    monkeypatch.setattr(
+        pdftext,
+        "page_texts",
+        lambda pdf: {
+            1: f"5.0 NAVIGATION DATA\n{BODY}",
+            2: f"6.0 ROUTES\n{other}\n{DROPPED}",  # lost sentence, flagged on 5 (span 1-2)
+        },
+    )
+    (tmp_path / "doc.pdf").write_bytes(b"%PDF-fake")
+    kb_dir = tmp_path / ".kb"
+    assert _ingest_demo(tmp_path).exit_code == 0
+    assert [s.id for s in l3report.load(kb_dir / "demo").sections] == ["5"]
+    l3report.confirm(kb_dir, "demo", None, by="tester")
+
+    result = _ingest_demo(tmp_path, "--sections", "6")
+
+    assert result.exit_code == 0, result.output
+    assert "L3 check: clean" in result.output
+    check = l3report.load(kb_dir / "demo")
+    assert [s.id for s in check.sections] == ["5"]
+    assert check.sections[0].confirmed is not None
