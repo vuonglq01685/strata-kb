@@ -145,6 +145,29 @@ kèm mẫu tiêu đề.
 - Một giá trị `--sections` không khớp tiêu đề nào sẽ **xoá** chương đó. Báo cáo
   nói rõ điều này; hãy đọc thay vì đoán.
 
+## 4.5 Review kết quả kiểm tra L3
+
+Sau khi ghi L3, `kb ingest` so từng section với lớp văn bản của chính PDF và ghi
+kết quả vào `.kb/<id>/_l3check.yaml` (hãy commit file này). Một section bị đánh
+dấu khi id của nó là id dự phòng, sai thứ tự, thiếu, thừa hoặc lỗi chữ, một
+đoạn bị ngắt giữa chừng, hoặc các trang không có lớp văn bản để kiểm tra. Một
+agent Sonnet thêm nhận định cho mỗi phát hiện về đoạn bị ngắt (`--no-llm-review`
+để bỏ qua); agent không bao giờ gỡ dấu hay sửa L3.
+
+Tài liệu còn phát hiện chưa xác nhận không đi tiếp được: `kb summarize` bỏ qua
+nó (exit 1), `kb build` báo lỗi, `kb publish` và `kb ci-publish` từ chối.
+
+```bash
+kb l3 report hr-handbook                       # phát hiện, bằng chứng, nhận định
+kb l3 confirm hr-handbook --section 4.12       # reviewer đã kiểm tra section này
+kb l3 confirm hr-handbook --all --yes          # mọi section bị đánh dấu
+```
+
+Xác nhận chỉ có hiệu lực khi L3 của section không đổi; ingest lại section đã đổi
+sẽ yêu cầu review lại. Tài liệu ingest trước 1.31.1 không có file kiểm tra nên
+không bị chặn cho đến khi ingest lại. `_l3check.yaml` không bao giờ được gửi lên
+hub.
+
 ---
 
 # 5. Tóm tắt
@@ -543,6 +566,7 @@ phép kiểm tra chặt hơn, và thông báo sẽ cho bạn biết lệnh nào 
 | `kb init [--kind hub\|child]` | Tạo hoặc làm mới repository |
 | `kb docker-setup` | Chuẩn bị Docker: hub khởi động dịch vụ, child kéo image |
 | `kb ingest <pdf> --id <id>` | Tách tài liệu, ghi L3, dựng khung L1/L2 |
+| `kb l3 report\|confirm <doc>` | Review và xác nhận các section L3 bị đánh dấu |
 | `kb status` | Còn gì chưa làm |
 | `kb summarize <doc>` | Điền hoặc điền lại tóm tắt |
 | `kb build [--strict] [--allow-pending]` | Kiểm tra kho |

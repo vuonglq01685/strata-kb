@@ -36,8 +36,13 @@ the hub's `federation/`.
    flags. (needs the ingest extra: `pip install "strata-kb[ingest]"` — or run
    it inside Docker, no local Python needed:
    `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc --no-summarize`)
-4. **Summarize** — `kb ingest` does this automatically when the Claude Code or
-   GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
+4. **Review L3, then summarize** — `kb ingest` first checks L3 against the PDF
+   and flags suspect sections (order, fallback ids, broken paragraphs, text
+   that differs). A flagged document cannot be summarized, built or published
+   until a reviewer confirms it: `kb l3 report <doc-id>`, then
+   `kb l3 confirm <doc-id> --section <id>` (or `--all`). Nothing flagged means
+   nothing to do. Summarizing: `kb ingest` does this automatically when the
+   Claude Code or GitHub Copilot CLI is installed (config: `llm:` in `.kb/index.yaml`).
    Manual fallback: `/kb-summarize` in your assistant, or `kb summarize` later.
    Then validate: `kb build`
    After checking the summaries, mark them reviewed:
@@ -79,6 +84,9 @@ the hub's `federation/`.
   (in your assistant: `/kb-docker-setup`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
+- `kb l3 report [<doc-id>]` / `kb l3 confirm <doc-id> --section <id> | --all` —
+  list the L3 sections the fidelity check flagged, then record the reviewer's
+  confirmation; run both between `kb ingest` and `kb summarize`
 - `kb summarize` — fill pending summaries via a headless LLM CLI
   (in your assistant: `/kb-summarize`)
 - `kb approve <doc-id> [--section <id>]` — mark summarized sections as

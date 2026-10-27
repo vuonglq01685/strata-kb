@@ -494,6 +494,9 @@ skill/command/prompt scaffolded on this repo is the identical resource a
 at all. On this repo, read every `kb ingest` mention in that wrapper as
 `kb code-ingest --scaffold-svc`: that is the command that actually
 created the scaffold `kb-summarize` fills, in the Onboarding step above.
+The same goes for the L3 review step (`kb l3 report` / `kb l3 confirm`)
+in that wrapper: it belongs to `kb ingest` of a PDF, so it never applies on
+this repo.
 
 ## Full-auto mode (optional)
 

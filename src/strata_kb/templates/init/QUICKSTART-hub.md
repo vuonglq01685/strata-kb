@@ -21,6 +21,9 @@ into it; merging their PRs here is the review gate.
    `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
    (prefer the `/kb-ingest` slash command; or run inside Docker:
    `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
+   If the L3 check flags sections, review them first: `kb l3 report my-doc`,
+   then `kb l3 confirm my-doc --section <id>` (or `--all`); until then the
+   document cannot be summarized, built or published.
    Summaries: automatic with a local LLM CLI, or `/kb-summarize`; validate
    with `kb build`; then `kb publish` mirrors into `federation/<repo-id>/`.
 3. **Query** — `kb query "your question"`, the web UI, or MCP. The local
@@ -158,6 +161,9 @@ configures asset storage of its own.
   (in your assistant: `/kb-docker-setup`)
 - `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
   (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
+- `kb l3 report [<doc-id>]` / `kb l3 confirm <doc-id> --section <id> | --all` —
+  list the L3 sections the fidelity check flagged, then record the reviewer's
+  confirmation; run both between `kb ingest` and `kb summarize`
 - `kb summarize` — fill pending summaries via a headless LLM CLI
   (in your assistant: `/kb-summarize`)
 - `kb approve <doc-id> [--section <id>]` — mark summarized sections as

@@ -146,6 +146,29 @@ out-of-order headings is usually a document whose outline needs
 - A `--sections` value that matches no heading **deletes** that chapter. The
   report says so explicitly; read it rather than assume.
 
+## 4.5 Review the L3 check
+
+After writing L3, `kb ingest` compares every section with the PDF's own text
+layer and writes what it finds to `.kb/<id>/_l3check.yaml` (commit it). It flags
+a section when its id is a fallback, it is out of order, text is missing, extra
+or garbled, a paragraph is broken in the middle, or the pages have no text layer
+to check. A Sonnet agent adds a verdict to each broken-paragraph finding
+(`--no-llm-review` skips it); it never clears a flag or edits L3.
+
+A document with unconfirmed findings cannot move on: `kb summarize` skips it
+(exit 1), `kb build` errors, `kb publish` and `kb ci-publish` refuse.
+
+```bash
+kb l3 report hr-handbook                       # findings, evidence, verdicts
+kb l3 confirm hr-handbook --section 4.12       # a reviewer checked this one
+kb l3 confirm hr-handbook --all --yes          # every flagged section
+```
+
+A confirmation holds only while that section's L3 is unchanged; re-ingesting a
+changed section asks for review again. Documents ingested before 1.31.1 have no
+check file and are not gated until re-ingested. `_l3check.yaml` is never sent to
+the hub.
+
 ---
 
 # 5. Summarize
@@ -559,6 +582,7 @@ got stricter, and the message tells you which command fixes it.
 | `kb init [--kind hub\|child]` | Create or refresh the repository |
 | `kb docker-setup` | Prepare Docker: hub starts the service, child pulls the image |
 | `kb ingest <pdf> --id <id>` | Split a document, write L3, scaffold L1/L2 |
+| `kb l3 report\|confirm <doc>` | Review and confirm flagged L3 sections |
 | `kb status` | What is still pending |
 | `kb summarize <doc>` | Fill or re-fill summaries |
 | `kb build [--strict] [--allow-pending]` | Validate the store |

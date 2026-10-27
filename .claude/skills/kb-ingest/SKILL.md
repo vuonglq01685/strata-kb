@@ -44,7 +44,18 @@ missing ones. "none" is a valid answer for tags and revision.
      `pip install "strata-kb[ingest]"`), which auto-summarizes as usual:
      `kb ingest source/<file>.pdf --id <id> --tags "<tags>" --revision "<revision>"`
    Omit `--tags` / `--revision` when the user answered "none".
-4. **Report the outcome.** Relay the CLI output: number of sections,
+4. **Review the L3 check.** `kb ingest` compares L3 with the PDF and
+   flags suspect sections (wrong order, fallback ids, broken paragraphs,
+   text that differs from the PDF) in `.kb/<id>/_l3check.yaml`. When the
+   output says `Summarize skipped until the L3 review is confirmed`:
+   run `kb l3 report <id>` and show the user every flagged section with
+   its evidence and agent verdict. Only the user confirms: after they
+   have checked a section, run `kb l3 confirm <id> --section <section-id>`
+   (repeatable), or `--all` when they say every flag is fine. Never
+   confirm on your own, and never edit L3 to clear a flag. Then run
+   `kb summarize` (or follow the summarize step). With Docker, prefix the
+   commands with `docker compose run --rm hub`.
+5. **Report the outcome.** Relay the CLI output: number of sections,
    summarize result, `kb build` status.
    - Some sections failed to summarize → tell the user to run
      `kb summarize` (or the kb-summarize skill) and stop.

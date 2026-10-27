@@ -14,6 +14,12 @@ LLM CLI (`kb summarize`). Use this manual workflow when auto-summarize was
 disabled (`--no-summarize`, `runner: none`), no LLM CLI was available, or
 some sections failed and you want to fix them.
 
+A document whose L3 fidelity check still has unconfirmed findings is
+blocked: `kb summarize` skips it (exit 1) and `kb build` errors on it. Do
+not summarize it by hand. Report it, point the user to `kb l3 report
+<doc-id>`, and let the reviewer run `kb l3 confirm <doc-id> --section <id>
+| --all` first. (A `dev` repo has no L3 check: it never runs `kb ingest`.)
+
 An optional argument narrows the run to one document id. `--print-prompt`
 (step 2) always requires a document id, though — with no argument, loop
 step 2 once per pending document listed in step 1.
