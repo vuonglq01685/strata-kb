@@ -829,7 +829,7 @@ def test_docs_page_cards_show_repo_and_tags(demo_doc_hub):
 
 def test_section_page_renders_l2_with_table_and_citation(demo_doc_hub):
     resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
-        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+        "/ui/docs/demo-doc/1.1", params={"level": "l2", "repo": "demo-kb"}
     )
     assert resp.status_code == 200
     assert "demo-kb:demo-doc §1.1" in resp.text
@@ -852,7 +852,15 @@ def test_section_page_l3(demo_doc_hub):
 def test_section_page_level_tabs_reflect_active_level(demo_doc_hub):
     client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
 
-    main_l2 = _main(client.get("/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}))
+    main_default = _main(
+        client.get("/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"})
+    )
+    assert re.search(r'class="on"[^>]*href="[^"]*level=l3', main_default)
+    assert not re.search(r'class="on"[^>]*level=l2', main_default)
+
+    main_l2 = _main(
+        client.get("/ui/docs/demo-doc/1.1", params={"level": "l2", "repo": "demo-kb"})
+    )
     assert re.search(r'class="on"[^>]*href="[^"]*level=l2', main_l2)
     assert not re.search(r'class="on"[^>]*level=l3', main_l2)
 
@@ -861,6 +869,31 @@ def test_section_page_level_tabs_reflect_active_level(demo_doc_hub):
     )
     assert re.search(r'class="on"[^>]*href="[^"]*level=l3', main_l3)
     assert not re.search(r'class="on"[^>]*level=l2', main_l3)
+
+
+def test_section_page_defaults_to_l3(demo_doc_hub):
+    client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
+    main = _main(client.get("/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}))
+    assert re.search(r'class="on"[^>]*href="[^"]*level=l3', main)
+    assert "Full raw text" in main
+
+
+def test_section_page_invalid_level_falls_back_to_l3(demo_doc_hub):
+    client = _client(demo_doc_hub / ".kb", str(demo_doc_hub))
+    main = _main(
+        client.get(
+            "/ui/docs/demo-doc/1.1", params={"level": "bogus", "repo": "demo-kb"}
+        )
+    )
+    assert re.search(r'class="on"[^>]*href="[^"]*level=l3', main)
+    assert "Full raw text" in main
+
+
+def test_left_rail_is_288px():
+    css = resources.files("strata_kb").joinpath("templates/web/static/style.css")
+    css = css.read_text(encoding="utf-8")
+    assert css.count("grid-template-columns: 288px") == 2
+    assert "248px" not in css
 
 
 def test_section_page_qualified_doc_id_resolves_manifest(demo_doc_hub):
@@ -884,7 +917,7 @@ def test_section_page_qualified_doc_id_resolves_manifest(demo_doc_hub):
 
 def test_remote_repo_section_page_returns_200_with_l2_content(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get(
-        "/ui/docs/icao-annex-2/1.1", params={"repo": "icao-kb"}
+        "/ui/docs/icao-annex-2/1.1", params={"level": "l2", "repo": "icao-kb"}
     )
     assert resp.status_code == 200
     assert "Condensed" in resp.text
@@ -1209,7 +1242,7 @@ def test_static_css_widens_main_and_defines_new_styles(fed_hub):
     resp = _client(fed_hub / ".kb", str(fed_hub)).get("/ui/static/style.css")
     # the old single-column `.detail` wrapper is gone — the redesign widens
     # the reading area via the shell's 3-column grid instead of a max-width
-    assert "grid-template-columns: 248px minmax(0,1fr) 292px" in resp.text
+    assert "grid-template-columns: 288px minmax(0,1fr) 292px" in resp.text
     # keyword-highlight rule (previously asserted with no test protecting it).
     # Anchored to line-start so a substring like ".brand-mark {" can't
     # trivially satisfy this the way a bare "mark {" in resp.text would.
