@@ -879,6 +879,11 @@ def ingest(
     llm: str = typer.Option(
         "", "--llm", help="Runner: claude | copilot | none (default: auto-detect)"
     ),
+    no_llm_review: bool = typer.Option(
+        False,
+        "--no-llm-review",
+        help="Skip the LLM verdicts on broken-paragraph findings",
+    ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from strata_kb import ingestcmd
@@ -911,6 +916,8 @@ def ingest(
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
     if report.l3_flagged:
+        if not (no_llm_review or llm == "none"):
+            _l3_agent_review(kb_dir, report.doc_id, llm)
         typer.echo(
             "Summarize skipped until the L3 review is confirmed: "
             f"kb l3 report {report.doc_id}, then "
@@ -942,6 +949,23 @@ def ingest(
         typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
     if build_report.ok:
         typer.echo("kb build: OK")
+
+
+def _l3_agent_review(kb_dir: Path, doc_id: str, llm: str) -> None:
+    """Advisory verdicts on `break` findings; a failure never changes ingest's exit code."""
+    from strata_kb.l3check import agent
+
+    try:
+        runner, _, workers = _resolve_runner(kb_dir, llm, 0)
+        if runner is None:
+            typer.echo("L3 agent review skipped: no LLM CLI")
+            return
+        n = agent.annotate(kb_dir, doc_id, runner, workers)
+    except Exception as exc:  # noqa: BLE001 - the review is advisory
+        typer.secho(f"L3 agent review failed: {exc}", fg=typer.colors.YELLOW)
+        return
+    if n:
+        typer.echo(f"L3 agent review: {n} verdict(s) written")
 
 
 def _require_hub_kind(kb_dir: Path, command: str) -> None:
