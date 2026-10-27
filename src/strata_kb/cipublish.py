@@ -129,7 +129,10 @@ def _multipart(meta: dict, archive: bytes) -> tuple[bytes, str]:
 def _check_unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> None:
     """Warn/refuse on sections published without SME review — the
     same helper `kb publish` calls, run here before any upload."""
-    gate = publish_mod.unreviewed_gate(kb_dir, require_reviewed)
+    _refuse_or_echo(publish_mod.unreviewed_gate(kb_dir, require_reviewed))
+
+
+def _refuse_or_echo(gate: publish_mod.UnreviewedGate) -> None:
     if gate.line is not None:
         typer.echo(gate.line)
         if gate.blocked:
@@ -146,6 +149,7 @@ def run(
 ) -> str:
     """Diff -> upload -> return PR URL; "" when there is nothing to publish."""
     _check_unreviewed_gate(kb_dir, require_reviewed)
+    _refuse_or_echo(publish_mod.l3_gate(kb_dir))
     http = http or _default_http
     kb_abs = kb_dir.resolve()
     # Before the token request or any upload: an unrecorded kind is a local fix.

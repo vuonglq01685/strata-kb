@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Literal
 
 from strata_kb import models, quality
+from strata_kb.l3check import report as l3_report
 from strata_kb.llm import RunnerError
 from strata_kb.mdutils import HEADING_RE, heading_occurrences, slice_section
 from strata_kb.quality import (
@@ -288,6 +289,7 @@ def replace_marker(
 class SummarizeReport:
     summarized: list[str] = field(default_factory=list)  # "doc-id/section-id"
     failed: list[str] = field(default_factory=list)
+    blocked: list[str] = field(default_factory=list)  # doc ids awaiting L3 review
 
     @property
     def ok(self) -> bool:
@@ -346,7 +348,17 @@ def summarize_kb(
     all file writes happen sequentially on the main thread."""
     say = on_progress or (lambda _msg: None)
     report = SummarizeReport()
-    pending = collect_pending(kb_dir, doc_id, on_missing=report.failed.append)
+    blocked = {
+        d: ids for d, ids in l3_report.blocked_docs(kb_dir) if doc_id in (None, d)
+    }
+    for d, ids in blocked.items():
+        report.blocked.append(d)
+        say(f"[skip] {d}: L3 review pending ({len(ids)} section(s)) — kb l3 report {d}")
+    pending = [
+        s
+        for s in collect_pending(kb_dir, doc_id, on_missing=report.failed.append)
+        if s.doc_id not in blocked
+    ]
     results: dict[tuple[str, int], dict[str, str]] = {}
     sections = {(s.doc_id, s.row): s for s in pending}
     if pending:
@@ -372,7 +384,16 @@ def summarize_kb(
 
         _apply_results(kb_dir, results, sections, runner, report)
     touched = {s.doc_id for s in pending}
-    _fill_doc_summaries(kb_dir, runner, doc_id, touched, say, report, max_workers)
+    _fill_doc_summaries(
+        kb_dir,
+        runner,
+        doc_id,
+        touched,
+        say,
+        report,
+        max_workers,
+        skip=frozenset(blocked),
+    )
     report.summarized.sort()
     report.failed.sort()
     return report
@@ -710,6 +731,7 @@ def _fill_doc_summaries(
     say: Callable[[str], None],
     report: SummarizeReport,
     max_workers: int = 5,
+    skip: frozenset[str] = frozenset(),
 ) -> None:
     """Write the L0 sentence for every in-scope doc that has no pending
     section and either was touched in this run or has an empty summary.
@@ -719,7 +741,7 @@ def _fill_doc_summaries(
     index = models.load_yaml_model(index_path, models.KBIndex)
     todo: list[tuple[models.IndexEntry, str]] = []
     for entry in index.docs:
-        if doc_id and entry.id != doc_id:
+        if (doc_id and entry.id != doc_id) or entry.id in skip:
             continue
         if entry.id not in touched and entry.summary.strip():
             continue

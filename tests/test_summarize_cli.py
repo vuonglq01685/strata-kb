@@ -4,7 +4,8 @@ from typer.testing import CliRunner
 
 from strata_kb import models
 from strata_kb.cli import app
-from tests.test_summarize import FakeRunner, make_kb
+from tests.test_l3check_report import _flag
+from tests.test_summarize import FakeRunner, _add_doc_copy, make_kb
 
 runner = CliRunner()
 
@@ -34,6 +35,21 @@ def test_summarize_failed_section_exit_1(tmp_path: Path, monkeypatch):
     assert result.exit_code == 1
     assert "1 failed" in result.output
     assert "kb summarize" in result.output  # re-run hint
+
+
+def test_summarize_blocked_doc_exit_1_after_summarizing_the_rest(
+    tmp_path: Path, monkeypatch
+):
+    kb = make_kb(tmp_path, {})
+    _add_doc_copy(kb, "d2")
+    _flag(kb, "1.1", doc="d1")
+    _patch_detect(monkeypatch, FakeRunner())
+    result = runner.invoke(app, ["summarize", "--kb-dir", str(kb)])
+    assert result.exit_code == 1
+    assert "[skip] d1: L3 review pending (1 section(s)) — kb l3 report d1" in (
+        result.output
+    )
+    assert "2 summarized, 0 failed." in result.output
 
 
 def test_summarize_no_runner_exit_1(tmp_path: Path, monkeypatch):

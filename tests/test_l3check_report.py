@@ -39,10 +39,10 @@ def _sec(sid: str, sha: str = "h", kind: FindingKind = "content", **kw) -> Secti
     )
 
 
-def _flag(kb: Path, *sids: str) -> None:
-    digests = report.current_digests(kb, "doc")
+def _flag(kb: Path, *sids: str, doc: str = "doc") -> None:
+    digests = report.current_digests(kb, doc)
     check = L3Check(checked_at="t", sections=[_sec(s, digests[s]) for s in sids])
-    report.save(kb / "doc", check)
+    report.save(kb / doc, check)
 
 
 def test_roundtrip_and_empty_deletes_file(tmp_path):

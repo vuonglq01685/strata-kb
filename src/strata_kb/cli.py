@@ -1581,6 +1581,7 @@ def _run_summarize_and_report(
             "Some sections stay pending — re-run with: kb summarize",
             fg=typer.colors.YELLOW,
         )
+    if report.failed or report.blocked:
         raise typer.Exit(1)
 
 
@@ -2676,6 +2677,15 @@ def publish(
         typer.secho(
             f"a _manifest.yaml under {kb_dir} is unreadable ({exc}) -- fix or "
             "re-ingest that document",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from None
+    try:
+        _apply_unreviewed_gate(publish_mod.l3_gate(kb_dir))
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(
+            f"cannot read the L3 check state under {kb_dir} ({exc}) -- fix "
+            "index.yaml or the document's _l3check.yaml",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1) from None

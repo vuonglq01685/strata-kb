@@ -7,6 +7,7 @@ later edit of the section re-blocks it.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -14,7 +15,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from strata_kb import models, quality
 from strata_kb.mdutils import heading_occurrences, slice_section
-from strata_kb.review import _now
 
 FILE_NAME = "_l3check.yaml"
 FindingKind = Literal["fallback", "order", "content", "break", "unverifiable"]
@@ -60,6 +60,11 @@ class L3Check(BaseModel):
     checked_at: str
     source_sha256: str = ""
     sections: list[SectionCheck] = Field(default_factory=list)
+
+
+def _now() -> str:
+    # not review._now: review imports build, which imports this module
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def load(doc_dir: Path) -> L3Check | None:

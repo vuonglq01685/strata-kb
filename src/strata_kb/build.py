@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from strata_kb import models, quality
+from strata_kb.l3check import report as l3_report
 from strata_kb.mdutils import (
     count_tokens,
     extract_tables,
@@ -50,8 +51,17 @@ def build_kb(
         report.errors.append(f"not found: {index_path}")
         return report
     index = models.load_yaml_model(index_path, models.KBIndex)
+    l3_blocked = dict(l3_report.blocked_docs(kb_dir))
     for entry in index.docs:
-        _build_doc(kb_dir, entry, report, allow_pending, strict, write_tokens)
+        _build_doc(
+            kb_dir,
+            entry,
+            report,
+            allow_pending,
+            strict,
+            write_tokens,
+            l3_blocked.get(entry.id, []),
+        )
     l0_tokens = count_tokens(index_path.read_text(encoding="utf-8"))
     if l0_tokens > 1000:
         report.warnings.append(
@@ -67,6 +77,7 @@ def _build_doc(
     allow_pending: bool,
     strict: bool,
     write_tokens: bool = True,
+    l3_pending: list[str] | None = None,
 ) -> None:
     manifest_path = kb_dir / entry.id / "_manifest.yaml"
     if not manifest_path.exists():
@@ -74,6 +85,11 @@ def _build_doc(
         return
     manifest = models.load_yaml_model(manifest_path, models.Manifest)
     errors_before = len(report.errors)
+    if l3_pending:  # unconfirmed L3 findings are an error under any --strict
+        sections = ", ".join(f"§{s}" for s in l3_pending)
+        report.errors.append(
+            f"{entry.id}: L3 review pending for {sections} — kb l3 report {entry.id}"
+        )
     _add_findings(report, quality.check_doc(entry), strict)
     file_cache: dict[str, str] = {}
     _check_orphan_headings(report, kb_dir, entry.id, manifest, file_cache)

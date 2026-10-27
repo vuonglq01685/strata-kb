@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from strata_kb import federation, ghio, gitio, kinds, models, pubgate
 from strata_kb import hub as hub_mod
 from strata_kb.errors import KbError
+from strata_kb.l3check import report as l3_report
 from strata_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("strata_kb.publish")
@@ -1207,6 +1208,20 @@ def unreviewed_gate(kb_dir: Path, require_reviewed: bool) -> UnreviewedGate:
             blocked=True,
         )
     return UnreviewedGate(line=f"[warn] {msg}", blocked=False)
+
+
+def l3_gate(kb_dir: Path) -> UnreviewedGate:
+    """Refuse (never just warn) while any doc has an unconfirmed L3 finding;
+    called by `kb publish` and `kb ci-publish` right after `unreviewed_gate`."""
+    blocked = l3_report.blocked_docs(kb_dir)
+    if not blocked:
+        return UnreviewedGate(line=None)
+    docs = ", ".join(doc_id for doc_id, _ in blocked)
+    return UnreviewedGate(
+        line=f"[error] L3 review pending in {len(blocked)} doc(s): {docs}"
+        " — kb l3 report",
+        blocked=True,
+    )
 
 
 def _load_hub_registry(handle: hub_mod.HubHandle, hub_label: str) -> models.Registry:
