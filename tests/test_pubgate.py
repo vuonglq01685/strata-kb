@@ -328,3 +328,22 @@ def test_asset_record_basename_stays_in_sync_with_assetstore():
     from strata_kb import assetstore
 
     assert pubgate._ASSET_RECORD_BASENAME == assetstore.RECORD_NAME
+
+
+def test_l3check_file_not_published_and_not_warned():
+    manifest = {
+        "demo-doc/_l3check.yaml": "h1",
+        "demo-doc/_manifest.yaml": "h2",
+        ".env": "h3",
+    }
+    for keep_records in (False, True):
+        kept, skipped = pubgate.split_allowlist(manifest, keep_records=keep_records)
+        assert "demo-doc/_l3check.yaml" not in kept
+        assert skipped == [".env"]  # local-only, not a stray file to warn about
+        assert "demo-doc/_manifest.yaml" in kept
+
+
+def test_l3check_basename_stays_in_sync_with_l3check_report():
+    from strata_kb.l3check import report
+
+    assert report.FILE_NAME in pubgate._LOCAL_ONLY_BASENAMES

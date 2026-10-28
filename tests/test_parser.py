@@ -106,6 +106,17 @@ def test_doc_to_items_maps_labels():
     assert "| A | B |" in items[2].text
 
 
+def test_furniture_by_page():
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("page_header"), text="ICAO Doc", prov=[_StubProv(2)]),
+            _StubItem(_StubLabel("text"), text="Body.", prov=[_StubProv(2)]),
+            _StubItem(_StubLabel("page_footer"), text="Page 2", prov=[_StubProv(2)]),
+        ]
+    )
+    assert parser.furniture_by_page(doc) == {2: ["ICAO Doc", "Page 2"]}
+
+
 def test_doc_to_items_carries_page_numbers():
     doc = _StubDoc(
         items=[
@@ -928,3 +939,29 @@ def test_doc_to_items_whitespace_caption_falls_through_to_ocr(tmp_path, monkeypa
     )
     items = parser.doc_to_items(doc, assets_dir=tmp_path)
     assert items[0].text.startswith("![OCR FOUND THIS](assets/")
+
+
+def test_furniture_by_page_sees_furniture_layer_of_a_real_docling_document():
+    # docling files running headers in ContentLayer.FURNITURE, which a default
+    # iterate_items() skips
+    pytest.importorskip("docling_core")
+    from docling_core.types.doc import (  # pyright: ignore[reportMissingImports]
+        BoundingBox,
+        ContentLayer,
+        DocItemLabel,
+        DoclingDocument,
+        ProvenanceItem,
+    )
+
+    doc = DoclingDocument(name="t")
+    prov = ProvenanceItem(
+        page_no=2, bbox=BoundingBox(l=0, t=0, r=1, b=1), charspan=(0, 5)
+    )
+    doc.add_text(
+        label=DocItemLabel.PAGE_HEADER,
+        text="ICAO Doc 8168",
+        prov=prov,
+        content_layer=ContentLayer.FURNITURE,
+    )
+    doc.add_text(label=DocItemLabel.TEXT, text="Body.", prov=prov)
+    assert parser.furniture_by_page(doc) == {2: ["ICAO Doc 8168"]}

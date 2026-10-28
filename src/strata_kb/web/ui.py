@@ -940,9 +940,9 @@ def build_routes(
     def section_page(request: Request) -> HTMLResponse:
         doc_id = request.path_params["doc"]
         section_id = request.path_params["section"]
-        level = request.query_params.get("level", "l2")
+        level = request.query_params.get("level", "l3")
         if level not in ("l2", "l3"):
-            level = "l2"
+            level = "l3"
         repo = request.query_params.get("repo") or None
         hub = api.hub_handle(config)
         if hub is None:

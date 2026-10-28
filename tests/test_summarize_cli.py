@@ -4,7 +4,8 @@ from typer.testing import CliRunner
 
 from strata_kb import models
 from strata_kb.cli import app
-from tests.test_summarize import FakeRunner, make_kb
+from tests.test_l3check_report import _flag
+from tests.test_summarize import FakeRunner, _add_doc_copy, make_kb
 
 runner = CliRunner()
 
@@ -34,6 +35,21 @@ def test_summarize_failed_section_exit_1(tmp_path: Path, monkeypatch):
     assert result.exit_code == 1
     assert "1 failed" in result.output
     assert "kb summarize" in result.output  # re-run hint
+
+
+def test_summarize_blocked_doc_exit_1_after_summarizing_the_rest(
+    tmp_path: Path, monkeypatch
+):
+    kb = make_kb(tmp_path, {})
+    _add_doc_copy(kb, "d2")
+    _flag(kb, "1.1", doc="d1")
+    _patch_detect(monkeypatch, FakeRunner())
+    result = runner.invoke(app, ["summarize", "--kb-dir", str(kb)])
+    assert result.exit_code == 1
+    assert "[skip] d1: L3 review pending (1 section(s)) — kb l3 report d1" in (
+        result.output
+    )
+    assert "2 summarized, 0 failed." in result.output
 
 
 def test_summarize_no_runner_exit_1(tmp_path: Path, monkeypatch):
@@ -137,6 +153,21 @@ def test_redo_include_reviewed_with_yes_resets_and_resummarizes(tmp_path, monkey
     assert "2 summarized, 0 failed." in result.output
     m = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
     assert all(s.status == "summarized" and s.reviewed is None for s in m.sections)
+
+
+def test_redo_of_a_blocked_doc_is_refused_and_changes_nothing(tmp_path, monkeypatch):
+    kb = make_kb(tmp_path, {"1.1": "summarized", "1.2": "summarized"})
+    _flag(kb, "1.1", doc="d1")
+    _patch_detect(monkeypatch, FakeRunner())
+    files = [kb / "d1" / "_manifest.yaml", kb / "d1" / "ch1.md"]
+    before = [f.read_bytes() for f in files]
+    result = runner.invoke(
+        app, ["summarize", "d1", "--redo", "--yes", "--kb-dir", str(kb)]
+    )
+    assert result.exit_code == 1
+    assert "d1: L3 review pending — kb l3 report d1" in result.output
+    assert "redo:" not in result.output
+    assert [f.read_bytes() for f in files] == before
 
 
 def test_redo_dry_run_writes_nothing(tmp_path, monkeypatch):

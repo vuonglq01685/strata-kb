@@ -21,6 +21,7 @@ import yaml
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
+from strata_kb.l3check import report as l3report
 from tests.test_parser import _StubDoc, _StubItem, _StubLabel, _StubProv
 
 REPO = Path(__file__).parent.parent
@@ -144,3 +145,149 @@ def test_ingest_writes_assets_and_l3_ref(tmp_path, monkeypatch):
     assert len(assets) == 1
     l3 = next((kb_dir / "demo").glob("*.raw.md")).read_text(encoding="utf-8")
     assert f"](assets/{assets[0].name})" in l3
+
+
+BODY = "Holding patterns keep aircraft in a defined airspace while awaiting clearance."
+DROPPED = "Radius limits for the holding fixes are listed in the annex tables."
+
+
+def _l3_fake(monkeypatch, tmp_path, page_text: dict[int, str]):
+    """Fake docling doc (one section, page 1) + a stubbed PDF text layer."""
+    from strata_kb.ingest import parser, pdftext
+
+    fake_doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="5.0 NAVIGATION DATA",
+                level=1,
+                prov=[_StubProv(page_no=1)],
+            ),
+            _StubItem(_StubLabel("text"), text=BODY, prov=[_StubProv(page_no=1)]),
+        ]
+    )
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: fake_doc)
+    monkeypatch.setattr(pdftext, "page_texts", lambda pdf: page_text)
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+    return tmp_path / ".kb"
+
+
+def _ingest_demo(tmp_path, *extra):
+    return runner.invoke(
+        app,
+        [
+            "ingest",
+            str(tmp_path / "doc.pdf"),
+            "--id",
+            "demo",
+            "--kb-dir",
+            str(tmp_path / ".kb"),
+            "--work-dir",
+            str(tmp_path / ".kb-work"),
+            "--no-summarize",
+            *extra,
+        ],
+    )
+
+
+def test_ingest_writes_l3check_for_missing_text(tmp_path, monkeypatch):
+    kb_dir = _l3_fake(
+        monkeypatch, tmp_path, {1: f"5.0 NAVIGATION DATA\n{BODY}\n{DROPPED}"}
+    )
+
+    result = _ingest_demo(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    check = l3report.load(kb_dir / "demo")
+    assert check is not None
+    assert [s.id for s in check.sections] == ["5"]
+    assert [f.kind for f in check.sections[0].findings] == ["content"]
+    assert check.sections[0].l3_sha256 == l3report.current_digests(kb_dir, "demo")["5"]
+    assert (
+        "L3 check: 1 section(s) flagged (fallback 0, order 0, content 1, break 0, "
+        "unverifiable 0) — review: kb l3 report demo" in result.output
+    )
+
+
+def test_ingest_clean_doc_writes_no_file(tmp_path, monkeypatch):
+    kb_dir = _l3_fake(monkeypatch, tmp_path, {1: f"5.0 NAVIGATION DATA\n{BODY}"})
+
+    result = _ingest_demo(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert "L3 check: clean" in result.output
+    assert not (kb_dir / "demo" / l3report.FILE_NAME).exists()
+
+
+def test_ingest_unreadable_text_layer_skips_check(tmp_path, monkeypatch):
+    kb_dir = _l3_fake(monkeypatch, tmp_path, {})
+
+    result = _ingest_demo(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert "L3 check skipped: PDF text layer unreadable" in result.output
+    assert not (kb_dir / "demo" / l3report.FILE_NAME).exists()
+
+
+def test_reingest_unchanged_keeps_confirmation(tmp_path, monkeypatch):
+    kb_dir = _l3_fake(
+        monkeypatch, tmp_path, {1: f"5.0 NAVIGATION DATA\n{BODY}\n{DROPPED}"}
+    )
+    assert _ingest_demo(tmp_path).exit_code == 0
+    l3report.confirm(kb_dir, "demo", None, by="tester")
+
+    result = _ingest_demo(tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert "L3 check: clean" in result.output
+    check = l3report.load(kb_dir / "demo")
+    assert check is not None and check.sections[0].confirmed is not None
+
+
+def test_sections_reingest_keeps_other_chapters_and_flags_nothing_new(
+    tmp_path, monkeypatch
+):
+    from strata_kb.ingest import parser, pdftext
+
+    other = "Route segments connect the published waypoints in the listed order."
+    fake_doc = _StubDoc(
+        items=[
+            _StubItem(
+                _StubLabel("section_header"),
+                text="5.0 NAVIGATION DATA",
+                level=1,
+                prov=[_StubProv(page_no=1)],
+            ),
+            _StubItem(_StubLabel("text"), text=BODY, prov=[_StubProv(page_no=1)]),
+            _StubItem(
+                _StubLabel("section_header"),
+                text="6.0 ROUTES",
+                level=1,
+                prov=[_StubProv(page_no=2)],
+            ),
+            _StubItem(_StubLabel("text"), text=other, prov=[_StubProv(page_no=2)]),
+        ]
+    )
+    monkeypatch.setattr(parser, "load_or_parse", lambda pdf, work: fake_doc)
+    monkeypatch.setattr(
+        pdftext,
+        "page_texts",
+        lambda pdf: {
+            1: f"5.0 NAVIGATION DATA\n{BODY}\n{DROPPED}",  # lost sentence, flagged on 5
+            2: f"6.0 ROUTES\n{other}",
+        },
+    )
+    (tmp_path / "doc.pdf").write_bytes(b"%PDF-fake")
+    kb_dir = tmp_path / ".kb"
+    assert _ingest_demo(tmp_path).exit_code == 0
+    assert [s.id for s in l3report.load(kb_dir / "demo").sections] == ["5"]
+    l3report.confirm(kb_dir, "demo", None, by="tester")
+
+    result = _ingest_demo(tmp_path, "--sections", "6")
+
+    assert result.exit_code == 0, result.output
+    assert "L3 check: clean" in result.output
+    check = l3report.load(kb_dir / "demo")
+    assert [s.id for s in check.sections] == ["5"]
+    assert check.sections[0].confirmed is not None

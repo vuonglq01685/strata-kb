@@ -7,6 +7,12 @@ applyTo: ".kb/**"
 Files under `.kb/` belong to a Strata knowledge base. When editing them
 to fill in summaries (after `kb ingest`), follow these rules exactly.
 
+A document whose L3 fidelity check still has unconfirmed findings is
+blocked: `kb summarize` skips it (exit 1) and `kb build` errors on it. Do
+not summarize it by hand. Report it, point the user to `kb l3 report
+<doc-id>`, and let the reviewer run `kb l3 confirm <doc-id> --section <id>
+| --all` first. (A `dev` repo has no L3 check: it never runs `kb ingest`.)
+
 ## What to edit
 
 - In `.kb/<doc-id>/<file>.md` (L2): replace each

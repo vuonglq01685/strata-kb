@@ -120,7 +120,7 @@ class IndexEntry(BaseModel):
 
 class LLMConfig(BaseModel):
     runner: Literal["auto", "claude", "copilot", "none"] = "auto"
-    model: str = "sonnet-5"
+    model: str = "sonnet"
     effort: Literal["low", "medium", "high"] = "high"
     max_workers: int = 5
     timeout: int = 300

@@ -2,6 +2,8 @@ from pathlib import Path
 
 from strata_kb import models
 from strata_kb.build import build_kb
+from strata_kb.l3check import report as l3report
+from tests.test_l3check_report import _flag
 
 
 def test_build_ok_on_valid_kb(fixture_kb: Path):
@@ -453,3 +455,28 @@ def test_l3_hash_drift_respects_occurrence_for_duplicate_ids(fixture_kb):
     drift_errs = [e for e in errs if "L3 changed since it was summarized" in e]
     assert len(drift_errs) == 1
     assert "§1.2" in drift_errs[0]
+
+
+def test_build_errors_on_blocked_doc(fixture_kb: Path):
+    _flag(fixture_kb, "1.1", doc="demo-doc")
+    manifest_path = fixture_kb / "demo-doc" / "_manifest.yaml"
+    before = manifest_path.read_bytes()
+
+    for strict in (False, True):
+        report = build_kb(fixture_kb, strict=strict)
+        assert (
+            "demo-doc: L3 review pending for §1.1 — kb l3 report demo-doc"
+            in report.errors
+        )
+    assert manifest_path.read_bytes() == before  # a rejected doc persists nothing
+
+
+def test_build_ok_after_confirm(fixture_kb: Path):
+    _flag(fixture_kb, "1.1", doc="demo-doc")
+    l3report.confirm(fixture_kb, "demo-doc", None, "tester")
+    report = build_kb(fixture_kb)
+    assert report.ok, report.errors
+
+
+def test_build_doc_without_l3check_not_gated(fixture_kb: Path):
+    assert build_kb(fixture_kb).ok

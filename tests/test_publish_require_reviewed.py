@@ -1,11 +1,15 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
-from strata_kb import models
+from strata_kb import cipublish, models
 from strata_kb.cli import app
+from strata_kb.l3check import report as l3_report
 from tests.conftest import make_fed_entry
+from tests.test_l3check_report import _flag
 from tests.test_publish_hub import _git_repo
+from tests.test_publish_intake_cli import FakeHTTP
 
 runner = CliRunner()
 
@@ -154,3 +158,54 @@ def test_publish_require_reviewed_ignores_hist_but_not_other_summarized(
     result = runner.invoke(app, _args(git_kb, hub_worktree, "--require-reviewed"))
     assert result.exit_code == 1
     assert "without SME review" in result.output
+
+
+def _flag_demo_doc(git_kb, run_git) -> None:
+    _flag(git_kb["kb"], "1.1", doc="demo-doc")
+    run_git(git_kb["root"], "add", "-A")
+    run_git(git_kb["root"], "commit", "-m", "l3 flagged")
+
+
+def test_publish_refuses_when_l3_blocked(git_kb, hub_worktree, run_git):
+    _flag_demo_doc(git_kb, run_git)
+
+    result = runner.invoke(app, _args(git_kb, hub_worktree))
+
+    assert result.exit_code == 1
+    assert "[error] L3 review pending in 1 doc(s): demo-doc — kb l3 report" in (
+        result.output
+    )
+    assert not (hub_worktree / "federation" / "demo-kb").exists()
+
+
+def test_publish_ok_after_l3_confirm_and_file_not_warned(git_kb, hub_worktree, run_git):
+    _flag_demo_doc(git_kb, run_git)
+    l3_report.confirm(git_kb["kb"], "demo-doc", None, "tester")
+    run_git(git_kb["root"], "add", "-A")
+    run_git(git_kb["root"], "commit", "-m", "l3 confirmed")
+
+    result = runner.invoke(app, _args(git_kb, hub_worktree))
+
+    assert result.exit_code == 0, result.output
+    assert "L3 review pending" not in result.output
+    assert "_l3check.yaml" not in result.output  # no allowlist [warn] either
+    assert not list((hub_worktree / "federation").rglob("_l3check.yaml"))
+
+
+def test_publish_doc_without_l3check_not_gated(git_kb, hub_worktree):
+    result = runner.invoke(app, _args(git_kb, hub_worktree))
+    assert result.exit_code == 0, result.output
+    assert "L3 review pending" not in result.output
+
+
+def test_ci_publish_refuses_when_l3_blocked(git_kb, run_git):
+    _flag_demo_doc(git_kb, run_git)
+    http = FakeHTTP({})  # any HTTP call at all is a bug for this path
+
+    with pytest.raises(cipublish.CIPublishError) as exc:
+        cipublish.run(git_kb["kb"], "https://kb.test", "demo-kb", http=http)
+
+    assert "[error] L3 review pending in 1 doc(s): demo-doc — kb l3 report" in str(
+        exc.value
+    )
+    assert http.calls == []

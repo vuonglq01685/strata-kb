@@ -465,3 +465,59 @@ def test_warn_notes_renders_every_line_class_and_the_capped_tail():
         "page re-ordered by layout, check both sections"
     ) in lines
     assert "duplicate section id '5.3' in part 6 renamed to '5.3-2'" in lines
+
+
+def test_ingest_cli_skips_summarize_when_flagged(tmp_path, monkeypatch):
+    import strata_kb.llm as llm_mod
+    from strata_kb.ingest import parser, pdftext
+
+    _fake_parse(monkeypatch)
+    _write_pdf(tmp_path)
+    paged = [DocItem(i.kind, i.text, i.level, page=1) for i in FAKE_ITEMS]
+    monkeypatch.setattr(
+        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: paged
+    )
+    monkeypatch.setattr(parser, "furniture_by_page", lambda doc: {})
+    # a PDF page with text the L3 never got
+    monkeypatch.setattr(
+        pdftext,
+        "page_texts",
+        lambda pdf: {
+            1: "Chapter intro. " * 60 + "Words that the scaffold dropped entirely."
+        },
+    )
+    monkeypatch.setattr(llm_mod, "detect_runner", lambda c, cfg: None)
+    result = runner.invoke(app, _ingest_args(tmp_path))
+    assert result.exit_code == 0, result.output
+    assert "kb l3 report arinc-424" in result.output
+    assert "L3 agent review skipped: no LLM CLI" in result.output
+    assert "Summarize skipped until the L3 review is confirmed" in result.output
+
+
+def test_ingest_no_llm_review_flag_skips_agent(tmp_path, monkeypatch):
+    import strata_kb.llm as llm_mod
+    from strata_kb.ingest import parser, pdftext
+
+    _fake_parse(monkeypatch)
+    _write_pdf(tmp_path)
+    paged = [DocItem(i.kind, i.text, i.level, page=1) for i in FAKE_ITEMS]
+    monkeypatch.setattr(
+        parser, "doc_to_items", lambda doc, assets_dir=None, pdf_path=None: paged
+    )
+    monkeypatch.setattr(parser, "furniture_by_page", lambda doc: {})
+    monkeypatch.setattr(
+        pdftext,
+        "page_texts",
+        lambda pdf: {
+            1: "Chapter intro. " * 60 + "Words that the scaffold dropped entirely."
+        },
+    )
+    monkeypatch.setattr(
+        llm_mod,
+        "detect_runner",
+        lambda c, cfg: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    result = runner.invoke(app, _ingest_args(tmp_path, ["--no-llm-review"]))
+    assert result.exit_code == 0, result.output
+    assert "L3 agent review" not in result.output
+    assert "Summarize skipped until the L3 review is confirmed" in result.output

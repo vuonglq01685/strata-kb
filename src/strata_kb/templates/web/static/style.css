@@ -112,14 +112,14 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 .hub-warn .dot { background: var(--warn); }
 .topbar-fed { font: 400 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
 
-.columns { flex: 1; display: grid; grid-template-columns: 248px minmax(0,1fr) 292px;
+.columns { flex: 1; display: grid; grid-template-columns: 288px minmax(0,1fr) 292px;
   align-items: start; }
 .rail { position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
   background: var(--surface-alt); display: flex; flex-direction: column; }
 .rail-left { border-right: 1px solid var(--line); padding: 20px 14px 32px; gap: 26px; }
 .rail-right { border-left: 1px solid var(--line); padding: 24px 18px 32px; gap: 20px; }
 main.content { padding: 28px 32px 56px; min-width: 0; }
-@media (max-width: 1279px) { .columns { grid-template-columns: 248px minmax(0,1fr); }
+@media (max-width: 1279px) { .columns { grid-template-columns: 288px minmax(0,1fr); }
   .rail-right { display: none; } }
 @media (max-width: 899px) { .columns { grid-template-columns: minmax(0,1fr); }
   .rail-left { display: none; } }
@@ -147,7 +147,7 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 .dot-pending { background: var(--warn); }
 .dot-summarized { background: var(--accent); }
 .dot-reviewed { background: var(--ok); }
-/* flex:none on .num let a long slug id eat the 248px rail; the title then
+/* flex:none on .num let a long slug id eat the 288px rail; the title then
    wrapped into a 1-word column and the row looked like a huge empty gap. */
 .tree-row .num { flex: 0 1 auto; min-width: 0; max-width: 42%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

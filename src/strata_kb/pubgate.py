@@ -257,6 +257,11 @@ _KEEP_BASENAMES = frozenset({"index.yaml", "_meta.yaml", "_manifest.yaml"})
 # assetstore is not; the two are kept in sync by tests/test_pubgate.py.
 _ASSET_RECORD_BASENAME = "_assets.yaml"
 
+# Files that stay in .kb/ by design: never published, and not a stray file
+# worth a [warn] either. Mirrors l3check.report.FILE_NAME (not imported, same
+# purity reason); kept in sync by tests/test_pubgate.py.
+_LOCAL_ONLY_BASENAMES = frozenset({"_l3check.yaml"})
+
 
 def is_kb_artifact(relpath: str, *, keep_records: bool = False) -> bool:
     """Is this posix relpath something a publish is allowed to mirror?
@@ -307,5 +312,9 @@ def split_allowlist(
         for rel, sha in manifest.items()
         if is_kb_artifact(rel, keep_records=keep_records)
     }
-    skipped = sorted(set(manifest) - set(kept))
+    skipped = sorted(
+        rel
+        for rel in set(manifest) - set(kept)
+        if PurePosixPath(rel).name not in _LOCAL_ONLY_BASENAMES
+    )
     return kept, skipped

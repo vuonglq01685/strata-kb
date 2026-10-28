@@ -54,6 +54,33 @@ def region_text(
     return text or None
 
 
+def page_texts(pdf_path: Path) -> dict[int, str]:
+    """Full text-layer text per page (1-based; "" for a page without text).
+
+    {} when pypdfium2 is missing or the PDF is unreadable: the L3 check then
+    has no reference and skips, rather than failing ingest.
+    """
+    try:
+        import pypdfium2  # pyright: ignore[reportMissingImports]
+
+        pdf = pypdfium2.PdfDocument(str(pdf_path))
+        try:
+            texts: dict[int, str] = {}
+            for i in range(len(pdf)):
+                textpage = pdf[i].get_textpage()
+                try:
+                    raw = textpage.get_text_range()
+                finally:
+                    textpage.close()
+                texts[i + 1] = raw.replace("\r\n", "\n").replace("\r", "\n")
+        finally:
+            pdf.close()
+    except Exception as exc:  # noqa: BLE001 -- reference text is best-effort; the check skips without it
+        logger.warning("pdf page texts skipped: %s", exc)
+        return {}
+    return texts
+
+
 def _flow(textpage, box: Box) -> str:
     left, top, right, bottom = box
     raw = textpage.get_text_bounded(left=left, bottom=bottom, right=right, top=top)

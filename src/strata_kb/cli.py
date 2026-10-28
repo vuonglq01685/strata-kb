@@ -33,6 +33,7 @@ from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
+    from strata_kb.l3check.report import Finding, SectionCheck
     from strata_kb.resolve import ResolvedRef
     from strata_kb.usage.ingest import IngestResult
 
@@ -114,6 +115,9 @@ app.add_typer(pr_app, name="pr")
 
 claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
 app.add_typer(claim_app, name="claim")
+
+l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
+app.add_typer(l3_app, name="l3")
 
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
@@ -879,6 +883,11 @@ def ingest(
     llm: str = typer.Option(
         "", "--llm", help="Runner: claude | copilot | none (default: auto-detect)"
     ),
+    no_llm_review: bool = typer.Option(
+        False,
+        "--no-llm-review",
+        help="Skip the LLM verdicts on broken-paragraph findings",
+    ),
 ) -> None:
     """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from strata_kb import ingestcmd
@@ -910,6 +919,15 @@ def ingest(
         f"Ingested '{report.doc_id}': {report.n_sections} sections, "
         f"{len(report.files)} files in {kb_dir / report.doc_id}"
     )
+    if report.l3_flagged:
+        if not (no_llm_review or llm == "none"):
+            _l3_agent_review(kb_dir, report.doc_id, llm)
+        typer.echo(
+            "Summarize skipped until the L3 review is confirmed: "
+            f"kb l3 report {report.doc_id}, then "
+            f"kb l3 confirm {report.doc_id} --section <id> | --all"
+        )
+        return
     if no_summarize or llm == "none":
         typer.echo(
             "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "
@@ -935,6 +953,23 @@ def ingest(
         typer.secho(f"  [build] {warn}", fg=typer.colors.YELLOW)
     if build_report.ok:
         typer.echo("kb build: OK")
+
+
+def _l3_agent_review(kb_dir: Path, doc_id: str, llm: str) -> None:
+    """Advisory verdicts on `break` findings; a failure never changes ingest's exit code."""
+    from strata_kb.l3check import agent
+
+    try:
+        runner, _, workers = _resolve_runner(kb_dir, llm, 0)
+        if runner is None:
+            typer.echo("L3 agent review skipped: no LLM CLI")
+            return
+        n = agent.annotate(kb_dir, doc_id, runner, workers)
+    except Exception as exc:  # noqa: BLE001 - the review is advisory
+        typer.secho(f"L3 agent review failed: {exc}", fg=typer.colors.YELLOW)
+        return
+    if n:
+        typer.echo(f"L3 agent review: {n} verdict(s) written")
 
 
 def _require_hub_kind(kb_dir: Path, command: str) -> None:
@@ -1546,6 +1581,7 @@ def _run_summarize_and_report(
             "Some sections stay pending — re-run with: kb summarize",
             fg=typer.colors.YELLOW,
         )
+    if report.failed or report.blocked:
         raise typer.Exit(1)
 
 
@@ -1637,6 +1673,7 @@ def _redo_or_exit(
     """Preview and (unless --dry-run) apply a `--redo` plan before the
     real summarize run. Resolves the runner FIRST: a redo must never wipe
     summaries when the subsequent run can't happen anyway."""
+    from strata_kb.l3check.report import blocked_docs
     from strata_kb.summarize import plan_redo
 
     _validate_redo_flags(doc_id, all_docs, sections)
@@ -1649,6 +1686,13 @@ def _redo_or_exit(
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from exc
+    # summarize skips a blocked doc, so resetting it would wipe prose nothing refills
+    targets = {item.doc_id for item in plan.items}
+    stuck = [d for d, _ in blocked_docs(kb_dir) if d in targets]
+    for d in stuck:
+        typer.secho(f"{d}: L3 review pending — kb l3 report {d}", fg=typer.colors.RED)
+    if stuck:
+        raise typer.Exit(1)
     _echo_redo_plan(doc_id, plan)
     if dry_run:
         return
@@ -1721,6 +1765,9 @@ def status(
         typer.echo(
             f"{entry.id}: {len(pending)}/{len(manifest.sections)} section pending"
         )
+        flagged = _l3_pending(kb_dir, entry.id)
+        if flagged:
+            typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Total: {total_pending} section(s) pending.")
@@ -2638,6 +2685,15 @@ def publish(
         typer.secho(
             f"a _manifest.yaml under {kb_dir} is unreadable ({exc}) -- fix or "
             "re-ingest that document",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1) from None
+    try:
+        _apply_unreviewed_gate(publish_mod.l3_gate(kb_dir))
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        typer.secho(
+            f"cannot read the L3 check state under {kb_dir} ({exc}) -- fix "
+            "index.yaml or the document's _l3check.yaml",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1) from None
@@ -4649,3 +4705,137 @@ def claim_list(
     from strata_kb import claimcmd
 
     _exit_with(claimcmd.list_(kb_dir, json_output))
+
+
+_L3_EVIDENCE_KEYS = ("l3", "next", "pdf", "heading", "other")
+
+
+def _l3_pending(kb_dir: Path, doc_id: str) -> list[SectionCheck]:
+    """The doc's flagged-and-unconfirmed sections; exit 1 on an unreadable file."""
+    from strata_kb.l3check import report
+
+    path = kb_dir / doc_id / report.FILE_NAME
+    try:
+        check = report.load(kb_dir / doc_id)
+        if check is None:
+            return []
+        path = kb_dir / doc_id / "_manifest.yaml"
+        return report.unconfirmed(check, report.current_digests(kb_dir, doc_id))
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return []
+
+
+def _l3_finding_lines(finding: Finding) -> list[str]:
+    evidence = " | ".join(
+        f"{k}: {finding.evidence[k]}"
+        for k in _L3_EVIDENCE_KEYS
+        if k in finding.evidence
+    )
+    page = "?" if finding.page is None else finding.page
+    lines = [" ".join(filter(None, [f"  [{finding.kind}] p.{page}", evidence]))]
+    if finding.agent is not None:
+        lines.append(f"    agent: {finding.agent.verdict} — {finding.agent.reason}")
+    return lines
+
+
+@l3_app.command("report")
+def l3_report(
+    doc_id: str = typer.Argument(
+        "", help="Document ID (default: every doc awaiting review)"
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """List the L3 sections awaiting review, with evidence and agent verdicts (exit 1 if any)."""
+    if doc_id:
+        doc_ids = [doc_id]
+    else:
+        index_path = kb_dir / "index.yaml"
+        if not index_path.exists():
+            typer.echo("KB is empty — no index.yaml yet.")
+            raise typer.Exit(0)
+        try:
+            index = models.load_yaml_model(index_path, models.KBIndex)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(index_path, exc)
+        doc_ids = [e.id for e in index.docs]
+    total = 0
+    for did in doc_ids:
+        pending = _l3_pending(kb_dir, did)
+        if not pending:
+            continue
+        total += len(pending)
+        typer.echo(did)
+        for sec in pending:
+            typer.echo(f"§{sec.id}")
+            for finding in sec.findings:
+                for line in _l3_finding_lines(finding):
+                    typer.echo(line)
+    if total == 0:
+        typer.echo("L3 check: nothing awaiting review.")
+        return
+    typer.echo(f"{total} section(s) awaiting review.")
+    raise typer.Exit(1)
+
+
+@l3_app.command("confirm")
+def l3_confirm(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    section: list[str] = typer.Option(
+        [], "--section", help="Flagged section ID to confirm (repeatable)"
+    ),
+    all_flagged: bool = typer.Option(
+        False, "--all", help="Confirm every flagged section of the doc"
+    ),
+    by: str = typer.Option(
+        "",
+        "--by",
+        help="Reviewer identity 'name <email>' (default: git user.name/email)",
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip the --all confirmation"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Record that a reviewer checked flagged L3 sections; unblocks summarize/build/publish."""
+    from strata_kb import gitio
+    from strata_kb.l3check import report
+    from strata_kb.review import resolve_reviewer
+
+    if bool(section) == all_flagged:
+        typer.secho(
+            "pass either --section ID (repeatable) or --all", fg=typer.colors.RED
+        )
+        raise typer.Exit(2)
+    try:
+        reviewer = resolve_reviewer(gitio.git_root(kb_dir.resolve()), by or None)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    try:
+        check = report.load(kb_dir / doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(kb_dir / doc_id / report.FILE_NAME, exc)
+    if check is None:
+        typer.secho(f"no {report.FILE_NAME} for {doc_id}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if (
+        all_flagged
+        and not yes
+        and not typer.confirm(
+            f"Confirm all {len(check.sections)} flagged section(s) of {doc_id}?"
+        )
+    ):
+        raise typer.Abort()
+    try:
+        confirmed = report.confirm(
+            kb_dir, doc_id, None if all_flagged else list(section), by=reviewer
+        )
+    except (
+        yaml.YAMLError,
+        ValidationError,
+        OSError,
+    ) as exc:  # digests read the manifest
+        _invalid_yaml_exit(kb_dir / doc_id / "_manifest.yaml", exc)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.echo("confirmed: " + ", ".join(f"§{i}" for i in confirmed))

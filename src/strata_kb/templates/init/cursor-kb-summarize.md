@@ -9,6 +9,12 @@ Fill every pending summary in `.kb/` by editing the files directly. The
 `.cursor/rules/kb-summarize.mdc` file's "How to write a summary" and
 "Validate" sections apply to all `.kb/**` edits — follow them exactly.
 
+A document whose L3 fidelity check still has unconfirmed findings is
+blocked: `kb summarize` skips it (exit 1) and `kb build` errors on it. Do
+not summarize it by hand. Report it, point the user to `kb l3 report
+<doc-id>`, and let the reviewer run `kb l3 confirm <doc-id> --section <id>
+| --all` first. (A `dev` repo has no L3 check: it never runs `kb ingest`.)
+
 ## Workflow
 
 1. Run `kb status` and list the pending sections. An argument, if given, is

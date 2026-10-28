@@ -1,11 +1,25 @@
 import json
+from pathlib import Path
 
 import pytest
 
-from strata_kb import llm
+import strata_kb
+from strata_kb import llm, models
 from strata_kb.models import LLMConfig
 from strata_kb.summarize import PendingSection, build_section_prompt
 from tests.cli_stub import echo_after_stdin, echo_stdin_length, write_cli_stub
+
+TEMPLATES = Path(strata_kb.__file__).parent / "templates"
+
+
+def test_llm_config_default_model_is_sonnet_alias():
+    assert models.LLMConfig().model == "sonnet"
+
+
+def test_init_index_template_uses_sonnet_alias():
+    text = (TEMPLATES / "init" / "index.yaml").read_text(encoding="utf-8")
+    assert "model: sonnet\n" in text and "sonnet-5" not in text
+
 
 # --- detect_runner -----------------------------------------------------------
 

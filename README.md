@@ -232,6 +232,10 @@ Deep KB trees can exceed the legacy 260-character path limit. If you hit
           ├─ L2 scaffolded (tables present, summaries blank)
           └─ L1 manifest written, every section status = pending
           │
+          │  kb l3 report / confirm       HUMAN review, only if L3 was flagged
+          ▼
+   L3 checked against the PDF; a reviewer confirms each flagged section
+          │
           │  kb summarize                 AI fills the blanks
           ▼                               (runs inside kb ingest by default)
    L2 prose + L1 one-liners written, status → summarized
@@ -269,6 +273,8 @@ that follows it.
 | `kb docker-setup` | Prepare the repo for Docker (hub: `.env` + token + start; child: pull image) |
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
+| `kb l3 report [DOC]` | List the L3 sections awaiting review (flagged and not yet confirmed), with evidence and agent verdicts. Exit `1` while any is listed |
+| `kb l3 confirm DOC` | Record that a reviewer checked flagged L3 sections: `--section ID` (repeatable) or `--all` (asks first; `--yes` skips it); `--by 'name <email>'` (default: git `user.name`/`user.email`). Unblocks summarize, build and publish |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
 | `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `issue [--json]` finds the hub job's own `kb-code-sync` issue among the open ones (needs `gh`; exit `0` a usable one, `2` none, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
@@ -345,6 +351,7 @@ kb ingest source/employee-handbook.pdf \
 | `--chapter-pattern` / `--appendix-pattern` / `--attachment-pattern` | Heading regex overrides for pattern splitting (defaults `Chapter N` / `Appendix X` / `Attachment N`; remembered between runs) | no |
 | `--no-bookmarks` | Ignore the PDF outline and split by heading pattern instead | no |
 | `--no-summarize` / `--llm none` | Skip the automatic summarize pass | no |
+| `--no-llm-review` | Skip the LLM verdicts on broken-paragraph findings of the L3 check | no |
 
 By default the split follows the PDF's own **bookmarks/outline**, so parts are
 named after the document's own structure (`APPENDIX N` → `appendix-N`,
@@ -376,6 +383,40 @@ The report names every sectioning decision, so nothing is silent: headings
 demoted to text, fallback ids, numbered headings that arrived out of order,
 duplicate ids renamed `<id>-2`, bookmarks the split missed, sections the outline
 does not name, and the L3 token distribution.
+
+### `kb l3`
+
+After scaffolding, `kb ingest` checks every section's L3 against the PDF's own
+text layer and writes the findings to `.kb/<id>/_l3check.yaml`. Commit it: your
+teammates' confirmations and the `kb ci-publish` gate depend on it. The file is
+never sent to the hub. A finding has a kind:
+
+| Kind | Meaning |
+|---|---|
+| `fallback` | The heading was not recognised; the section got a synthetic id |
+| `order` | Sections are not in the PDF's order |
+| `content` | Text is missing, extra or garbled against the PDF |
+| `break` | A paragraph is broken in the middle |
+| `unverifiable` | The pages have no text layer (scanned), so nothing was checked |
+
+For `break` findings, an LLM agent (the configured `llm.model`, Sonnet by default) adds a verdict (`spurious`, `intentional`
+or `unsure`) when an LLM CLI is available; `--no-llm-review` skips it. It only
+judges: it never clears a flag and never edits L3.
+
+A document with an unconfirmed finding is **blocked**: `kb summarize` skips it
+and exits `1`, `kb build` errors, `kb publish` and `kb ci-publish` refuse, and
+`kb status` shows `L3 check: N section(s) awaiting review`.
+
+```bash
+kb l3 report hr-handbook                    # evidence and agent verdicts; exit 1 if any
+kb l3 confirm hr-handbook --section 4.12    # after a reviewer checked it
+kb l3 confirm hr-handbook --all --yes       # every flagged section of the doc
+```
+
+A confirmation is valid only while the section's L3 is unchanged. A re-ingest
+asks for review again on changed sections and keeps confirmations on unchanged
+ones. A document ingested before 1.31.1 has no check file and is not gated until
+it is re-ingested.
 
 ### `kb status`
 
@@ -2067,6 +2108,7 @@ me wrong" should check which command it ran, not only the code.
 |---|---|---|
 | `kb build`: "table mismatch" | A table was edited, added, duplicated or reordered in L2 | Open the section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
 | `kb build`: sections still `pending`/`TODO` | Summarization did not finish, failed, or was skipped | `kb status` to see what is left, then `kb summarize` to retry — or `/kb-summarize` with no LLM CLI installed |
+| `kb summarize` skips a document, `kb build` or `kb publish` says `L3 review pending` | The L3 fidelity check flagged sections nobody confirmed | `kb l3 report <doc>`, check each section against the PDF, then `kb l3 confirm <doc> --section <id>` (or `--all`) |
 | `kb ingest` is very slow on the first run | Normal — a layout model (~500 MB) is downloading | Wait. Later runs use the cache. |
 | `kb: command not found` | Virtualenv not activated | `source .venv/bin/activate` |
 | MCP server fails to start: "Executable not found in $PATH: python" | `.mcp.json` calls `python`, but the system only has `python3` or the venv is not on `PATH` | Point the `command` at an absolute interpreter path, e.g. `.venv/bin/python` |

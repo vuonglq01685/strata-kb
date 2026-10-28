@@ -1,4 +1,5 @@
 import json as _json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from strata_kb.summarize import (
     reset_section_prose,
     strip_tables,
 )
+from tests.test_l3check_report import _flag
 
 
 @pytest.fixture(autouse=True)
@@ -189,6 +191,65 @@ def test_summarize_kb_fills_l2_manifest_and_doc_summary(tmp_path):
     assert all(s.summary == "One line." for s in manifest.sections)
     index = models.load_yaml_model(kb / "index.yaml", models.KBIndex)
     assert index.docs[0].summary == "Doc-level summary."
+
+
+def _add_doc_copy(kb: Path, new_id: str) -> None:
+    """A second doc `new_id`, same sections as d1, in index order after d1."""
+    shutil.copytree(kb / "d1", kb / new_id)
+    manifest = models.load_yaml_model(kb / new_id / "_manifest.yaml", models.Manifest)
+    models.save_yaml_model(
+        kb / new_id / "_manifest.yaml", manifest.model_copy(update={"id": new_id})
+    )
+    index = models.load_yaml_model(kb / "index.yaml", models.KBIndex)
+    index.docs.append(models.IndexEntry(id=new_id, title=new_id))
+    models.save_yaml_model(kb / "index.yaml", index)
+
+
+def test_summarize_skips_blocked_doc(tmp_path):
+    kb = make_kb(tmp_path, {})
+    _add_doc_copy(kb, "d2")
+    _flag(kb, "1.1", doc="d1")
+    fake = FakeRunner()
+    lines: list[str] = []
+
+    report = summarize.summarize_kb(kb, fake, max_workers=1, on_progress=lines.append)
+
+    assert report.blocked == ["d1"]
+    assert report.summarized == ["d2/1.1", "d2/1.2"]
+    assert len(fake.calls) == 3  # d2's two sections + d2's doc summary
+    assert "[skip] d1: L3 review pending (1 section(s)) — kb l3 report d1" in lines
+    manifest = models.load_yaml_model(kb / "d1" / "_manifest.yaml", models.Manifest)
+    assert [s.status for s in manifest.sections] == ["pending", "pending"]
+    assert "TODO:summarize" in (kb / "d1" / "ch1.md").read_text(encoding="utf-8")
+
+
+def test_summarize_blocked_doc_missing_heading_is_not_a_failure(tmp_path):
+    kb = make_kb(tmp_path, {})
+    _flag(kb, "1.1", doc="d1")
+    (kb / "d1" / "ch1.raw.md").write_text("## 1.1 Alpha\n\nbody\n", encoding="utf-8")
+
+    report = summarize.summarize_kb(kb, FakeRunner(), max_workers=1)
+
+    assert report.blocked == ["d1"]
+    assert report.failed == []  # d1 is skipped whole; a re-run hint would mislead
+
+
+def test_summarize_doc_id_ignores_other_docs_blocking(tmp_path):
+    kb = make_kb(tmp_path, {})
+    _add_doc_copy(kb, "d2")
+    _flag(kb, "1.1", doc="d1")
+
+    report = summarize.summarize_kb(kb, FakeRunner(), doc_id="d2", max_workers=1)
+
+    assert report.blocked == []
+    assert report.summarized == ["d2/1.1", "d2/1.2"]
+
+
+def test_summarize_doc_without_l3check_not_gated(tmp_path):
+    kb = make_kb(tmp_path, {})
+    report = summarize.summarize_kb(kb, FakeRunner(), max_workers=1)
+    assert report.blocked == []
+    assert report.summarized == ["d1/1.1", "d1/1.2"]
 
 
 def test_summarize_kb_failed_section_stays_pending(tmp_path):
