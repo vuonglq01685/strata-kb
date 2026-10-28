@@ -944,6 +944,7 @@ def test_doc_to_items_whitespace_caption_falls_through_to_ocr(tmp_path, monkeypa
 def test_furniture_by_page_sees_furniture_layer_of_a_real_docling_document():
     # docling files running headers in ContentLayer.FURNITURE, which a default
     # iterate_items() skips
+    pytest.importorskip("docling_core")
     from docling_core.types.doc import (  # pyright: ignore[reportMissingImports]
         BoundingBox,
         ContentLayer,
