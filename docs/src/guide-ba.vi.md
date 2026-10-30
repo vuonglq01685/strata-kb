@@ -476,7 +476,10 @@ Khi soạn một story từ backlog, hãy nêu mission cha. Agent sẽ:
   là tuỳ chọn; vắng mặt nghĩa là rev 1),
 - lưu ticket thành `tickets/<mission-id>/<mission-id>-US<n>.md`.
 
-Chính tên file đó là thứ phép kiểm tra liên kết ngược tìm kiếm. Bỏ dòng parent đi
+Chính tên file đó là thứ phép kiểm tra liên kết ngược tìm kiếm. Khi có dòng parent,
+mọi story mà `- Blocked by:` của ticket nêu tên cũng phải nằm trong ô `Depends on`
+của ticket đó trong `## Sequencing` của mission, nếu không `kb ticket lint` báo
+lỗi: auto runner của Dev chỉ đọc `Depends on`. Bỏ dòng parent đi
 vẫn hợp lệ — chỉ là ticket không truy vết được về mission của nó. Ghim này quan
 trọng khi bạn sửa đổi mission (mục 6.3): nhờ nó `kb mission next` biết ticket được
 viết theo một revision cũ hơn. `kb ticket tidy` chuyển một `tickets/` phẳng vào

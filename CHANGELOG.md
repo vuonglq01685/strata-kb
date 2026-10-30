@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.31.3 — 2026-10-30
+
+`kb ticket lint` catches a blocker that the ticket names but the mission does not declare.
+
+- **Lint.** A ticket with a `> Parent mission:` line fails when its `## Dependencies` `- Blocked by:` line, or an indented sub-bullet under it, names a story (full `M-<slug>-US<n>` or bare `US<n>`) that the mission's `## Sequencing` does not list in that ticket's `Depends on` cell. The error names the stories and says to add them there. `kb auto run` reads only `Depends on`, so a blocker named only in the ticket let the runner pick the story while its blocker was still being built, and the run then waited on a question. It runs wherever the back-link check runs: `kb ticket lint`, `kb_ticket_lint` with `ticket_id`, and the BA repo's `kb-ticket-lint.yml`.
+- **Docs.** README §BA tickets and the BA guide (EN, VI). The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI and bump the BA repo's CI pin to `strata-kb==1.31.3`. A published ticket that names a story in `Blocked by:` only in prose (for example "independent of US7") now fails lint on its next change: add the story to `Depends on`, or move that mention off the `Blocked by:` line.
+
 ## 1.31.2 — 2026-10-30
 
 A `ready` ticket says what it waits on: a dependency not done yet no longer hides behind `ready`.

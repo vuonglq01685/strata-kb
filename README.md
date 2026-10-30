@@ -1207,6 +1207,11 @@ cites it; the CLI reads every mission under `missions/` (for a mission plan, its
 directory), MCP every mission on the hub with `mission_markdown` winning. Only the CLI's local
 `-code` fallback (`--kb-dir`) has no MCP twin. `kb ticket lint --missions-dir`
 and `kb mission lint --tickets-dir` point either gate at a non-sibling folder.
+A ticket with a `> Parent mission:` line fails `kb ticket lint` when its
+`## Dependencies` `- Blocked by:` line (or a sub-bullet under it) names a story
+that the mission's `## Sequencing` does not list in that ticket's `Depends on`.
+`kb auto run` reads only `Depends on`, so a blocker named only in the ticket lets
+it pick the story before its blocker is done.
 
 Every pull request on a `ba` repo runs `.github/workflows/kb-ticket-lint.yml`.
 The trigger is deliberately **not** `paths`-filtered: GitHub never synthesises a

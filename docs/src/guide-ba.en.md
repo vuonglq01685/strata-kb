@@ -489,7 +489,10 @@ When drafting a story from the backlog, name the parent mission. The agent then:
   (the `@ rev` part is optional; absent means rev 1),
 - saves the ticket as `tickets/<mission-id>/<mission-id>-US<n>.md`.
 
-That filename is what the back-link check looks for. Dropping the parent line is
+That filename is what the back-link check looks for. With the parent line, every
+story the ticket's `- Blocked by:` names must also be in its `Depends on` cell in
+the mission's `## Sequencing`, or `kb ticket lint` fails: the Dev's auto runner
+reads only `Depends on`. Dropping the parent line is
 valid — the ticket just becomes untraceable to its mission. The pin matters once
 you amend the mission (§6.3): it is how `kb mission next` knows the ticket was
 written against an older revision. `kb ticket tidy` moves a flat `tickets/` into

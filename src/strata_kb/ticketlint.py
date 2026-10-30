@@ -105,6 +105,8 @@ _FILL_EXEMPT: frozenset[str] = frozenset(
 _NA_RE = re.compile(r"^\s*n/?a\b", re.I)
 
 _SEQUENCE_HEADING = "## Sequence diagram"
+_DEPENDENCIES_HEADING = "## Dependencies"
+_BLOCKED_BY_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$")
 _TRIGGER_SCAN_HEADINGS: tuple[str, ...] = (
     "## Summary",
     "## User Story",
@@ -543,7 +545,7 @@ def check_parent_mission(
                 )
             ], []
         return _check_backlog_membership(
-            ticket_id, mission_id, loaded, f"hub:{mission_id}"
+            text, ticket_id, mission_id, loaded, f"hub:{mission_id}"
         )
 
     mission_path = missions_dir / f"{mission_id}.md"
@@ -574,11 +576,17 @@ def check_parent_mission(
                 f"could not read mission file '{mission_path}': {exc}",
             )
         ], []
-    return _check_backlog_membership(us_id, mission_id, mission_text, mission_path)
+    return _check_backlog_membership(
+        text, us_id, mission_id, mission_text, mission_path
+    )
 
 
 def _check_backlog_membership(
-    us_id: str, mission_id: str, mission_text: str, mission_path: Path | str
+    text: str,
+    us_id: str,
+    mission_id: str,
+    mission_text: str,
+    mission_path: Path | str,
 ) -> tuple[list[Issue], list[str]]:
     backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
@@ -613,13 +621,59 @@ def _check_backlog_membership(
     # A story the mission still blocks (an undecided D-row or an unticked
     # open question naming it) gets no ticket: the answer may change it.
     return [
+        *(
+            Issue(
+                "error",
+                f"'{us_id}' is blocked by mission '{mission_id}': {reason} — "
+                "close it in the mission before drafting this ticket",
+            )
+            for reason in missionnext.story_blockers(mission_text, us_id)
+        ),
+        *_check_blocked_by_declared(text, us_id, mission_id, mission_text),
+    ], []
+
+
+def _blocked_by_ids(text: str, mission_id: str) -> tuple[str, ...]:
+    """US ids on the `- Blocked by:` bullet of `## Dependencies` and its
+    indented sub-bullets, read like a `Depends on` cell."""
+    body = lintcore.section_body(text, _DEPENDENCIES_HEADING) or ""
+    cells: list[str] = []
+    inside = False
+    for line in body.splitlines():
+        m = _BLOCKED_BY_RE.match(line)
+        if m:
+            inside = True
+            cells.append(m.group("rest"))
+        elif inside and line[:1].isspace() and line.strip():
+            cells.append(line)
+        else:
+            inside = False
+    return missionnext.dep_ids(" ".join(cells), mission_id)
+
+
+def _check_blocked_by_declared(
+    text: str, us_id: str, mission_id: str, mission_text: str
+) -> list[Issue]:
+    """Every story the ticket's `Blocked by:` names must be in the mission's
+    `Depends on` for it: the Dev auto runner reads only `Depends on`, so a
+    blocker named only in the ticket lets it pick the story too early."""
+    _mid, stories, _decisions = missionnext.parse_mission(mission_text)
+    declared = next((s.depends_on for s in stories if s.us_id == us_id), ())
+    missing = [
+        d for d in _blocked_by_ids(text, mission_id) if d not in declared and d != us_id
+    ]
+    if not missing:
+        return []
+    return [
         Issue(
             "error",
-            f"'{us_id}' is blocked by mission '{mission_id}': {reason} — "
-            "close it in the mission before drafting this ticket",
+            f"'## Dependencies' Blocked by names {', '.join(missing)}, but "
+            f"mission '{mission_id}' does not list it in the 'Depends on' of "
+            f"'{us_id}' (## Sequencing) — add it there, or the Dev auto runner "
+            "can pick this ticket before that story is done; a story that "
+            "does not block this one goes on another line",
         )
-        for reason in missionnext.story_blockers(mission_text, us_id)
-    ], []
+    ]
 
 
 def lint(
