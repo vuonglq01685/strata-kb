@@ -266,7 +266,9 @@ Menu **Ticket** của hub (`/ui/tickets`) và `kb mission next --from-hub
 [--repo <ba-repo>]` hiển thị mọi story của một mission đã publish là **done** (id
 của nó nằm trong một dòng `hist.*` của `-svc` của bạn, do `kb svc note` ghi lúc
 handover), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã
-publish) hoặc **blocked** (kèm lý do). Hãy chọn story **ready**.
+publish) hoặc **blocked** (kèm lý do). Hãy chọn story **ready** không kèm lý do:
+story **ready** có phụ thuộc chưa done sẽ hiện `US <id> not done` (trên trang
+ticket: "Waiting on: …"), và `kb auto run` bỏ qua nó cho đến khi phụ thuộc đó done.
 
 Ở phía BA, `kb mission next` còn có thể báo một ticket là `draft` với lý do
 `parent mission rev <M> affects this story`: mission đã được sửa sau khi ticket

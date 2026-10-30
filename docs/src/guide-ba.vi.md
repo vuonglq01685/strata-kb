@@ -640,7 +640,8 @@ chí chấp nhận của ticket. Agent tìm nó bằng `kb_search`; con người
 | `/ui/tickets/<mission>/<story>?repo=<id>` | Chính ticket đó |
 
 Trạng thái được suy ra và chỉ đọc: **done** (story có trong lịch sử `-svc` của repo
-Dev), **ready** (ticket của nó đã publish), **not ready** (chưa có ticket đã
+Dev), **ready** (ticket của nó đã publish; phụ thuộc chưa done hiện thành lý do),
+**not ready** (chưa có ticket đã
 publish, các phụ thuộc đã done) hoặc **blocked** (kèm lý do). Muốn đổi trạng thái
 thì đổi nguồn: hoàn tất và publish ticket, hoặc để Dev bàn giao. Hệ thống quản lý
 issue, không phải hub, là nơi cho "đang làm" và người được giao.
