@@ -653,7 +653,8 @@ Document:
 | `/ui/tickets/<mission>/<story>?repo=<id>` | The ticket itself |
 
 Status is derived and read-only: **done** (the story is in the Dev repo's `-svc`
-history), **ready** (its ticket is published), **not ready** (no published
+history), **ready** (its ticket is published; a dependency not done yet shows as
+its reason), **not ready** (no published
 ticket, dependencies done) or **blocked** (with reasons). To change a status you
 change the source: finish and publish the ticket, or have the Dev hand it over.
 The tracker, not the hub, is the place for "in progress" and for assignees.

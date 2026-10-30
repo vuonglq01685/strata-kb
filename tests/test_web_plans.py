@@ -62,6 +62,19 @@ def test_ticket_page_renders_the_ticket_body(plan_hub):
     assert "Definition of Ready" not in resp.text
 
 
+def test_ready_ticket_page_shows_what_it_waits_on(plan_hub, monkeypatch):
+    monkeypatch.setattr(
+        planui, "_story_status", lambda *_: ("ready", (f"US {US[0]} not done",))
+    )
+    text = _client(plan_hub).get(f"/ui/tickets/{MISSION_ID}/{US[1]}?repo=ba-one").text
+    assert f"Waiting on: US {US[0]} not done" in text
+
+
+def test_ready_ticket_page_without_reasons_shows_no_wait(plan_hub):
+    text = _client(plan_hub).get(f"/ui/tickets/{MISSION_ID}/{US[1]}?repo=ba-one").text
+    assert "Waiting on" not in text
+
+
 @pytest.mark.parametrize(
     "path",
     [

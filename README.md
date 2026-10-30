@@ -868,7 +868,9 @@ to the same path under `/ui/tickets…`, query string kept, so old links work.
 
 Status per story, in this order: **done** (the story id is in a `hist.*` row of
 the Dev repo's `-svc`, found from the mission's `Grounded on:` line), **ready**
-(its ticket is published, so its Definition of Ready passed), **not ready** (no
+(its ticket is published, so its Definition of Ready passed; a dependency not
+done yet shows as its reason, `US <id> not done`, also as "Waiting on:" on the
+ticket page, and `kb auto run` skips the story until it is done), **not ready** (no
 published ticket, every dependency done) or **blocked** (with its reasons). The
 repo rides in `?repo=` because nested federation ids contain `/`; without it the
 one repo holding the id is used, and several holders give a 404 page naming

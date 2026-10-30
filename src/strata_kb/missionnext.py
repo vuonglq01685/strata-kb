@@ -251,7 +251,8 @@ def statuses(
     demoted: dict[str, str] | None = None,
 ) -> list[StoryStatus]:
     """One `StoryStatus` per backlog story, first rule that matches:
-    done (id in `done`) → ready (ticket file, every DoR box ticked) → draft
+    done (id in `done`) → ready (ticket file, every DoR box ticked; a reason
+    per dependency not done) → draft
     (ticket file, some box unticked, or no DoR section) → to-draft (no
     file, every dependency done, every D-row blocking it DECIDED) →
     blocked, with one reason per cause. `drafted` maps a ticket id to its
@@ -296,8 +297,16 @@ def statuses(
                             )
                         )
                     else:
+                        # still ready (the Dev picker skips it), but it says
+                        # what it waits on: BA may draft past unfinished deps
                         out.append(
-                            StoryStatus(s.us_id, s.mission_id, s.title, "ready", ())
+                            StoryStatus(
+                                s.us_id,
+                                s.mission_id,
+                                s.title,
+                                "ready",
+                                tuple(_deps_not_done(s, done_set, known)),
+                            )
                         )
                     continue
                 why = (
@@ -307,13 +316,7 @@ def statuses(
                 )
                 out.append(StoryStatus(s.us_id, s.mission_id, s.title, "draft", (why,)))
                 continue
-            reasons: list[str] = []
-            for dep in s.depends_on:
-                if dep in done_set:
-                    continue
-                reasons.append(
-                    f"US {dep} not done" if dep in known else f"US {dep} unknown"
-                )
+            reasons = _deps_not_done(s, done_set, known)
             reasons += _undecided(s.us_id, blocking, decisions)
             reasons += s.open_questions
             status = "blocked" if reasons else "to-draft"
@@ -322,6 +325,15 @@ def statuses(
             )
     deps = {s.us_id: s.depends_on for _m, stories, _d in missions for s in stories}
     return [replace(r, depends_on=deps[r.us_id]) for r in out]
+
+
+def _deps_not_done(s: Story, done_set: set[str], known: set[str]) -> list[str]:
+    """One reason per dependency of story `s` that is not done."""
+    return [
+        f"US {dep} not done" if dep in known else f"US {dep} unknown"
+        for dep in s.depends_on
+        if dep not in done_set
+    ]
 
 
 def _blocking(

@@ -3,6 +3,15 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.31.2 — 2026-10-30
+
+A `ready` ticket says what it waits on: a dependency not done yet no longer hides behind `ready`.
+
+- **Status.** A story whose ticket is published stays `ready`, but now carries one reason per `Depends on` story that is not `done` (`US <id> not done`, or `US <id> unknown`). The BA may draft a story past unfinished dependencies, so a `ready` ticket could look free while its dependency's code was not merged. `kb mission next [--from-hub] [--json]`, `kb_mission_next` and the mission page's Reason column show the reasons. `kb auto run` already skipped such a story; nothing changes in what it picks.
+- **Web UI.** The ticket page of a `ready` ticket with such a reason shows `Waiting on: <reasons>` under its title.
+- **Docs.** README §Ticket menu and the Dev and BA guides (EN, VI) describe it. The guide PDFs under `docs/` were not rebuilt for this release; the Markdown sources are current.
+- **Upgrade.** Upgrade the hub to see it in the Ticket menu; upgrade the CLI for `kb mission next`. No config or `kb init` change.
+
 ## 1.31.1 — 2026-10-27
 
 L3 fidelity check: `kb ingest` compares every section's L3 with the source PDF, and a reviewer must confirm what it flags before the document is summarized, built or published.

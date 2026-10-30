@@ -284,7 +284,7 @@ def test_draft_or_blocked_ticket_page_shows_no_claim(
     admin_client, store, monkeypatch, status
 ):
     _take(store)
-    monkeypatch.setattr(planui, "_story_status", lambda *_: status)
+    monkeypatch.setattr(planui, "_story_status", lambda *_: (status, ()))
     text = admin_client.get(PAGE).text
     assert "Taken by" not in text and "In progress" not in text
     assert "Release" not in text

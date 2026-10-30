@@ -86,14 +86,15 @@ def _held_by_ticket(
         return {}, CLAIMS_UNAVAILABLE
 
 
-def _story_status(hub: HubHandle, repo: str, story: str) -> str:
-    """The derived status of a story or unparented ticket; "" when unknown."""
+def _story_status(hub: HubHandle, repo: str, story: str) -> tuple[str, tuple[str, ...]]:
+    """(derived status, reasons) of a story or unparented ticket; ("", ())
+    when unknown."""
     plans, _notes = planstatus.hub_plans(hub, repo)
     for plan in plans:
         for item in (*(s for m in plan.missions for s in m.stories), *plan.unparented):
             if item.us_id == story:
-                return item.status
-    return ""
+                return item.status, item.reasons
+    return "", ()
 
 
 def plan_routes(
@@ -210,7 +211,7 @@ def plan_routes(
     ) -> HTMLResponse:
         content_html, toc = uidata.inject_heading_anchors(md_render(ticket.markdown))
         db = claims_db_path(hub.root)
-        ticket_status = _story_status(hub, found_repo, story)
+        ticket_status, reasons = _story_status(hub, found_repo, story)
         if ticket_status == "done" and db.exists():  # never create the DB on GET
             try:
                 ClaimStore(db, ttl=ttl).close_done({(found_repo, story)})
@@ -257,6 +258,7 @@ def plan_routes(
             ),
             error=error,
             claim_notice=ctx["claim_notice"],
+            waiting_on=reasons if ticket_status == "ready" else (),
         )
         if can_release:
             resp.headers.update(NO_STORE)

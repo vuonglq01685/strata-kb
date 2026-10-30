@@ -266,7 +266,9 @@ The hub's **Ticket** menu (`/ui/tickets`) and `kb mission next --from-hub
 [--repo <ba-repo>]` show every story of a published mission as **done** (its id is
 in a `hist.*` row of your `-svc`, which `kb svc note` writes at handover),
 **ready** (its ticket is published), **not ready** (no published ticket yet) or
-**blocked** (with reasons). Pick a **ready** one.
+**blocked** (with reasons). Pick a **ready** one with no reason: a **ready** story
+whose dependency is not done yet shows `US <id> not done` (on the ticket page:
+"Waiting on: …"), and `kb auto run` skips it until that dependency is done.
 
 On the BA side, `kb mission next` can also report a ticket `draft` with the reason
 `parent mission rev <M> affects this story`: the mission was amended after the

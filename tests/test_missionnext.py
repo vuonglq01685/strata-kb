@@ -202,6 +202,18 @@ def test_dependency_not_done_blocks_even_when_ready():
     )
 
 
+def test_ready_ticket_names_its_dependency_not_done():
+    # BA may draft a story whose dependency is unfinished: it stays ready
+    # (the Dev picker skips it) and says what it waits on
+    s = _run(drafted={"M-catalog-US2": FULL}, done=["M-catalog-US1"])["M-catalog-US2"]
+    assert s.status == "ready"
+    assert s.reasons == ("US M-platform-US2 not done",)
+    done = ["M-catalog-US1", "M-platform-US2"]
+    assert (
+        _run(drafted={"M-catalog-US2": FULL}, done=done)["M-catalog-US2"].reasons == ()
+    )
+
+
 def test_done_wins_over_a_ticket_file():
     by = _run(drafted={"M-platform-US1": PART}, done=["M-platform-US1"])
     assert by["M-platform-US1"].status == "done"
