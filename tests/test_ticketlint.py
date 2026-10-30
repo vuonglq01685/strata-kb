@@ -1672,6 +1672,72 @@ def test_mission_blockers_are_checked_over_mcp_too(golden_block: str, tmp_path: 
     assert "Q1 open (owner: Bob)" in issues[0].message
 
 
+def _sequenced_mission(us2_depends_on: str) -> str:
+    return _mission_doc(
+        "M-airspace-filter",
+        ["M-airspace-filter-US1", "M-airspace-filter-US2", "M-airspace-filter-US3"],
+    ) + (
+        "\n## Sequencing\n"
+        "| US ID | Depends on | Size | Notes |\n|---|---|---|---|\n"
+        "| M-airspace-filter-US1 | none | S | |\n"
+        f"| M-airspace-filter-US2 | {us2_depends_on} | M | |\n"
+    )
+
+
+def _deps_issues(blocked_by: str, us2_depends_on: str) -> list:
+    text = _build_ticket(
+        "",
+        title=f"{DEFAULT_TITLE}\n\n> Parent mission: M-airspace-filter",
+        overrides={"## Dependencies": f"{blocked_by}\n- Blocks: None"},
+    )
+    issues, _notes = ticketlint.check_parent_mission(
+        text,
+        None,
+        None,
+        ticket_id="M-airspace-filter-US2",
+        load_mission=lambda _mid: _sequenced_mission(us2_depends_on),
+    )
+    return issues
+
+
+@pytest.mark.parametrize(
+    "blocked_by",
+    [
+        "- Blocked by: M-airspace-filter-US1 — needs its importer on main",
+        "- Blocked by: US1 — bare id, same mission",
+        "- Blocked by:\n  - M-airspace-filter-US1 — on a sub-bullet",
+    ],
+)
+def test_blocked_by_story_missing_from_depends_on_errors(blocked_by: str):
+    # the Dev auto runner reads only the mission's `Depends on`: an id named
+    # only in the ticket lets it pick this story before its blocker is done
+    issues = _deps_issues(blocked_by, "none")
+    assert [i.level for i in issues] == ["error"]
+    assert "M-airspace-filter-US1" in issues[0].message
+    assert "Depends on" in issues[0].message
+
+
+@pytest.mark.parametrize(
+    "blocked_by",
+    [
+        "- Blocked by: None",
+        "- Blocked by: F-010 export API (external team)",
+        "- Blocked by: US1 — declared in the mission",
+    ],
+)
+def test_blocked_by_declared_or_external_passes(blocked_by: str):
+    assert _deps_issues(blocked_by, "US1") == []
+
+
+def test_blocked_by_names_each_undeclared_story_once():
+    issues = _deps_issues(
+        "- Blocked by: US1 (done), M-airspace-filter-US3 and US3 again", "US1"
+    )
+    assert len(issues) == 1
+    assert "M-airspace-filter-US3" in issues[0].message
+    assert "M-airspace-filter-US1" not in issues[0].message
+
+
 # --- type dispatch (bug / hotfix go to buglint) ---
 
 
