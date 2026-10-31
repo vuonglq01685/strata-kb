@@ -1,7 +1,7 @@
 # L3 AI structure fix and hub reader upgrade — design
 
 Date: 2026-10-31
-Status: draft, awaiting owner approval
+Status: draft, builder check done, awaiting owner approval
 Mockup: https://claude.ai/artifact/SbFbyPMUyTN2X3vjrdYCTz (before/after of one
 section, the 7 changes, the layout contract)
 
@@ -54,8 +54,13 @@ Part 2
   summarize/build/publish, exactly like an L3 check finding today.
 - Works the same in Claude Code, Copilot Chat and Cursor, because the rules
   live in the `kb` command, not in the prompt.
-- Expected effect (estimate, not measured): 70–80 % of flagged problems fixed
-  automatically; scanned/bad-font sections and tables still need a human.
+- Expected effect (estimate, not measured): 60–75 % of flagged problems fixed
+  automatically (word-level verification rejects more drafts than a
+  sentence-level one would); scanned/bad-font sections and tables still need
+  a human.
+- With the switch on, no L3 change reaches summarize/build/publish without an
+  `apply` record and a human confirmation, even if the AI edits `.raw.md`
+  directly (§9.6).
 
 ## 3. Non-goals
 
@@ -66,7 +71,8 @@ Part 2
 - Moving content between chapter files (cross-file reorder). The AI may
   reorder, split or merge `##` units only inside one `.raw.md` file.
 - Showing AI-fix status on the hub.
-- Fixing documents already summarized (§7.6).
+- Fixing a chapter file that holds any summarized or reviewed unit (§9.4
+  check 5).
 - Blockquotes, links, headings deeper than `####`, HTML passthrough in the
   renderer.
 
@@ -93,8 +99,21 @@ Part 2
 - A unit is `## <id> <title>` to the next `## ` line (`mdutils.section_map`);
   folded children are `### <id> …` (`slice_subsection`). Ids may repeat in a
   file (`heading_occurrences`).
-- L2 skeleton per section: same heading, `<!-- TODO:summarize <id> -->`, then
-  the section's tables verbatim (`tests-gate/fixtures/pending-kb/demo-doc`).
+- L2 skeleton per section: same heading, `<!-- TODO:summarize <id> -->`, the
+  section's tables verbatim, then one `Figure: <desc>` line per image
+  (`ingest/scaffold.py:350-357`, `extract_image_descs`). Summarize and
+  `quality.py` treat the `Figure:` lines as structure, so a rebuilt skeleton
+  must keep them.
+- `.kb-work/` is git-ignored only in hub repos (`initcmd.HUB_TEMPLATES`
+  `.gitignore`). Child repos — the Docker ingest case — ship no `.gitignore`.
+- `detect` reports only uncovered runs of ≥ `MIN_RUN` (5) words over 4-word
+  shingles and ignores order (`detect.py:17-18, 94-115`). It cannot prove "no
+  word added"; Part 2 needs its own word-level check (§9.4 check 3).
+- `kb l3 confirm` refuses ids not flagged in `_l3check.yaml`
+  (`report.py:206-213`).
+- Page spans (`SectionUnit.page` → `SectionInput.page/end_page`) and
+  `SectioningNotes` exist only in memory during `kb ingest`
+  (`ingestcmd.py:158-169`).
 - Confirmations are bound to the section's L3 digest
   (`l3report.digest_slices`); any L3 edit re-blocks the section. Part 2 relies
   on this.
@@ -223,7 +242,18 @@ human:    kb l3 report <id> (now lists AI changes) + git diff of .raw.md
 kb summarize -> kb build -> kb publish   (unchanged)
 ```
 
-Drafts live under `.kb-work/` (git-ignored scratch), not `.kb/`.
+Drafts and page images live under `.kb-work/` (scratch), not `.kb/`. `kb l3
+fix on` appends `.kb-work/` to the repo's `.gitignore` when missing (child
+repos have none today), so drafts and PNGs are never committed.
+
+**Unit spans and notes after ingest.** `kb ingest` always writes
+`.kb-work/<id>/sections.json`: per unit its id, file, start/end page, and the
+`SectioningNotes` fallbacks/front-matter exclusions. It is local scratch next
+to the docling cache, never committed or published, so it changes nothing a
+user sees with the switch off. `lint`, `apply` and `pages` read it; `apply`
+updates it when it renames, splits or merges units (a split unit inherits its
+parent's span; a merge takes the union). Missing file → the command says to
+re-ingest.
 
 ### 9.3 `kb l3 lint <doc-id> --pdf <pdf>`
 
@@ -240,26 +270,50 @@ contain one or more `##` units, which is how split/merge/re-id is expressed):
 1. **Tables**: the multiset of table blocks in the draft equals the original
    unit's, byte for byte, and in the same order. Else reject.
 2. **Contract**: the draft passes R1–R8. Else reject.
-3. **Content vs PDF**, using `detect` over the unit's page span with
-   furniture removed:
-   - no new uncovered L3 run: every `content` "extra" run in the draft was
-     already an extra run in the original (the AI added no word that is not in
-     the PDF);
-   - missing runs did not grow: no PDF run that the original covered is
-     missing in the draft;
-   - every word sequence removed from the original is one of: an exact
-     duplicate of a block that stays (R4), a furniture line (R5), or an
-     "extra" run of the original.
-   Else reject.
+3. **Content vs PDF, word by word** (owner decision: one wrong word is a
+   failure). Words are normalised as in `detect.normalize_words`, prose only
+   (tables, image links, fences excluded — tables are covered by check 1),
+   over the unit's page span with furniture removed. Diff the original's word
+   sequence against the draft's (`difflib.SequenceMatcher` on word lists,
+   builder may choose another aligner). Every non-equal opcode must be
+   justified:
+   - **insert / replace** (words in the draft, not in the original at that
+     place): the draft's words around and including the change must occur as
+     one contiguous run in the PDF word stream, anchored by at least `ANCHOR`
+     (builder tunes, e.g. 3) equal words on each side that also match the PDF
+     there. So "không" inserted into a sentence fails, because the PDF does not
+     have that sentence with "không". A replace that turns a garbled word into
+     the PDF's word passes.
+   - **delete** (words in the original, gone from the draft): the deleted
+     words are one of: an exact duplicate of a block that stays in the unit
+     (R4), a furniture line of the span (R5), or a run that does not occur in
+     the PDF span at all (garbage the PDF never had).
+   - **move**: a block may change position only as a whole `##`/`###` unit
+     inside the file (reorder), and the new order must follow the PDF stream
+     order of those units' first words. A sentence moved inside a paragraph
+     shows up as delete + insert and fails the rules above unless the PDF
+     has it at the new place.
+   Pure structure edits (re-id, heading level, paragraph join, list markers)
+   leave the word sequence equal and always pass. Else reject, naming the
+   first unjustified opcode with ~10 words of context from draft and PDF.
 4. **Ids**: new unit ids do not clash with other units in the doc (same check
    as `scaffold._check_no_id_clash`).
-5. **Section status**: every touched unit is `pending` (§7.6). Else reject.
+5. **Status, per chapter file**: every unit in the touched `.raw.md` file is
+   `pending`. A file with any summarized/reviewed unit is refused whole, so
+   the L2 file can be rebuilt as skeletons without touching any summary.
 
 A passing draft is written atomically: the unit's slice in `.raw.md` is
 replaced; the file's manifest rows are rebuilt in file order (id, title,
 `tokens.l3` recounted, everything else of untouched rows kept); the L2
-skeleton of the touched units is regenerated (heading, TODO marker, tables);
-`_l3check.yaml` entries of renamed units move to the new id. Each run prints
+skeleton of the touched units is regenerated (heading, TODO marker, tables,
+`Figure:` lines); `.kb-work/<id>/sections.json` is updated.
+
+`_l3check.yaml` after apply: the old entry of every touched unit is dropped
+and `detect` is re-run on the new unit(s) for `content`, `break` and
+`unverifiable` (spans from `sections.json`); `fallback`/`order` are not
+re-run, lint R1 and check 3's move rule cover them. A split gives each new
+unit its own fresh findings. So the reviewer never sees evidence that no
+longer matches L3. Each run prints
 per section: `applied` / `rejected: <rule or check> <evidence>`, exit 1 if
 any was rejected. The draft of an applied section is deleted; a rejected one
 is kept for the AI to retry.
@@ -302,14 +356,43 @@ sections:
     confirmed: null       # or {by, at, l3_sha256}
 ```
 
-- `blocked_docs` also blocks a doc with any `_l3fix.yaml` section whose
-  `confirmed.l3_sha256` differs from its current digest. Same effect on
-  summarize/build/publish/ci-publish as the L3 check.
+**Baseline (owner decision: direct edits must be caught).** With the switch
+on, `kb ingest` writes `_l3fix.yaml` with a `baseline:` map, unit id → L3
+digest as ingest wrote it, for **every** unit of the re-ingested chapters
+(not only flagged ones). `apply` adds a `sections:` record per unit it
+writes.
+
+```yaml
+baseline: {"4.1": <sha>, "x1": <sha>, ...}   # as ingested
+sections: [...]                               # as above
+```
+
+- `blocked_docs` also blocks a doc where, in `_l3fix.yaml`:
+  - a `sections` entry's `confirmed.l3_sha256` differs from its current
+    digest; or
+  - a unit's current digest differs from its `baseline` digest and no
+    `sections` entry has that digest (an edit that did not go through
+    `apply`). The report names it as `edited outside kb l3 fix apply`; the
+    way out is `git checkout` of the file or re-ingest, or a human
+    `kb l3 confirm` after reading the diff.
+  - a unit present now but in neither `baseline` nor `sections` (created by
+    a direct edit) — same handling.
+  Same effect on summarize/build/publish/ci-publish as the L3 check.
+- The gate reads `_l3fix.yaml`, **not** the switch: turning the switch off
+  does not unblock AI changes that are still unreviewed. With the switch
+  never turned on there is no file and nothing changes from 1.32.0.
+- Re-ingest: `kb ingest` drops `baseline` and `sections` entries of the
+  re-ingested chapters (their L3 is rewritten from the PDF, the AI fix is
+  gone) and, if the switch is on, writes fresh baselines for them. If the
+  switch is off and no entries remain, the file is deleted. Other chapters'
+  entries are kept.
 - `kb l3 report` lists AI-fixed sections first, `verified: false` ones on top
   and marked, with the `changes` list and the hint
   `git diff -- .kb/<id>/<file>.raw.md`.
 - `kb l3 confirm` confirms both the `_l3check.yaml` and `_l3fix.yaml` entry of
-  that section in one go.
+  that section in one go, and accepts an id that appears only in
+  `_l3fix.yaml` (today it refuses ids not in `_l3check.yaml`). Confirming an
+  `edited outside` unit records a `sections` entry with `by: human`.
 - A doc with no `_l3fix.yaml` behaves as today.
 - CI pin note: a CI on ≤ 1.32 ignores `_l3fix.yaml` (no gate); bump the pin
   (CHANGELOG/QUICKSTART, like 1.31.1).
@@ -337,8 +420,11 @@ before showing the report; when off, unchanged. Key instructions:
   `--from-image` refusal, id rename keeping `_l3check.yaml` entries, manifest
   and L2 skeleton rebuild, gate via `_l3fix.yaml`, switch on/off, sha mismatch.
 - A fixture PDF + broken L3 with the mockup's 7 defects: the corrected draft
-  applies; drafts with one inserted word, one dropped sentence, one table cell
-  changed are each rejected.
+  applies; drafts with one inserted word ("không"), one replaced word, one
+  dropped sentence, one sentence moved inside a paragraph, one table cell
+  changed are each rejected; a garbled word replaced by the PDF's word passes.
+- Gate: a direct `.raw.md` edit with the switch on blocks build; switch off
+  afterwards still blocks; re-ingest of that chapter clears it.
 - `kb init` template map test includes the new files.
 - README §14, guides (EN/VI) sources, CHANGELOG. Version: next minor after
   Part 1 — builder's call.
@@ -350,14 +436,20 @@ before showing the report; when off, unchanged. Key instructions:
 - Runs from the chat AI after the container ingest, not via API.
 - Switch on/off. Layout contract as in the mockup.
 - Approach A; Part 1 before Part 2.
+- Content check is **word by word** (§9.4 check 3).
+- Edits that bypass `apply` are **blocked** (§9.6 baseline).
 
 ## 11. My calls (owner to check)
 
 - Switch default **off**; `kb l3 fix apply` refuses while off.
 - Records in a new `_l3fix.yaml`, not in `_l3check.yaml` (old-CI parse safety).
-- Drafts under `.kb-work/`, not `.kb/`.
+- Drafts under `.kb-work/`; `kb l3 fix on` adds `.kb-work/` to `.gitignore`.
+- Ingest always writes `.kb-work/<id>/sections.json` (scratch only).
 - No cross-file moves; split/merge/reorder only inside one chapter file.
-- Only `pending` sections may be fixed.
+- A chapter file can be fixed only while all its units are `pending`.
+- After apply, `detect` is re-run on touched units; their old findings drop.
+- The gate follows `_l3fix.yaml`, not the switch; re-ingest clears entries of
+  re-ingested chapters.
 - Doc header on the hub without page number (wire-compat).
 - `kb l3 lint` is advisory, never a gate on its own.
 - AI retries a rejected section at most twice.
