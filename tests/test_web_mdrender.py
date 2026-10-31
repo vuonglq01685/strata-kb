@@ -204,14 +204,18 @@ def test_table_cells_never_inline_parsed():
 
 
 def test_ordered_list():
-    assert render("1. Gửi đơn\n2) Duyệt") == "<ol><li>Gửi đơn</li><li>Duyệt</li></ol>"
+    assert (
+        render("1. Gửi đơn\n2) Duyệt")
+        == '<ol><li value="1">Gửi đơn</li><li value="2">Duyệt</li></ol>'
+    )
 
 
 def test_nested_mixed_list():
     md = "1. Gửi đơn\n2. Duyệt\n   - Vắng mặt\n   - Quá hạn\n3. Cập nhật"
     assert render(md) == (
-        "<ol><li>Gửi đơn</li><li>Duyệt<ul><li>Vắng mặt</li><li>Quá hạn</li></ul></li>"
-        "<li>Cập nhật</li></ol>"
+        '<ol><li value="1">Gửi đơn</li><li value="2">Duyệt'
+        "<ul><li>Vắng mặt</li><li>Quá hạn</li></ul></li>"
+        '<li value="3">Cập nhật</li></ol>'
     )
 
 
@@ -227,14 +231,14 @@ def test_tab_indent_counts_as_four_spaces():
 def test_continuation_line_joins_item():
     assert (
         render("1. Gửi đơn trên\n   hệ thống HRM")
-        == "<ol><li>Gửi đơn trên hệ thống HRM</li></ol>"
+        == '<ol><li value="1">Gửi đơn trên hệ thống HRM</li></ol>'
     )
 
 
 def test_paragraph_line_closes_list_blank_line_does_not():
     assert (
         render("1. a\n\n2. b\nĐoạn văn")
-        == "<ol><li>a</li><li>b</li></ol>\n<p>Đoạn văn</p>"
+        == '<ol><li value="1">a</li><li value="2">b</li></ol>\n<p>Đoạn văn</p>'
     )
 
 
@@ -248,3 +252,34 @@ def test_list_item_inline_formatting():
         render("- **x** và `y`")
         == "<ul><li><strong>x</strong> và <code>y</code></li></ul>"
     )
+
+
+def test_ordered_list_keeps_source_numbers():
+    md = "1. Khoản một\n\na) điểm a\n\nb) điểm b\n\n2. Khoản hai"
+    out = render(md)
+    assert '<ol><li value="1">Khoản một</li></ol>' in out
+    assert '<ol><li value="2">Khoản hai</li></ol>' in out
+    assert render("2026. Kết thúc") == '<ol><li value="2026">Kết thúc</li></ol>'
+
+
+def test_delimiter_runs_and_punctuation_spans_stay_literal():
+    for text in [
+        "Lương (*) và thưởng (*) theo quy định",
+        "(**) xem ghi chú (**)",
+        "Họ tên: ______ Ngày: ______",
+        "Ký tên ____",
+        "***",
+        "****",
+        "use __dunder__ name",
+        "*-*",
+    ]:
+        assert render(text) == f"<p>{html.escape(text)}</p>", text
+
+
+def test_many_unclosed_delimiters_render_fast():
+    import time
+
+    start = time.perf_counter()
+    render("**x " * 8000)
+    render("*x " * 16000)
+    assert time.perf_counter() - start < 2.0

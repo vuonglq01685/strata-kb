@@ -23,19 +23,29 @@ _IMG_LINE_RE = re.compile(r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\
 _FENCE_RE = re.compile(r"^```[\w-]*\s*$")
 _LIST_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*]|\d+[.)])[ \t]+(?P<text>.*)$")
 _NEST_INDENT = 2  # spaces more than the parent item that open a nested list
-# Inline rules, applied in order; a delimiter hugs non-space text and has no
-# word character (or another delimiter) on its outer side, so `2*3*4`,
-# `snake_case` and `a * b` stay literal.
+_INLINE_SPAN = 500  # longest inline span; bounds the scan per opener
+
+
+def _span_re(delim: str) -> str:
+    """`delim`-wrapped span: no word char or delimiter outside either end, inner
+    text does not start with space/delimiter/closing bracket nor end with
+    space/delimiter/opening bracket, so `2*3*4`, `snake_case`, `a * b`, `(*)`,
+    `____` and `***` stay literal."""
+    d = re.escape(delim)
+    c = re.escape(delim[0])
+    return (
+        rf"(?<![\w{c}]){d}(?![\s{c})\]}}])([^\n]{{1,{_INLINE_SPAN}}}?)"
+        rf"(?<![\s{c}(\[{{]){d}(?![\w{c}])"
+    )
+
+
+# Inline rules, applied in order.
 _INLINE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"`([^`\n]+)`"), "code"),
-    (re.compile(r"(?<![\w*])\*\*(\S|\S.*?\S)\*\*(?![\w*])"), "strong"),
-    (
-        re.compile(
-            r"(?<![\w*])\*(\S|\S.*?\S)\*(?![\w*])|(?<![\w_])_(\S|\S.*?\S)_(?![\w_])"
-        ),
-        "em",
-    ),
+    (re.compile(_span_re("**")), "strong"),
+    (re.compile(_span_re("*") + "|" + _span_re("_")), "em"),
 )
+_HAS_WORD = re.compile(r"\w")
 
 
 def _img_tag(m: re.Match[str]) -> str:
@@ -76,6 +86,10 @@ def _inline(text: str, terms: set[str], rule: int = 0) -> str:
     for m in regex.finditer(text):
         out.append(_inline(text[last : m.start()], terms, rule + 1))
         inner = next(g for g in m.groups() if g is not None)
+        if tag != "code" and not _HAS_WORD.search(inner):  # `*-*`: not emphasis
+            out.append(_inline(m.group(0), terms, rule + 1))
+            last = m.end()
+            continue
         body = html.escape(inner) if tag == "code" else _inline(inner, terms, rule + 1)
         out.append(f"<{tag}>{body}</{tag}>")
         last = m.end()
@@ -103,6 +117,9 @@ def _cell_html(cell: str, terms: set[str]) -> str:
     return _highlight(cell, terms)
 
 
+_Item = tuple[str, list[str], list[tuple[str, list[tuple[str, list[str]]]]]]
+
+
 class _ListBuilder:
     """One open list: level-1 items, each with nested level-2 lists. Deeper
     indents stay at level 2; a tab counts as 4 spaces."""
@@ -114,8 +131,8 @@ class _ListBuilder:
     def _reset(self) -> None:
         self.kind = ""  # "ul" | "ol"; "" = no list open
         self.base = 0
-        # (text parts, [(kind, [text parts per item])])
-        self.items: list[tuple[list[str], list[tuple[str, list[list[str]]]]]] = []
+        # (<li> open tag, text parts, [(kind, [(<li> open tag, text parts)])])
+        self.items: list[_Item] = []
         self.last: list[str] = []
 
     def add(self, m: re.Match[str]) -> str | None:
@@ -124,17 +141,21 @@ class _ListBuilder:
         indent = len(m.group("indent").expandtabs(4))
         kind = "ol" if m.group("marker")[0].isdigit() else "ul"
         text = [m.group("text").strip()]
+        # keep the source number: L3 numbering is content, not styling
+        li_open = (
+            f'<li value="{int(m.group("marker")[:-1])}">' if kind == "ol" else "<li>"
+        )
         if self.items and indent >= self.base + _NEST_INDENT:
-            subs = self.items[-1][1]
+            subs = self.items[-1][2]
             if not subs or subs[-1][0] != kind:
                 subs.append((kind, []))
-            subs[-1][1].append(text)
+            subs[-1][1].append((li_open, text))
             self.last = text
             return None
         done = self.flush() if self.kind and kind != self.kind else None
         if not self.kind:
             self.kind, self.base = kind, indent
-        self.items.append((text, []))
+        self.items.append((li_open, text, []))
         self.last = text
         return done
 
@@ -156,12 +177,12 @@ class _ListBuilder:
             return _inline(" ".join(parts), self.terms)
 
         out = []
-        for text, subs in self.items:
+        for li_open, text, subs in self.items:
             nested = "".join(
-                f"<{k}>" + "".join(f"<li>{li(t)}</li>" for t in sub) + f"</{k}>"
+                f"<{k}>" + "".join(f"{o}{li(t)}</li>" for o, t in sub) + f"</{k}>"
                 for k, sub in subs
             )
-            out.append(f"<li>{li(text)}{nested}</li>")
+            out.append(f"{li_open}{li(text)}{nested}</li>")
         html_out = f"<{self.kind}>{''.join(out)}</{self.kind}>"
         self._reset()
         return html_out
