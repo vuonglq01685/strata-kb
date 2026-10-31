@@ -290,6 +290,29 @@ def _clip(text: str) -> str:
     return one if len(one) <= EVIDENCE_MAX else one[: EVIDENCE_MAX - 1] + "…"
 
 
+def _check_outside_edits(t: _Target) -> bool:
+    """Refuse a unit changed or removed outside `apply`: its words were never
+    checked, so a draft must not launder them. Return True when a replaced unit
+    still holds an unconfirmed fix that was not checked against the PDF text."""
+    rec = fixrecord.load(t.kb_dir / t.doc_id)
+    if rec is None:
+        return False
+    digests = slices.current_digests(t.kb_dir, t.doc_id)
+    for sid, reason in fixrecord.blocked(rec, digests):
+        if sid in t.ids and reason in (fixrecord.EDITED, fixrecord.REMOVED):
+            raise _Reject(
+                f"status: §{sid} was {reason} "
+                "— run kb l3 confirm or restore it first"
+            )
+    newest = {e.id: e for e in rec.sections}
+    return any(
+        (e := newest.get(sid)) is not None
+        and not e.verified
+        and (e.confirmed is None or e.confirmed.l3_sha256 != digests.get(sid))
+        for sid in t.ids
+    )
+
+
 def _check_tables(t: _Target, draft: str) -> None:
     old, new = _table_blocks(t.run), _table_blocks(draft)
     if len(old) != len(new):
@@ -583,6 +606,7 @@ def _apply_one(
         if draft.text == t.run:
             _draft_file(work_dir, doc_id, draft.name).unlink(missing_ok=True)
             return ApplyResult(draft.name, "unchanged")
+        unverified_before = _check_outside_edits(t)
         _check_l2(t)
         _check_status(t)
         _check_tables(t, draft.text)
@@ -599,7 +623,15 @@ def _apply_one(
     pieces = section_map(draft.text)
     after = {sid: quality.digest(pieces[sid][0]) for sid in ids}
     changes = _changes(t.ids, ids, t.run, draft.text)
-    _record(t, ids, changes, assistant, not skipped, before, after)
+    _record(
+        t,
+        ids,
+        changes,
+        assistant,
+        not skipped and not unverified_before,
+        before,
+        after,
+    )
     _write_l3_l2_manifest(t, draft.text, units)
     _write_spans(t, ids)
     _recheck(t, ids, pdf_pages, furniture, after)
