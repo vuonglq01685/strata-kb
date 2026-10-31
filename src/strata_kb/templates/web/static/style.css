@@ -414,3 +414,8 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 .md-body [class^="hl-s"] { color: #0a3069; }
 .md-body [class^="hl-m"], .md-body .hl-kc { color: #0550ae; }
 .md-body .hl-na, .md-body .hl-nf, .md-body .hl-nc { color: #8250df; }
+
+/* mobile shell: markup is hidden until the small-screen rules (Tasks 3-4) show it */
+.tab-bar, .sheet-pills, .topbar-btn, .hub-dot, .more-sheet, .sheet-scrim,
+.topbar-search [data-search-toggle] { display: none; }
+.main-col { min-width: 0; }

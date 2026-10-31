@@ -2,37 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{ title | default("Strata", true) }} — Strata</title>
+<noscript><style>.sheet-pill, .topbar-btn { display: none }</style></noscript>
 <link rel="stylesheet" href="/ui/static/style.css?v={{ asset_v }}">
 {% block head_scripts %}{% endblock %}
 <script src="/ui/static/app.js?v={{ asset_v }}" defer></script>
 </head>
 <body>
+{% from "_partials/status_chips.html" import status_chips %}
 <div class="shell">
 <header class="topbar">
   <a class="brand" href="/ui"><span class="brand-mark">KB</span>CENTER<span class="brand-dot">·</span>KB</a>
+  <span class="hub-dot {{ 'hub-dot-online' if shell.hub_ok else 'hub-dot-offline' }}" role="img" aria-label="hub {{ 'online' if shell.hub_ok else 'offline' }}"></span>
   <form class="topbar-search" method="get" action="/ui">
     <input type="search" id="global-search" name="q" value="{{ shell.q }}"
            aria-label="Search"
            placeholder="Search sections, fields, codes…  ⌘K">
     {% if shell.raw_tags %}<input type="hidden" name="tags" value="{{ shell.raw_tags }}">{% endif %}
     {% if shell.budget %}<input type="hidden" name="budget" value="{{ shell.budget }}">{% endif %}
+    <button type="button" data-search-toggle>Cancel</button>
   </form>
+  <button type="button" class="topbar-btn" data-search-toggle aria-label="Search">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+  </button>
+  <button type="button" class="topbar-btn" data-sheet-open="more" aria-controls="more" aria-expanded="false" aria-label="More">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+  </button>
   <div class="topbar-status">
-    {% if shell.hub_ok %}
-    <span class="hub-chip hub-online"><span class="dot"></span>hub online</span>
-    {% else %}
-    <span class="hub-chip hub-offline"><span class="dot"></span>hub offline</span>
-    {% endif %}
-    {% if shell.pull %}
-    <span class="hub-chip {{ 'hub-warn' if shell.pull.failed else 'hub-pulled' }}" title="{{ shell.pull.title }}"><span class="dot"></span>{{ shell.pull.label }}</span>
-    {% endif %}
-    {% if shell.commit %}
-    <span class="topbar-fed" title="{{ shell.commit.title }}">@{{ shell.commit.sha }} · {{ shell.commit.date }}</span>
-    {% endif %}
-    <span class="topbar-fed">federation · {{ shell.repo_count }} repos</span>
-    <span class="topbar-fed" title="strata-kb version this hub runs">strata-kb {{ shell.version }}</span>
+    {{ status_chips(shell) }}
   </div>
   {# ponytail: shown unconditionally (no shell.authenticated context yet) --
      harmless when logged out, just clears a cookie that isn't set. Add a
@@ -41,11 +39,27 @@
     <button type="submit" class="seg">Sign out</button>
   </form>
 </header>
+{% set rail_html %}{% block rail %}{% endblock %}{% endset %}
 <div class="columns">
   {% include "_partials/left_rail.html" %}
-  <main class="content">{% block main %}{% endblock %}</main>
-  <aside class="rail rail-right" aria-label="Page context">{% block rail %}{% endblock %}</aside>
+  <div class="main-col">
+    <div class="sheet-pills">
+      <button type="button" class="sheet-pill" data-sheet-open="rail-left" aria-controls="rail-left" aria-expanded="false">
+        {% if shell.tree %}Sections · {{ shell.tree | rejectattr('kind', 'equalto', 'chapter') | list | length }}{% else %}Tags{% endif %}
+      </button>
+      {% if rail_html | trim %}
+      <button type="button" class="sheet-pill" data-sheet-open="rail-right" aria-controls="rail-right" aria-expanded="false">
+        {% block rail_label %}Page info{% endblock %}
+      </button>
+      {% endif %}
+    </div>
+    <main class="content">{% block main %}{% endblock %}</main>
+  </div>
+  <aside class="rail rail-right" id="rail-right" aria-label="Page context">{{ rail_html }}</aside>
 </div>
+{% include "_partials/tab_bar.html" %}
+{% include "_partials/more_sheet.html" %}
+<div class="sheet-scrim" id="sheet-scrim" data-sheet-close hidden></div>
 </div>
 </body>
 </html>

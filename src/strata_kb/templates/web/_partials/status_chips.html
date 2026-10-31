@@ -1,0 +1,16 @@
+{# Top-bar status chips. verbose=True (More sheet) also prints each chip's title as visible text. #}
+{% macro status_chips(shell, verbose=False) %}
+    {% if shell.hub_ok %}
+    <span class="hub-chip hub-online"><span class="dot"></span>hub online</span>
+    {% else %}
+    <span class="hub-chip hub-offline"><span class="dot"></span>hub offline</span>
+    {% endif %}
+    {% if shell.pull %}
+    <span class="hub-chip {{ 'hub-warn' if shell.pull.failed else 'hub-pulled' }}" title="{{ shell.pull.title }}"><span class="dot"></span>{{ shell.pull.label }}{% if verbose %}<span class="chip-detail">{{ shell.pull.title }}</span>{% endif %}</span>
+    {% endif %}
+    {% if shell.commit %}
+    <span class="topbar-fed" title="{{ shell.commit.title }}">@{{ shell.commit.sha }} · {{ shell.commit.date }}{% if verbose %}<span class="chip-detail">{{ shell.commit.title }}</span>{% endif %}</span>
+    {% endif %}
+    <span class="topbar-fed">federation · {{ shell.repo_count }} repos</span>
+    <span class="topbar-fed" title="strata-kb version this hub runs">strata-kb {{ shell.version }}{% if verbose %}<span class="chip-detail">strata-kb version this hub runs</span>{% endif %}</span>
+{% endmacro %}

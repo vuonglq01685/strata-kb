@@ -1,0 +1,19 @@
+{# bottom tab bar (phones/foldables); same active rule as left_rail.html #}
+{% set menu = shell.tree_doc.kind if shell.tree_doc else shell.menu_kind %}
+<nav class="tab-bar" aria-label="Main menus">
+  <a href="/ui" class="tab{{ ' on' if shell.screen == 'overview' }}"{% if shell.screen == 'overview' %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    <span>Overview</span></a>
+  <a href="/ui/docs" class="tab{{ ' on' if menu == 'kb' }}"{% if menu == 'kb' %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
+    <span>Docs</span></a>
+  <a href="/ui/tickets" class="tab{{ ' on' if menu == 'ba' }}"{% if menu == 'ba' %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 0 0 6v3h18v-3a2 2 0 0 1 0-6V6H3z"/><path d="M13 6v12" stroke-dasharray="2 3"/></svg>
+    <span>Tickets</span></a>
+  <a href="/ui/code" class="tab{{ ' on' if menu == 'dev' }}"{% if menu == 'dev' %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>
+    <span>Code</span></a>
+  <a href="/ui/questions" class="tab{{ ' on' if shell.screen.startswith('questions') }}"{% if shell.screen.startswith('questions') %} aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.4M12 16.5h.01"/></svg>
+    <span>Q&amp;A</span></a>
+</nav>
