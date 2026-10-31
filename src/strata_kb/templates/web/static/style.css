@@ -295,6 +295,9 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 .reader-body pre code { font: inherit; }
 .reader-body ul { margin: 10px 0; padding-left: 1.4em; }
 .reader-body li + li { margin-top: 4px; }
+.reader-body :not(pre) > code { font: 13px/1.5 var(--mono); background: var(--field);
+  padding: 1px 5px; border-radius: 4px; }
+.reader-body strong { font-weight: 600; color: var(--ink); }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 16px; background: var(--surface-alt); border: 1px solid var(--line);
   border-radius: var(--r-lg); }

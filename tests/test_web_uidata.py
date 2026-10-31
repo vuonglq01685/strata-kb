@@ -6,6 +6,7 @@ from strata_kb import models
 from strata_kb.hub import HubHandle
 from strata_kb.models import Manifest, SectionEntry, SectionTokens
 from strata_kb.web import uidata
+from strata_kb.web.mdrender import render
 from tests.conftest import make_fed_entry
 
 
@@ -380,3 +381,9 @@ def test_inject_heading_anchors_unescapes_label():
     out, toc = uidata.inject_heading_anchors("<h2>A &amp; B</h2>")
     assert toc[0].label == "A & B"
     assert toc[0].anchor == "a-b"
+
+
+def test_heading_inline_and_toc_label():
+    content, toc = uidata.inject_heading_anchors(render("## 4.2 **NGHỈ** PHÉP"))
+    assert "<strong>NGHỈ</strong>" in content
+    assert toc[0].label == "4.2 NGHỈ PHÉP"

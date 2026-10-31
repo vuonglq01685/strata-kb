@@ -3,8 +3,9 @@
 
 Supported: #..###### headings, blank-line paragraphs, GitHub pipe tables,
 sha-named asset images (as standalone blocks or table cells), fenced code
-blocks (verbatim, never highlighted) and `- `/`* ` bullet lists. Table
-cells are escaped but never reworded/reflowed — the project's inviolable
+blocks (verbatim, never highlighted), `- `/`* ` bullet lists, and inline
+`**strong**`, `*em*`/`_em_` and `` `code` `` in paragraphs and headings. Table
+cells are escaped but never reworded/reflowed or inline-parsed — the project's inviolable
 rule is that tables render character-for-character. Optional keyword
 highlighting wraps matched whole words in <mark> without altering any
 other character.
@@ -21,6 +22,19 @@ _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 _IMG_LINE_RE = re.compile(r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$")
 _FENCE_RE = re.compile(r"^```[\w-]*\s*$")
 _LIST_RE = re.compile(r"^[-*] (.*)$")
+# Inline rules, applied in order; a delimiter hugs non-space text and has no
+# word character (or another delimiter) on its outer side, so `2*3*4`,
+# `snake_case` and `a * b` stay literal.
+_INLINE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"`([^`\n]+)`"), "code"),
+    (re.compile(r"(?<![\w*])\*\*(\S|\S.*?\S)\*\*(?![\w*])"), "strong"),
+    (
+        re.compile(
+            r"(?<![\w*])\*(\S|\S.*?\S)\*(?![\w*])|(?<![\w_])_(\S|\S.*?\S)_(?![\w_])"
+        ),
+        "em",
+    ),
+)
 
 
 def _img_tag(m: re.Match[str]) -> str:
@@ -48,6 +62,23 @@ def _highlight(text: str, terms: set[str]) -> str:
             out.append(f"<mark>{html.escape(word)}</mark>")
             last = m.end()
     out.append(html.escape(text[last:]))
+    return "".join(out)
+
+
+def _inline(text: str, terms: set[str], rule: int = 0) -> str:
+    """Escape `text`, add inline tags, highlight `terms` outside code spans."""
+    if rule == len(_INLINE_RULES):
+        return _highlight(text, terms)
+    regex, tag = _INLINE_RULES[rule]
+    out: list[str] = []
+    last = 0
+    for m in regex.finditer(text):
+        out.append(_inline(text[last : m.start()], terms, rule + 1))
+        inner = next(g for g in m.groups() if g is not None)
+        body = html.escape(inner) if tag == "code" else _inline(inner, terms, rule + 1)
+        out.append(f"<{tag}>{body}</{tag}>")
+        last = m.end()
+    out.append(_inline(text[last:], terms, rule + 1))
     return "".join(out)
 
 
@@ -79,7 +110,7 @@ def render(md: str, terms: set[str] | None = None) -> str:
 
     def flush_para() -> None:
         if para:
-            blocks.append(f"<p>{_highlight(' '.join(para), terms)}</p>")
+            blocks.append(f"<p>{_inline(' '.join(para), terms)}</p>")
             para.clear()
 
     def flush_list() -> None:
@@ -125,9 +156,7 @@ def render(md: str, terms: set[str] | None = None) -> str:
             flush_para()
             flush_list()
             level = len(m.group(1))
-            blocks.append(
-                f"<h{level}>{_highlight(m.group(2).strip(), terms)}</h{level}>"
-            )
+            blocks.append(f"<h{level}>{_inline(m.group(2).strip(), terms)}</h{level}>")
         elif m_li:
             flush_para()
             bullets.append(f"<li>{_highlight(m_li.group(1).strip(), terms)}</li>")

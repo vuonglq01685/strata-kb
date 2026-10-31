@@ -1,4 +1,6 @@
 # tests/test_web_mdrender.py
+import html
+
 from strata_kb.web.mdrender import render
 
 
@@ -162,3 +164,40 @@ def test_list_closes_before_heading_and_table():
 
 def test_dash_inside_paragraph_is_not_a_list():
     assert render("value - not a list") == "<p>value - not a list</p>"
+
+
+def test_inline_strong_em_code():
+    assert render("A **Bảng 4-1** và *HRM* và `5 ngày`.") == (
+        "<p>A <strong>Bảng 4-1</strong> và <em>HRM</em> và <code>5 ngày</code>.</p>"
+    )
+    assert render("_nghiêng_ ok") == "<p><em>nghiêng</em> ok</p>"
+
+
+def test_inline_literal_cases_stay_literal():
+    for text in [
+        "a * b * c",
+        "2*3*4 = 24",
+        "snake_case_name",
+        "file_v2_final.pdf",
+        "lone ** here",
+    ]:
+        assert render(text) == f"<p>{html.escape(text)}</p>"
+
+
+def test_inline_code_is_not_parsed_further_and_escaped():
+    assert render("`**x** <b>`") == "<p><code>**x** &lt;b&gt;</code></p>"
+
+
+def test_inline_escape_before_tags():
+    assert render("**<script>**") == "<p><strong>&lt;script&gt;</strong></p>"
+
+
+def test_highlight_inside_strong_not_inside_code():
+    out = render("**leave rules** and `leave`", terms={"leave"})
+    assert "<strong><mark>leave</mark> rules</strong>" in out
+    assert "<code>leave</code>" in out
+
+
+def test_table_cells_never_inline_parsed():
+    out = render("| a | b |\n|---|---|\n| **x** | `y` |")
+    assert "<td>**x**</td><td>`y`</td>" in out
