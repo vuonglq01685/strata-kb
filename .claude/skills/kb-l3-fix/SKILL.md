@@ -43,6 +43,8 @@ every `kb` command below with `docker compose run --rm hub`.
      `§<section> <rule> line <n>: <evidence>` (rules R1–R8; exit 1 when
      there are issues).
    - `kb l3 report <doc-id>` — flagged sections with evidence.
+   `kb l3 report` exits 1 whenever any section awaits review; that is normal,
+   not an error, so keep going.
    Fix only the sections these list. Leave every other section alone.
    Nothing listed → report that and stop.
 3. **Read the unit.** The section's file is the `file:` of its row in

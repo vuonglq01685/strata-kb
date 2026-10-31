@@ -466,8 +466,8 @@ that `kb ingest` always writes the scratch file `.kb-work/<id>/sections.json`
    `§<name> applied → <new ids>`, `§<name> unchanged` or
    `§<name> rejected: <check>: <detail>`; a rejected draft writes nothing and
    stays in place.
-5. `kb l3 report <id>` lists the AI fixes first, each with the files it changed
-   and a `git diff` hint. A human reads the diff and runs `kb l3 confirm`.
+5. `kb l3 report <id>` lists the AI fixes first, each with the kinds of change
+   it made and a `git diff` hint. A human reads the diff and runs `kb l3 confirm`.
    Then `kb summarize`, `kb build` and `kb publish` as usual.
 
 **What `apply` verifies.** In this order, and the first failure rejects the draft:

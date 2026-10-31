@@ -178,3 +178,21 @@ def test_unchanged_links_pass(kb):
     _draft(kb, "x1", FIXED_42)
 
     assert _apply(kb)[0].status == "applied"
+
+
+def test_skill_body_says_report_exit_1_is_normal():
+    from strata_kb.initcmd import read_template
+
+    text = read_template("claude-skill-kb-l3-fix.md")
+
+    assert "`kb l3 report` exits 1 whenever any section awaits review" in text
+
+
+def test_readme_does_not_promise_changed_files():
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "the files it changed" not in readme
