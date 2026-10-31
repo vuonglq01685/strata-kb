@@ -36,6 +36,13 @@ def test_direct_edit_blocks():
     ]
 
 
+def test_untracked_unit_in_record_doc_blocks():
+    rec = _rec(baseline={"1": ("a", "h1")})
+    assert fixrecord.blocked(rec, {"1": "h1", "9": "h"}) == [
+        ("9", "edited outside kb l3 fix apply")
+    ]
+
+
 def test_removed_unit_blocks():
     rec = _rec(baseline={"x1": ("a", "h1")})
     assert fixrecord.blocked(rec, {}) == [("x1", "removed outside kb l3 fix apply")]
@@ -80,6 +87,44 @@ def test_reset_drops_reingested_files_and_rebaselines(tmp_path):
     assert [e.id for e in rec.sections] == ["2"]
 
 
+def test_switch_on_partial_reingest_baselines_untouched_chapters(tmp_path):
+    for stem in ("a", "b"):
+        (tmp_path / f"{stem}.raw.md").write_text("x", encoding="utf-8")
+    doc = {
+        "1": BaselineUnit(file="a", l3_sha256="ha"),
+        "2": BaselineUnit(file="b", l3_sha256="hb"),
+    }
+    fixrecord.reset_on_ingest(tmp_path, {"a"}, doc, switch_on=True)
+    rec = fixrecord.load(tmp_path)
+    assert rec.baseline == doc
+    assert fixrecord.blocked(rec, {"1": "ha", "2": "hb"}) == []
+
+
+def test_switch_on_partial_reingest_keeps_tracked_units_of_other_files(tmp_path):
+    for stem in ("a", "b"):
+        (tmp_path / f"{stem}.raw.md").write_text("x", encoding="utf-8")
+    fixrecord.save(tmp_path, _rec(baseline={"2": ("b", "old")}))
+    doc = {
+        "1": BaselineUnit(file="a", l3_sha256="ha"),
+        "2": BaselineUnit(file="b", l3_sha256="new"),
+    }
+    fixrecord.reset_on_ingest(tmp_path, {"a"}, doc, switch_on=True)
+    assert fixrecord.load(tmp_path).baseline["2"].l3_sha256 == "old"
+
+
+def test_switch_off_partial_reingest_keeps_record_complete(tmp_path):
+    for stem in ("a", "b"):
+        (tmp_path / f"{stem}.raw.md").write_text("x", encoding="utf-8")
+    fixrecord.save(tmp_path, _rec(baseline={"1": ("a", "old"), "2": ("b", "hb")}))
+    doc = {
+        "1": BaselineUnit(file="a", l3_sha256="new"),
+        "2": BaselineUnit(file="b", l3_sha256="hb"),
+    }
+    fixrecord.reset_on_ingest(tmp_path, {"a"}, doc, switch_on=False)
+    rec = fixrecord.load(tmp_path)
+    assert fixrecord.blocked(rec, {"1": "new", "2": "hb"}) == []
+
+
 def test_reset_drops_files_gone_from_disk(tmp_path):
     (tmp_path / "b.raw.md").write_text("x", encoding="utf-8")
     fixrecord.save(tmp_path, _rec(baseline={"1": ("a", "h"), "2": ("b", "h")}))
@@ -101,8 +146,15 @@ def test_reset_switch_off_creates_nothing(tmp_path):
 
 def test_blocked_docs_includes_l3fix_only_doc(tmp_path):
     kb = _kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
     fixrecord.save(
-        kb / "doc", L3Fix(baseline={"1": BaselineUnit(file="a", l3_sha256="stale")})
+        kb / "doc",
+        L3Fix(
+            baseline={
+                "1": BaselineUnit(file="a", l3_sha256="stale"),
+                "2": BaselineUnit(file="a", l3_sha256=digests["2"]),
+            }
+        ),
     )
     assert report.blocked_docs(kb) == [("doc", ["1"])]
 
@@ -137,7 +189,10 @@ def test_switch_off_keeps_gate(tmp_path):
     kb = _kb(tmp_path)
     fixswitch.turn_on(kb)
     digest = report.current_digests(kb, "doc")["1"]
-    fixrecord.save(kb / "doc", _rec(entries=[_entry("1", digest)]))
+    other = report.current_digests(kb, "doc")["2"]
+    fixrecord.save(
+        kb / "doc", _rec(baseline={"2": ("a", other)}, entries=[_entry("1", digest)])
+    )
     before = report.blocked_docs(kb)
     fixswitch.turn_off(kb)
     assert before == [("doc", ["1"])]

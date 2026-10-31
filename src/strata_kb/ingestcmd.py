@@ -257,8 +257,8 @@ def _reset_fix_record(
         doc_dir,
         stems,
         {
-            i: fixrecord.BaselineUnit(file=files[i], l3_sha256=digests[i])
-            for i in redone
+            i: fixrecord.BaselineUnit(file=f, l3_sha256=digests[i])
+            for i, f in files.items()
             if i in digests
         },
         switch_on,

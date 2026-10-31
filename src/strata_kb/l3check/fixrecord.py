@@ -69,7 +69,10 @@ def reset_on_ingest(
     switch_on: bool,
 ) -> None:
     """Re-ingest rewrote the files in `stems`: forget what was tracked for them
-    (and for files gone from disk); with the switch on, track `units` afresh."""
+    (and for files gone from disk). `units` is every unit of the doc now. While
+    the switch is on, or a record with anything tracked remains, baseline the
+    units of `stems` afresh and every other unit nothing tracks yet, so that
+    `blocked` finds no unit untracked."""
     rec = load(doc_dir) or L3Fix()
 
     def gone(file: str) -> bool:
@@ -77,13 +80,17 @@ def reset_on_ingest(
 
     baseline = {k: v for k, v in rec.baseline.items() if not gone(v.file)}
     sections = [e for e in rec.sections if not gone(e.file)]
-    if switch_on:
-        baseline.update(units)
+    if switch_on or baseline or sections:
+        tracked = baseline.keys() | {e.id for e in sections}
+        baseline.update(
+            {k: v for k, v in units.items() if v.file in stems or k not in tracked}
+        )
     save(doc_dir, L3Fix(baseline=baseline, sections=sections))
 
 
 def blocked(rec: L3Fix, digests: dict[str, str]) -> list[tuple[str, str]]:
-    """(section id, reason) for every tracked id whose L3 is not as recorded."""
+    """(section id, reason) for every tracked id whose L3 is not as recorded,
+    then every id in `digests` that nothing tracks (a unit added by direct edit)."""
     newest = {e.id: e for e in rec.sections}  # later entry overwrites earlier
     out: list[tuple[str, str]] = []
     for sid in dict.fromkeys([*rec.baseline, *newest]):
@@ -97,6 +104,8 @@ def blocked(rec: L3Fix, digests: dict[str, str]) -> list[tuple[str, str]]:
                 out.append((sid, AWAITING))
         elif base is None or base.l3_sha256 != digest:
             out.append((sid, EDITED))
+    tracked = set(rec.baseline) | set(newest)
+    out += [(sid, EDITED) for sid in digests if sid not in tracked]
     return out
 
 
