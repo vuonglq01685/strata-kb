@@ -293,7 +293,8 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
   font: 400 13px/1.5 var(--mono); background: var(--surface-alt); border: 1px solid var(--line);
   border-radius: var(--r-lg); }
 .reader-body pre code { font: inherit; }
-.reader-body ul { margin: 10px 0; padding-left: 1.4em; }
+.reader-body ul, .reader-body ol { margin: 10px 0; padding-left: 1.4em; }
+.reader-body li > ul, .reader-body li > ol { margin: 4px 0 0; }
 .reader-body li + li { margin-top: 4px; }
 .reader-body :not(pre) > code { font: 13px/1.5 var(--mono); background: var(--field);
   padding: 1px 5px; border-radius: 4px; }

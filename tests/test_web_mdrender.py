@@ -201,3 +201,50 @@ def test_highlight_inside_strong_not_inside_code():
 def test_table_cells_never_inline_parsed():
     out = render("| a | b |\n|---|---|\n| **x** | `y` |")
     assert "<td>**x**</td><td>`y`</td>" in out
+
+
+def test_ordered_list():
+    assert render("1. Gửi đơn\n2) Duyệt") == "<ol><li>Gửi đơn</li><li>Duyệt</li></ol>"
+
+
+def test_nested_mixed_list():
+    md = "1. Gửi đơn\n2. Duyệt\n   - Vắng mặt\n   - Quá hạn\n3. Cập nhật"
+    assert render(md) == (
+        "<ol><li>Gửi đơn</li><li>Duyệt<ul><li>Vắng mặt</li><li>Quá hạn</li></ul></li>"
+        "<li>Cập nhật</li></ol>"
+    )
+
+
+def test_deeper_indent_clamps_to_level_two():
+    out = render("- a\n  - b\n    - c")
+    assert out == "<ul><li>a<ul><li>b</li><li>c</li></ul></li></ul>"
+
+
+def test_tab_indent_counts_as_four_spaces():
+    assert render("- a\n\t- b") == "<ul><li>a<ul><li>b</li></ul></li></ul>"
+
+
+def test_continuation_line_joins_item():
+    assert (
+        render("1. Gửi đơn trên\n   hệ thống HRM")
+        == "<ol><li>Gửi đơn trên hệ thống HRM</li></ol>"
+    )
+
+
+def test_paragraph_line_closes_list_blank_line_does_not():
+    assert (
+        render("1. a\n\n2. b\nĐoạn văn")
+        == "<ol><li>a</li><li>b</li></ol>\n<p>Đoạn văn</p>"
+    )
+
+
+def test_numbered_headings_and_years_are_not_list_items():
+    assert render("4.2.1 Thủ tục") == "<p>4.2.1 Thủ tục</p>"
+    assert render("2026 là năm") == "<p>2026 là năm</p>"
+
+
+def test_list_item_inline_formatting():
+    assert (
+        render("- **x** và `y`")
+        == "<ul><li><strong>x</strong> và <code>y</code></li></ul>"
+    )

@@ -21,7 +21,8 @@ _SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 _IMG_LINE_RE = re.compile(r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$")
 _FENCE_RE = re.compile(r"^```[\w-]*\s*$")
-_LIST_RE = re.compile(r"^[-*] (.*)$")
+_LIST_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*]|\d+[.)])[ \t]+(?P<text>.*)$")
+_NEST_INDENT = 2  # spaces more than the parent item that open a nested list
 # Inline rules, applied in order; a delimiter hugs non-space text and has no
 # word character (or another delimiter) on its outer side, so `2*3*4`,
 # `snake_case` and `a * b` stay literal.
@@ -102,11 +103,75 @@ def _cell_html(cell: str, terms: set[str]) -> str:
     return _highlight(cell, terms)
 
 
+class _ListBuilder:
+    """One open list: level-1 items, each with nested level-2 lists. Deeper
+    indents stay at level 2; a tab counts as 4 spaces."""
+
+    def __init__(self, terms: set[str]) -> None:
+        self.terms = terms
+        self._reset()
+
+    def _reset(self) -> None:
+        self.kind = ""  # "ul" | "ol"; "" = no list open
+        self.base = 0
+        # (text parts, [(kind, [text parts per item])])
+        self.items: list[tuple[list[str], list[tuple[str, list[list[str]]]]]] = []
+        self.last: list[str] = []
+
+    def add(self, m: re.Match[str]) -> str | None:
+        """Add an item; returns the finished list's HTML when a level-1
+        marker type change closes it."""
+        indent = len(m.group("indent").expandtabs(4))
+        kind = "ol" if m.group("marker")[0].isdigit() else "ul"
+        text = [m.group("text").strip()]
+        if self.items and indent >= self.base + _NEST_INDENT:
+            subs = self.items[-1][1]
+            if not subs or subs[-1][0] != kind:
+                subs.append((kind, []))
+            subs[-1][1].append(text)
+            self.last = text
+            return None
+        done = self.flush() if self.kind and kind != self.kind else None
+        if not self.kind:
+            self.kind, self.base = kind, indent
+        self.items.append((text, []))
+        self.last = text
+        return done
+
+    def continues(self, line: str) -> bool:
+        """An indented non-item line inside an open list joins the last item."""
+        if (
+            not self.kind
+            or len(line.expandtabs(4)) - len(line.expandtabs(4).lstrip()) < 2
+        ):
+            return False
+        self.last.append(line.strip())
+        return True
+
+    def flush(self) -> str | None:
+        if not self.kind:
+            return None
+
+        def li(parts: list[str]) -> str:
+            return _inline(" ".join(parts), self.terms)
+
+        out = []
+        for text, subs in self.items:
+            nested = "".join(
+                f"<{k}>" + "".join(f"<li>{li(t)}</li>" for t in sub) + f"</{k}>"
+                for k, sub in subs
+            )
+            out.append(f"<li>{li(text)}{nested}</li>")
+        html_out = f"<{self.kind}>{''.join(out)}</{self.kind}>"
+        self._reset()
+        return html_out
+
+
 def render(md: str, terms: set[str] | None = None) -> str:
     terms = terms or set()
     blocks: list[str] = []
     para: list[str] = []
-    bullets: list[str] = []
+    lists = _ListBuilder(terms)
 
     def flush_para() -> None:
         if para:
@@ -114,9 +179,9 @@ def render(md: str, terms: set[str] | None = None) -> str:
             para.clear()
 
     def flush_list() -> None:
-        if bullets:
-            blocks.append("<ul>" + "".join(bullets) + "</ul>")
-            bullets.clear()
+        done = lists.flush()
+        if done:
+            blocks.append(done)
 
     lines = md.splitlines()
     i = 0
@@ -159,9 +224,13 @@ def render(md: str, terms: set[str] | None = None) -> str:
             blocks.append(f"<h{level}>{_inline(m.group(2).strip(), terms)}</h{level}>")
         elif m_li:
             flush_para()
-            bullets.append(f"<li>{_highlight(m_li.group(1).strip(), terms)}</li>")
+            done = lists.add(m_li)
+            if done:
+                blocks.append(done)
         elif not line.strip():
             flush_para()  # a blank line does not end a list
+        elif not para and lists.continues(line):
+            pass
         else:
             flush_list()
             para.append(line.strip())
