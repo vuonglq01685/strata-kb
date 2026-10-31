@@ -92,7 +92,8 @@ async function main() {
   const browser = await chromium.launch();
   const login = await browser.newContext();
   const resp = await login.request.post(`${base}/ui/login`, { form: { username: user, password: pw.join(":") } });
-  if (!resp.ok()) throw new Error(`login failed: ${resp.status()}`);
+  // a wrong password re-renders the login form with HTTP 200, so check where we ended up
+  if (!resp.ok() || new URL(resp.url()).pathname === "/ui/login") throw new Error(`login failed: ${resp.status()} ${resp.url()}`);
   const state = await login.storageState();
   await login.close();
 
@@ -106,7 +107,16 @@ async function main() {
       const context = await browser.newContext({ viewport: { width: w, height: h }, storageState });
       const page = await context.newPage();
       for (const p of pages) {
-        await page.goto(base + p, { waitUntil: "networkidle" });
+        const r = await page.goto(base + p, { waitUntil: "networkidle" });
+        const want = p.startsWith("/ui/docs/does-not-exist") ? 404 : 200;
+        const bounced = pages === AUTHED_PAGES && new URL(page.url()).pathname === "/ui/login";
+        if (r.status() !== want || bounced) {
+          const msg = `status ${r.status()} (want ${want})${bounced ? ` / redirected to ${page.url()}` : ""}`;
+          if (baseline) throw new Error(`bad baseline page ${vp} ${p}: ${msg}`);
+          failures++;
+          console.log(`FAIL load ${vp} ${p}: ${msg}`);
+          continue;
+        }
         const shot = await page.screenshot({ fullPage: true, animations: "disabled" });
         const dir = path.join(out, baseline ? "baseline" : "", vp);
         fs.mkdirSync(dir, { recursive: true });
