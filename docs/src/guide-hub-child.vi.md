@@ -168,6 +168,57 @@ sẽ yêu cầu review lại. Tài liệu ingest trước 1.31.1 không có file
 không bị chặn cho đến khi ingest lại. `_l3check.yaml` không bao giờ được gửi lên
 hub.
 
+## 4.6 Sửa cấu trúc L3 bằng AI (không bắt buộc)
+
+`kb ingest` có thể để lại lỗi cấu trúc trong L3: id section dự phòng, cấp tiêu đề
+sai, đoạn văn bị ngắt giữa chừng, khối bị lặp, đầu trang hoặc chân trang còn sót
+trong văn bản. Tính năng sửa L3 bằng AI cho một trợ lý AI sửa cấu trúc đó, còn
+máy kiểm tra rằng trợ lý không đổi gì khác. Mặc định tính năng này tắt, và L3
+vẫn là văn bản của PDF.
+
+```bash
+kb l3 fix on                                   # l3_fix: enabled trong .kb/config.yaml; thêm .kb-work/ vào .gitignore
+kb ingest source/handbook.pdf --id hr-handbook # ghi mốc ban đầu vào .kb/hr-handbook/_l3fix.yaml; không tóm tắt
+kb l3 lint hr-handbook --pdf source/handbook.pdf
+# chạy skill kb-l3-fix (Claude Code /kb-l3-fix, prompt Copilot, lệnh Cursor); skill ghi các bản nháp
+kb l3 fix apply hr-handbook --pdf source/handbook.pdf --assistant claude-code
+kb l3 report hr-handbook                       # các sửa chữa của AI đứng đầu, kèm gợi ý git diff
+kb l3 confirm hr-handbook --section 4.12       # một người đã kiểm tra
+kb summarize
+```
+
+- `kb ingest` luôn ghi file tạm `.kb-work/<id>/sections.json`. Khi công tắc bật,
+  nó còn ghi mốc ban đầu `_l3fix.yaml` và để bước tóm tắt cho bạn, đồng thời in
+  các bước tiếp theo.
+- `kb l3 lint` kiểm tra các quy tắc bố cục R1 đến R8: id dự phòng, id trùng, cấp
+  tiêu đề, khối lặp, đầu trang và chân trang, khối mà L3 không cho phép, code
+  fence chưa đóng, đoạn văn bị ngắt. Nó chỉ mang tính tham khảo.
+- Skill ghi mỗi section một bản nháp tại `.kb-work/<id>/l3fix/<section-id>.md`
+  (dòng đầu `<!-- replaces: <id> <id> -->` để gộp hoặc đổi thứ tự section). Skill
+  không bao giờ sửa `.kb/` và không bao giờ xác nhận.
+- `kb l3 fix apply` kiểm tra từng bản nháp theo thứ tự này và không ghi gì khi gặp
+  lỗi đầu tiên: dòng `replaces`, `status` (mọi section của file chương phải còn
+  `pending`), `tables` (khớp từng byte, cùng thứ tự), `contract` (các quy tắc
+  lint), `words` (đối chiếu từng từ với lớp văn bản của PDF: không có từ nào mà
+  PDF không có ở chỗ đó, không mất chữ của PDF, không khôi phục dở dang, không
+  chép chữ của section bên cạnh; id section mới phải là chữ mà PDF hiển thị) và
+  `ids`. Mỗi dòng kết quả có dạng `§<tên> applied → <id mới>`,
+  `§<tên> unchanged` hoặc `§<tên> rejected: <kiểm tra>: <chi tiết>`.
+- Với section bị quét ảnh hoặc font hỏng, `kb l3 fix pages <id> --pdf <pdf> --page N`
+  xuất các trang PNG vào `.kb-work/<id>/pages/`, và `apply ... --from-image <id>`
+  bỏ qua bước kiểm tra từ. Bản sửa đó bị đánh dấu chưa được kiểm chứng và
+  `kb l3 report` xếp nó lên đầu: hãy đọc nó đối chiếu với PDF.
+- Cổng chặn: khi một sửa chữa của AI đang chờ review, hoặc L3 bị sửa hay xoá
+  ngoài `kb l3 fix apply`, `kb summarize` bỏ qua tài liệu, `kb build` báo lỗi,
+  `kb publish` và `kb ci-publish` từ chối. Cổng đọc `_l3fix.yaml`, không đọc công
+  tắc. `kb l3 confirm` xoá mục trong cả `_l3check.yaml` lẫn `_l3fix.yaml`. Hãy
+  commit `_l3fix.yaml`; file này không bao giờ được gửi lên hub. Nâng bản ghim
+  CI lên `strata-kb==1.33.0`: CI cũ bỏ qua file này và không chặn.
+
+AI không bao giờ xác nhận. Máy kiểm tra bảng và từ, không kiểm tra được cấp tiêu
+đề hay đoạn văn đã gộp có đúng ý tác giả hay không: reviewer đọc `git diff` và
+đối chiếu với PDF.
+
 ---
 
 # 5. Tóm tắt
@@ -566,7 +617,9 @@ phép kiểm tra chặt hơn, và thông báo sẽ cho bạn biết lệnh nào 
 | `kb init [--kind hub\|child]` | Tạo hoặc làm mới repository |
 | `kb docker-setup` | Chuẩn bị Docker: hub khởi động dịch vụ, child kéo image |
 | `kb ingest <pdf> --id <id>` | Tách tài liệu, ghi L3, dựng khung L1/L2 |
-| `kb l3 report\|confirm <doc>` | Review và xác nhận các section L3 bị đánh dấu |
+| `kb l3 report\|confirm <doc>` | Review và xác nhận các section L3 bị đánh dấu và các sửa chữa của AI |
+| `kb l3 lint <doc> --pdf <pdf>` | Kiểm tra các quy tắc bố cục L3 R1 đến R8 |
+| `kb l3 fix on\|off\|pages\|apply` | Sửa L3 bằng AI: công tắc, ảnh trang, kiểm tra và ghi bản nháp |
 | `kb status` | Còn gì chưa làm |
 | `kb summarize <doc>` | Điền hoặc điền lại tóm tắt |
 | `kb build [--strict] [--allow-pending]` | Kiểm tra kho |

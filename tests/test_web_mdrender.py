@@ -1,4 +1,6 @@
 # tests/test_web_mdrender.py
+import html
+
 from strata_kb.web.mdrender import render
 
 
@@ -162,3 +164,122 @@ def test_list_closes_before_heading_and_table():
 
 def test_dash_inside_paragraph_is_not_a_list():
     assert render("value - not a list") == "<p>value - not a list</p>"
+
+
+def test_inline_strong_em_code():
+    assert render("A **Bảng 4-1** và *HRM* và `5 ngày`.") == (
+        "<p>A <strong>Bảng 4-1</strong> và <em>HRM</em> và <code>5 ngày</code>.</p>"
+    )
+    assert render("_nghiêng_ ok") == "<p><em>nghiêng</em> ok</p>"
+
+
+def test_inline_literal_cases_stay_literal():
+    for text in [
+        "a * b * c",
+        "2*3*4 = 24",
+        "snake_case_name",
+        "file_v2_final.pdf",
+        "lone ** here",
+    ]:
+        assert render(text) == f"<p>{html.escape(text)}</p>"
+
+
+def test_inline_code_is_not_parsed_further_and_escaped():
+    assert render("`**x** <b>`") == "<p><code>**x** &lt;b&gt;</code></p>"
+
+
+def test_inline_escape_before_tags():
+    assert render("**<script>**") == "<p><strong>&lt;script&gt;</strong></p>"
+
+
+def test_highlight_inside_strong_not_inside_code():
+    out = render("**leave rules** and `leave`", terms={"leave"})
+    assert "<strong><mark>leave</mark> rules</strong>" in out
+    assert "<code>leave</code>" in out
+
+
+def test_table_cells_never_inline_parsed():
+    out = render("| a | b |\n|---|---|\n| **x** | `y` |")
+    assert "<td>**x**</td><td>`y`</td>" in out
+
+
+def test_ordered_list():
+    assert (
+        render("1. Gửi đơn\n2) Duyệt")
+        == '<ol><li value="1">Gửi đơn</li><li value="2">Duyệt</li></ol>'
+    )
+
+
+def test_nested_mixed_list():
+    md = "1. Gửi đơn\n2. Duyệt\n   - Vắng mặt\n   - Quá hạn\n3. Cập nhật"
+    assert render(md) == (
+        '<ol><li value="1">Gửi đơn</li><li value="2">Duyệt'
+        "<ul><li>Vắng mặt</li><li>Quá hạn</li></ul></li>"
+        '<li value="3">Cập nhật</li></ol>'
+    )
+
+
+def test_deeper_indent_clamps_to_level_two():
+    out = render("- a\n  - b\n    - c")
+    assert out == "<ul><li>a<ul><li>b</li><li>c</li></ul></li></ul>"
+
+
+def test_tab_indent_counts_as_four_spaces():
+    assert render("- a\n\t- b") == "<ul><li>a<ul><li>b</li></ul></li></ul>"
+
+
+def test_continuation_line_joins_item():
+    assert (
+        render("1. Gửi đơn trên\n   hệ thống HRM")
+        == '<ol><li value="1">Gửi đơn trên hệ thống HRM</li></ol>'
+    )
+
+
+def test_paragraph_line_closes_list_blank_line_does_not():
+    assert (
+        render("1. a\n\n2. b\nĐoạn văn")
+        == '<ol><li value="1">a</li><li value="2">b</li></ol>\n<p>Đoạn văn</p>'
+    )
+
+
+def test_numbered_headings_and_years_are_not_list_items():
+    assert render("4.2.1 Thủ tục") == "<p>4.2.1 Thủ tục</p>"
+    assert render("2026 là năm") == "<p>2026 là năm</p>"
+
+
+def test_list_item_inline_formatting():
+    assert (
+        render("- **x** và `y`")
+        == "<ul><li><strong>x</strong> và <code>y</code></li></ul>"
+    )
+
+
+def test_ordered_list_keeps_source_numbers():
+    md = "1. Khoản một\n\na) điểm a\n\nb) điểm b\n\n2. Khoản hai"
+    out = render(md)
+    assert '<ol><li value="1">Khoản một</li></ol>' in out
+    assert '<ol><li value="2">Khoản hai</li></ol>' in out
+    assert render("2026. Kết thúc") == '<ol><li value="2026">Kết thúc</li></ol>'
+
+
+def test_delimiter_runs_and_punctuation_spans_stay_literal():
+    for text in [
+        "Lương (*) và thưởng (*) theo quy định",
+        "(**) xem ghi chú (**)",
+        "Họ tên: ______ Ngày: ______",
+        "Ký tên ____",
+        "***",
+        "****",
+        "use __dunder__ name",
+        "*-*",
+    ]:
+        assert render(text) == f"<p>{html.escape(text)}</p>", text
+
+
+def test_many_unclosed_delimiters_render_fast():
+    import time
+
+    start = time.perf_counter()
+    render("**x " * 8000)
+    render("*x " * 16000)
+    assert time.perf_counter() - start < 2.0

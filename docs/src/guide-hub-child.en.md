@@ -169,6 +169,57 @@ changed section asks for review again. Documents ingested before 1.31.1 have no
 check file and are not gated until re-ingested. `_l3check.yaml` is never sent to
 the hub.
 
+## 4.6 Fix the structure of L3 with AI (optional)
+
+`kb ingest` can leave structure problems in L3: a fallback section id, a wrong
+heading level, a paragraph broken in the middle, a repeated block, a page header
+or footer left in the text. The L3 AI fix lets an AI assistant repair that
+structure while a machine checks that it changed nothing else. It is off by
+default, and L3 stays the PDF's text.
+
+```bash
+kb l3 fix on                                   # l3_fix: enabled in .kb/config.yaml; adds .kb-work/ to .gitignore
+kb ingest source/handbook.pdf --id hr-handbook # writes a baseline in .kb/hr-handbook/_l3fix.yaml; does not summarize
+kb l3 lint hr-handbook --pdf source/handbook.pdf
+# run the kb-l3-fix skill (Claude Code /kb-l3-fix, a Copilot prompt, a Cursor command); it writes drafts
+kb l3 fix apply hr-handbook --pdf source/handbook.pdf --assistant claude-code
+kb l3 report hr-handbook                       # AI fixes first, each with a git diff hint
+kb l3 confirm hr-handbook --section 4.12       # a human checked it
+kb summarize
+```
+
+- `kb ingest` always writes the scratch file `.kb-work/<id>/sections.json`. With
+  the switch on it also writes the baseline `_l3fix.yaml` and leaves summarizing
+  to you, printing the next steps.
+- `kb l3 lint` checks the layout rules R1 to R8: fallback id, duplicate id,
+  heading levels, repeated blocks, page headers and footers, blocks L3 does not
+  allow, an unclosed code fence, a broken paragraph. It is advisory.
+- The skill writes one draft per section in `.kb-work/<id>/l3fix/<section-id>.md`
+  (`<!-- replaces: <id> <id> -->` on the first line to merge or reorder
+  sections). It never edits `.kb/` and never confirms.
+- `kb l3 fix apply` checks each draft in this order and writes nothing on the
+  first failure: the `replaces` header, `status` (every section of the chapter
+  file must still be `pending`), `tables` (byte for byte, same order),
+  `contract` (the lint rules), `words` (word by word against the PDF's text
+  layer: no word the PDF does not have at that place, no PDF text lost, no
+  partial restore, no text copied from a neighbour; a new section id must be
+  text the PDF shows) and `ids`. Each line reads `§<name> applied → <new ids>`,
+  `§<name> unchanged` or `§<name> rejected: <check>: <detail>`.
+- For a scanned section or a broken font, `kb l3 fix pages <id> --pdf <pdf> --page N`
+  renders PNG pages to `.kb-work/<id>/pages/`, and `apply ... --from-image <id>`
+  skips the word check. The fix is marked unverified and `kb l3 report` lists it
+  first: read it against the PDF.
+- The gate: while an AI fix awaits review, or L3 was edited or removed outside
+  `kb l3 fix apply`, `kb summarize` skips the document, `kb build` errors, and
+  `kb publish` and `kb ci-publish` refuse. It reads `_l3fix.yaml`, not the
+  switch. `kb l3 confirm` clears both `_l3check.yaml` and `_l3fix.yaml`.
+  Commit `_l3fix.yaml`; it is never sent to the hub. Bump the CI pin to
+  `strata-kb==1.33.0`: an older CI ignores it and does not gate.
+
+The AI never confirms. The machine checks tables and words, not whether a
+heading level or a merged paragraph is what the author meant: a reviewer reads
+the `git diff` against the PDF.
+
 ---
 
 # 5. Summarize
@@ -582,7 +633,9 @@ got stricter, and the message tells you which command fixes it.
 | `kb init [--kind hub\|child]` | Create or refresh the repository |
 | `kb docker-setup` | Prepare Docker: hub starts the service, child pulls the image |
 | `kb ingest <pdf> --id <id>` | Split a document, write L3, scaffold L1/L2 |
-| `kb l3 report\|confirm <doc>` | Review and confirm flagged L3 sections |
+| `kb l3 report\|confirm <doc>` | Review and confirm flagged L3 sections and AI fixes |
+| `kb l3 lint <doc> --pdf <pdf>` | Check the L3 layout rules R1 to R8 |
+| `kb l3 fix on\|off\|pages\|apply` | The L3 AI fix: switch, page images, check and write drafts |
 | `kb status` | What is still pending |
 | `kb summarize <doc>` | Fill or re-fill summaries |
 | `kb build [--strict] [--allow-pending]` | Validate the store |

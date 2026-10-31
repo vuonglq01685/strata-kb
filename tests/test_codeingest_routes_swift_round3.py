@@ -161,13 +161,41 @@ def _scope_with(root, files: int):
         )
 
 
+def test_app_owners_are_scanned_once_whatever_the_file_count(tmp_path, monkeypatch):
+    """The scale guard, without a clock: a per-call owner rescan (the bug the
+    timing test below was written for) shows up as many scans."""
+    from strata_kb.codeingest.extractors import _routes_swift
+
+    calls = []
+    real = _routes_swift.Vapor._scan_app_owners
+
+    def counting(self):
+        calls.append(1)
+        return real(self)
+
+    monkeypatch.setattr(_routes_swift.Vapor, "_scan_app_owners", counting)
+    for files in (20, 200):
+        calls.clear()
+        root = tmp_path / str(files)
+        _scope_with(root, files)
+        assert verdict(run_routes(root)) == ("complete", "")
+        assert len(calls) <= 1, files
+
+
 def test_time_grows_roughly_linearly_with_the_file_count(tmp_path):
     timings = {}
     for files in (200, 800):
         root = tmp_path / str(files)
         _scope_with(root, files)
-        start = time.perf_counter()
-        assert verdict(run_routes(root)) == ("complete", "")
-        timings[files] = time.perf_counter() - start
-    # 4x the files: linear is about 4x, a per-call owner rescan is about 16x
-    assert timings[800] / max(timings[200], 0.05) < 9
+        runs = []
+        # best of 3: noise on a shared CI runner only adds time
+        for _ in range(3):
+            start = time.perf_counter()
+            assert verdict(run_routes(root)) == ("complete", "")
+            runs.append(time.perf_counter() - start)
+        timings[files] = min(runs)
+    # 4x the files: linear is ~4x locally, but 9-11x on loaded CI runners
+    # (xdist workers share the machine), which failed the 1.32.0 release gate
+    # at the old limit of 9. A per-call owner rescan is ~16x locally and far
+    # more on CI; the exact guard is the scan-count test above.
+    assert timings[800] / max(timings[200], 0.05) < 16

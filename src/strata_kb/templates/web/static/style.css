@@ -182,6 +182,7 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 /* headings / stat cards / panels */
 .page-head { display: flex; flex-direction: column; gap: 6px; }
 .page-head h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
+.page-head .doc-line { margin: 0; font: 400 12px/1.5 var(--mono); color: var(--muted); }
 .page-head .lede { margin: 0; color: var(--muted); font-size: 15px; max-width: 60ch; }
 .stack-lg { display: flex; flex-direction: column; gap: 24px; }
 .stack-md { display: flex; flex-direction: column; gap: 18px; }
@@ -294,7 +295,13 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
   border-radius: var(--r-lg); }
 .reader-body pre code { font: inherit; }
 .reader-body ul { margin: 10px 0; padding-left: 1.4em; }
+/* L2/L3 only (mdrender); mission/ticket pages (.md-body) keep their own look */
+.reader-body:not(.md-body) ol { margin: 10px 0; padding-left: 1.4em; }
+.reader-body:not(.md-body) li > ul, .reader-body:not(.md-body) li > ol { margin: 4px 0 0; }
 .reader-body li + li { margin-top: 4px; }
+.reader-body:not(.md-body) :not(pre) > code { font: 13px/1.5 var(--mono); background: var(--field);
+  padding: 1px 5px; border-radius: 4px; }
+.reader-body:not(.md-body) strong { font-weight: 600; color: var(--ink); }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 16px; background: var(--surface-alt); border: 1px solid var(--line);
   border-radius: var(--r-lg); }
@@ -523,7 +530,7 @@ html.sheet-locked, html.sheet-locked body { overflow: hidden; }
 @media (max-width: 899px) {
   .seg-row { flex-wrap: wrap; }
   .sec-grid .sid, .reg-pin, [data-cards] .reg-id, .reg-confirm code.inline, .tree-row .label,
-  .cite-box code, .crumbs { overflow-wrap: anywhere; }
+  .cite-box code, .crumbs, .doc-line { overflow-wrap: anywhere; }
   .reader-body { padding: 16px; }
   .login-card { width: calc(100% - 32px); margin: 4vh auto 0; }
   [data-cards] .sec-grid.head, [data-cards] .reg-grid.head { display: none; }

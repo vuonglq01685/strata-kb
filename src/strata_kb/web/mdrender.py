@@ -3,8 +3,9 @@
 
 Supported: #..###### headings, blank-line paragraphs, GitHub pipe tables,
 sha-named asset images (as standalone blocks or table cells), fenced code
-blocks (verbatim, never highlighted) and `- `/`* ` bullet lists. Table
-cells are escaped but never reworded/reflowed — the project's inviolable
+blocks (verbatim, never highlighted), `- `/`* ` bullet lists, and inline
+`**strong**`, `*em*`/`_em_` and `` `code` `` in paragraphs and headings. Table
+cells are escaped but never reworded/reflowed or inline-parsed — the project's inviolable
 rule is that tables render character-for-character. Optional keyword
 highlighting wraps matched whole words in <mark> without altering any
 other character.
@@ -20,7 +21,31 @@ _SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 _WORD_RE = re.compile(r"[A-Za-z0-9]+")
 _IMG_LINE_RE = re.compile(r"^!\[([^\]]*)\]\(assets/([0-9a-f]{64}\.(?:png|webp))\)$")
 _FENCE_RE = re.compile(r"^```[\w-]*\s*$")
-_LIST_RE = re.compile(r"^[-*] (.*)$")
+_LIST_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*]|\d+[.)])[ \t]+(?P<text>.*)$")
+_NEST_INDENT = 2  # spaces more than the parent item that open a nested list
+_INLINE_SPAN = 500  # longest inline span; bounds the scan per opener
+
+
+def _span_re(delim: str) -> str:
+    """`delim`-wrapped span: no word char or delimiter outside either end, inner
+    text does not start with space/delimiter/closing bracket nor end with
+    space/delimiter/opening bracket, so `2*3*4`, `snake_case`, `a * b`, `(*)`,
+    `____` and `***` stay literal."""
+    d = re.escape(delim)
+    c = re.escape(delim[0])
+    return (
+        rf"(?<![\w{c}]){d}(?![\s{c})\]}}])([^\n]{{1,{_INLINE_SPAN}}}?)"
+        rf"(?<![\s{c}(\[{{]){d}(?![\w{c}])"
+    )
+
+
+# Inline rules, applied in order.
+_INLINE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"`([^`\n]+)`"), "code"),
+    (re.compile(_span_re("**")), "strong"),
+    (re.compile(_span_re("*") + "|" + _span_re("_")), "em"),
+)
+_HAS_WORD = re.compile(r"\w")
 
 
 def _img_tag(m: re.Match[str]) -> str:
@@ -51,6 +76,27 @@ def _highlight(text: str, terms: set[str]) -> str:
     return "".join(out)
 
 
+def _inline(text: str, terms: set[str], rule: int = 0) -> str:
+    """Escape `text`, add inline tags, highlight `terms` outside code spans."""
+    if rule == len(_INLINE_RULES):
+        return _highlight(text, terms)
+    regex, tag = _INLINE_RULES[rule]
+    out: list[str] = []
+    last = 0
+    for m in regex.finditer(text):
+        out.append(_inline(text[last : m.start()], terms, rule + 1))
+        inner = next(g for g in m.groups() if g is not None)
+        if tag != "code" and not _HAS_WORD.search(inner):  # `*-*`: not emphasis
+            out.append(_inline(m.group(0), terms, rule + 1))
+            last = m.end()
+            continue
+        body = html.escape(inner) if tag == "code" else _inline(inner, terms, rule + 1)
+        out.append(f"<{tag}>{body}</{tag}>")
+        last = m.end()
+    out.append(_inline(text[last:], terms, rule + 1))
+    return "".join(out)
+
+
 def _render_table(rows: list[str], terms: set[str]) -> str:
     has_header = len(rows) > 1 and _is_separator(rows[1])
     out = ["<table>"]
@@ -71,21 +117,92 @@ def _cell_html(cell: str, terms: set[str]) -> str:
     return _highlight(cell, terms)
 
 
+_Item = tuple[str, list[str], list[tuple[str, list[tuple[str, list[str]]]]]]
+
+
+class _ListBuilder:
+    """One open list: level-1 items, each with nested level-2 lists. Deeper
+    indents stay at level 2; a tab counts as 4 spaces."""
+
+    def __init__(self, terms: set[str]) -> None:
+        self.terms = terms
+        self._reset()
+
+    def _reset(self) -> None:
+        self.kind = ""  # "ul" | "ol"; "" = no list open
+        self.base = 0
+        # (<li> open tag, text parts, [(kind, [(<li> open tag, text parts)])])
+        self.items: list[_Item] = []
+        self.last: list[str] = []
+
+    def add(self, m: re.Match[str]) -> str | None:
+        """Add an item; returns the finished list's HTML when a level-1
+        marker type change closes it."""
+        indent = len(m.group("indent").expandtabs(4))
+        kind = "ol" if m.group("marker")[0].isdigit() else "ul"
+        text = [m.group("text").strip()]
+        # keep the source number: L3 numbering is content, not styling
+        li_open = (
+            f'<li value="{int(m.group("marker")[:-1])}">' if kind == "ol" else "<li>"
+        )
+        if self.items and indent >= self.base + _NEST_INDENT:
+            subs = self.items[-1][2]
+            if not subs or subs[-1][0] != kind:
+                subs.append((kind, []))
+            subs[-1][1].append((li_open, text))
+            self.last = text
+            return None
+        done = self.flush() if self.kind and kind != self.kind else None
+        if not self.kind:
+            self.kind, self.base = kind, indent
+        self.items.append((li_open, text, []))
+        self.last = text
+        return done
+
+    def continues(self, line: str) -> bool:
+        """An indented non-item line inside an open list joins the last item."""
+        if (
+            not self.kind
+            or len(line.expandtabs(4)) - len(line.expandtabs(4).lstrip()) < 2
+        ):
+            return False
+        self.last.append(line.strip())
+        return True
+
+    def flush(self) -> str | None:
+        if not self.kind:
+            return None
+
+        def li(parts: list[str]) -> str:
+            return _inline(" ".join(parts), self.terms)
+
+        out = []
+        for li_open, text, subs in self.items:
+            nested = "".join(
+                f"<{k}>" + "".join(f"{o}{li(t)}</li>" for o, t in sub) + f"</{k}>"
+                for k, sub in subs
+            )
+            out.append(f"{li_open}{li(text)}{nested}</li>")
+        html_out = f"<{self.kind}>{''.join(out)}</{self.kind}>"
+        self._reset()
+        return html_out
+
+
 def render(md: str, terms: set[str] | None = None) -> str:
     terms = terms or set()
     blocks: list[str] = []
     para: list[str] = []
-    bullets: list[str] = []
+    lists = _ListBuilder(terms)
 
     def flush_para() -> None:
         if para:
-            blocks.append(f"<p>{_highlight(' '.join(para), terms)}</p>")
+            blocks.append(f"<p>{_inline(' '.join(para), terms)}</p>")
             para.clear()
 
     def flush_list() -> None:
-        if bullets:
-            blocks.append("<ul>" + "".join(bullets) + "</ul>")
-            bullets.clear()
+        done = lists.flush()
+        if done:
+            blocks.append(done)
 
     lines = md.splitlines()
     i = 0
@@ -125,14 +242,16 @@ def render(md: str, terms: set[str] | None = None) -> str:
             flush_para()
             flush_list()
             level = len(m.group(1))
-            blocks.append(
-                f"<h{level}>{_highlight(m.group(2).strip(), terms)}</h{level}>"
-            )
+            blocks.append(f"<h{level}>{_inline(m.group(2).strip(), terms)}</h{level}>")
         elif m_li:
             flush_para()
-            bullets.append(f"<li>{_highlight(m_li.group(1).strip(), terms)}</li>")
+            done = lists.add(m_li)
+            if done:
+                blocks.append(done)
         elif not line.strip():
             flush_para()  # a blank line does not end a list
+        elif not para and lists.continues(line):
+            pass
         else:
             flush_list()
             para.append(line.strip())

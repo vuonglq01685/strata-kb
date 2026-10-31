@@ -380,17 +380,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_32_0_everywhere():
+def test_version_is_1_33_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.32.0"
+    assert project["project"]["version"] == "1.33.0"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.32.0"]
+    assert [p["version"] for p in own] == ["1.33.0"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.32.0 — 2026-10-31")
+    assert first.startswith("1.33.0 — 2026-10-31")
 
 
 def test_docs_describe_structural_coverage():
@@ -519,3 +519,16 @@ def test_readme_and_changelog_pin_the_rerunnable_cloud_switch():
         assert "`/kb-auto run` is re-runnable" in text
         assert "closed and deleted on GitHub by hand" in text
         assert "git branch -D auto/switch" not in text
+
+
+def test_readme_and_hub_child_guides_document_the_l3_ai_fix():
+    texts = {"README.md": _readme_text()}
+    for lang in ("en", "vi"):
+        name = f"docs/src/guide-hub-child.{lang}.md"
+        texts[name] = (REPO_ROOT / name).read_text(encoding="utf-8")
+    for name, text in texts.items():
+        flat = _normalised(text)
+        assert "kb l3 fix apply" in flat, name
+        assert "_l3fix.yaml" in flat, name
+        assert "kb l3 lint" in flat, name
+        assert "kb l3 fix on" in flat, name

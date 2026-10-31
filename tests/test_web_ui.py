@@ -2163,3 +2163,23 @@ def test_topbar_shows_version_hub_commit_and_last_pull(fed_hub, run_git):
     resp = c.get("/ui/docs")
     assert "pull failed just now" in resp.text
     assert "not possible to fast-forward" in resp.text
+
+
+def test_section_page_shows_doc_line(demo_doc_hub):
+    manifest_path = (
+        demo_doc_hub / "federation" / "demo-kb" / "demo-doc" / "_manifest.yaml"
+    )
+    manifest = models.load_yaml_model(manifest_path, models.Manifest)
+    manifest.revision = "Rev 7"
+    models.save_yaml_model(manifest_path, manifest)
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"level": "l3", "repo": "demo-kb"}
+    )
+    assert '<p class="doc-line">Demo Document · Rev 7 · ch1</p>' in resp.text
+
+
+def test_section_page_doc_line_without_revision(demo_doc_hub):
+    resp = _client(demo_doc_hub / ".kb", str(demo_doc_hub)).get(
+        "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
+    )
+    assert '<p class="doc-line">Demo Document · ch1</p>' in resp.text

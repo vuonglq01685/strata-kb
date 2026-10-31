@@ -8,6 +8,7 @@
       <a href="/ui/docs/{{ doc_id | urlencode }}?repo={{ repo | urlencode }}">{{ doc_id }}</a>
       <span class="sep">/</span> §{{ section_id }}</p>
     <h1 style="font-size:26px">{{ result.title }}</h1>
+    {% if doc_title %}<p class="doc-line">{{ doc_title }}{% if revision %} · {{ revision }}{% endif %}{% if chapter_label %} · {{ chapter_label }}{% endif %}</p>{% endif %}
   </div>
   {{ pager(doc_id, repo, prev, next) }}
   <div class="level-tabs">

@@ -119,6 +119,9 @@ app.add_typer(claim_app, name="claim")
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
+fix_app = typer.Typer(help="AI structure fix of L3 (switch, pages, apply).")
+l3_app.add_typer(fix_app, name="fix")
+
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
 )
@@ -928,6 +931,18 @@ def ingest(
             f"kb l3 confirm {report.doc_id} --section <id> | --all"
         )
         return
+    from strata_kb.l3check import fixswitch
+
+    if fixswitch.is_on(kb_dir):
+        # Summarizing marks the chapter files past pending, and a draft of
+        # kb-l3-fix is refused for such a file.
+        typer.secho(
+            "Summarize skipped while L3 fix is on. Next: run the kb-l3-fix "
+            f"skill on {report.doc_id}, then kb l3 report {report.doc_id}, "
+            "then kb summarize.",
+            fg=typer.colors.YELLOW,
+        )
+        return
     if no_summarize or llm == "none":
         typer.echo(
             "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "
@@ -1704,11 +1719,19 @@ def _print_prompts(kb_dir: Path, doc_id: str, sections: list[str]) -> None:
     of `doc_id`, so the manual (skill-driven) path can build it without
     reading L3 directly. Table-only/brief sections need no LLM call — say
     so instead of a prompt."""
+    from strata_kb.l3check.report import blocked_docs
     from strata_kb.summarize import build_section_prompt, collect_pending
 
     if not doc_id:
         typer.secho("--print-prompt requires a DOC_ID", fg=typer.colors.RED)
         raise typer.Exit(1)
+    for d, ids in blocked_docs(kb_dir):
+        if d == doc_id:  # the manual path must not summarize unreviewed L3 either
+            typer.secho(
+                f"[skip] {d}: L3 review pending ({len(ids)} section(s)) — kb l3 report {d}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
     pending = collect_pending(
         kb_dir,
         doc_id,
@@ -1765,9 +1788,10 @@ def status(
         typer.echo(
             f"{entry.id}: {len(pending)}/{len(manifest.sections)} section pending"
         )
-        flagged = _l3_pending(kb_dir, entry.id)
-        if flagged:
-            typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
+        awaiting = {s.id for s in _l3_pending(kb_dir, entry.id)}
+        awaiting |= set(_l3_fix_lines(kb_dir, entry.id))
+        if awaiting:
+            typer.echo(f"  L3 check: {len(awaiting)} section(s) awaiting review")
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Total: {total_pending} section(s) pending.")
@@ -4726,6 +4750,56 @@ def _l3_pending(kb_dir: Path, doc_id: str) -> list[SectionCheck]:
         return []
 
 
+def _l3_fix_lines(kb_dir: Path, doc_id: str) -> dict[str, str]:
+    """Review line per id that `_l3fix.yaml` blocks: AI fixes awaiting review
+    (unverified first), then outside edits and removals. Exit 1 on bad YAML."""
+    from strata_kb.l3check import fixrecord
+
+    path = kb_dir / doc_id / fixrecord.FILE_NAME
+    try:
+        rec = fixrecord.load(kb_dir / doc_id)
+        if rec is None:
+            return {}
+        path = kb_dir / doc_id / "_manifest.yaml"
+        blocked = fixrecord.blocked_ids(kb_dir, doc_id)
+        files = fixrecord.unit_files(kb_dir / doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return {}
+    newest = {e.id: e for e in rec.sections}  # later entry overwrites earlier
+
+    def diff_hint(sid: str) -> str:
+        known = newest.get(sid) or rec.baseline.get(sid)
+        file = known.file if known else files.get(sid, "")
+        return f"git diff -- {(kb_dir / doc_id / f'{file}.raw.md').as_posix()}"
+
+    def unverified(item: tuple[str, str]) -> bool:
+        entry = newest.get(item[0])
+        return (
+            item[1] == fixrecord.AWAITING and entry is not None and not entry.verified
+        )
+
+    lines: dict[str, str] = {}
+    for sid, reason in sorted(blocked, key=lambda i: not unverified(i)):
+        if reason == fixrecord.AWAITING:
+            entry = newest[sid]
+            tag = (
+                "ai-fix"
+                if entry.verified
+                else ("ai-fix, from page image — check against the PDF")
+            )
+            parts = [f"by {entry.by}"]
+            if entry.changes:
+                parts.append(f"changes: {', '.join(entry.changes)}")
+            parts.append(diff_hint(sid))
+            lines[sid] = f"§{sid} [{tag}] " + " · ".join(parts)
+        elif reason == fixrecord.EDITED:
+            lines[sid] = f"§{sid} [{reason}] {diff_hint(sid)}"
+        else:
+            lines[sid] = f"§{sid} [{reason}]"
+    return lines
+
+
 def _l3_finding_lines(finding: Finding) -> list[str]:
     evidence = " | ".join(
         f"{k}: {finding.evidence[k]}"
@@ -4737,6 +4811,153 @@ def _l3_finding_lines(finding: Finding) -> list[str]:
     if finding.agent is not None:
         lines.append(f"    agent: {finding.agent.verdict} — {finding.agent.reason}")
     return lines
+
+
+@fix_app.command("on")
+def l3_fix_on(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn the AI structure fix of L3 on (also gitignores .kb-work/)."""
+    from strata_kb.l3check import fixswitch
+
+    path = kb_dir / "config.yaml"
+    try:
+        lines = fixswitch.turn_on(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return
+    for line in lines:
+        typer.echo(line)
+
+
+@fix_app.command("off")
+def l3_fix_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn the AI structure fix of L3 off."""
+    from strata_kb.l3check import fixswitch
+
+    path = kb_dir / "config.yaml"
+    try:
+        fixswitch.turn_off(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return
+    typer.echo("l3_fix: off")
+
+
+class _Assistant(StrEnum):
+    claude_code = "claude-code"
+    copilot = "copilot"
+    cursor = "cursor"
+    other = "other"
+
+
+def _l3_fix_refuse(message: str) -> None:
+    typer.secho(message, fg=typer.colors.RED)
+    raise typer.Exit(1)
+
+
+def _l3_fix_preflight(kb_dir: Path, work_dir: Path, doc_id: str, pdf: Path) -> None:
+    """Refuse (exit 1) unless the switch is on, `pdf` is the ingested PDF and
+    `sections.json` exists. Runs before any draft is read."""
+    import hashlib
+
+    from strata_kb.l3check import fixswitch, spans
+
+    reading = kb_dir / "config.yaml"
+    manifest_path = kb_dir / doc_id / "_manifest.yaml"
+    try:
+        if not fixswitch.is_on(kb_dir):
+            _l3_fix_refuse("L3 fix is off — run: kb l3 fix on")
+        reading = manifest_path
+        if not manifest_path.exists():
+            _l3_fix_refuse(f"no document {doc_id} in {kb_dir}")
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        if hashlib.sha256(pdf.read_bytes()).hexdigest() != manifest.source_sha256:
+            _l3_fix_refuse(f"{pdf} is not the PDF {doc_id} was ingested from")
+        reading = work_dir / doc_id / spans.FILE_NAME
+        if spans.load(work_dir, doc_id) is None:
+            _l3_fix_refuse(f"no sections.json for {doc_id} — re-ingest")
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(reading, exc)
+
+
+@fix_app.command("apply")
+def l3_fix_apply(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
+    assistant: _Assistant = typer.Option(
+        ..., "--assistant", help="The AI tool that wrote the drafts"
+    ),
+    section: list[str] = typer.Option(
+        [], "--section", help="Apply only the draft of this name (repeatable)"
+    ),
+    from_image: list[str] = typer.Option(
+        [],
+        "--from-image",
+        help="Draft read from a page image: skip the word check (only where "
+        "the PDF has no usable text; repeatable)",
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Verify AI drafts of L3 units against the PDF and apply the ones that pass (exit 1 on any rejection)."""
+    from strata_kb.l3check import fix, lint
+
+    _l3_fix_preflight(kb_dir, work_dir, doc_id, pdf)
+    drafts = fix.load_drafts(work_dir, doc_id, set(section) or None)
+    if not drafts:
+        typer.echo(f"no drafts in {work_dir / doc_id / fix.DRAFT_DIR}")
+        return
+    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
+    results = fix.apply_drafts(
+        kb_dir,
+        work_dir,
+        doc_id,
+        drafts,
+        pdf_pages,
+        furniture,
+        assistant=assistant.value,
+        from_image=set(from_image),
+    )
+    for r in results:
+        if r.status == "applied":
+            typer.echo(f"§{r.section} applied → {', '.join(r.new_ids)}")
+        elif r.status == "unchanged":
+            typer.echo(f"§{r.section} unchanged")
+        else:
+            typer.echo(f"§{r.section} rejected: {r.reason}")
+    if any(r.status == "rejected" for r in results):
+        raise typer.Exit(1)
+
+
+@fix_app.command("pages")
+def l3_fix_pages(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
+    page: list[int] = typer.Option(
+        ..., "--page", min=1, help="1-based page to render (repeatable)"
+    ),
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Render PDF pages to PNG under .kb-work/<doc-id>/pages/ and print their paths."""
+    from strata_kb.l3check import fix
+
+    try:
+        paths = fix.render_pages(pdf, work_dir, doc_id, page)
+    except ImportError:
+        _l3_fix_refuse("pypdfium2 is not installed — install strata-kb[ingest]")
+        return
+    except (IndexError, ValueError, OSError) as exc:
+        _l3_fix_refuse(f"cannot render {pdf}: {' '.join(str(exc).split())}")
+        return
+    for path in paths:
+        typer.echo(path)
 
 
 @l3_app.command("report")
@@ -4761,11 +4982,14 @@ def l3_report(
         doc_ids = [e.id for e in index.docs]
     total = 0
     for did in doc_ids:
-        pending = _l3_pending(kb_dir, did)
-        if not pending:
+        fix_lines = _l3_fix_lines(kb_dir, did)
+        pending = [s for s in _l3_pending(kb_dir, did) if s.id not in fix_lines]
+        if not pending and not fix_lines:
             continue
-        total += len(pending)
+        total += len(pending) + len(fix_lines)
         typer.echo(did)
+        for line in fix_lines.values():
+            typer.echo(line)
         for sec in pending:
             typer.echo(f"§{sec.id}")
             for finding in sec.findings:
@@ -4775,6 +4999,39 @@ def l3_report(
         typer.echo("L3 check: nothing awaiting review.")
         return
     typer.echo(f"{total} section(s) awaiting review.")
+    raise typer.Exit(1)
+
+
+@l3_app.command("lint")
+def l3_lint(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Check the L3 layout contract (R1-R8) of a document (exit 1 on any issue)."""
+    from strata_kb.l3check import lint, spans
+
+    try:
+        data = spans.load(work_dir, doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(work_dir / doc_id / spans.FILE_NAME, exc)
+        return
+    if data is None:
+        typer.secho(f"no sections.json for {doc_id} — re-ingest", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
+    issues = lint.lint_doc(kb_dir, doc_id, data, pdf_pages, furniture)
+    for i in issues:
+        typer.echo(f"§{i.section} {i.rule} line {i.line}: {i.evidence}")
+    if not issues:
+        typer.echo("L3 lint: clean")
+        return
+    typer.echo(f"{len(issues)} issue(s)")
     raise typer.Exit(1)
 
 
@@ -4797,7 +5054,7 @@ def l3_confirm(
 ) -> None:
     """Record that a reviewer checked flagged L3 sections; unblocks summarize/build/publish."""
     from strata_kb import gitio
-    from strata_kb.l3check import report
+    from strata_kb.l3check import fixrecord, report
     from strata_kb.review import resolve_reviewer
 
     if bool(section) == all_flagged:
@@ -4810,21 +5067,26 @@ def l3_confirm(
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    try:
-        check = report.load(kb_dir / doc_id)
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        _invalid_yaml_exit(kb_dir / doc_id / report.FILE_NAME, exc)
-    if check is None:
+    for load, name in (
+        (report.load, report.FILE_NAME),
+        (fixrecord.load, fixrecord.FILE_NAME),
+    ):
+        try:
+            load(kb_dir / doc_id)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(kb_dir / doc_id / name, exc)
+    if not any(
+        (kb_dir / doc_id / n).exists() for n in (report.FILE_NAME, fixrecord.FILE_NAME)
+    ):
         typer.secho(f"no {report.FILE_NAME} for {doc_id}", fg=typer.colors.RED)
         raise typer.Exit(1)
-    if (
-        all_flagged
-        and not yes
-        and not typer.confirm(
-            f"Confirm all {len(check.sections)} flagged section(s) of {doc_id}?"
-        )
-    ):
-        raise typer.Abort()
+    if all_flagged and not yes:
+        try:
+            count = len(report.confirmable(kb_dir, doc_id) or [])
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:  # digests read the manifest
+            _invalid_yaml_exit(kb_dir / doc_id / "_manifest.yaml", exc)
+        if not typer.confirm(f"Confirm all {count} flagged section(s) of {doc_id}?"):
+            raise typer.Abort()
     try:
         confirmed = report.confirm(
             kb_dir, doc_id, None if all_flagged else list(section), by=reviewer

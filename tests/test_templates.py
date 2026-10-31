@@ -1997,6 +1997,7 @@ _REPO_MIRRORS = [
     (".claude/commands/kb-summarize.md", "claude-command-kb-summarize.md"),
     (".claude/skills/kb-ingest/SKILL.md", "claude-skill-kb-ingest.md"),
     (".claude/skills/kb-publish/SKILL.md", "claude-skill-kb-publish.md"),
+    (".claude/skills/kb-l3-fix/SKILL.md", "claude-skill-kb-l3-fix.md"),
     (".github/prompts/kb-ingest.prompt.md", "copilot-kb-ingest.prompt.md"),
     (".github/prompts/kb-publish.prompt.md", "copilot-kb-publish.prompt.md"),
 ]
@@ -3695,3 +3696,39 @@ def test_a1_a2_review_loop_converges(skill, lead, slice_rule):
             "not lower than the round before, stop at once",
         ):
             assert needle in body, (name, needle)
+
+
+_L3_FIX_TEMPLATES = (
+    "claude-skill-kb-l3-fix.md",
+    "copilot-kb-l3-fix.prompt.md",
+    "cursor-kb-l3-fix.md",
+)
+
+
+@pytest.mark.parametrize("name", _L3_FIX_TEMPLATES)
+def test_l3_fix_skill_states_the_safety_contract_and_real_commands(name):
+    text = _tpl(name)
+    for needle in (
+        "`l3_fix:`",
+        "NEVER run `kb l3 confirm`",
+        "NEVER edit",
+        "at most 2 times",
+        "kb l3 lint <doc-id> --pdf <pdf>",
+        "kb l3 report <doc-id>",
+        "kb l3 fix apply <doc-id> --pdf <pdf> --assistant",
+        "kb l3 fix pages <doc-id> --pdf <pdf> --page",
+        "--from-image",
+        "<!-- replaces:",
+        ".kb-work/<doc-id>/l3fix/<section-id>.md",
+        "docker compose run --rm hub",
+        "never invent an id",
+    ):
+        assert needle.lower() in text.lower(), (name, needle)
+
+
+def test_l3_fix_command_wrappers_invoke_the_skill():
+    assert "kb-l3-fix" in _tpl("claude-command-kb-l3-fix.md")
+    for name in ("claude-skill-kb-ingest.md", "copilot-kb-ingest.prompt.md"):
+        text = _tpl(name)
+        assert "l3_fix: enabled: true" in text and "kb-l3-fix" in text
+        assert "never edit L3 to clear a flag" not in text

@@ -258,9 +258,10 @@ _KEEP_BASENAMES = frozenset({"index.yaml", "_meta.yaml", "_manifest.yaml"})
 _ASSET_RECORD_BASENAME = "_assets.yaml"
 
 # Files that stay in .kb/ by design: never published, and not a stray file
-# worth a [warn] either. Mirrors l3check.report.FILE_NAME (not imported, same
-# purity reason); kept in sync by tests/test_pubgate.py.
-_LOCAL_ONLY_BASENAMES = frozenset({"_l3check.yaml"})
+# worth a [warn] either. Mirrors l3check.report.FILE_NAME and
+# l3check.fixrecord.FILE_NAME (not imported, same purity reason); kept in sync
+# by tests/test_pubgate.py and tests/test_l3fix_record.py.
+_LOCAL_ONLY_BASENAMES = frozenset({"_l3check.yaml", "_l3fix.yaml"})
 
 
 def is_kb_artifact(relpath: str, *, keep_records: bool = False) -> bool:
