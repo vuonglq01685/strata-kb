@@ -4810,6 +4810,37 @@ def l3_report(
     raise typer.Exit(1)
 
 
+@l3_app.command("lint")
+def l3_lint(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(..., "--pdf", help="Source PDF file"),
+    kb_dir: Path = _KB_DIR_OPT,
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Check the L3 layout contract (R1-R8) of a document (exit 1 on any issue)."""
+    from strata_kb.l3check import lint, spans
+
+    try:
+        data = spans.load(work_dir, doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(work_dir / doc_id / spans.FILE_NAME, exc)
+        return
+    if data is None:
+        typer.secho(f"no sections.json for {doc_id} — re-ingest", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
+    issues = lint.lint_doc(kb_dir, doc_id, data, pdf_pages, furniture)
+    for i in issues:
+        typer.echo(f"§{i.section} {i.rule} line {i.line}: {i.evidence}")
+    if not issues:
+        typer.echo("L3 lint: clean")
+        return
+    typer.echo(f"{len(issues)} issue(s)")
+    raise typer.Exit(1)
+
+
 @l3_app.command("confirm")
 def l3_confirm(
     doc_id: str = typer.Argument(..., help="Document ID"),
