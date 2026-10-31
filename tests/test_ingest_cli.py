@@ -192,6 +192,33 @@ def test_ingest_auto_summarizes_by_default(tmp_path, monkeypatch):
     assert "summarized" in result.output
 
 
+def test_ingest_leaves_summarize_to_the_user_while_l3_fix_is_on(tmp_path, monkeypatch):
+    from strata_kb.l3check import fixswitch
+
+    _fake_parse(monkeypatch)
+    _write_pdf(tmp_path)
+    (tmp_path / ".kb").mkdir()
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: child\n", encoding="utf-8")
+    fixswitch.turn_on(tmp_path / ".kb")
+    import strata_kb.llm as llm_mod
+
+    monkeypatch.setattr(
+        llm_mod,
+        "detect_runner",
+        lambda c, cfg: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    result = runner.invoke(app, _ingest_args(tmp_path))
+    assert result.exit_code == 0, result.output
+    manifest = models.load_yaml_model(
+        tmp_path / ".kb" / "arinc-424" / "_manifest.yaml", models.Manifest
+    )
+    assert all(s.status == "pending" for s in manifest.sections)
+    assert (
+        "Summarize skipped while L3 fix is on. Next: run the kb-l3-fix skill on "
+        "arinc-424, then kb l3 report arinc-424, then kb summarize."
+    ) in " ".join(result.output.split())
+
+
 def test_ingest_no_summarize_flag_skips_llm(tmp_path, monkeypatch):
     _fake_parse(monkeypatch)
     _write_pdf(tmp_path)

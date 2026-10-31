@@ -931,6 +931,18 @@ def ingest(
             f"kb l3 confirm {report.doc_id} --section <id> | --all"
         )
         return
+    from strata_kb.l3check import fixswitch
+
+    if fixswitch.is_on(kb_dir):
+        # Summarizing marks the chapter files past pending, and a draft of
+        # kb-l3-fix is refused for such a file.
+        typer.secho(
+            "Summarize skipped while L3 fix is on. Next: run the kb-l3-fix "
+            f"skill on {report.doc_id}, then kb l3 report {report.doc_id}, "
+            "then kb summarize.",
+            fg=typer.colors.YELLOW,
+        )
+        return
     if no_summarize or llm == "none":
         typer.echo(
             "Summarize skipped. Next: run `kb summarize` (or the kb-summarize "

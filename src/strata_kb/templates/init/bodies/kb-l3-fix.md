@@ -80,7 +80,8 @@ every `kb` command below with `docker compose run --rm hub`.
 8. **Report.** Give three lists: applied (with new ids), rejected (with
    the check and detail), left for the human. Then tell the user to run
    `kb l3 report <doc-id>` and check the changes themselves; you do not
-   confirm.
+   confirm. After they have confirmed, `kb summarize` fills the summaries
+   (`kb ingest` leaves it to them while L3 fix is on).
 
 ## What a draft may change
 
