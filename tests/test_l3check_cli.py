@@ -228,7 +228,7 @@ def test_report_lists_ai_fix_first_with_diff_hint(tmp_path):
     )
     raw = kb / "doc" / "a.raw.md"
     raw.write_text(raw.read_text(encoding="utf-8").replace("beta", "BETA"), "utf-8")
-    diff = f"git diff -- {kb}/doc/a.raw.md"
+    diff = f"git diff -- {(kb / 'doc' / 'a.raw.md').as_posix()}"
 
     result = _invoke(kb, "report")
 
@@ -258,7 +258,7 @@ def test_report_verified_ai_fix_line(tmp_path):
 
     assert result.exit_code == 1
     assert (
-        f"§1 [ai-fix] by cursor · changes: re-id, join · git diff -- {kb}/doc/a.raw.md"
+        f"§1 [ai-fix] by cursor · changes: re-id, join · git diff -- {(kb / 'doc' / 'a.raw.md').as_posix()}"
         in result.output.splitlines()
     )
 

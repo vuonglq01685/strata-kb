@@ -4771,7 +4771,7 @@ def _l3_fix_lines(kb_dir: Path, doc_id: str) -> dict[str, str]:
     def diff_hint(sid: str) -> str:
         known = newest.get(sid) or rec.baseline.get(sid)
         file = known.file if known else files.get(sid, "")
-        return f"git diff -- {kb_dir / doc_id / file}.raw.md"
+        return f"git diff -- {(kb_dir / doc_id / f'{file}.raw.md').as_posix()}"
 
     def unverified(item: tuple[str, str]) -> bool:
         entry = newest.get(item[0])
