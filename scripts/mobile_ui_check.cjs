@@ -305,6 +305,15 @@ const SUITES = {
         const fs = parseFloat(getComputedStyle(el).fontSize);
         if (fs < 16) out.push(`${name(el)} font-size ${fs}px`);
       }
+      // painted pill must stay padding-box only: a shorthand `background` reset or coloured border would paint the 52x44 hit area
+      for (const el of document.querySelectorAll(".switch")) {
+        if (!shown(el)) continue;
+        const cs = getComputedStyle(el);
+        if (cs.backgroundClip !== "padding-box") out.push(`${name(el)} background-clip ${cs.backgroundClip}`);
+        for (const side of ["Top", "Right", "Bottom", "Left"]) {
+          if (!/rgba\(0, 0, 0, 0\)|transparent/.test(cs[`border${side}Color`])) out.push(`${name(el)} border${side}Color ${cs[`border${side}Color`]}`);
+        }
+      }
       return [...new Set(out)];
     }, SEL);
     const PAGES = ["/ui", "/ui?q=airspace", "/ui/docs", SECTION, `/ui/tickets/${MISSION}?repo=ba-one`, "/ui/registry"];

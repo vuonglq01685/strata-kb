@@ -565,7 +565,7 @@ html.sheet-locked, html.sheet-locked body { overflow: hidden; }
   .pager a { justify-content: center; }
   .switch { width: 52px; height: 44px; padding: 2px; border: solid transparent; border-width: 11px 7px;
     background-clip: padding-box; box-shadow: inset 0 0 0 1px var(--dash); }
-  .switch.on { box-shadow: inset 0 0 0 1px var(--ok); }
+  .switch.on { background-clip: padding-box; border-color: transparent; box-shadow: inset 0 0 0 1px var(--ok); }
   .switch.on .knob { transform: translateX(18px); }
   .switch:focus-visible { box-shadow: inset 0 0 0 1px var(--dash), 0 0 0 3px var(--focus-ring); }
   input:not([type=hidden]), select, textarea, .reg-field select { font-size: 16px; }
