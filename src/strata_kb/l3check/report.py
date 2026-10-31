@@ -166,9 +166,14 @@ def confirm(
             f"(flagged: {', '.join(valid)})"
         )
     digests = current_digests(kb_dir, doc_id)
+    removed = {
+        sid
+        for sid, why in fixrecord.blocked_ids(kb_dir, doc_id)
+        if why == fixrecord.REMOVED
+    }
     for sid in wanted:
-        # a fix-blocked id missing from L3 is an outside removal: confirmable
-        if sid not in digests and sid in flagged:
+        # a flagged id removed outside kb l3 fix apply is dropped below, not confirmed
+        if sid not in digests and sid in flagged and sid not in removed:
             raise ValueError(f"§{sid}: section not found in L3 — re-ingest {doc_id}")
     at = _now()
     if check is not None:
@@ -178,9 +183,10 @@ def confirm(
                     "confirmed": Confirmation(by=by, at=at, l3_sha256=digests[s.id])
                 }
             )
-            if s.id in wanted
+            if s.id in wanted and s.id not in removed
             else s
             for s in check.sections
+            if not (s.id in wanted and s.id in removed)
         ]
         save(kb_dir / doc_id, check.model_copy(update={"sections": sections}))
     fixrecord.confirm(kb_dir / doc_id, wanted, by, at, digests)

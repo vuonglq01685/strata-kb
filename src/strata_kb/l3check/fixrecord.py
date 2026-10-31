@@ -53,10 +53,11 @@ def load(doc_dir: Path) -> L3Fix | None:
     return models.load_yaml_model(path, L3Fix) if path.exists() else None
 
 
-def save(doc_dir: Path, rec: L3Fix) -> None:
-    """Nothing tracked means no file: its presence is what gates."""
+def save(doc_dir: Path, rec: L3Fix, keep_empty: bool = False) -> None:
+    """Nothing tracked means no file: its presence is what gates. `keep_empty`
+    writes it anyway (confirm: deleting it would unblock untracked edits)."""
     path = doc_dir / FILE_NAME
-    if rec.baseline or rec.sections:
+    if rec.baseline or rec.sections or keep_empty:
         models.save_yaml_model(path, rec)
     else:
         path.unlink(missing_ok=True)
@@ -174,4 +175,4 @@ def confirm(
                 confirmed=proof,
             )
         )
-    save(doc_dir, L3Fix(baseline=baseline, sections=sections))
+    save(doc_dir, L3Fix(baseline=baseline, sections=sections), keep_empty=True)

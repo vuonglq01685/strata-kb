@@ -359,3 +359,56 @@ def test_confirm_with_only_l3fix_file(tmp_path):
     assert "no flagged section 9 (flagged: 1)" in unknown.output
     assert accepted.exit_code == 0
     assert report.blocked_docs(kb) == []
+
+
+def test_confirm_last_removed_id_keeps_gate_on_untracked_units(tmp_path):
+    kb = _git_kb(tmp_path)
+    _fix(kb, baseline={"x1": "gone"})
+    assert report.blocked_docs(kb) == [("doc", ["x1", "1", "2"])]
+
+    result = _invoke(kb, "confirm", "doc", "--section", "x1", "--by", "r")
+
+    assert result.exit_code == 0
+    assert (kb / "doc" / fixrecord.FILE_NAME).exists()
+    assert report.blocked_docs(kb) == [("doc", ["1", "2"])]
+
+
+def _flag_removed(kb):
+    digests = report.current_digests(kb, "doc")
+    _fix(
+        kb,
+        baseline={"1": digests["1"], "2": digests["2"], "x1": "gone"},
+    )
+    check = L3Check(
+        checked_at="t",
+        sections=[
+            SectionCheck(
+                id=sid, l3_sha256=sha, findings=[Finding(kind="content", page=1)]
+            )
+            for sid, sha in (("x1", "gone"), ("1", digests["1"]))
+        ],
+    )
+    report.save(kb / "doc", check)
+
+
+def test_confirm_flagged_and_removed_id_drops_its_check_section(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag_removed(kb)
+
+    result = _invoke(kb, "confirm", "doc", "--section", "x1", "--by", "r")
+
+    assert result.exit_code == 0
+    assert "confirmed: §x1" in result.output
+    assert [s.id for s in report.load(kb / "doc").sections] == ["1"]
+    assert report.blocked_docs(kb) == [("doc", ["1"])]
+
+
+def test_confirm_all_with_flagged_and_removed_id(tmp_path):
+    kb = _git_kb(tmp_path)
+    _flag_removed(kb)
+
+    result = _invoke(kb, "confirm", "doc", "--all", "--yes", "--by", "r")
+
+    assert result.exit_code == 0
+    assert "confirmed: §x1, §1" in result.output
+    assert report.blocked_docs(kb) == []
