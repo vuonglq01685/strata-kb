@@ -116,12 +116,14 @@ def _setup(tmp_path, monkeypatch, body):
         ),
     )
     monkeypatch.setattr(lint, "load_pdf_context", lambda *a: ({}, {}))
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF")
     return [
         "l3",
         "lint",
         "d",
         "--pdf",
-        "x.pdf",
+        str(pdf),
         "--kb-dir",
         str(kb),
         "--work-dir",
@@ -140,9 +142,38 @@ def test_cli_lint_exit_codes(tmp_path, monkeypatch):
 
 
 def test_cli_lint_without_sections_json(tmp_path):
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF")
     result = runner.invoke(
         app,
-        ["l3", "lint", "d", "--pdf", "x.pdf", "--work-dir", str(tmp_path)],
+        ["l3", "lint", "d", "--pdf", str(pdf), "--work-dir", str(tmp_path)],
     )
     assert result.exit_code == 1
     assert "no sections.json for d — re-ingest" in result.output
+
+
+def test_unit_without_context_still_gets_pdf_free_rules():
+    raw = "## 9 A\n\n#### x\n\n```\ncode\n"
+    issues = lint.lint_file(raw, {})
+    assert [(i.section, i.rule, i.line) for i in issues] == [
+        ("9", "R3", 3),
+        ("9", "R7", 5),
+    ]
+
+
+def test_text_before_first_unit_is_flagged():
+    issues = lint.lint_file("stray text\n\n## 1 A\n\nx\n", {"1": _ctx("1")})
+    assert [(i.section, i.rule, i.line) for i in issues] == [("", "R6", 1)]
+    assert issues[0].evidence.startswith("text outside a ## unit")
+
+
+def test_text_under_rejected_heading_is_flagged():
+    issues = lint.lint_file("## 1 A\n\nx\n\n## \n\nlost\n", {"1": _ctx("1")})
+    assert [(i.section, i.rule, i.line) for i in issues] == [("1", "R6", 5)]
+
+
+def test_cli_lint_rejects_missing_pdf(tmp_path):
+    result = runner.invoke(
+        app, ["l3", "lint", "d", "--pdf", str(tmp_path / "nope.pdf")]
+    )
+    assert result.exit_code == 2

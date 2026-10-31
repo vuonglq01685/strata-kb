@@ -12,7 +12,7 @@ from pathlib import Path
 from strata_kb.ingest import parser, pdftext
 from strata_kb.l3check import detect, spans
 from strata_kb.l3check.spans import SpansFile, UnitSpan
-from strata_kb.mdutils import section_map
+from strata_kb.mdutils import HEADING_RE, section_map
 
 EVIDENCE_MAX = 80
 TAB_WIDTH = 4
@@ -175,17 +175,39 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     return sorted(issues, key=lambda i: (i.rule, i.line))
 
 
+def _orphans(raw_md: str) -> list[LintIssue]:
+    """One R6 issue per run of text outside any `## <id>` unit: before the first
+    heading, or under a `## ` line HEADING_RE rejects (section_map drops both)."""
+    out: list[LintIssue] = []
+    owner, inside, flagged = "", False, False
+    for n, line in enumerate(raw_md.splitlines(), 1):
+        if line.startswith("## "):
+            m = HEADING_RE.match(line)
+            inside, flagged = m is not None, False
+            owner = m.group("sid") if m else owner
+        if inside or not line.strip() or flagged:
+            continue
+        flagged = True
+        out.append(LintIssue(owner, "R6", n, _clip(f"text outside a ## unit: {line}")))
+    return out
+
+
 def lint_file(raw_md: str, contexts: dict[str, UnitContext]) -> list[LintIssue]:
-    """Lint every `## ` unit of a chapter file (or a draft) plus R2 across it.
-    A unit whose id has no context is not linted (nothing to check it against)."""
-    issues: list[LintIssue] = []
+    """Lint every `## ` unit of a chapter file (or a draft) plus R2 and orphan
+    text across it. A unit whose id has no context gets a neutral one (no PDF
+    checks): the PDF-free rules still apply."""
+    issues = _orphans(raw_md)
     for sid, slices in section_map(raw_md).items():
         if len(slices) > 1:
             issues.append(LintIssue(sid, "R2", 1, _clip(slices[1].splitlines()[0])))
-        ctx = contexts.get(sid)
-        if ctx is not None:
-            for unit in slices:
-                issues += lint_unit(unit, ctx)
+        ctx = contexts.get(sid) or UnitContext(
+            UnitSpan(id=sid, file="", chapter="", page=None, end_page=None),
+            False,
+            [],
+            {},
+        )
+        for unit in slices:
+            issues += lint_unit(unit, ctx)
     return issues
 
 

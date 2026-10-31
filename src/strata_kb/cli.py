@@ -4813,7 +4813,9 @@ def l3_report(
 @l3_app.command("lint")
 def l3_lint(
     doc_id: str = typer.Argument(..., help="Document ID"),
-    pdf: Path = typer.Option(..., "--pdf", help="Source PDF file"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
     kb_dir: Path = _KB_DIR_OPT,
     work_dir: Path = typer.Option(
         Path(".kb-work"), help="Intermediate cache directory"
