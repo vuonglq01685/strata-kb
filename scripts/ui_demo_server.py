@@ -41,6 +41,9 @@ GIT_ENV = {
     "GIT_AUTHOR_EMAIL": "demo@demo.local",
     "GIT_COMMITTER_NAME": "demo",
     "GIT_COMMITTER_EMAIL": "demo@demo.local",
+    # fixed dates: the commit sha and date show in the top bar, so every run must match
+    "GIT_AUTHOR_DATE": "2026-10-30T12:00:00+00:00",
+    "GIT_COMMITTER_DATE": "2026-10-30T12:00:00+00:00",
 }
 
 
