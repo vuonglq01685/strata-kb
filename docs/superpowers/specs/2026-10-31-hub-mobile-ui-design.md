@@ -12,8 +12,9 @@ Galaxy Z Fold / Flip, Apple's foldable), and of every iPad size, with **every
 feature the desktop web has**. It stays a website opened in the browser (no
 installable app). The owner's bar: "not ugly, good UX".
 
-Today the UI has a `viewport` meta but only two breakpoints, and both hide
-features instead of moving them:
+Today the UI has a `viewport` meta but only two layout breakpoints (plus a
+1100px one for `.stat-grid`), and both layout breakpoints hide features
+instead of moving them:
 
 - below 1280px, `.rail-right` is `display: none`: the page's table of
   contents, citation + copy button, doc coverage, overview store health /
@@ -24,7 +25,11 @@ features instead of moving them:
   (Overview, Document, Ticket, Code, Q&A, Registry, Sign in), the tag filter
   and the section tree are gone. **On a phone you cannot navigate.**
 - the 56px top bar packs search, up to 5 status chips and Sign out into one
-  row; it overflows at phone widths.
+  row. Below 1280px the search box shrinks to almost nothing (measured in
+  Chromium: ~26px at 900, ~32px at 1024, ~188px at 1180) and the chips wrap,
+  so global search is unusable on iPads too, not only on phones.
+- the chips' `title=` tooltips (pull error and last good pull, full HEAD
+  timestamp, version note) are hover-only, so touch screens never show them.
 - the section table (`.sec-grid`, `min-width: 720px`) and the registry table
   (`.reg-grid`, `min-width: 760px`) scroll sideways.
 
@@ -76,9 +81,17 @@ features instead of moving them:
   (`static/style.css`, 416 lines), one script (`static/app.js`, 266 lines),
   IBM Plex fonts and the existing color tokens. Keep that design system.
 - No new dependencies.
-- `tests/test_web_ui.py::test_left_rail_is_288px` asserts the CSS contains
-  `grid-template-columns: 288px` exactly twice. Update that assertion if the
-  breakpoint rewrite changes the count; keep its intent (rail stays 288px).
+- CSS / markup the tests pin (`tests/test_web_ui.py`); update an assertion
+  only where the change is intended, keeping its intent:
+  - `test_left_rail_is_288px` expects `grid-template-columns: 288px` exactly
+    twice (rail stays 288px).
+  - `test_static_css_widens_main_and_defines_new_styles` (~line 1245) expects
+    the literal `grid-template-columns: 288px minmax(0,1fr) 292px` (desktop
+    grid unchanged).
+  - the `_left_rail` helpers (~lines 1619, 1966) search for the exact string
+    `<aside class="rail rail-left"`. Keep that tag's opening unchanged; give
+    the sheet role through CSS media queries or an attribute placed after
+    `class`, not a new class inside it.
 - Tests slice `<main>` to avoid matching rail markup (`test_web_ui.py:20`).
   New shell markup (tab bar, sheets) must sit outside `<main>`.
 - `.topbar` has `backdrop-filter`, which makes it the containing block for
@@ -118,13 +131,19 @@ Widths are CSS px of the viewport. Examples are portrait unless noted.
 | Width | Devices (examples) | Layout |
 |---|---|---|
 | < 900 | iPhone (375–440), Galaxy S (360–412), Fold cover screen, Flip, Fold unfolded (~600–900), iPad mini / Air 11 / Pro 11 portrait (744–834) | **Phone layout**: compact top bar, one content column, bottom tab bar, left rail → sheet, right rail → sheet |
-| 900–1279 | iPad 13″ portrait (1024–1032), iPad mini / Air / Pro 11 landscape (1133–1194) | Left rail visible (288px) + content, as today; right rail → sheet (new: today it is hidden) |
+| 900–1279 | iPad 13″ portrait (1024–1032), iPad mini / Air / Pro 11 landscape (1133–1194) | Left rail visible (288px) + content, as today; right rail → sheet (new: today it is hidden); **compact top bar** with ⋯ / More sheet (§7.2) |
 | ≥ 1280 | iPad Pro 13″ landscape (1366–1376), desktop | **Unchanged**: three columns |
 
 The owner confirmed: Fold unfolded and iPad portrait keep the bottom tab bar
 like a phone, not a left rail.
 
-### 7.2 Top bar below 900px
+### 7.2 Top bar below 1280px
+
+*Builder-check call (Claude's, not the owner's): the compact bar runs up to
+1279px, not only below 900px, because the full bar leaves the search box
+unusable on iPads (§1). The ⌕ expand-to-full-width search below applies only
+below 900px; at 900–1279 the search box simply takes the room the chips
+left.*
 
 - Shows: brand, a hub-status dot (green online / red offline, same data as
   the `hub online` chip), a search button (⌕) and a More button (⋯).
@@ -164,7 +183,7 @@ Three bottom sheets, all the same component:
 |---|---|---|---|
 | Left-rail sheet | the existing `.rail-left` minus its `.nav` links (tabs + More replace them): section tree + filter on reader pages, tag cloud + search elsewhere, status legend | pill under the page head: **Sections · N** on pages with `shell.tree`, **Tags** elsewhere | 900px |
 | Right-rail sheet | the existing `.rail-right` (`{% block rail %}`) unchanged | pill under the page head, labelled per page (below) | 1280px |
-| More sheet | status chips, Registry link (admins only, `shell.is_admin`), Sign in link, Sign out form | ⋯ in the top bar | 900px |
+| More sheet | status chips, with their tooltip text shown as visible text (pull error + last good pull, full commit timestamp, version note); below 900px also the Registry link (admins only, `shell.is_admin`) and the Sign in link, which the visible left rail already shows at 900–1279; Sign out form | ⋯ in the top bar | 1280px |
 
 Right-rail pill label per page, from a new `{% block rail_label %}` in
 `base.html` (default **Page info**): overview **Store health**, doc
@@ -201,6 +220,9 @@ Sheet behaviour (JS in `app.js`):
 - **Doc page** section table (`.sec-grid`): becomes one card per section
   (id + status on the first line, title, summary, token count), head row
   hidden, no `min-width`.
+- **Mission page** stories table (`plan_mission.html`, also `.sec-grid`):
+  one card per story (story id + status on the first line, title, reason,
+  ticket link). Scope the card rules per table so each keeps its own fields.
 - **Registry** (`.reg-grid`): one card per repo, with the auto-merge switch
   and Remove button at ≥44px; the add form (`.reg-add-grid`) is one column;
   the remove-confirm banner stacks its text above its buttons.
@@ -216,12 +238,17 @@ Sheet behaviour (JS in `app.js`):
 
 ### 7.6 Touch rules (all widths, `@media (pointer: coarse)`)
 
+*Builder-check call (Claude's): these apply at every width, iPad Pro 13″
+landscape included, because that is a touch screen. A desktop with a mouse
+reports `pointer: fine` and stays unchanged, which is what §4 protects.*
+
 - Tap targets ≥ 44×44px: nav links, tree rows, tag chips, `.seg`, `.btn`,
   level tabs, switches, pager links, footer buttons on result cards. Grow
   padding / `min-height`, not font size.
 - Inputs, selects and textareas ≥ 16px font (prevents the iOS focus zoom).
-- `:hover`-only affordances get an equivalent visible state (nothing in the
-  UI today depends on hover to reveal content; keep it that way).
+- Hover-only content gets a visible equivalent: today that is only the top
+  bar chips' `title=` text, which the More sheet shows as text (§7.4). Add no
+  new hover-only content.
 
 ### 7.7 Viewport and safe areas
 
@@ -248,7 +275,9 @@ Sheet behaviour (JS in `app.js`):
   closes, and take screenshots for the owner:
   344×882, 375×667, 402×874, 440×956, 412×915, 600×900, 884×1104,
   744×1133, 834×1194, 1024×1366, 1180×820, 1366×1024, 1440×900.
-  At 1440 the screenshot must match today's desktop.
+  At 1440 (mouse pointer) the screenshot must match today's desktop. At
+  1366×1024 run with touch emulation (`hasTouch`, coarse pointer): three
+  columns, with the §7.6 touch sizes.
 
 ## 9. Left to the builder
 
