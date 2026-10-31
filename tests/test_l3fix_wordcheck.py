@@ -365,11 +365,110 @@ def test_fallback_heading_id_replaced_passes():
     assert wordcheck.check_words(ORIG, draft, PDF) is None
 
 
-def test_heading_id_replaced_by_slug_passes():
+def test_heading_id_swapped_for_other_id_rejected():  # ids are only ever deleted
     draft = ORIG.replace("## x1 4.2", "## nghi-phep-nam 4.2")
-    assert wordcheck.check_words(ORIG, draft, PDF) is None
+    assert wordcheck.check_words(ORIG, draft, PDF) is not None
 
 
 def test_heading_text_word_inserted_rejected():
     draft = ORIG.replace("4.2 NGHỈ PHÉP NĂM", "4.2 KHÔNG NGHỈ PHÉP NĂM")
     assert wordcheck.check_words(ORIG, draft, PDF) is not None
+
+
+# --- ruling 3: no loopholes in the exemptions ---
+
+
+def test_heading_word_inserted_rejected():
+    pdf = pdf_of("LƯU Ý Nhân viên được hút thuốc.")
+    assert wordcheck.check_words("### LƯU Ý", "### KHÔNG LƯU Ý", pdf) is not None
+
+
+def test_fake_heading_inserting_word_rejected():
+    pdf = pdf_of("Nhân viên được hút thuốc.")
+    draft = "Nhân viên\n## không\nđược hút thuốc."
+    assert wordcheck.check_words("Nhân viên\nđược hút thuốc.", draft, pdf) is not None
+
+
+def test_fake_heading_inserting_number_rejected():
+    pdf = pdf_of("Phạt 5 triệu")
+    assert (
+        wordcheck.check_words("Phạt\n5 triệu", "Phạt\n## 10\n5 triệu", pdf) is not None
+    )
+
+
+def test_heading_word_dropped_when_heading_not_in_pdf_rejected():
+    pdf = pdf_of("Nhân viên được hút thuốc.")
+    orig = "## KHÔNG ÁP DỤNG\n\nNhân viên được hút thuốc."
+    assert (
+        wordcheck.check_words(orig, "## ÁP DỤNG\n\nNhân viên được hút thuốc.", pdf)
+        is not None
+    )
+
+
+def test_slug_id_dropped_from_matched_heading_passes():
+    pdf = pdf_of("LƯU Ý VỀ PHÉP TỒN Nhân viên được nghỉ phép.")
+    orig = "## luu-y-ve-phep-ton LƯU Ý VỀ PHÉP TỒN\n\nNhân viên được nghỉ phép."
+    draft = "### LƯU Ý VỀ PHÉP TỒN\n\nNhân viên được nghỉ phép."
+    assert wordcheck.check_words(orig, draft, pdf) is None
+
+
+def test_unicode_slug_id_dropped_from_matched_heading_passes():
+    pdf = pdf_of("NGHỈ PHÉP NĂM Nhân viên được nghỉ phép.")
+    orig = "## nghỉ-phép-năm NGHỈ PHÉP NĂM\n\nNhân viên được nghỉ phép."
+    assert wordcheck.check_words(orig, orig.replace("nghỉ-phép-năm ", ""), pdf) is None
+
+
+def test_paragraph_line_split_into_heading_passes():
+    pdf = pdf_of("4.3 Thủ tục Nhân viên nộp đơn.")
+    orig = "4.3 Thủ tục\n\nNhân viên nộp đơn."
+    assert (
+        wordcheck.check_words(orig, "## 4.3 Thủ tục\n\nNhân viên nộp đơn.", pdf) is None
+    )
+
+
+def test_misplaced_paragraph_negation_dropped_in_place_rejected():
+    pdf = pdf_of(f"{P1} {P2}")
+    draft = f"{P2.replace('không ', '')}\n\n{P1}"
+    assert wordcheck.check_words(f"{P2}\n\n{P1}", draft, pdf) is not None
+
+
+def test_misplaced_paragraph_negation_dropped_with_matched_negation_elsewhere_rejected():
+    p1 = P1 + " Người lao động không được tự ý nghỉ."
+    pdf = pdf_of(f"{p1} {P2}")
+    draft = f"{P2.replace('không ', '')}\n\n{p1}"
+    assert wordcheck.check_words(f"{P2}\n\n{p1}", draft, pdf) is not None
+
+
+def test_duplicate_paragraph_negation_dropped_rejected():
+    d = "Nhân viên không được nghỉ 12 ngày."
+    assert wordcheck.check_words(
+        f"{d}\n\n{d}", f"{d}\n\n{d.replace('không ', '')}", pdf_of(d)
+    )
+
+
+def test_misplaced_paragraph_replaced_by_pdf_gap_text_rejected():
+    pdf = pdf_of(f"Mục A. {P1} {P2}")
+    assert wordcheck.check_words(f"{P2}\n\n{P1}", f"Mục A.\n\n{P1}", pdf) is not None
+
+
+def test_negation_sentence_replaced_by_other_pdf_text_rejected():
+    pdf = pdf_of("Ghi chú. Nhân viên được nghỉ phép năm.")
+    orig = "Phụ cấp không áp dụng cho thử việc.\n\nNhân viên được nghỉ phép năm."
+    draft = "Ghi chú.\n\nNhân viên được nghỉ phép năm."
+    assert wordcheck.check_words(orig, draft, pdf) is not None
+
+
+def test_word_replaced_by_footer_word_rejected():
+    pdf = pdf_of("Nhân viên không được hút thuốc. Trang 3")
+    orig = "Nhân viên không được hút thuốc."
+    assert wordcheck.check_words(orig, orig.replace("không", "Trang"), pdf) is not None
+
+
+def test_garble_fix_in_place_with_digits_passes():
+    pdf = pdf_of("Mức phạt là 500.000 đồng.")
+    assert (
+        wordcheck.check_words(
+            "Mức phạt là 5O0.000 đồng.", "Mức phạt là 500.000 đồng.", pdf
+        )
+        is None
+    )

@@ -27,6 +27,7 @@ _BULLETS = frozenset("•◦▪‣●○■□–—-*")
 _HEADING_ID = re.compile(r"^([ \t]*#{1,6}[ \t]+)(\S+)", re.MULTILINE)
 _ID_MARK = re.compile("\ue000(.*?)\ue001")
 _NO_PDF = "no PDF text to verify against"
+GARBLE_MIN_RATIO = 0.6  # a corrected spelling must still look like the text it replaces
 
 
 @dataclass(frozen=True)
@@ -42,20 +43,22 @@ def _tokens(text: str) -> list[str]:
     return [t for t in found if t not in _BULLETS]
 
 
-def _prose(md: str) -> tuple[list[str], list[bool]]:
-    """Tokens of the markdown and a parallel flag: True for a heading's id token."""
+def _prose(md: str) -> tuple[list[str], list[bool], list[int]]:
+    """Tokens, a flag for heading-id tokens, and per token the title length after an id."""
     marked = _HEADING_ID.sub(lambda m: f"{m[1]}\ue000{m[2]}\ue001", md)
     text = _LEADING_BULLET.sub("", strip_markdown(marked))
     tokens: list[str] = []
     structural: list[bool] = []
+    title: list[int] = []
     pos = 0
     for m in _ID_MARK.finditer(text):
         plain = _tokens(text[pos : m.start()])
         tokens += [*plain, unicodedata.normalize("NFKC", m[1]).casefold()]
         structural += [False] * len(plain) + [True]
+        title += [0] * len(plain) + [len(_tokens(text[m.end() :].split("\n", 1)[0]))]
         pos = m.end()
     tail = _tokens(text[pos:])
-    return tokens + tail, structural + [False] * len(tail)
+    return tokens + tail, structural + [False] * len(tail), title + [0] * len(tail)
 
 
 def prose_tokens(md: str) -> list[str]:
@@ -106,14 +109,15 @@ def _align(pdf: list[str], tokens: list[str]) -> tuple[dict[int, int], list[int]
 class _Side:
     tokens: list[str]
     structural: list[bool]
+    title: list[int]  # tokens after a heading id on its line
     hit: dict[int, int]  # pdf index -> token index
     matched: frozenset[int]  # token indices matched to the PDF
 
 
 def _side(md: str, pdf: list[str]) -> _Side:
-    tokens, structural = _prose(md)
+    tokens, structural, title = _prose(md)
     hit, _ = _align(pdf, tokens)
-    return _Side(tokens, structural, hit, frozenset(hit.values()))
+    return _Side(tokens, structural, title, hit, frozenset(hit.values()))
 
 
 def _window(tokens: list[str], pos: int) -> str:
@@ -144,7 +148,7 @@ def _unmatched_inserts(draft: _Side, edit: list) -> list[int]:
         for tag, _, _, j1, j2 in edit
         if tag in ("insert", "replace")
         for j in range(j1, j2)
-        if j not in draft.matched and not draft.structural[j]
+        if j not in draft.matched
     ]
 
 
@@ -207,26 +211,54 @@ def _is_furniture(run: list[str], lines: list[list[str]]) -> bool:
     return len(run) in reach
 
 
+def _id_removable(orig: _Side, i: int) -> bool:
+    """An unmatched heading id may go only above a non-empty, fully PDF-matched title."""
+    title = range(i + 1, i + 1 + orig.title[i])
+    return bool(title) and all(k in orig.matched for k in title)
+
+
+def _whole_segment(run: list[int], plain_unmatched: set[int]) -> bool:
+    return run[0] - 1 not in plain_unmatched and run[-1] + 1 not in plain_unmatched
+
+
+def _garble_fix(
+    orig: _Side, draft: _Side, run: list[int], span: tuple[int, int]
+) -> bool:
+    """Rule 5b: the replacement fills a PDF gap at that place and is a corrected spelling."""
+    j1, j2 = span
+    if j2 <= j1 or any(j not in draft.matched for j in range(j1, j2)):
+        return False
+    pos_to_pdf = {pos: i for i, pos in draft.hit.items()}
+    before = [pos_to_pdf[k] for k in range(j1) if k in pos_to_pdf]
+    after = [pos_to_pdf[k] for k in range(j2, len(draft.tokens)) if k in pos_to_pdf]
+    low, high = (before[-1] if before else -1), (after[0] if after else None)
+    used = [pos_to_pdf[j] for j in range(j1, j2)]
+    if any(i <= low or (high is not None and i >= high) or i in orig.hit for i in used):
+        return False
+    removed = " ".join(orig.tokens[i] for i in run)
+    replacement = " ".join(draft.tokens[j1:j2])
+    return SequenceMatcher(None, removed, replacement).ratio() >= GARBLE_MIN_RATIO
+
+
 def _unaccounted_removal(
-    orig: _Side,
-    draft: _Side,
-    edit: list,
-    orig_unmatched: set[int],
-    furniture: Sequence[str],
+    orig: _Side, draft: _Side, edit: list, furniture: Sequence[str]
 ) -> WordIssue | None:
-    """Rule 5: removed original text the PDF lacks must be an id, a fix, a duplicate or furniture."""
+    """Rule 5: removed original text the PDF lacks must be an id, a fix, a whole block or furniture."""
     lines = [_tokens(f) for f in furniture]
+    unmatched = set(range(len(orig.tokens))) - orig.matched
+    plain = {i for i in unmatched if not orig.structural[i]}
     for tag, i1, i2, j1, j2 in edit:
         if tag not in ("delete", "replace"):
             continue
-        for run in _runs([i for i in range(i1, i2) if i in orig_unmatched]):
+        ids = [i for i in range(i1, i2) if i in unmatched and orig.structural[i]]
+        for i in ids:
+            if not _id_removable(orig, i):
+                return WordIssue("delete", _window(draft.tokens, j1), orig.tokens[i])
+        for run in _runs([i for i in range(i1, i2) if i in plain]):
             words = [orig.tokens[i] for i in run]
-            if (
-                all(orig.structural[i] for i in run)
-                or (tag == "replace" and j2 > j1)
-                or _occurs_matched(words, draft)
-                or _is_furniture(words, lines)
-            ):
+            fixed = tag == "replace" and _garble_fix(orig, draft, run, (j1, j2))
+            block = _whole_segment(run, plain) and _occurs_matched(words, draft)
+            if fixed or block or _is_furniture(words, lines):
                 continue
             return WordIssue(
                 "delete", _window(draft.tokens, j1), " ".join(words[:_SHOWN])
@@ -251,13 +283,12 @@ def check_words(
     edit = SequenceMatcher(
         None, orig.tokens, draft.tokens, autojunk=False
     ).get_opcodes()
-    orig_unmatched = set(range(len(orig.tokens))) - orig.matched
     return (
         _lost(pdf, orig, draft, edit)
         or _foreign_insert(draft, edit)
         or _partial_restore(pdf, orig, draft, neigh_cov)
         or _neighbour_copy(orig, draft, neigh_cov)
-        or _unaccounted_removal(orig, draft, edit, orig_unmatched, furniture)
+        or _unaccounted_removal(orig, draft, edit, furniture)
     )
 
 
