@@ -138,3 +138,43 @@ def test_ingest_templates_summarize_only_after_l3_confirm(name):
 
     assert "fill them only after the\n     user has run `kb l3 confirm`" in text
     assert "only\n   after the user has run `kb l3 confirm`" in text
+
+
+IMG_B = "![Sơ đồ phê duyệt](assets/" + "b" * 64 + ".png)"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "target"),
+    [
+        (lambda d: d.replace(IMAGE, IMG_B), "!assets/" + "b" * 64 + ".png"),
+        (
+            lambda d: d.replace(NOTE, "![](assets/" + "c" * 64 + ".png)\n\n" + NOTE),
+            "!assets/" + "c" * 64 + ".png",
+        ),
+        (
+            lambda d: d.replace(
+                "theo hợp đồng.", "theo [hợp đồng](https://example.com/x)."
+            ),
+            "https://example.com/x",
+        ),
+        (lambda d: d.replace(IMAGE + "\n\n", ""), "!assets/" + "a" * 64 + ".png"),
+        (
+            lambda d: d.replace(NOTE, NOTE + "\n\n[1]: https://example.com/ref"),
+            "https://example.com/ref",
+        ),
+    ],
+    ids=["swap", "new-image", "new-link", "removed-image", "definition"],
+)
+def test_changed_image_or_link_target_is_rejected(kb, mutate, target):
+    _draft(kb, "x1", mutate(FIXED_42))
+
+    [r] = _apply(kb)
+
+    assert r.status == "rejected"
+    assert r.reason == f"links: {target}"
+
+
+def test_unchanged_links_pass(kb):
+    _draft(kb, "x1", FIXED_42)
+
+    assert _apply(kb)[0].status == "applied"

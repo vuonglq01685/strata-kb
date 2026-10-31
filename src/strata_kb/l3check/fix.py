@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from itertools import zip_longest
 from pathlib import Path
 from typing import Literal
 
@@ -301,8 +302,7 @@ def _check_outside_edits(t: _Target) -> bool:
     for sid, reason in fixrecord.blocked(rec, digests):
         if sid in t.ids and reason in (fixrecord.EDITED, fixrecord.REMOVED):
             raise _Reject(
-                f"status: §{sid} was {reason} "
-                "— run kb l3 confirm or restore it first"
+                f"status: §{sid} was {reason} — run kb l3 confirm or restore it first"
             )
     newest = {e.id: e for e in rec.sections}
     return any(
@@ -323,6 +323,31 @@ def _check_tables(t: _Target, draft: str) -> None:
         if a != b:
             bad = next((y for x, y in zip(a, b, strict=False) if x != y), "row count")
             raise _Reject(f"tables: table {n} changed at {_clip(bad)}")
+
+
+# `![alt](T)` / `[text](T)` (T keeps any title), `[ref]: T` definitions, <autolinks>
+_LINK_TARGET = re.compile(
+    r"(!?)\[[^\]]*\]\(([^)]*)\)"
+    r"|^[ ]{0,3}\[[^\]]+\]:[ \t]*(\S+)"
+    r"|<((?:https?|mailto):[^>\s]+)>",
+    re.MULTILINE,
+)
+
+
+def _link_targets(text: str) -> list[str]:
+    return [
+        ((m.group(1) or "") + (m.group(2) or m.group(3) or m.group(4) or "")).strip()
+        for m in _LINK_TARGET.finditer(text)
+    ]
+
+
+def _check_links(t: _Target, draft: str) -> None:
+    """Images and links carry content the word check cannot see: the ordered
+    targets must be the same as in the current L3."""
+    old, new = _link_targets(t.run), _link_targets(draft)
+    for a, b in zip_longest(old, new, fillvalue="(none)"):
+        if a != b:
+            raise _Reject(f"links: {_clip(b if b != '(none)' else a)}")
 
 
 def _check_contract(
@@ -610,6 +635,7 @@ def _apply_one(
         _check_l2(t)
         _check_status(t)
         _check_tables(t, draft.text)
+        _check_links(t, draft.text)
         units = _units(draft.text)
         ids = [u.id for u in units]
         _check_contract(t, draft.text, ids, pdf_pages)
