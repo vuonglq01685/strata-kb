@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from strata_kb import models, pubgate
 from strata_kb.cli import app
 from strata_kb.l3check import fixrecord, fixswitch, report
@@ -123,6 +125,23 @@ def test_switch_off_partial_reingest_keeps_record_complete(tmp_path):
     fixrecord.reset_on_ingest(tmp_path, {"a"}, doc, switch_on=False)
     rec = fixrecord.load(tmp_path)
     assert fixrecord.blocked(rec, {"1": "new", "2": "hb"}) == []
+
+
+@pytest.mark.parametrize("switch_on", [True, False])
+def test_reingest_other_chapter_does_not_launder_hand_edited_unit(tmp_path, switch_on):
+    for stem in ("a", "b"):
+        (tmp_path / f"{stem}.raw.md").write_text("x", encoding="utf-8")
+    fixrecord.save(tmp_path, _rec(baseline={"1": ("a", "old")}))
+    doc = {
+        "1": BaselineUnit(file="a", l3_sha256="new"),
+        "9": BaselineUnit(file="b", l3_sha256="hand"),
+    }
+    fixrecord.reset_on_ingest(tmp_path, {"a"}, doc, switch_on=switch_on)
+    rec = fixrecord.load(tmp_path)
+    assert {k: v.l3_sha256 for k, v in rec.baseline.items()} == {"1": "new"}
+    assert fixrecord.blocked(rec, {"1": "new", "9": "hand"}) == [
+        ("9", "edited outside kb l3 fix apply")
+    ]
 
 
 def test_reset_drops_files_gone_from_disk(tmp_path):

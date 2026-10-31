@@ -69,21 +69,25 @@ def reset_on_ingest(
     switch_on: bool,
 ) -> None:
     """Re-ingest rewrote the files in `stems`: forget what was tracked for them
-    (and for files gone from disk). `units` is every unit of the doc now. While
-    the switch is on, or a record with anything tracked remains, baseline the
-    units of `stems` afresh and every other unit nothing tracks yet, so that
-    `blocked` finds no unit untracked."""
-    rec = load(doc_dir) or L3Fix()
+    (and for files gone from disk). `units` is every unit of the doc now.
+
+    No record yet: with the switch on, baseline every unit of the doc; off,
+    write nothing. Record exists (whatever the switch): baseline only the units
+    of `stems`, whose L3 was just rewritten from the PDF. Never baseline a unit
+    outside `stems`, or a hand edit there would clear the gate unreviewed.
+    Nothing tracked afterwards: delete the file (an existing record keeps
+    gating the doc, so only an empty one goes)."""
+    rec = load(doc_dir)
 
     def gone(file: str) -> bool:
         return file in stems or not (doc_dir / f"{file}.raw.md").exists()
 
-    baseline = {k: v for k, v in rec.baseline.items() if not gone(v.file)}
-    sections = [e for e in rec.sections if not gone(e.file)]
-    if switch_on or baseline or sections:
-        tracked = baseline.keys() | {e.id for e in sections}
+    kept = rec or L3Fix()
+    baseline = {k: v for k, v in kept.baseline.items() if not gone(v.file)}
+    sections = [e for e in kept.sections if not gone(e.file)]
+    if switch_on or rec is not None:
         baseline.update(
-            {k: v for k, v in units.items() if v.file in stems or k not in tracked}
+            {k: v for k, v in units.items() if rec is None or v.file in stems}
         )
     save(doc_dir, L3Fix(baseline=baseline, sections=sections))
 
