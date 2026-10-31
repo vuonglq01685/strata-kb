@@ -526,7 +526,7 @@ def test_assistant_slash_command_parity(tmp_path: Path):
         ),
         "cursor": lambda n: Path(".cursor/commands") / f"{n}.md",
     }
-    common = common + ["kb-docker-setup", "kb-approve"]
+    common = common + ["kb-docker-setup", "kb-approve", "kb-l3-fix"]
     # kb-mcp-setup is a reader-kind command: the hub serves MCP over stdio
     # and has nothing to connect to.
     for kind, names in (("hub", common), ("child", common + ["kb-mcp-setup"])):
@@ -660,6 +660,15 @@ _BA_SPEC_8_PATHS = (
     "QUICKSTART-BA.md",
 )
 
+# kb-l3-fix ships to hub and child (the kinds that ingest PDFs) on top of the
+# frozen lists below.
+_L3_FIX_WRAPPERS = [
+    ".claude/skills/kb-l3-fix/SKILL.md",
+    ".claude/commands/kb-l3-fix.md",
+    ".github/prompts/kb-l3-fix.prompt.md",
+    ".cursor/commands/kb-l3-fix.md",
+]
+
 # The exact hub/child expected-file sets as they existed before this plan —
 # used to assert Phase 4 added nothing to hub/child (byte-for-byte).
 _PRE_PHASE4_HUB_FILES = [
@@ -761,6 +770,7 @@ def test_init_kind_ba_scaffolds_minimal_set(tmp_path: Path):
         "kb-summarize",
         "kb-approve",
         "kb-docker-setup",
+        "kb-l3-fix",
     ):
         assert not (tmp_path / ".claude" / "skills" / name).exists(), name
         assert not (tmp_path / ".claude" / "commands" / f"{name}.md").exists(), name
@@ -820,13 +830,13 @@ def test_hub_child_unchanged_by_phase4(tmp_path: Path):
     # hub gained exactly the four kb-code-sync wrappers (named, like the
     # kb-mcp-setup ones below, so the freeze keeps its meaning).
     assert sorted(expected_files("hub")) == sorted(
-        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS + _L3_FIX_WRAPPERS
     )
     # child gained exactly the four kb-mcp-setup wrappers since Phase 4 —
     # named explicitly rather than folded into the frozen list, so the
     # freeze keeps meaning "Phase 4/5 added nothing".
     assert sorted(expected_files("child")) == sorted(
-        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS + _L3_FIX_WRAPPERS
     )
     hub_repo = tmp_path / "h"
     child_repo = tmp_path / "c"
@@ -2091,10 +2101,10 @@ def test_dev_mcp_json_reuses_the_child_templates(tmp_path: Path):
 
 def test_phase5_adds_nothing_to_hub_child_or_ba(tmp_path: Path):
     assert sorted(expected_files("hub")) == sorted(
-        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS
+        _PRE_PHASE4_HUB_FILES + _CODE_SYNC_WRAPPERS + _L3_FIX_WRAPPERS
     )
     assert sorted(expected_files("child")) == sorted(
-        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS
+        _PRE_PHASE4_CHILD_FILES + _MCP_SETUP_WRAPPERS + _L3_FIX_WRAPPERS
     )
     for rel in expected_files("ba"):
         assert "dev-" not in rel, rel
