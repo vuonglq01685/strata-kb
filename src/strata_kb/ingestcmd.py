@@ -236,6 +236,14 @@ def l3_check(
     )
 
 
+def _in_chapters(chapters: set[str] | None) -> Callable[[str], bool]:
+    """Whether a chapter file (by stem) belongs to a chapter this run re-ingests."""
+    if chapters is None:
+        return lambda _file: True
+    prefixes = [scaffold._stem_prefix(c) for c in chapters]
+    return lambda file: any(scaffold._belongs_to(file, p) for p in prefixes)
+
+
 def _reset_fix_record(
     opts: IngestOptions,
     units: list[sectioner.SectionUnit],
@@ -262,6 +270,7 @@ def _reset_fix_record(
             if i in digests
         },
         switch_on,
+        _in_chapters(chapters),
     )
     if switch_on:
         echo(

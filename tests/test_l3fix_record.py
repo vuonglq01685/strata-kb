@@ -145,11 +145,29 @@ def test_reingest_other_chapter_does_not_launder_hand_edited_unit(tmp_path, swit
     ]
 
 
-def test_reset_drops_files_gone_from_disk(tmp_path):
+def test_reset_drops_gone_files_of_a_reingested_chapter(tmp_path):
     (tmp_path / "b.raw.md").write_text("x", encoding="utf-8")
     fixrecord.save(tmp_path, _rec(baseline={"1": ("a", "h"), "2": ("b", "h")}))
-    fixrecord.reset_on_ingest(tmp_path, set(), {}, switch_on=False)
+    fixrecord.reset_on_ingest(
+        tmp_path, set(), {}, switch_on=False, rewritten=lambda f: f == "a"
+    )
     assert list(fixrecord.load(tmp_path).baseline) == ["2"]
+
+
+def test_reset_keeps_a_chapter_file_deleted_by_hand_blocked(tmp_path):
+    (tmp_path / "b.raw.md").write_text("x", encoding="utf-8")
+    fixrecord.save(
+        tmp_path,
+        _rec(
+            baseline={"1": ("a", "h"), "2": ("b", "h")}, entries=[_entry("1", file="a")]
+        ),
+    )
+    fixrecord.reset_on_ingest(
+        tmp_path, {"b"}, {}, switch_on=False, rewritten=lambda f: f == "b"
+    )
+    rec = fixrecord.load(tmp_path)
+    assert set(rec.baseline) == {"1"} and [e.id for e in rec.sections] == ["1"]
+    assert ("1", fixrecord.REMOVED) in fixrecord.blocked(rec, {})
 
 
 def test_reset_switch_off_with_nothing_left_deletes_file(tmp_path):
@@ -289,3 +307,12 @@ def test_confirm_ignores_ids_not_blocked(tmp_path):
     fixrecord.confirm(tmp_path, ["1", "nope"], "Rev", "t2", {"1": "h1"})
 
     assert fixrecord.load(tmp_path) == rec
+
+
+def test_in_chapters_matches_stems_of_the_rerun_chapters_only():
+    from strata_kb.ingestcmd import _in_chapters
+
+    assert _in_chapters(None)("anything")
+    belongs = _in_chapters({"4"})
+    assert belongs("ch4") and belongs("ch4-pham-vi")
+    assert not belongs("ch5-khac") and not belongs("ch40-x")

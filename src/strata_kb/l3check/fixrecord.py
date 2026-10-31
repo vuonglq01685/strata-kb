@@ -6,6 +6,7 @@ Local only (never published). The gate reads this file, not the switch.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -68,9 +69,12 @@ def reset_on_ingest(
     stems: set[str],
     units: dict[str, BaselineUnit],
     switch_on: bool,
+    rewritten: Callable[[str], bool] = lambda _file: False,
 ) -> None:
     """Re-ingest rewrote the files in `stems`: forget what was tracked for them
-    (and for files gone from disk). `units` is every unit of the doc now.
+    and for files gone from disk that `rewritten(file)` says belonged to a
+    re-ingested chapter (a chapter file deleted by hand stays blocked as
+    removed until a human confirms). `units` is every unit of the doc now.
 
     No record yet: with the switch on, baseline every unit of the doc; off,
     write nothing. Record exists (whatever the switch): baseline only the units
@@ -81,7 +85,9 @@ def reset_on_ingest(
     rec = load(doc_dir)
 
     def gone(file: str) -> bool:
-        return file in stems or not (doc_dir / f"{file}.raw.md").exists()
+        if file in stems:
+            return True
+        return not (doc_dir / f"{file}.raw.md").exists() and rewritten(file)
 
     kept = rec or L3Fix()
     baseline = {k: v for k, v in kept.baseline.items() if not gone(v.file)}
