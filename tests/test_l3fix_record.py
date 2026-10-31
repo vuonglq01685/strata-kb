@@ -276,7 +276,7 @@ def test_ingest_with_switch_on_writes_baseline(tmp_path, monkeypatch):
     }
     assert set(digests) == {s.id for s in manifest.sections}
     assert (
-        "AI fix: on — run the kb-l3-fix skill (or /kb-l3-fix), then kb l3 report <id>"
+        "AI fix: on — run the kb-l3-fix skill (or /kb-l3-fix), then kb l3 report arinc-424"
         in result.output
     )
 

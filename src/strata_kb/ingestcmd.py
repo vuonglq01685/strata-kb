@@ -275,7 +275,7 @@ def _reset_fix_record(
     if switch_on:
         echo(
             "AI fix: on — run the kb-l3-fix skill (or /kb-l3-fix), "
-            "then kb l3 report <id>"
+            f"then kb l3 report {opts.doc_id}"
         )
 
 
