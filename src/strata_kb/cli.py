@@ -1719,11 +1719,19 @@ def _print_prompts(kb_dir: Path, doc_id: str, sections: list[str]) -> None:
     of `doc_id`, so the manual (skill-driven) path can build it without
     reading L3 directly. Table-only/brief sections need no LLM call — say
     so instead of a prompt."""
+    from strata_kb.l3check.report import blocked_docs
     from strata_kb.summarize import build_section_prompt, collect_pending
 
     if not doc_id:
         typer.secho("--print-prompt requires a DOC_ID", fg=typer.colors.RED)
         raise typer.Exit(1)
+    for d, ids in blocked_docs(kb_dir):
+        if d == doc_id:  # the manual path must not summarize unreviewed L3 either
+            typer.secho(
+                f"[skip] {d}: L3 review pending ({len(ids)} section(s)) — kb l3 report {d}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
     pending = collect_pending(
         kb_dir,
         doc_id,
@@ -1780,9 +1788,10 @@ def status(
         typer.echo(
             f"{entry.id}: {len(pending)}/{len(manifest.sections)} section pending"
         )
-        flagged = _l3_pending(kb_dir, entry.id)
-        if flagged:
-            typer.echo(f"  L3 check: {len(flagged)} section(s) awaiting review")
+        awaiting = {s.id for s in _l3_pending(kb_dir, entry.id)}
+        awaiting |= set(_l3_fix_lines(kb_dir, entry.id))
+        if awaiting:
+            typer.echo(f"  L3 check: {len(awaiting)} section(s) awaiting review")
         for sec in pending:
             typer.echo(f"  - §{sec.id} {sec.title} (file: {sec.file}.md)")
     typer.echo(f"Total: {total_pending} section(s) pending.")
