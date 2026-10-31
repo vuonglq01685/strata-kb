@@ -124,6 +124,186 @@ const CHECKS = {
   },
 };
 
+// ---- sheet suites: stateful checks that need their own fresh page/context ----
+const SECTION = "/ui/docs/demo-doc/1.1?repo=demo-kb";
+const MANY = "/ui/docs/many-doc?repo=many-kb";
+const SHEET_PAGES = ["/ui", "/ui/docs", SECTION, `/ui/tickets/${MISSION}?repo=ba-one`];
+const visible = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)].some((el) => {
+  const r = el.getBoundingClientRect();
+  return getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" && r.width > 0 && r.height > 0;
+}), sel);
+const sheetState = (page, id) => page.evaluate((i) => {
+  const el = document.getElementById(i);
+  const r = el.getBoundingClientRect();
+  return {
+    open: el.hasAttribute("data-open"),
+    inside: el.contains(document.activeElement),
+    locked: document.documentElement.classList.contains("sheet-locked"),
+    h: r.height, ih: window.innerHeight,
+    dialog: el.getAttribute("role") === "dialog" && el.getAttribute("aria-modal") === "true" && !!el.getAttribute("aria-label"),
+  };
+}, id);
+const openAny = (page) => page.evaluate(() => !!document.querySelector("[data-open]") || document.documentElement.classList.contains("sheet-locked"));
+async function authed(browser, state, vp, extra = {}) {
+  const context = await browser.newContext({ viewport: { width: vp[0], height: vp[1] }, storageState: state, ...extra });
+  context.setDefaultTimeout(4000);
+  return { context, page: await context.newPage() };
+}
+async function visibleTriggers(page) {
+  return page.$$eval("[data-sheet-open]", (els) => els.filter((el) => {
+    const r = el.getBoundingClientRect();
+    return getComputedStyle(el).display !== "none" && r.width > 0 && r.height > 0;
+  }).map((el) => el.getAttribute("data-sheet-open")));
+}
+
+const SUITES = {
+  sheets: async ({ browser, base, state }) => {
+    const bad = [];
+    for (const vp of [[402, 874], [1180, 820]]) {
+      const { context, page } = await authed(browser, state, vp);
+      for (const p of SHEET_PAGES) {
+        await page.goto(base + p, { waitUntil: "networkidle" });
+        const ids = await visibleTriggers(page);
+        const at = `${vp.join("x")} ${p}`;
+        if (vp[0] === 402 && !ids.includes("more")) bad.push(`${at}: no visible more trigger`);
+        for (const id of ids) {
+          for (const how of ["scrim", "esc", "button"]) {
+            const tag = `${at} ${id}/${how}`;
+            await page.goto(base + p, { waitUntil: "networkidle" });
+            const trig = page.locator(`[data-sheet-open="${id}"]`).filter({ visible: true }).first();
+            await trig.click();
+            await page.waitForTimeout(350);
+            const st = await sheetState(page, id);
+            const exp = await trig.getAttribute("aria-expanded");
+            if (!st.open) { bad.push(`${tag}: no data-open`); continue; }
+            if (exp !== "true") bad.push(`${tag}: aria-expanded=${exp}`);
+            if (!st.inside) bad.push(`${tag}: focus not inside sheet`);
+            if (!st.locked) bad.push(`${tag}: html not sheet-locked`);
+            if (st.h > st.ih * 0.8 + 1) bad.push(`${tag}: height ${Math.round(st.h)} > 80% of ${st.ih}`);
+            if (!st.dialog) bad.push(`${tag}: missing dialog semantics`);
+            if (vp[0] === 402 && id === "rail-left" && (await visible(page, "#rail-left .nav"))) bad.push(`${tag}: .rail-left .nav visible in sheet`);
+            if (vp[0] >= 600) {
+              const w = await page.evaluate((i) => document.getElementById(i).getBoundingClientRect().width, id);
+              if (w > 641) bad.push(`${tag}: width ${Math.round(w)} > 640`);
+            }
+            if (how === "scrim") await page.mouse.click(vp[0] / 2, 4);
+            else if (how === "esc") await page.keyboard.press("Escape");
+            else await page.click(`#${id} [data-sheet-close]`);
+            await page.waitForTimeout(350);
+            const after = await page.evaluate((i) => ({
+              open: !!document.querySelector("[data-open]"),
+              locked: document.documentElement.classList.contains("sheet-locked"),
+              onTrigger: document.activeElement === document.querySelector(`[data-sheet-open="${i}"]:not([style*="none"])`)
+                || document.activeElement?.getAttribute("data-sheet-open") === i,
+              exp: document.activeElement?.getAttribute("aria-expanded"),
+            }), id);
+            if (after.open || after.locked) bad.push(`${tag}: still open after close`);
+            if (!after.onTrigger) bad.push(`${tag}: focus not back on trigger`);
+            if (after.exp === "true") bad.push(`${tag}: trigger aria-expanded still true`);
+          }
+        }
+      }
+      // TOC link inside right-rail sheet closes it and changes the hash
+      await page.goto(base + SECTION, { waitUntil: "networkidle" });
+      await page.locator('[data-sheet-open="rail-right"]').filter({ visible: true }).first().click();
+      await page.waitForTimeout(350);
+      const before = await page.evaluate(() => location.hash);
+      await page.click("#rail-right a.toc-link");
+      await page.waitForTimeout(350);
+      const after = await page.evaluate(() => ({ hash: location.hash, open: !!document.querySelector("[data-open]"), locked: document.documentElement.classList.contains("sheet-locked") }));
+      if (after.open || after.locked) bad.push(`${vp.join("x")} toc link: sheet still open`);
+      if (after.hash === before || !after.hash) bad.push(`${vp.join("x")} toc link: hash unchanged (${after.hash})`);
+      await context.close();
+    }
+    return bad;
+  },
+
+  "resize-closes-sheet": async ({ browser, base, state }) => {
+    const bad = [];
+    const { context, page } = await authed(browser, state, [402, 874]);
+    await page.goto(base + SECTION, { waitUntil: "networkidle" });
+    await page.click('[data-sheet-open="rail-left"]');
+    await page.waitForTimeout(350);
+    if (!(await openAny(page))) bad.push("left sheet did not open before resize");
+    await page.setViewportSize({ width: 1366, height: 1024 });
+    await page.waitForTimeout(350);
+    if (await openAny(page)) bad.push("sheet still open / sheet-locked after resize to 1366");
+    for (const sel of [".rail-left", ".rail-right"]) {
+      if (!(await visible(page, sel))) bad.push(`${sel} not visible after resize`);
+      else {
+        const pos = await page.$eval(sel, (el) => getComputedStyle(el).position);
+        if (pos === "fixed") bad.push(`${sel} still position:fixed after resize`);
+      }
+    }
+    await context.close();
+    return bad;
+  },
+
+  "bfcache-no-sheet": async ({ browser, base, state }) => {
+    const bad = [];
+    const { context, page } = await authed(browser, state, [402, 874]);
+    await page.goto(base + SECTION, { waitUntil: "networkidle" });
+    await page.click('[data-sheet-open="rail-left"]');
+    await page.waitForTimeout(350);
+    const row = page.locator("#rail-left a.tree-row:not(.active)").first();
+    if (await row.count()) await row.click(); else await page.click("#rail-left a.tree-row");
+    await page.waitForLoadState("networkidle");
+    await page.goBack({ waitUntil: "networkidle" });
+    await page.waitForTimeout(350);
+    if (await openAny(page)) bad.push("sheet open / sheet-locked after goBack");
+    await context.close();
+    return bad;
+  },
+
+  nojs: async ({ browser, base, state }) => {
+    const bad = [];
+    const { context, page } = await authed(browser, state, [402, 874], { javaScriptEnabled: false });
+    for (const p of [SECTION, "/ui", `/ui/tickets/${MISSION}?repo=ba-one`]) {
+      await page.goto(base + p, { waitUntil: "load" });
+      const t = `nojs ${p}`;
+      if (!(await visible(page, ".tab-bar a"))) bad.push(`${t}: tab-bar links hidden`);
+      if (await visible(page, ".sheet-pill")) bad.push(`${t}: sheet-pill visible`);
+      if (await visible(page, ".topbar-btn")) bad.push(`${t}: topbar-btn visible`);
+      if (!(await visible(page, ".topbar-search input"))) bad.push(`${t}: search input hidden`);
+      for (const sel of [".rail-left", ".rail-right", ".more-sheet"]) {
+        if (sel === ".rail-right" && !(await page.$(sel + " > *"))) continue;
+        const info = await page.evaluate((s) => {
+          const el = document.querySelector(s); const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return { pos: cs.position, shown: cs.display !== "none" && cs.visibility !== "hidden" && r.height > 0, right: r.right, inView: r.right <= window.innerWidth + 1 };
+        }, sel);
+        if (info.pos === "fixed") bad.push(`${t}: ${sel} position fixed`);
+        if (!info.shown) bad.push(`${t}: ${sel} not visible`);
+        if (!info.inView) bad.push(`${t}: ${sel} overflows viewport`);
+      }
+      if (p === SECTION && !(await visible(page, ".rail-left .tree-list"))) bad.push(`${t}: tree-list hidden`);
+      const ov = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (ov > 0) bad.push(`${t}: horizontal overflow ${ov}px`);
+    }
+    await context.close();
+    return bad;
+  },
+
+  "sheet-scrolls-inside": async ({ browser, base, state }) => {
+    const bad = [];
+    const { context, page } = await authed(browser, state, [402, 874]);
+    await page.goto(base + MANY, { waitUntil: "networkidle" });
+    await page.click('[data-sheet-open="rail-left"]');
+    await page.waitForTimeout(350);
+    await page.evaluate(() => window.scrollTo(0, 120)); // programmatic scroll still works under the lock
+    const y0 = await page.evaluate(() => window.scrollY);
+    const m = await page.evaluate(() => { const s = document.getElementById("rail-left"); return { sh: s.scrollHeight, ch: s.clientHeight }; });
+    if (m.sh <= m.ch) bad.push(`scrollHeight ${m.sh} <= clientHeight ${m.ch}`);
+    await page.mouse.move(201, 600);
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({ y: window.scrollY, st: document.getElementById("rail-left").scrollTop }));
+    if (after.y !== y0) bad.push(`window.scrollY ${y0} -> ${after.y}`);
+    if (after.st <= 0) bad.push("sheet did not scroll");
+    await context.close();
+    return bad;
+  },
+};
+
 async function main() {
   const args = process.argv.slice(2);
   const flag = (n) => args.includes(n);
@@ -131,11 +311,12 @@ async function main() {
   const [base, out] = args.filter((a, i) => !a.startsWith("--") && !["--only", "--login"].includes(args[i - 1]));
   if (!base || !out) throw new Error("usage: mobile_ui_check.cjs <base_url> <out_dir> [--only c] [--baseline] [--login u:p]");
   const only = val("--only");
-  if (only && !CHECKS[only]) throw new Error(`unknown check ${only}; have ${Object.keys(CHECKS)}`);
+  if (only && !CHECKS[only] && !SUITES[only]) throw new Error(`unknown check ${only}; have ${[...Object.keys(CHECKS), ...Object.keys(SUITES)]}`);
   const baseline = flag("--baseline");
   const [user, ...pw] = (val("--login") || process.env.UI_CHECK_LOGIN || "").split(":");
   if (!user || !pw.length) throw new Error("need --login user:password (or UI_CHECK_LOGIN)");
-  const names = only ? [only] : Object.keys(CHECKS);
+  const names = only ? [only].filter((n) => CHECKS[n]) : Object.keys(CHECKS);
+  const suites = only ? [only].filter((n) => SUITES[n]) : Object.keys(SUITES);
 
   const browser = await chromium.launch();
   const login = await browser.newContext();
@@ -147,7 +328,15 @@ async function main() {
 
   const cmp = await browser.newPage(); // blank page for pixel compares (app pages' CSP blocks data: images)
   let failures = 0;
+  for (const name of baseline ? [] : suites) {
+    const found = await SUITES[name]({ browser, base, state }).catch((e) => [`error: ${e.message.split("\n")[0]}`]);
+    for (const detail of found) {
+      failures++;
+      console.log(`FAIL ${name}: ${detail}`);
+    }
+  }
   for (const [w, h] of VIEWPORTS) {
+    if (!baseline && !names.length) break; // suite-only run
     const vp = `${w}x${h}`;
     // baseline and desktop-unchanged only look at the desktop viewports
     if ((baseline || only === "desktop-unchanged") && !DESKTOP.has(vp)) continue;

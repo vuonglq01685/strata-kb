@@ -119,10 +119,8 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 .rail-left { border-right: 1px solid var(--line); padding: 20px 14px 32px; gap: 26px; }
 .rail-right { border-left: 1px solid var(--line); padding: 24px 18px 32px; gap: 20px; }
 main.content { padding: 28px 32px 56px; min-width: 0; }
-@media (max-width: 1279px) { .columns { grid-template-columns: 288px minmax(0,1fr); }
-  .rail-right { display: none; } }
-@media (max-width: 899px) { .columns { grid-template-columns: minmax(0,1fr); }
-  .rail-left { display: none; } }
+@media (max-width: 1279px) { .columns { grid-template-columns: 288px minmax(0,1fr); } }
+@media (max-width: 899px) { .columns { grid-template-columns: minmax(0,1fr); } }
 
 /* left rail */
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -416,7 +414,7 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 .md-body .hl-na, .md-body .hl-nf, .md-body .hl-nc { color: #8250df; }
 
 /* mobile shell: markup is hidden until the small-screen rules (Tasks 3-4) show it */
-.tab-bar, .sheet-pills, .topbar-btn, .hub-dot, .more-sheet, .sheet-scrim,
+.tab-bar, .sheet-pills, .topbar-btn, .hub-dot, .more-sheet,
 .topbar-search [data-search-toggle] { display: none; }
 .main-col { min-width: 0; }
 
@@ -455,4 +453,61 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
     align-items: center; justify-content: center; gap: 3px; font: 500 11px/1 var(--sans); color: var(--muted); }
   .tab.on { color: var(--accent); }
   main.content { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px); }
+}
+
+/* bottom sheets: .rail-left < 900px, .rail-right and .more-sheet < 1280px (app.js sets [data-open]).
+   Closed sheets stay visibility:hidden so they are out of the tab order and the a11y tree. */
+.sheet-scrim { position: fixed; inset: 0; z-index: 35; background: rgba(22,32,44,.45); }
+.sheet-head { position: absolute; top: 0; left: 0; right: 0; height: 32px; touch-action: none; }
+.sheet-head::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 4px;
+  margin-left: -20px; border-radius: 2px; background: var(--dash); }
+.sheet-close { position: absolute; top: 0; right: 4px; width: 44px; height: 44px; display: flex;
+  align-items: center; justify-content: center; padding: 0; font: 400 26px/1 var(--sans);
+  color: var(--muted); background: transparent; border: 0; border-radius: var(--r-md); cursor: pointer; }
+.sheet-close:hover { color: var(--ink); background: var(--field); }
+html.sheet-locked, html.sheet-locked body { overflow: hidden; }
+.more-sheet .sheet-grab { display: none; }
+.more-status { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.more-status .chip-detail { display: block; margin-top: 2px; font: 400 10.5px/1.5 var(--mono);
+  color: var(--muted); letter-spacing: .02em; overflow-wrap: anywhere; }
+.more-status .hub-chip { flex-wrap: wrap; border-radius: var(--r-md); }
+.more-nav a { padding: 11px 10px; border-radius: var(--r-md); font: 500 14px/1.4 var(--sans);
+  color: var(--ink); }
+.more-nav a.active { background: var(--accent-bg); box-shadow: inset 2px 0 0 var(--accent); }
+.more-sheet .nav-logout .seg { width: 100%; height: 44px; font-size: 14px; }
+.sheet-pills { padding: 14px 32px 0; gap: 8px; flex-wrap: wrap; }
+.sheet-pill { min-height: 40px; padding: 0 16px; font: 500 13px/1 var(--sans); color: var(--accent);
+  background: var(--surface); border: 1px solid var(--accent-line); border-radius: 999px; cursor: pointer; }
+.sheet-pill:hover { background: var(--accent-bg); }
+@media (max-width: 1279px) {
+  .sheet-pills { display: flex; }
+  .rail-right, .more-sheet { position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 40;
+    height: auto; max-height: 80vh; max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: 20px; border: 0; border-radius: 18px 18px 0 0;
+    padding: 48px 16px calc(24px + env(safe-area-inset-bottom)); background: var(--surface);
+    box-shadow: 0 -8px 32px rgba(22,32,44,.18); transform: translateY(102%); visibility: hidden;
+    transition: transform .2s ease, visibility 0s linear .2s; }
+  .rail-right[data-open], .more-sheet[data-open] { transform: none; visibility: visible;
+    transition: transform .2s ease; }
+}
+@media (max-width: 899px) {
+  .rail-left { position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 40;
+    height: auto; max-height: 80vh; max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain;
+    border: 0; border-radius: 18px 18px 0 0; gap: 20px;
+    padding: 48px 16px calc(24px + env(safe-area-inset-bottom)); background: var(--surface);
+    box-shadow: 0 -8px 32px rgba(22,32,44,.18); transform: translateY(102%); visibility: hidden;
+    transition: transform .2s ease, visibility 0s linear .2s; }
+  .rail-left[data-open] { transform: none; visibility: visible; transition: transform .2s ease; }
+  .more-nav { display: flex; flex-direction: column; gap: 2px; }
+  .rail-left .nav { display: none; }
+  .rail-left .legend { margin-top: 0; }
+  .rail-left .tree-list { max-height: none; overflow-y: visible; }
+}
+@media (min-width: 900px) { .sheet-pill[data-sheet-open="rail-left"] { display: none; } }
+@media (min-width: 600px) and (max-width: 1279px) {
+  .rail-right, .more-sheet { max-width: 640px; margin-inline: auto; }
+}
+@media (min-width: 600px) and (max-width: 899px) { .rail-left { max-width: 640px; margin-inline: auto; } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-left, .rail-right, .more-sheet { transition: none !important; }
 }
