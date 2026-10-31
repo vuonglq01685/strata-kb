@@ -4,10 +4,19 @@ import re
 
 import pytest
 
-from tests import test_web_ui
+from tests import test_web_plans, test_web_registry, test_web_ui
+from tests.test_planstatus import MISSION_ID
 from tests.test_web_ui import _client
 
 demo_doc_hub = test_web_ui.demo_doc_hub  # re-export the fixture for pytest
+# registry fixtures re-exported so the admin client works here
+_git_identity = test_web_registry._git_identity
+registry_hub = test_web_registry.registry_hub
+intake_config = test_web_registry.intake_config
+pushes = test_web_registry.pushes
+recording_push = test_web_registry.recording_push
+make_client = test_web_registry.make_client
+admin_registry_client = test_web_registry.admin_registry_client
 
 READER = "/ui/docs/demo-doc/1.1?repo=demo-kb"
 
@@ -196,3 +205,22 @@ def test_topbar_status_markup_is_byte_identical_to_pre_macro_markup():
         "  </div>"
     )
     assert expected in html
+
+
+def test_data_cards_marker_on_sections(demo_doc_hub):
+    text = get(demo_doc_hub, "/ui/docs/demo-doc?repo=demo-kb")
+    assert 'class="panel sec-table" data-cards="sections"' in text
+
+
+def test_data_cards_marker_on_stories(plan_hub):
+    text = (
+        test_web_plans._client(plan_hub)
+        .get(f"/ui/tickets/{MISSION_ID}?repo=ba-one")
+        .text
+    )
+    assert 'class="panel sec-table" data-cards="stories"' in text
+
+
+def test_data_cards_marker_on_registry(admin_registry_client):
+    text = admin_registry_client.get("/ui/registry").text
+    assert 'class="sec-table" data-cards="registry"' in text
