@@ -119,6 +119,9 @@ app.add_typer(claim_app, name="claim")
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
+fix_app = typer.Typer(help="AI structure fix of L3 (switch, pages, apply).")
+l3_app.add_typer(fix_app, name="fix")
+
 plan_app = typer.Typer(
     help="Dev plan tools: dependency waves of docs/impl/<ticket-id>/plan.md."
 )
@@ -4737,6 +4740,35 @@ def _l3_finding_lines(finding: Finding) -> list[str]:
     if finding.agent is not None:
         lines.append(f"    agent: {finding.agent.verdict} — {finding.agent.reason}")
     return lines
+
+
+@fix_app.command("on")
+def l3_fix_on(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn the AI structure fix of L3 on (also gitignores .kb-work/)."""
+    from strata_kb.l3check import fixswitch
+
+    path = kb_dir / "config.yaml"
+    try:
+        lines = fixswitch.turn_on(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return
+    for line in lines:
+        typer.echo(line)
+
+
+@fix_app.command("off")
+def l3_fix_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) -> None:
+    """Turn the AI structure fix of L3 off."""
+    from strata_kb.l3check import fixswitch
+
+    path = kb_dir / "config.yaml"
+    try:
+        fixswitch.turn_off(kb_dir)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return
+    typer.echo("l3_fix: off")
 
 
 @l3_app.command("report")
