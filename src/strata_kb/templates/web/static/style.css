@@ -114,7 +114,7 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 
 .columns { flex: 1; display: grid; grid-template-columns: 288px minmax(0,1fr) 292px;
   align-items: start; }
-.rail { position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto;
+.rail { position: sticky; top: 56px; height: calc(100vh - 56px); height: calc(100dvh - 56px); overflow-y: auto;
   background: var(--surface-alt); display: flex; flex-direction: column; }
 .rail-left { border-right: 1px solid var(--line); padding: 20px 14px 32px; gap: 26px; }
 .rail-right { border-left: 1px solid var(--line); padding: 24px 18px 32px; gap: 20px; }
@@ -546,3 +546,29 @@ html.sheet-locked, html.sheet-locked body { overflow: hidden; }
   .reg-confirm p { flex: none; }
 }
 @media (max-width: 359px) { .stat-grid { grid-template-columns: minmax(0,1fr); } }
+
+/* safe-area side gutters on phones; the pills row stays aligned with main.content */
+@media (max-width: 899px) {
+  main.content { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .sheet-pills { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* touch: 44px targets via padding (not font size); 16px inputs so iOS does not zoom on focus */
+@media (pointer: coarse) {
+  .nav a, .tree-row, .chip, .seg, .btn, .level-tabs a, .pager a, .sheet-pill, .toc-link,
+  .result-card footer a, .result-card footer button, .cite-box button, .login-card button {
+    min-height: 44px; }
+  .chip, .seg, .btn, .level-tabs a, .sheet-pill, .result-card footer a, .result-card footer button {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+  .result-card footer a, .result-card footer button { padding: 0 10px; }
+  .tree-row, .toc-link { display: flex; align-items: center; }
+  .pager a { justify-content: center; }
+  .switch { width: 52px; height: 44px; padding: 2px; border: solid transparent; border-width: 11px 7px;
+    background-clip: padding-box; box-shadow: inset 0 0 0 1px var(--dash); }
+  .switch.on { box-shadow: inset 0 0 0 1px var(--ok); }
+  .switch.on .knob { transform: translateX(18px); }
+  .switch:focus-visible { box-shadow: inset 0 0 0 1px var(--dash), 0 0 0 3px var(--focus-ring); }
+  input:not([type=hidden]), select, textarea, .reg-field select { font-size: 16px; }
+  .rail-input, .topbar-search input, .filter-bar input, .reg-field input, .reg-field select,
+  .login-card input { min-height: 44px; }
+}

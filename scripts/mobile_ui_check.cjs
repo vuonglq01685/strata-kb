@@ -286,6 +286,50 @@ const SUITES = {
     return bad;
   },
 
+  // coarse pointer: every control >= 44px, inputs >= 16px (no iOS focus zoom); sheets opened so rail controls count
+  "touch-targets": async ({ browser, base, state }) => {
+    const bad = [];
+    const SEL = ".nav a, .tree-row, .chip, .seg, .btn, .level-tabs a, .switch, .pager a, .result-card footer button, .result-card footer a, .tab-bar a, .sheet-pill, .topbar-btn, .toc-link";
+    const scan = (page) => page.evaluate((sel) => {
+      const shown = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; };
+      const name = (el) => `${el.tagName.toLowerCase()}.${[...el.classList].join(".")}`;
+      const out = [];
+      for (const el of document.querySelectorAll(sel)) {
+        if (!shown(el)) continue;
+        const r = el.getBoundingClientRect();
+        const tall = el.matches(".chip, .toc-link");
+        if (r.height < 43.5 || (!tall && r.width < 43.5)) out.push(`${name(el)} ${r.width.toFixed(1)}x${r.height.toFixed(1)}`);
+      }
+      for (const el of document.querySelectorAll("input, select, textarea")) {
+        if (!shown(el) || el.type === "hidden") continue;
+        const fs = parseFloat(getComputedStyle(el).fontSize);
+        if (fs < 16) out.push(`${name(el)} font-size ${fs}px`);
+      }
+      return [...new Set(out)];
+    }, SEL);
+    const PAGES = ["/ui", "/ui?q=airspace", "/ui/docs", SECTION, `/ui/tickets/${MISSION}?repo=ba-one`, "/ui/registry"];
+    for (const [vp, extra] of [[[402, 874], { hasTouch: true, isMobile: true }], [[1366, 1024], { hasTouch: true }]]) {
+      const { context, page } = await authed(browser, state, vp, extra);
+      for (const p of PAGES) {
+        await page.goto(base + p, { waitUntil: "networkidle" });
+        const at = `${vp.join("x")} ${p}`;
+        for (const d of await scan(page)) bad.push(`${at}: ${d}`);
+        if (vp[0] === 1366) {
+          if (!(await visible(page, ".rail-right")) && p === SECTION) bad.push(`${at}: .rail-right hidden (want three columns)`);
+          continue;
+        }
+        for (const id of await visibleTriggers(page)) {
+          await page.goto(base + p, { waitUntil: "networkidle" });
+          await page.locator(`[data-sheet-open="${id}"]`).filter({ visible: true }).first().click();
+          await page.waitForTimeout(350);
+          for (const d of await scan(page)) bad.push(`${at}: ${d}`);
+        }
+      }
+      await context.close();
+    }
+    return [...new Set(bad)];
+  },
+
   "sheet-scrolls-inside": async ({ browser, base, state }) => {
     const bad = [];
     const { context, page } = await authed(browser, state, [402, 874]);
