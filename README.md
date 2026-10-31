@@ -274,7 +274,11 @@ that follows it.
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3 and scaffold L1/L2 |
 | `kb l3 report [DOC]` | List the L3 sections awaiting review (flagged and not yet confirmed), with evidence and agent verdicts. Exit `1` while any is listed |
-| `kb l3 confirm DOC` | Record that a reviewer checked flagged L3 sections: `--section ID` (repeatable) or `--all` (asks first; `--yes` skips it); `--by 'name <email>'` (default: git `user.name`/`user.email`). Unblocks summarize, build and publish |
+| `kb l3 confirm DOC` | Record that a reviewer checked flagged L3 sections and AI fixes: `--section ID` (repeatable) or `--all` (asks first; `--yes` skips it); `--by 'name <email>'` (default: git `user.name`/`user.email`). Clears the entries of `_l3check.yaml` and `_l3fix.yaml`; unblocks summarize, build and publish |
+| `kb l3 lint DOC --pdf PDF` | Check the L3 layout contract (rules R1–R8) of a document against its source PDF. Advisory; exit `1` when it finds an issue |
+| `kb l3 fix on\|off` | Switch the [L3 AI fix](#l3-ai-fix) on or off (`l3_fix: enabled` in `.kb/config.yaml`, default off). `on` also adds `.kb-work/` to `.gitignore` |
+| `kb l3 fix pages DOC --pdf PDF --page N` | Render PDF pages (`--page` repeatable) to PNG under `.kb-work/<id>/pages/` and print their paths |
+| `kb l3 fix apply DOC --pdf PDF --assistant NAME` | Check the AI drafts in `.kb-work/<id>/l3fix/` against the PDF and write the ones that pass. `NAME` is `claude-code`, `copilot`, `cursor` or `other`; `--section ID` (repeatable) applies only some drafts; `--from-image ID` (repeatable) for a section whose text layer is unusable. Exit `1` if any draft is rejected |
 | `kb summarize` | Fill pending L1/L2 summaries via a headless LLM CLI |
 | `kb authored` | Tag a hub doc `authored` (markdown is the master; `kb ingest` refuses it) |
 | `kb code-sync` | Hub only. `scan` lists hub docs that name code that changed since the baseline (`--md`, `--json`, `--baseline <sha>`; exit `0` nothing, `2` findings, `1` error); `issue [--json]` finds the hub job's own `kb-code-sync` issue among the open ones (needs `gh`; exit `0` a usable one, `2` none, `1` error); `baseline [--at <sha>]` records the commit the sync is current at; `run [--issue] [--loop]` is the `hub-sync` job: one scan, optionally the `kb-code-sync` issue update, optionally forever |
@@ -417,6 +421,87 @@ A confirmation is valid only while the section's L3 is unchanged. A re-ingest
 asks for review again on changed sections and keeps confirmations on unchanged
 ones. A document ingested before 1.31.1 has no check file and is not gated until
 it is re-ingested.
+
+### L3 AI fix
+
+`kb ingest` splits by what the PDF's layout looks like, so some L3 comes out with
+the wrong structure: a fallback section id, a wrong heading level, a paragraph
+broken in the middle, a block repeated, a page header or footer left in the
+text. The L3 AI fix lets an AI assistant repair that structure, and lets a
+machine check that the assistant changed nothing else. It is off until you turn
+it on, and it is not a way to edit content: L3 stays the PDF's text.
+
+**The switch.** `kb l3 fix on` sets `l3_fix: enabled: true` in `.kb/config.yaml`
+and adds `.kb-work/` to the repo's `.gitignore`; `kb l3 fix off` turns it off.
+The default is off. With the switch never turned on, nothing changes, except
+that `kb ingest` always writes the scratch file `.kb-work/<id>/sections.json`
+(the page span of every section).
+
+**The flow.**
+
+1. `kb ingest` as usual. With the switch on it also writes a baseline of L3 in
+   `.kb/<id>/_l3fix.yaml`, does not summarize, and prints the next steps.
+2. `kb l3 lint <id> --pdf <pdf>` lists the layout problems, one per line as
+   `§<section> <rule> line <n>: <evidence>`. It is advisory. The rules:
+
+   | Rule | Meaning |
+   |---|---|
+   | R1 | The section id is a fallback id |
+   | R2 | Two sections have the same id |
+   | R3 | A heading level is wrong (`##` unit, `###`, `####` at most, no level skipped) |
+   | R4 | A block is repeated |
+   | R5 | A page header or footer is left in the text |
+   | R6 | A block L3 does not allow: a line starting with `>` or `<`, a `~~~` fence, a list nested deeper than two levels, text outside a `## ` unit |
+   | R7 | A code fence is not closed |
+   | R8 | A paragraph is broken in the middle |
+
+3. The `kb-l3-fix` skill (Claude Code `/kb-l3-fix`, a Copilot prompt, a Cursor
+   command; all written by `kb init`) reads the lint and `kb l3 report`, and
+   writes one draft per section in `.kb-work/<id>/l3fix/<section-id>.md`. A draft
+   holds the whole section. To merge or reorder sections of one chapter file its
+   first line is `<!-- replaces: <id> <id> -->`. The skill never edits `.kb/`
+   and never confirms.
+4. `kb l3 fix apply <id> --pdf <pdf> --assistant <claude-code|copilot|cursor|other>`
+   checks every draft and writes only the ones that pass. It prints
+   `§<name> applied → <new ids>`, `§<name> unchanged` or
+   `§<name> rejected: <check>: <detail>`; a rejected draft writes nothing and
+   stays in place.
+5. `kb l3 report <id>` lists the AI fixes first, each with the files it changed
+   and a `git diff` hint. A human reads the diff and runs `kb l3 confirm`.
+   Then `kb summarize`, `kb build` and `kb publish` as usual.
+
+**What `apply` verifies.** In this order, and the first failure rejects the draft:
+
+| Check | Rule |
+|---|---|
+| `replaces` | The sections named by `<!-- replaces: … -->` exist, are listed once, and sit in one chapter file one after another |
+| `status` | Every section of the whole chapter file is still `pending`. A summarized or reviewed chapter is refused: re-ingest it with `--sections` first |
+| `tables` | The table blocks are the same, byte for byte and in the same order |
+| `contract` | The draft passes the lint rules R1–R8 |
+| `words` | Aligned word by word against the PDF's text layer: no word the PDF does not have at that place enters, no PDF text is lost, a missing run is restored whole or not at all, and no text is copied from a neighbouring section. A section id changes only to text the PDF shows |
+| `ids` | A new id is not already a section of the document and is a usable id |
+
+**Sections without a usable text layer.** For a scanned section or a broken
+font, the word check has no reference. `kb l3 fix pages <id> --pdf <pdf> --page N`
+renders the pages to PNG for the assistant to read, and `apply … --from-image <id>`
+skips the word check for that draft. It is refused for a section whose text
+layer is usable, and the fix is marked unverified: `kb l3 report` lists it first
+as `[ai-fix, from page image — check against the PDF]`.
+
+**The gate.** `_l3fix.yaml` is written before L3, so a crash fails closed. It
+holds the baseline of every section and one entry per AI fix. While an AI fix
+awaits review, or L3 was edited or removed outside `kb l3 fix apply`, the
+document is blocked like an unconfirmed L3 finding: `kb summarize` skips it,
+`kb build` errors, `kb publish` and `kb ci-publish` refuse. The gate reads
+`_l3fix.yaml`, not the switch, so it stays in force after `kb l3 fix off`.
+Commit `_l3fix.yaml`: the CI gate needs it. It is never sent to the hub. An old
+CI (before 1.33.0) ignores it, so bump the pin to `strata-kb==1.33.0`.
+
+**What the human still does.** The AI never confirms. The machine checks that
+tables and words are unchanged, not that a heading level or a merged paragraph is
+what the author meant. Read each AI fix with `git diff` against the PDF,
+unverified ones first, then run `kb l3 confirm <id> --section <id>` (or `--all`).
+`kb l3 confirm` clears the entries of both `_l3check.yaml` and `_l3fix.yaml`.
 
 ### `kb status`
 
@@ -2054,6 +2139,13 @@ job. No commands, no code — read the diff like a document with tracked changes
 - [ ] If something is wrong, **edit the `.md` or `.yaml` directly in the web UI**,
       comment why, or ask the author to fix it.
 
+If the document went through the [L3 AI fix](#l3-ai-fix), the PR also carries
+`_l3fix.yaml` and changed `.raw.md` files. The machine already checked that no
+table changed and that no word entered that the PDF does not show; you check
+what it cannot: the section ids and heading levels, and that merged or split
+sections still read right against the source. A fix marked "from page image" was
+never checked against the PDF text: read it against the PDF, word by word.
+
 Merging that PR is the subject-matter sign-off — not an AI draft. It does not yet
 make the content searchable: `kb publish` mirrors it to the hub and opens a
 second PR *there*, and merging that one is what makes it live.
@@ -2071,6 +2163,7 @@ second PR *there*, and merging that one is what makes it live.
 | `repo_id` | This repo's entry id under `federation/` |
 | `intake` | Intake service URL for `kb ci-publish` (child, `dev` and `ba` repos; http(s) only) |
 | `asset_store` | `{mode: none}` (default) or `{mode: s3, bucket: …}` |
+| `l3_fix` | `{enabled: false}` — the [L3 AI fix](#l3-ai-fix) switch; `kb l3 fix on\|off` sets it |
 | `auto` | `ba` and `dev` repos: `{enabled: false, qa_interval: 300, idle_interval: 600, hotfix_base: ""}` — the full-auto switch and its poll intervals in seconds; see [Full-auto mode](#full-auto-mode) |
 
 ### Environment variables
@@ -2117,6 +2210,8 @@ me wrong" should check which command it ran, not only the code.
 | `kb build`: "table mismatch" | A table was edited, added, duplicated or reordered in L2 | Open the section's `.raw.md` (L3), copy the table verbatim, paste over the `.md` (L2) |
 | `kb build`: sections still `pending`/`TODO` | Summarization did not finish, failed, or was skipped | `kb status` to see what is left, then `kb summarize` to retry — or `/kb-summarize` with no LLM CLI installed |
 | `kb summarize` skips a document, `kb build` or `kb publish` says `L3 review pending` | The L3 fidelity check flagged sections nobody confirmed | `kb l3 report <doc>`, check each section against the PDF, then `kb l3 confirm <doc> --section <id>` (or `--all`) |
+| `kb l3 fix apply`: "L3 fix is off" | The switch is off | A person runs `kb l3 fix on` |
+| `kb l3 fix apply`: `rejected: words: …` or `rejected: status: …` | The draft changed text the PDF does not show, or the chapter file already has summarized units | Correct the draft to the PDF's text; for `status`, re-ingest the chapter with `--sections` first |
 | `kb ingest` is very slow on the first run | Normal — a layout model (~500 MB) is downloading | Wait. Later runs use the cache. |
 | `kb: command not found` | Virtualenv not activated | `source .venv/bin/activate` |
 | MCP server fails to start: "Executable not found in $PATH: python" | `.mcp.json` calls `python`, but the system only has `python3` or the venv is not on `PATH` | Point the `command` at an absolute interpreter path, e.g. `.venv/bin/python` |

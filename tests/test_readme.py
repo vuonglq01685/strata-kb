@@ -519,3 +519,16 @@ def test_readme_and_changelog_pin_the_rerunnable_cloud_switch():
         assert "`/kb-auto run` is re-runnable" in text
         assert "closed and deleted on GitHub by hand" in text
         assert "git branch -D auto/switch" not in text
+
+
+def test_readme_and_hub_child_guides_document_the_l3_ai_fix():
+    texts = {"README.md": _readme_text()}
+    for lang in ("en", "vi"):
+        name = f"docs/src/guide-hub-child.{lang}.md"
+        texts[name] = (REPO_ROOT / name).read_text(encoding="utf-8")
+    for name, text in texts.items():
+        flat = _normalised(text)
+        assert "kb l3 fix apply" in flat, name
+        assert "_l3fix.yaml" in flat, name
+        assert "kb l3 lint" in flat, name
+        assert "kb l3 fix on" in flat, name
