@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{ title | default("Strata", true) }} — Strata</title>
-<noscript><style>.sheet-pill, .topbar-btn { display: none }</style></noscript>
+<noscript><style>.sheet-pill, .topbar-btn, .topbar-search [data-search-toggle] { display: none !important } .topbar-search { display: block !important }</style></noscript>
 <link rel="stylesheet" href="/ui/static/style.css?v={{ asset_v }}">
 {% block head_scripts %}{% endblock %}
 <script src="/ui/static/app.js?v={{ asset_v }}" defer></script>

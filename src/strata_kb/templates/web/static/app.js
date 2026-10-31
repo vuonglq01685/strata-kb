@@ -1,12 +1,27 @@
 // Strata UI enhancements. Progressive only — every page works without this file.
 "use strict";
 
+// Below 900px the search box is hidden until .topbar[data-searching] is set (style.css).
+const PHONE_MQ = window.matchMedia("(max-width: 899px)");
+
+function setSearching(on) {
+  const bar = document.querySelector(".topbar");
+  if (!bar) return;
+  bar.toggleAttribute("data-searching", on);
+  if (on) document.getElementById("global-search")?.focus();
+}
+
 document.addEventListener("keydown", (e) => {
   if (typeof e.key !== "string") return;
+  if (e.key === "Escape") { setSearching(false); return; }
   if (e.shiftKey || e.altKey) return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     const box = document.getElementById("global-search");
-    if (box) { e.preventDefault(); box.focus(); box.select(); }
+    if (!box) return;
+    e.preventDefault();
+    if (PHONE_MQ.matches) setSearching(true);
+    box.focus();
+    box.select();
   }
 });
 
@@ -31,6 +46,10 @@ function copyText(text, btn) {
 }
 
 document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-search-toggle]")) {
+    setSearching(!document.querySelector(".topbar")?.hasAttribute("data-searching"));
+    return;
+  }
   const copySel = e.target.closest("[data-copy]");
   if (copySel) {
     const node = document.querySelector(copySel.getAttribute("data-copy"));

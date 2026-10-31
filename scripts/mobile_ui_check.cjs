@@ -55,6 +55,53 @@ async function samePixels(page, a, b) {
   }, [enc(a), enc(b), TOLERANCE]);
 }
 
+
+// Compact top bar (< 1280px) and bottom tab bar (< 900px). Returns a failure detail or null.
+// Clicks the search toggle, so it reloads the page afterwards to keep later checks clean.
+async function shellProblem(page, iw) {
+  if (iw >= 1280 || !(await page.$(".topbar"))) return null;
+  const probe = (sel) => page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return { shown: false, w: 0, h: 0 };
+    const r = el.getBoundingClientRect();
+    return { shown: getComputedStyle(el).display !== "none" && r.width > 0 && r.height > 0, w: r.width, h: r.height };
+  }, sel);
+  const bad = [];
+  for (const sel of [".topbar-status", ".nav-logout"]) if ((await probe(sel)).shown) bad.push(`${sel} visible`);
+  if (!(await probe('[data-sheet-open="more"].topbar-btn')).shown) bad.push("more button hidden");
+  if (!(await probe(".hub-dot")).shown) bad.push("hub-dot hidden");
+  if (iw >= 900) {
+    const input = await probe(".topbar-search input");
+    if (!input.shown || input.w < 160) bad.push(`search input ${input.w}px < 160`);
+    if ((await probe(".topbar-btn[data-search-toggle]")).shown) bad.push("search button visible >= 900");
+    return bad.length ? bad.join("; ") : null;
+  }
+  const tabs = await page.$$eval(".tab-bar a", (as) => as.map((a) => a.getBoundingClientRect().height));
+  if (!(await probe(".tab-bar")).shown) bad.push("tab-bar hidden");
+  if (tabs.length !== 5 || tabs.some((h) => h < 44)) bad.push(`tab links ${JSON.stringify(tabs)} (want 5, each >= 44px)`);
+  const covered = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const main = document.querySelector("main.content");
+    const last = main.lastElementChild || main;
+    const bar = document.querySelector(".tab-bar");
+    return bar ? last.getBoundingClientRect().bottom - bar.getBoundingClientRect().top : 0;
+  });
+  if (covered > 0) bad.push(`main covered by tab-bar by ${Math.round(covered)}px`);
+  if ((await probe(".topbar-search")).shown) bad.push("search visible before toggle");
+  try { await page.click(".topbar-btn[data-search-toggle]", { timeout: 1500 }); }
+  catch { bad.push("search button not clickable"); await page.reload({ waitUntil: "networkidle" }); return bad.join("; "); }
+  const open = await page.evaluate(() => ({
+    w: document.querySelector(".topbar-search").getBoundingClientRect().width,
+    focused: document.activeElement === document.getElementById("global-search"),
+    attr: document.querySelector(".topbar").hasAttribute("data-searching"),
+  }));
+  if (!open.attr) bad.push("data-searching not set after click");
+  if (!open.focused) bad.push("search input not focused after click");
+  if (open.w < iw * 0.8) bad.push(`open search ${Math.round(open.w)}px < 80% of ${iw}`);
+  await page.reload({ waitUntil: "networkidle" });
+  return bad.length ? bad.join("; ") : null;
+}
+
 // Each check: (ctx) => string | null, a failure detail or null. ctx = {page, shot, vp, p, out, cmp}.
 const CHECKS = {
   overflow: async ({ page, vp }) => {
@@ -62,7 +109,8 @@ const CHECKS = {
       sw: document.documentElement.scrollWidth,
       iw: window.innerWidth,
     }));
-    return sw > iw ? `scrollWidth ${sw} > innerWidth ${iw}` : null;
+    if (sw > iw) return `scrollWidth ${sw} > innerWidth ${iw}`;
+    return shellProblem(page, iw);
   },
   "desktop-unchanged": async ({ shot, vp, p, out, cmp }) => {
     if (!DESKTOP.has(vp)) return null;
