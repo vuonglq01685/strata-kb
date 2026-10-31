@@ -62,7 +62,6 @@ def test_confirmed_unverified_entry_does_not_taint_the_next_fix(kb):
     bad = FIXED_42.replace(KB_BODY, HAND)
     _draft(kb, "x1", bad)
     _apply(kb, pdf_pages={}, from_image={"x1"})
-    rec = fixrecord.load(kb / "doc")
     fixrecord.confirm(
         kb / "doc", ["4.2"], "human", "t", report.current_digests(kb, "doc")
     )
