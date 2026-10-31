@@ -17,7 +17,7 @@
 <header class="topbar">
   <a class="brand" href="/ui"><span class="brand-mark">KB</span>CENTER<span class="brand-dot">·</span>KB</a>
   <span class="hub-dot {{ 'hub-dot-online' if shell.hub_ok else 'hub-dot-offline' }}" role="img" aria-label="hub {{ 'online' if shell.hub_ok else 'offline' }}"></span>
-  <form class="topbar-search" method="get" action="/ui">
+  <form class="topbar-search" id="topbar_search" method="get" action="/ui">
     <input type="search" id="global-search" name="q" value="{{ shell.q }}"
            aria-label="Search"
            placeholder="Search sections, fields, codes…  ⌘K">
@@ -25,10 +25,10 @@
     {% if shell.budget %}<input type="hidden" name="budget" value="{{ shell.budget }}">{% endif %}
     <button type="button" data-search-toggle>Cancel</button>
   </form>
-  <button type="button" class="topbar-btn" data-search-toggle aria-label="Search">
+  <button type="button" class="topbar-btn" data-search-toggle aria-label="Search" aria-controls="topbar_search" aria-expanded="false">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
   </button>
-  <button type="button" class="topbar-btn" data-sheet-open="more" aria-controls="more" aria-expanded="false" aria-label="More">
+  <button type="button" class="topbar-btn" data-sheet-open="sheet_more" aria-controls="sheet_more" aria-expanded="false" aria-label="More">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
   </button>
   <div class="topbar-status">
@@ -45,23 +45,23 @@
 <div class="columns">
   {% include "_partials/left_rail.html" %}
   <div class="main-col">
-    <div class="sheet-pills">
-      <button type="button" class="sheet-pill" data-sheet-open="rail-left" aria-controls="rail-left" aria-expanded="false">
+    <div class="sheet-pills"{% if not rail_html | trim %} data-left-only{% endif %}>
+      <button type="button" class="sheet-pill" data-sheet-open="sheet_rail_left" aria-controls="sheet_rail_left" aria-expanded="false">
         {% if shell.tree %}Sections · {{ shell.tree | rejectattr('kind', 'equalto', 'chapter') | list | length }}{% else %}Tags{% endif %}
       </button>
       {% if rail_html | trim %}
-      <button type="button" class="sheet-pill" data-sheet-open="rail-right" aria-controls="rail-right" aria-expanded="false">
+      <button type="button" class="sheet-pill" data-sheet-open="sheet_rail_right" aria-controls="sheet_rail_right" aria-expanded="false">
         {% block rail_label %}Page info{% endblock %}
       </button>
       {% endif %}
     </div>
     <main class="content">{% block main %}{% endblock %}</main>
   </div>
-  <aside class="rail rail-right" id="rail-right" aria-label="Page context">{{ rail_html }}</aside>
+  <aside class="rail rail-right" id="sheet_rail_right" aria-label="Page context">{{ rail_html }}</aside>
 </div>
 {% include "_partials/tab_bar.html" %}
 {% include "_partials/more_sheet.html" %}
-<div class="sheet-scrim" id="sheet-scrim" data-sheet-close hidden></div>
+<div class="sheet-scrim" id="sheet_scrim" data-sheet-close hidden></div>
 </div>
 </body>
 </html>

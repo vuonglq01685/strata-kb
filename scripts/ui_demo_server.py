@@ -157,7 +157,9 @@ def main() -> None:
         audience="https://demo.invalid",
         creds=ghapp.AppCreds(app_id="1", private_key_pem="unused"),
     )
-    app = create_app(config, TOKEN, intake_cfg=intake, registry_push=lambda work, branch: None)
+    app = create_app(
+        config, TOKEN, intake_cfg=intake, registry_push=lambda work, branch: None
+    )
     server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning"))
     original_startup = server.startup
 

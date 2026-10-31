@@ -28,7 +28,7 @@ const AUTHED_PAGES = [
 ];
 const LOGGED_OUT_PAGES = ["/ui/login"];
 const VIEWPORTS = [
-  [344, 882], [375, 667], [402, 874], [440, 956], [412, 915], [600, 900],
+  [320, 568], [344, 882], [375, 667], [402, 874], [440, 956], [412, 915], [600, 900],
   [884, 1104], [744, 1133], [834, 1194], [1024, 1366], [1180, 820],
   [1366, 1024], [1440, 900],
 ];
@@ -71,7 +71,7 @@ async function shellProblem(page, iw) {
   }, sel);
   const bad = [];
   for (const sel of [".topbar-status", ".nav-logout"]) if ((await probe(sel)).shown) bad.push(`${sel} visible`);
-  if (!(await probe('[data-sheet-open="more"].topbar-btn')).shown) bad.push("more button hidden");
+  if (!(await probe('[data-sheet-open="sheet_more"].topbar-btn')).shown) bad.push("more button hidden");
   if (!(await probe(".hub-dot")).shown) bad.push("hub-dot hidden");
   if (iw >= 900) {
     const input = await probe(".topbar-search input");
@@ -168,7 +168,7 @@ const SUITES = {
         await page.goto(base + p, { waitUntil: "networkidle" });
         const ids = await visibleTriggers(page);
         const at = `${vp.join("x")} ${p}`;
-        if (vp[0] === 402 && !ids.includes("more")) bad.push(`${at}: no visible more trigger`);
+        if (vp[0] === 402 && !ids.includes("sheet_more")) bad.push(`${at}: no visible more trigger`);
         for (const id of ids) {
           for (const how of ["scrim", "esc", "button"]) {
             const tag = `${at} ${id}/${how}`;
@@ -184,7 +184,7 @@ const SUITES = {
             if (!st.locked) bad.push(`${tag}: html not sheet-locked`);
             if (st.h > st.ih * 0.8 + 1) bad.push(`${tag}: height ${Math.round(st.h)} > 80% of ${st.ih}`);
             if (!st.dialog) bad.push(`${tag}: missing dialog semantics`);
-            if (vp[0] === 402 && id === "rail-left" && (await visible(page, "#rail-left .nav"))) bad.push(`${tag}: .rail-left .nav visible in sheet`);
+            if (vp[0] === 402 && id === "sheet_rail_left" && (await visible(page, "#sheet_rail_left .nav"))) bad.push(`${tag}: .rail-left .nav visible in sheet`);
             if (vp[0] >= 600) {
               const w = await page.evaluate((i) => document.getElementById(i).getBoundingClientRect().width, id);
               if (w > 641) bad.push(`${tag}: width ${Math.round(w)} > 640`);
@@ -208,10 +208,10 @@ const SUITES = {
       }
       // TOC link inside right-rail sheet closes it and changes the hash
       await page.goto(base + SECTION, { waitUntil: "networkidle" });
-      await page.locator('[data-sheet-open="rail-right"]').filter({ visible: true }).first().click();
+      await page.locator('[data-sheet-open="sheet_rail_right"]').filter({ visible: true }).first().click();
       await page.waitForTimeout(350);
       const before = await page.evaluate(() => location.hash);
-      await page.click("#rail-right a.toc-link");
+      await page.click("#sheet_rail_right a.toc-link");
       await page.waitForTimeout(350);
       const after = await page.evaluate(() => ({ hash: location.hash, open: !!document.querySelector("[data-open]"), locked: document.documentElement.classList.contains("sheet-locked") }));
       if (after.open || after.locked) bad.push(`${vp.join("x")} toc link: sheet still open`);
@@ -225,7 +225,7 @@ const SUITES = {
     const bad = [];
     const { context, page } = await authed(browser, state, [402, 874]);
     await page.goto(base + SECTION, { waitUntil: "networkidle" });
-    await page.click('[data-sheet-open="rail-left"]');
+    await page.click('[data-sheet-open="sheet_rail_left"]');
     await page.waitForTimeout(350);
     if (!(await openAny(page))) bad.push("left sheet did not open before resize");
     await page.setViewportSize({ width: 1366, height: 1024 });
@@ -246,10 +246,10 @@ const SUITES = {
     const bad = [];
     const { context, page } = await authed(browser, state, [402, 874]);
     await page.goto(base + SECTION, { waitUntil: "networkidle" });
-    await page.click('[data-sheet-open="rail-left"]');
+    await page.click('[data-sheet-open="sheet_rail_left"]');
     await page.waitForTimeout(350);
-    const row = page.locator("#rail-left a.tree-row:not(.active)").first();
-    if (await row.count()) await row.click(); else await page.click("#rail-left a.tree-row");
+    const row = page.locator("#sheet_rail_left a.tree-row:not(.active)").first();
+    if (await row.count()) await row.click(); else await page.click("#sheet_rail_left a.tree-row");
     await page.waitForLoadState("networkidle");
     await page.goBack({ waitUntil: "networkidle" });
     await page.waitForTimeout(350);
@@ -339,20 +339,68 @@ const SUITES = {
     return [...new Set(bad)];
   },
 
+  // sticky sheet head, uncapped tag cloud, no empty pill band, search/More a11y
+  "sheet-details": async ({ browser, base, state }) => {
+    const bad = [];
+    let { context, page } = await authed(browser, state, [402, 874]);
+    await page.goto(base + MANY, { waitUntil: "networkidle" });
+    await page.click('[data-sheet-open="sheet_rail_left"]');
+    await page.waitForTimeout(350);
+    await page.evaluate(() => { document.getElementById("sheet_rail_left").scrollTop = 400; });
+    const head = await page.evaluate(() => {
+      const s = document.getElementById("sheet_rail_left").getBoundingClientRect();
+      const c = document.querySelector("#sheet_rail_left .sheet-close").getBoundingClientRect();
+      return { dy: c.top - s.top, st: document.getElementById("sheet_rail_left").scrollTop };
+    });
+    if (head.st <= 0) bad.push("long sheet did not scroll");
+    if (head.dy < -1 || head.dy > 8) bad.push(`close button ${Math.round(head.dy)}px from sheet top after scroll (want sticky)`);
+    await page.goto(base + "/ui/docs", { waitUntil: "networkidle" });
+    const moreRole = () => page.evaluate(() => document.getElementById("sheet_more").getAttribute("role"));
+    if ((await moreRole()) !== null) bad.push("closed More sheet has role");
+    await page.click('[data-sheet-open="sheet_more"]');
+    await page.waitForTimeout(350);
+    if ((await moreRole()) !== "dialog") bad.push("open More sheet lacks role=dialog");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(350);
+    if ((await moreRole()) !== null) bad.push("More sheet keeps role after close");
+    await page.click('[data-sheet-open="sheet_rail_left"]');
+    await page.waitForTimeout(350);
+    const tc = await page.evaluate(() => { const c = getComputedStyle(document.querySelector(".rail-left .tag-cloud")); return [c.maxHeight, c.overflowY]; });
+    if (tc[0] !== "none" || tc[1] !== "visible") bad.push(`tag-cloud in sheet capped: ${tc}`);
+    await page.goto(base + "/ui/docs", { waitUntil: "networkidle" });
+    const sel = ".topbar-btn[data-search-toggle]";
+    const exp = () => page.getAttribute(sel, "aria-expanded");
+    if ((await exp()) !== "false") bad.push("search button aria-expanded not false initially");
+    await page.click(sel);
+    if ((await exp()) !== "true") bad.push("search button aria-expanded not true when open");
+    await page.keyboard.press("Escape");
+    const back = await page.evaluate(() => document.activeElement?.matches(".topbar-btn[data-search-toggle]"));
+    if (!back || (await exp()) !== "false") bad.push("Esc did not restore focus/aria-expanded on search button");
+    await context.close();
+    // 900-1279: no empty pill band on pages without a right pill; pill row kept where one exists
+    ({ context, page } = await authed(browser, state, [1180, 820]));
+    await page.goto(base + "/ui/docs", { waitUntil: "networkidle" });
+    if (await visible(page, ".sheet-pills")) bad.push("1180 /ui/docs: empty .sheet-pills band visible");
+    await page.goto(base + SECTION, { waitUntil: "networkidle" });
+    if (!(await visible(page, ".sheet-pills .sheet-pill"))) bad.push("1180 section: right pill missing");
+    await context.close();
+    return bad;
+  },
+
   "sheet-scrolls-inside": async ({ browser, base, state }) => {
     const bad = [];
     const { context, page } = await authed(browser, state, [402, 874]);
     await page.goto(base + MANY, { waitUntil: "networkidle" });
-    await page.click('[data-sheet-open="rail-left"]');
+    await page.click('[data-sheet-open="sheet_rail_left"]');
     await page.waitForTimeout(350);
     await page.evaluate(() => window.scrollTo(0, 120)); // programmatic scroll still works under the lock
     const y0 = await page.evaluate(() => window.scrollY);
-    const m = await page.evaluate(() => { const s = document.getElementById("rail-left"); return { sh: s.scrollHeight, ch: s.clientHeight }; });
+    const m = await page.evaluate(() => { const s = document.getElementById("sheet_rail_left"); return { sh: s.scrollHeight, ch: s.clientHeight }; });
     if (m.sh <= m.ch) bad.push(`scrollHeight ${m.sh} <= clientHeight ${m.ch}`);
     await page.mouse.move(201, 600);
     await page.mouse.wheel(0, 400);
     await page.waitForTimeout(300);
-    const after = await page.evaluate(() => ({ y: window.scrollY, st: document.getElementById("rail-left").scrollTop }));
+    const after = await page.evaluate(() => ({ y: window.scrollY, st: document.getElementById("sheet_rail_left").scrollTop }));
     if (after.y !== y0) bad.push(`window.scrollY ${y0} -> ${after.y}`);
     if (after.st <= 0) bad.push("sheet did not scroll");
     await context.close();

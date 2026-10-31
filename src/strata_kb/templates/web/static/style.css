@@ -119,8 +119,9 @@ mark { background: #d9e5f9; color: inherit; padding: 0 1px; border-radius: 2px; 
 .rail-left { border-right: 1px solid var(--line); padding: 20px 14px 32px; gap: 26px; }
 .rail-right { border-left: 1px solid var(--line); padding: 24px 18px 32px; gap: 20px; }
 main.content { padding: 28px 32px 56px; min-width: 0; }
-@media (max-width: 1279px) { .columns { grid-template-columns: 288px minmax(0,1fr); } }
-@media (max-width: 899px) { .columns { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 1279px) { .columns { grid-template-columns: 288px minmax(0,1fr);
+  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); } }
+@media (max-width: 899px) { .columns { grid-template-columns: minmax(0,1fr); padding-left: 0; padding-right: 0; } }
 
 /* left rail */
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -458,7 +459,10 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
 /* bottom sheets: .rail-left < 900px, .rail-right and .more-sheet < 1280px (app.js sets [data-open]).
    Closed sheets stay visibility:hidden so they are out of the tab order and the a11y tree. */
 .sheet-scrim { position: fixed; inset: 0; z-index: 35; background: rgba(22,32,44,.45); }
-.sheet-head { position: absolute; top: 0; left: 0; right: 0; height: 32px; touch-action: none; }
+/* sticky keeps the × reachable while a long sheet scrolls; top:-48px offsets the sheet's padding (sticky is measured inside it),
+   the -48px top margin pulls the head over that padding, -4px bottom + the 20px flex gap restores 48px before content */
+.sheet-head { position: sticky; top: -48px; z-index: 1; flex: none; height: 32px; margin: -48px -16px -4px; background: var(--surface);
+  touch-action: none; }
 .sheet-head::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 4px;
   margin-left: -20px; border-radius: 2px; background: var(--dash); }
 .sheet-close { position: absolute; top: 0; right: 4px; width: 44px; height: 44px; display: flex;
@@ -466,7 +470,6 @@ code.inline { font: 400 12.5px/1.5 var(--mono); background: var(--field);
   color: var(--muted); background: transparent; border: 0; border-radius: var(--r-md); cursor: pointer; }
 .sheet-close:hover { color: var(--ink); background: var(--field); }
 html.sheet-locked, html.sheet-locked body { overflow: hidden; }
-.more-sheet .sheet-grab { display: none; }
 .more-status { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .more-status .chip-detail { display: block; margin-top: 2px; font: 400 10.5px/1.5 var(--mono);
   color: var(--muted); letter-spacing: .02em; overflow-wrap: anywhere; }
@@ -502,8 +505,12 @@ html.sheet-locked, html.sheet-locked body { overflow: hidden; }
   .rail-left .nav { display: none; }
   .rail-left .legend { margin-top: 0; }
   .rail-left .tree-list { max-height: none; overflow-y: visible; }
+  .rail-left .tag-cloud { max-height: none; overflow: visible; }
 }
-@media (min-width: 900px) { .sheet-pill[data-sheet-open="rail-left"] { display: none; } }
+@media (min-width: 900px) {
+  .sheet-pill[data-sheet-open="sheet_rail_left"] { display: none; }
+  .sheet-pills[data-left-only] { display: none; } /* no right pill here: drop the empty band */
+}
 @media (min-width: 600px) and (max-width: 1279px) {
   .rail-right, .more-sheet { max-width: 640px; margin-inline: auto; }
 }

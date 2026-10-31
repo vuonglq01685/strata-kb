@@ -74,8 +74,8 @@ def test_new_shell_markup_sits_outside_main(demo_doc_hub):
     for marker in [
         '<nav class="tab-bar"',
         'class="sheet-pills"',
-        'id="more"',
-        'id="sheet-scrim"',
+        'id="sheet_more"',
+        'id="sheet_scrim"',
     ]:
         assert not (start <= text.index(marker) < end)
 
@@ -92,30 +92,37 @@ def test_new_shell_markup_sits_outside_main(demo_doc_hub):
 def test_right_rail_pill_label_per_page(demo_doc_hub, path, label):
     text = get(demo_doc_hub, path)
     assert re.search(
-        rf'data-sheet-open="rail-right"[^>]*>\s*{re.escape(label)}\s*<', text
+        rf'data-sheet-open="sheet_rail_right"[^>]*>\s*{re.escape(label)}\s*<', text
     )
 
 
 def test_no_right_rail_pill_when_rail_block_is_empty(demo_doc_hub):
-    assert 'data-sheet-open="rail-right"' not in get(demo_doc_hub, "/ui/docs")
+    assert 'data-sheet-open="sheet_rail_right"' not in get(demo_doc_hub, "/ui/docs")
+
+
+def test_pill_row_is_marked_left_only_when_no_right_pill(demo_doc_hub):
+    assert '<div class="sheet-pills" data-left-only>' in get(demo_doc_hub, "/ui/docs")
+    assert "data-left-only" not in get(demo_doc_hub, READER)
 
 
 def test_left_rail_pill_is_sections_on_reader_and_tags_elsewhere(demo_doc_hub):
     reader = get(demo_doc_hub, READER)
-    assert re.search(r'data-sheet-open="rail-left"[^>]*>\s*Sections · 1\s*<', reader)
+    assert re.search(
+        r'data-sheet-open="sheet_rail_left"[^>]*>\s*Sections · 1\s*<', reader
+    )
     docs = get(demo_doc_hub, "/ui/docs")
-    assert re.search(r'data-sheet-open="rail-left"[^>]*>\s*Tags\s*<', docs)
+    assert re.search(r'data-sheet-open="sheet_rail_left"[^>]*>\s*Tags\s*<', docs)
 
 
 def test_left_pill_precedes_right_pill(demo_doc_hub):
     pills = _slice(get(demo_doc_hub, READER), 'class="sheet-pills"', "</div>")
-    assert pills.index('"rail-left"') < pills.index('"rail-right"')
+    assert pills.index('"sheet_rail_left"') < pills.index('"sheet_rail_right"')
 
 
 def test_sheet_triggers_are_buttons_bound_to_existing_ids(demo_doc_hub):
     text = get(demo_doc_hub, READER)
     triggers = re.findall(r'<button[^>]*data-sheet-open="([^"]+)"[^>]*>', text)
-    assert set(triggers) == {"rail-left", "rail-right", "more"}
+    assert set(triggers) == {"sheet_rail_left", "sheet_rail_right", "sheet_more"}
     for tag in re.findall(r"<button[^>]*data-sheet-open=[^>]*>", text):
         assert 'type="button"' in tag and 'aria-expanded="false"' in tag
         target = re.search(r'aria-controls="([^"]+)"', tag).group(1)
@@ -124,8 +131,31 @@ def test_sheet_triggers_are_buttons_bound_to_existing_ids(demo_doc_hub):
 
 def test_rail_tags_keep_their_opening(demo_doc_hub):
     text = get(demo_doc_hub, READER)
-    assert '<aside class="rail rail-left" id="rail-left"' in text
-    assert '<aside class="rail rail-right" id="rail-right"' in text
+    assert '<aside class="rail rail-left" id="sheet_rail_left"' in text
+    assert '<aside class="rail rail-right" id="sheet_rail_right"' in text
+
+
+@pytest.mark.parametrize("level", ["l2", "l3"])
+def test_body_headings_cannot_collide_with_shell_ids(demo_doc_hub, level):
+    # inject_heading_anchors slugs headings to [a-z0-9-], so shell ids use "_" to stay unreachable
+    names = ["More", "Sheet more", "Sheet rail left", "Sheet rail right", "Sheet scrim"]
+    for suffix in (".md", ".raw.md"):
+        path = demo_doc_hub / "federation/demo-kb/demo-doc" / f"ch1{suffix}"
+        extra = "".join(f"\n### {n}\n\ntext\n" for n in names)
+        path.write_text(path.read_text(encoding="utf-8") + extra, encoding="utf-8")
+    text = (
+        _client(demo_doc_hub / ".kb", str(demo_doc_hub))
+        .get("/ui/docs/demo-doc/1.1", params={"level": level, "repo": "demo-kb"})
+        .text
+    )
+    assert 'id="more"' in text  # the "More" heading really got its slug anchor
+    for sheet_id in (
+        "sheet_more",
+        "sheet_rail_left",
+        "sheet_rail_right",
+        "sheet_scrim",
+    ):
+        assert text.count(f'id="{sheet_id}"') == 1
 
 
 def test_topbar_has_compact_controls(demo_doc_hub):
@@ -133,10 +163,13 @@ def test_topbar_has_compact_controls(demo_doc_hub):
     bar = _slice(text, '<header class="topbar"', "</header>")
     assert 'aria-label="hub online"' in bar
     assert re.search(
-        r'<button type="button" class="topbar-btn" data-search-toggle', bar
+        r'<button type="button" class="topbar-btn" data-search-toggle[^>]*'
+        r'aria-controls="topbar_search" aria-expanded="false"',
+        bar,
     )
+    assert 'id="topbar_search"' in bar
     assert re.search(
-        r'<button type="button" class="topbar-btn" data-sheet-open="more"', bar
+        r'<button type="button" class="topbar-btn" data-sheet-open="sheet_more"', bar
     )
     form = _slice(bar, '<form class="topbar-search"', "</form>")
     assert '<button type="button" data-search-toggle' in form
@@ -144,10 +177,11 @@ def test_topbar_has_compact_controls(demo_doc_hub):
 
 def test_more_sheet_prints_chip_titles_as_text(demo_doc_hub):
     # fed_hub is a git repo, so the commit chip renders with title "hub HEAD <sha> · <date>"
-    more = _slice(get(demo_doc_hub, "/ui"), 'id="more"', "</form>")
+    more = _slice(get(demo_doc_hub, "/ui"), 'id="sheet_more"', "</form>")
     assert re.search(r'class="chip-detail">\s*hub HEAD ', more)
     assert 'action="/ui/logout"' in more
-    assert 'role="dialog"' in more and 'aria-modal="true"' in more
+    # dialog semantics are added by app.js on open, so the no-JS in-flow sheet is not modal
+    assert 'role="dialog"' not in more and "aria-modal" not in more
 
 
 def test_desktop_topbar_chips_have_no_detail_spans(demo_doc_hub):
@@ -158,9 +192,9 @@ def test_desktop_topbar_chips_have_no_detail_spans(demo_doc_hub):
 def test_more_sheet_registry_link_only_for_admin(
     demo_doc_hub, web_client, web_client_logged_in
 ):
-    more = _slice(web_client_logged_in.get("/ui").text, 'id="more"', "</form>")
+    more = _slice(web_client_logged_in.get("/ui").text, 'id="sheet_more"', "</form>")
     assert 'href="/ui/registry"' in more
-    anon = _slice(get(demo_doc_hub, "/ui"), 'id="more"', "</form>")
+    anon = _slice(get(demo_doc_hub, "/ui"), 'id="sheet_more"', "</form>")
     assert 'href="/ui/registry"' not in anon
 
 

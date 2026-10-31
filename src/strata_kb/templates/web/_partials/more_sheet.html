@@ -1,6 +1,5 @@
 {% from "_partials/status_chips.html" import status_chips %}
-<div class="sheet more-sheet" id="more" role="dialog" aria-modal="true" aria-label="More">
-  <div class="sheet-grab" aria-hidden="true"></div>
+<div class="sheet more-sheet" id="sheet_more" aria-label="More">
   <p class="kicker">Status</p>
   <div class="more-status">{{ status_chips(shell, verbose=True) }}</div>
   <div class="more-nav">

@@ -7,8 +7,14 @@ const PHONE_MQ = window.matchMedia("(max-width: 899px)");
 function setSearching(on) {
   const bar = document.querySelector(".topbar");
   if (!bar) return;
+  const form = bar.querySelector(".topbar-search");
+  const focusWasInForm = form?.contains(document.activeElement);
   bar.toggleAttribute("data-searching", on);
+  const opener = bar.querySelector(".topbar-btn[data-search-toggle]");
+  opener?.setAttribute("aria-expanded", on ? "true" : "false");
   if (on) document.getElementById("global-search")?.focus();
+  // The form is display:none once closed, so focus inside it would be lost; hand it back to the ⌕ button.
+  else if (focusWasInForm && PHONE_MQ.matches) opener?.focus();
 }
 
 document.addEventListener("keydown", (e) => {
@@ -284,9 +290,9 @@ document.addEventListener("DOMContentLoaded", () => {
   window.mermaid.run({ querySelector: "pre.mermaid", suppressErrors: true });
 });
 
-// Bottom sheets (style.css): .rail-left < 900px, .rail-right and #more < 1280px.
+// Bottom sheets (style.css): .rail-left < 900px, .rail-right and .more-sheet < 1280px.
 // Open state = [data-open] on the sheet, aria-expanded on its trigger(s), html.sheet-locked,
-// and the scrim un-hidden. Rails get dialog semantics and a close button only while open.
+// and the scrim un-hidden. Sheets get dialog semantics and a close button only while open.
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const SWIPE_CLOSE_PX = 80;
 let openSheetState = null; // { sheet, id, trigger }
@@ -314,14 +320,12 @@ function openSheet(id, trigger) {
   if (!sheet) return;
   closeSheet(false);
   ensureSheetHead(sheet);
-  if (sheet.classList.contains("rail")) {
-    sheet.setAttribute("role", "dialog");
-    sheet.setAttribute("aria-modal", "true");
-  }
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
   sheet.setAttribute("data-open", "");
   document.querySelectorAll(`[data-sheet-open="${id}"]`).forEach((t) => t.setAttribute("aria-expanded", "true"));
   document.documentElement.classList.add("sheet-locked");
-  const scrim = document.getElementById("sheet-scrim");
+  const scrim = document.getElementById("sheet_scrim");
   if (scrim) scrim.hidden = false;
   openSheetState = { sheet, id, trigger };
   (sheetFocusables(sheet)[0] || sheet).focus({ preventScroll: true });
@@ -332,13 +336,11 @@ function closeSheet(restoreFocus = true) {
   const { sheet, id, trigger } = openSheetState;
   openSheetState = null;
   sheet.removeAttribute("data-open");
-  if (sheet.classList.contains("rail")) {
-    sheet.removeAttribute("role");
-    sheet.removeAttribute("aria-modal");
-  }
+  sheet.removeAttribute("role");
+  sheet.removeAttribute("aria-modal");
   document.querySelectorAll(`[data-sheet-open="${id}"]`).forEach((t) => t.setAttribute("aria-expanded", "false"));
   document.documentElement.classList.remove("sheet-locked");
-  const scrim = document.getElementById("sheet-scrim");
+  const scrim = document.getElementById("sheet_scrim");
   if (scrim) scrim.hidden = true;
   if (restoreFocus && trigger) trigger.focus({ preventScroll: true });
 }
