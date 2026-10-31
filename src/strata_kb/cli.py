@@ -4771,6 +4771,124 @@ def l3_fix_off(kb_dir: Path = typer.Option(Path(".kb"), help="KB directory")) ->
     typer.echo("l3_fix: off")
 
 
+class _Assistant(StrEnum):
+    claude_code = "claude-code"
+    copilot = "copilot"
+    cursor = "cursor"
+    other = "other"
+
+
+def _l3_fix_refuse(message: str) -> None:
+    typer.secho(message, fg=typer.colors.RED)
+    raise typer.Exit(1)
+
+
+def _l3_fix_preflight(kb_dir: Path, work_dir: Path, doc_id: str, pdf: Path) -> None:
+    """Refuse (exit 1) unless the switch is on, `pdf` is the ingested PDF and
+    `sections.json` exists. Runs before any draft is read."""
+    import hashlib
+
+    from strata_kb.l3check import fixswitch, spans
+
+    reading = kb_dir / "config.yaml"
+    manifest_path = kb_dir / doc_id / "_manifest.yaml"
+    try:
+        if not fixswitch.is_on(kb_dir):
+            _l3_fix_refuse("L3 fix is off — run: kb l3 fix on")
+        reading = manifest_path
+        if not manifest_path.exists():
+            _l3_fix_refuse(f"no document {doc_id} in {kb_dir}")
+        manifest = models.load_yaml_model(manifest_path, models.Manifest)
+        if hashlib.sha256(pdf.read_bytes()).hexdigest() != manifest.source_sha256:
+            _l3_fix_refuse(f"{pdf} is not the PDF {doc_id} was ingested from")
+        reading = work_dir / doc_id / spans.FILE_NAME
+        if spans.load(work_dir, doc_id) is None:
+            _l3_fix_refuse(f"no sections.json for {doc_id} — re-ingest")
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(reading, exc)
+
+
+@fix_app.command("apply")
+def l3_fix_apply(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
+    assistant: _Assistant = typer.Option(
+        ..., "--assistant", help="The AI tool that wrote the drafts"
+    ),
+    section: list[str] = typer.Option(
+        [], "--section", help="Apply only the draft of this name (repeatable)"
+    ),
+    from_image: list[str] = typer.Option(
+        [],
+        "--from-image",
+        help="Draft read from a page image: skip the word check (only where "
+        "the PDF has no usable text; repeatable)",
+    ),
+    kb_dir: Path = _KB_DIR_OPT,
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Verify AI drafts of L3 units against the PDF and apply the ones that pass (exit 1 on any rejection)."""
+    from strata_kb.l3check import fix, lint
+
+    _l3_fix_preflight(kb_dir, work_dir, doc_id, pdf)
+    drafts = fix.load_drafts(work_dir, doc_id, set(section) or None)
+    if not drafts:
+        typer.echo(f"no drafts in {work_dir / doc_id / fix.DRAFT_DIR}")
+        return
+    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
+    results = fix.apply_drafts(
+        kb_dir,
+        work_dir,
+        doc_id,
+        drafts,
+        pdf_pages,
+        furniture,
+        assistant=assistant.value,
+        from_image=set(from_image),
+    )
+    for r in results:
+        if r.status == "applied":
+            typer.echo(f"§{r.section} applied → {', '.join(r.new_ids)}")
+        elif r.status == "unchanged":
+            typer.echo(f"§{r.section} unchanged")
+        else:
+            typer.echo(f"§{r.section} rejected: {r.reason}")
+    if any(r.status == "rejected" for r in results):
+        raise typer.Exit(1)
+
+
+@fix_app.command("pages")
+def l3_fix_pages(
+    doc_id: str = typer.Argument(..., help="Document ID"),
+    pdf: Path = typer.Option(
+        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    ),
+    page: list[int] = typer.Option(
+        ..., "--page", min=1, help="1-based page to render (repeatable)"
+    ),
+    work_dir: Path = typer.Option(
+        Path(".kb-work"), help="Intermediate cache directory"
+    ),
+) -> None:
+    """Render PDF pages to PNG under .kb-work/<doc-id>/pages/ and print their paths."""
+    from strata_kb.l3check import fix
+
+    try:
+        paths = fix.render_pages(pdf, work_dir, doc_id, page)
+    except ImportError:
+        _l3_fix_refuse("pypdfium2 is not installed — install strata-kb[ingest]")
+        return
+    except (IndexError, ValueError, OSError) as exc:
+        _l3_fix_refuse(f"cannot render {pdf}: {' '.join(str(exc).split())}")
+        return
+    for path in paths:
+        typer.echo(path)
+
+
 @l3_app.command("report")
 def l3_report(
     doc_id: str = typer.Argument(
