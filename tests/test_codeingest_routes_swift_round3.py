@@ -166,8 +166,14 @@ def test_time_grows_roughly_linearly_with_the_file_count(tmp_path):
     for files in (200, 800):
         root = tmp_path / str(files)
         _scope_with(root, files)
-        start = time.perf_counter()
-        assert verdict(run_routes(root)) == ("complete", "")
-        timings[files] = time.perf_counter() - start
+        runs = []
+        # best of 3: noise on a shared CI runner only ever adds time, and one
+        # slow single run broke the 1.32.0 release gate (ratio 10.7 on CI,
+        # ~4.2 locally)
+        for _ in range(3):
+            start = time.perf_counter()
+            assert verdict(run_routes(root)) == ("complete", "")
+            runs.append(time.perf_counter() - start)
+        timings[files] = min(runs)
     # 4x the files: linear is about 4x, a per-call owner rescan is about 16x
     assert timings[800] / max(timings[200], 0.05) < 9
