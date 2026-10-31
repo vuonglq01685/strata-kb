@@ -17,8 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import uvicorn
 
-from strata_kb import models
+from strata_kb import ghapp, gitio, models
 from strata_kb.federation import write_federation_index
+from strata_kb.intake import IntakeConfig
 from strata_kb.mcp import ServerConfig
 from strata_kb.serving.accounts import Accounts
 from strata_kb.web.app import create_app
@@ -34,6 +35,18 @@ DEMO_L2 = (
 DEMO_L3 = (
     f"## 1.1 Airspace Records\n\nFull raw text about airspace records.\n\n{TABLE}\n"
 )
+# registry rows: an unbreakable repo_id, a workflow pin, auto-merge on
+REGISTRY = """\
+repos:
+  acme/aaa-long:
+    repo_id: my_very_long_repository_identifier_v2_0123456789abcdef
+    kind: dev
+    auto_merge: true
+  acme/pinned:
+    repo_id: pinned-kb
+    kind: dev
+    workflow: owner/repo/.github/workflows/kb-code.yml@refs/heads/main
+"""
 LONG_DOC = "very-long-document-identifier-without-any-breaks-0123456789"
 LONG_SEC = "appendix-b.long-slug-section-identifier-0123456789"
 GIT_ENV = {
@@ -111,6 +124,7 @@ def build_hub(root: Path) -> Path:
         tags=[f"tag-{n:02d}" for n in range(60)], summary="60 tags, 40 sections.",
     )  # fmt: skip
     add_sections(fed, "many-kb", "many-doc", [f"1.{n}" for n in range(2, 41)])
+    (fed / "registry.yaml").write_text(REGISTRY, encoding="utf-8", newline="\n")
     write_federation_index(fed)
     git(hub, "init")
     git(hub, "add", "-A")
@@ -121,6 +135,12 @@ def build_hub(root: Path) -> Path:
     write_federation_index(fed)
     git(hub, "add", "-A")
     git(hub, "commit", "-m", "demo plans")
+    # an origin remote (never pushed to: registry_push is a no-op) makes /ui/registry editable
+    origin = root / "hub-origin.git"
+    git(root, "init", "--bare", "-b", gitio.current_branch(hub), str(origin))
+    git(hub, "remote", "add", "origin", str(origin))
+    git(hub, "push", "-u", "origin", "HEAD")
+    git(hub, "remote", "set-head", "origin", gitio.current_branch(hub))
     return hub
 
 
@@ -132,9 +152,13 @@ def main() -> None:
     password = secrets.token_urlsafe(12)
     Accounts(hub / ".kb-auth" / "users.db").add("admin", password, "admin")
     config = ServerConfig(kb_dir=hub / ".kb", hub=str(hub))
-    server = uvicorn.Server(
-        uvicorn.Config(create_app(config, TOKEN), port=port, log_level="warning")
+    intake = IntakeConfig(  # fake creds: only gates the registry page's edit forms
+        hub_ref=str(hub),
+        audience="https://demo.invalid",
+        creds=ghapp.AppCreds(app_id="1", private_key_pem="unused"),
     )
+    app = create_app(config, TOKEN, intake_cfg=intake, registry_push=lambda work, branch: None)
+    server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning"))
     original_startup = server.startup
 
     async def startup(sockets=None):

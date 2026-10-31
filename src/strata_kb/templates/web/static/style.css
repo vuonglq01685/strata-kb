@@ -515,7 +515,8 @@ html.sheet-locked, html.sheet-locked body { overflow: hidden; }
 /* phone content (< 900px): tables become cards, forms stack, long strings wrap */
 @media (max-width: 899px) {
   .seg-row { flex-wrap: wrap; }
-  .sec-grid .sid, .reg-pin, .tree-row .label, .cite-box code, .crumbs { overflow-wrap: anywhere; }
+  .sec-grid .sid, .reg-pin, [data-cards] .reg-id, .reg-confirm code.inline, .tree-row .label,
+  .cite-box code, .crumbs { overflow-wrap: anywhere; }
   .reader-body { padding: 16px; }
   .login-card { width: calc(100% - 32px); margin: 4vh auto 0; }
   [data-cards] .sec-grid.head, [data-cards] .reg-grid.head { display: none; }

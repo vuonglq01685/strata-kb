@@ -6,6 +6,8 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const MISSION = "M-airspace-filter";
+// the remove-confirm banner only exists in the POST response, so the loop clicks Remove on the long-id row
+const REG_CONFIRM = "/ui/registry?confirm=1";
 const AUTHED_PAGES = [
   "/ui",
   "/ui?q=airspace",
@@ -21,6 +23,7 @@ const AUTHED_PAGES = [
   "/ui/code",
   "/ui/questions",
   "/ui/registry",
+  REG_CONFIRM,
   "/ui/docs/does-not-exist?repo=demo-kb",
 ];
 const LOGGED_OUT_PAGES = ["/ui/login"];
@@ -353,6 +356,13 @@ async function main() {
           failures++;
           console.log(`FAIL load ${vp} ${p}: ${msg}`);
           continue;
+        }
+        if (p === REG_CONFIRM) {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: "networkidle" }),
+            page.click('.reg-grid:has-text("my_very_long") .btn-quiet'),
+          ]);
+          if (!(await page.$(".reg-confirm"))) throw new Error(`no .reg-confirm banner at ${vp}`);
         }
         const shot = await page.screenshot({ fullPage: true, animations: "disabled" });
         const dir = path.join(out, baseline ? "baseline" : "", vp);
