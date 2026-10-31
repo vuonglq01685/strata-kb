@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from strata_kb import models
+from strata_kb import models, quality
 from strata_kb.errors import KbError
 from strata_kb.ingest import parser
 from strata_kb.l3check import (
@@ -337,6 +337,22 @@ def image_allowed(
     return wordcheck.uncovered_share(unit_md, pdf_words) > FROM_IMAGE_SHARE
 
 
+def _check_image(
+    t: _Target, pdf_pages: dict[int, str], furniture: dict[int, list[str]]
+) -> None:
+    """The word check is skipped for the whole draft, so every replaced unit
+    must be one the text layer cannot verify, each judged on its own."""
+    by_id = {u.id: u for u in t.data.units}
+    pieces = section_map(t.raw)
+    for sid in t.ids:
+        span = by_id[sid]
+        pdf = wordcheck.pdf_tokens(pdf_pages, furniture, span.page, span.end_page)
+        if not image_allowed(t.kb_dir, t.doc_id, span, pieces[sid][0], pdf):
+            raise _Reject(
+                f"words: --from-image not allowed for {sid} (text layer is usable)"
+            )
+
+
 def _check_words(
     t: _Target,
     draft: str,
@@ -345,14 +361,10 @@ def _check_words(
     from_image: set[str],
 ) -> bool:
     """Run the word check; True when `--from-image` skipped it."""
-    pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
-    first = t.ids[0]
-    if first in from_image:
-        if not image_allowed(t.kb_dir, t.doc_id, t.span, t.run, pdf):
-            raise _Reject(
-                f"words: --from-image not allowed for {first} (text layer is usable)"
-            )
+    if t.ids[0] in from_image:
+        _check_image(t, pdf_pages, furniture)
         return True
+    pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
     issue = wordcheck.check_words(t.run, draft, pdf, t.neighbours, t.furniture)
     if issue is not None:
         raise _Reject(
@@ -581,13 +593,16 @@ def _apply_one(
         _check_ids(t, ids)
     except _Reject as why:
         return ApplyResult(draft.name, "rejected", str(why))
+    # the record goes first: a crash in any later write leaves digests that do
+    # not match L3, so the gate stays shut
     before = slices.current_digests(kb_dir, doc_id)
-    _write_l3_l2_manifest(t, draft.text, units)
-    _write_spans(t, ids)
-    after = slices.current_digests(kb_dir, doc_id)
-    _recheck(t, ids, pdf_pages, furniture, after)
+    pieces = section_map(draft.text)
+    after = {sid: quality.digest(pieces[sid][0]) for sid in ids}
     changes = _changes(t.ids, ids, t.run, draft.text)
     _record(t, ids, changes, assistant, not skipped, before, after)
+    _write_l3_l2_manifest(t, draft.text, units)
+    _write_spans(t, ids)
+    _recheck(t, ids, pdf_pages, furniture, after)
     _draft_file(work_dir, doc_id, draft.name).unlink(missing_ok=True)
     return ApplyResult(draft.name, "applied", new_ids=tuple(ids))
 

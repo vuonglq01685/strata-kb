@@ -267,13 +267,15 @@ def test_chained_fix_records_was(kb):
     assert fixrecord.blocked_ids(kb, "doc") == [("4.2", fixrecord.AWAITING)]
 
 
+MERGED = (
+    "<!-- replaces: 4.1 x1 -->\n"
+    f"## 4.1 PHẠM VI ÁP DỤNG\n\n{BODY_41}\n\n"
+    f"### 4.2 NGHỈ PHÉP NĂM\n\n{FIXED_BODY.replace('### 4.2.1', '#### 4.2.1')}"
+)
+
+
 def test_merge_with_replaces_header(kb):
-    merged = (
-        "<!-- replaces: 4.1 x1 -->\n"
-        f"## 4.1 PHẠM VI ÁP DỤNG\n\n{BODY_41}\n\n"
-        f"### 4.2 NGHỈ PHÉP NĂM\n\n{FIXED_BODY.replace('### 4.2.1', '#### 4.2.1')}"
-    )
-    _draft(kb, "merge", merged)
+    _draft(kb, "merge", MERGED)
 
     [r] = _apply(kb)
 
@@ -352,6 +354,77 @@ def test_from_image_only_where_allowed(kb):
     assert r.status == "applied", r.reason
     rec = fixrecord.load(kb / "doc")
     assert rec is not None and rec.sections[0].verified is False
+
+
+def test_from_image_multi_unit_needs_every_unit_scanned(kb):
+    _draft(kb, "merge", MERGED)
+    only_first_scanned = {**PDF_PAGES, 11: ""}
+
+    [r] = _apply(kb, pdf_pages=only_first_scanned, from_image={"4.1"})
+
+    assert r.status == "rejected"
+    assert r.reason.startswith("words: --from-image not allowed for x1"), r.reason
+    assert [s.id for s in _manifest(kb).sections] == ["4.1", "x1"]
+
+    [r] = _apply(kb, pdf_pages={}, from_image={"4.1"})
+
+    assert r.status == "applied", r.reason
+    rec = fixrecord.load(kb / "doc")
+    assert rec is not None and rec.sections[0].verified is False
+
+
+def test_from_image_allowed_by_unverifiable_finding(kb):
+    digest = report.current_digests(kb, "doc")["x1"]
+    report.save(
+        kb / "doc",
+        L3Check(
+            checked_at="t",
+            sections=[
+                SectionCheck(
+                    id="x1",
+                    l3_sha256=digest,
+                    findings=[Finding(kind="unverifiable", page=12)],
+                )
+            ],
+        ),
+    )
+    _draft(kb, "x1", FIXED_42)
+
+    [r] = _apply(kb, from_image={"x1"})  # the text layer looks usable
+
+    assert r.status == "applied", r.reason
+    rec = fixrecord.load(kb / "doc")
+    assert rec is not None and rec.sections[0].verified is False
+
+
+@pytest.mark.parametrize("record", [True, False])
+@pytest.mark.parametrize("failing", ["_write_spans", "raw"])
+def test_crash_after_check_leaves_gate_shut(kb, monkeypatch, failing, record):
+    if not record:
+        (kb / "doc" / fixrecord.FILE_NAME).unlink()
+        (kb / "doc" / report.FILE_NAME).unlink()  # nothing else gates the doc
+    _draft(kb, "x1", FIXED_42)
+    if failing == "_write_spans":
+        monkeypatch.setattr(fix, "_write_spans", _boom)
+    else:
+        real = fix._atomic
+        monkeypatch.setattr(
+            fix,
+            "_atomic",
+            lambda path, text: (
+                _boom() if path.name.endswith(".raw.md") else real(path, text)
+            ),
+        )
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        _apply(kb)
+
+    assert report.blocked_docs(kb)  # AI text or not, a human must look
+    assert _draft_path(kb, "x1").exists()
+
+
+def _boom(*_a, **_k):
+    raise RuntimeError("disk full")
 
 
 def test_l3check_rerun_on_new_unit(kb):
