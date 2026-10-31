@@ -158,3 +158,41 @@ def test_more_sheet_registry_link_only_for_admin(
 def test_noscript_fallback_hides_sheet_controls(demo_doc_hub):
     block = _slice(get(demo_doc_hub, "/ui"), "<noscript><style>", "</style></noscript>")
     assert ".sheet-pill" in block and ".topbar-btn" in block
+
+
+def test_topbar_status_markup_is_byte_identical_to_pre_macro_markup():
+    from strata_kb.web.templating import render
+
+    shell = {
+        "hub_ok": True,
+        "pull": {"failed": False, "label": "pulled 5m ago", "title": "last pull"},
+        "commit": {
+            "sha": "abc1234",
+            "date": "2026-10-31",
+            "title": "hub HEAD abc1234 · 2026-10-31",
+        },
+        "repo_count": 3,
+        "version": "1.2.3",
+        "q": "",
+        "screen": "overview",
+        "menu_kind": "",
+        "tree": [],
+        "tree_doc": None,
+        "tags": [],
+        "is_admin": False,
+    }
+    html = render("base.html", shell=shell)
+    # literal copy of what f688e9c's base.html rendered for this shell
+    expected = (
+        '  <div class="topbar-status">\n    \n'
+        '    <span class="hub-chip hub-online"><span class="dot"></span>hub online</span>\n'
+        "    \n    \n"
+        '    <span class="hub-chip hub-pulled" title="last pull"><span class="dot"></span>pulled 5m ago</span>\n'
+        "    \n    \n"
+        '    <span class="topbar-fed" title="hub HEAD abc1234 · 2026-10-31">@abc1234 · 2026-10-31</span>\n'
+        "    \n"
+        '    <span class="topbar-fed">federation · 3 repos</span>\n'
+        '    <span class="topbar-fed" title="strata-kb version this hub runs">strata-kb 1.2.3</span>\n'
+        "  </div>"
+    )
+    assert expected in html
