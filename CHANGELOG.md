@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.33.0 — 2026-10-31
+
+The hub reader shows L2 and L3 Markdown the way it was written.
+
+- **Reader.** Numbered lists (`1.`, `1)`), nested lists (two levels; deeper indents stay at level two), `**bold**`, `*italic*` / `_italic_` and `` `inline code` `` now render in L2/L3 paragraphs, list items and headings. Before, they showed as raw characters and numbered lists ran together into one paragraph. Asterisks and underscores inside words or between spaces (`2*3*4`, `snake_case`, `a * b`) stay literal. Tables are unchanged: they still render character for character and are never inline-parsed. Mission and ticket pages keep their current look.
+- **Section page.** A line under the section title shows the document title, revision and chapter.
+- **Upgrade.** Upgrade the hub only. No config change, no `kb init` change, no CLI change.
+
 ## 1.32.0 — 2026-10-31
 
 The hub web UI works on phones, foldables and iPads; the desktop layout is unchanged.

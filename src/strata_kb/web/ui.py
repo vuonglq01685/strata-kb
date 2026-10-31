@@ -968,7 +968,7 @@ def build_routes(
                 detail=f"{doc_id} §{section_id} not found.",
             )
         prev = nxt = entry = None
-        revision = ""
+        revision = doc_title = chapter_label = ""
         # repo=result.source is always a concrete repo id here (get_section
         # already resolved it), so this can't raise AmbiguousDocError — that
         # only fires when repo is None and >1 repo holds the same doc_id.
@@ -985,6 +985,9 @@ def build_routes(
             entry = next(
                 (s for s in manifest.sections if s.id == result.section_id), None
             )
+            doc_title = manifest.title
+            # same label the left-rail tree gives the chapter (uidata.section_tree)
+            chapter_label = entry.file.replace("-", " ") if entry else ""
             shell_extra = _tree_extra(
                 manifest,
                 result.doc_id,
@@ -1009,6 +1012,8 @@ def build_routes(
             next=nxt,
             entry=entry,
             revision=revision,
+            doc_title=doc_title,
+            chapter_label=chapter_label,
             shell_extra=shell_extra,
         )
 
