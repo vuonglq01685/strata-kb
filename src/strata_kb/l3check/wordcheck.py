@@ -5,7 +5,8 @@ loses no PDF text the original had, inserts only PDF-matched tokens, restores a 
 PDF run whole or not at all, does not copy a neighbouring unit's text, and removes
 unmatched original text only when it is a heading id, a replaced garbled run, a
 duplicate or furniture. Symbols are tokens, so <=/>=, signs, % and decimal separators
-count. A heading's first chunk (the section id) is one structural token.
+count. A heading's first chunk is one structural token only when it is shaped like an
+id (word characters joined by - or .); otherwise it is ordinary text.
 """
 
 from __future__ import annotations
@@ -25,9 +26,13 @@ _TOKEN = re.compile(r"[-−+]?\d+(?:[.,]\d+)*%?|[^\W_]+|[^\w\s]")
 _LEADING_BULLET = re.compile(r"^[ \t]*[-*+][ \t]+", re.MULTILINE)
 _BULLETS = frozenset("•◦▪‣●○■□–—-*")
 _HEADING_ID = re.compile(r"^([ \t]*#{1,6}[ \t]+)(\S+)", re.MULTILINE)
+_ID_SHAPE = re.compile(
+    r"^[^\W_]+(?:[-.][^\W_]+)*$"
+)  # an id has no punctuation but - and .
 _ID_MARK = re.compile("\ue000(.*?)\ue001")
 _NO_PDF = "no PDF text to verify against"
 GARBLE_MIN_RATIO = 0.6  # a corrected spelling must still look like the text it replaces
+DUP_MIN_TOKENS = 5  # a repeated block is at least this long; shorter runs are words
 
 
 @dataclass(frozen=True)
@@ -45,7 +50,9 @@ def _tokens(text: str) -> list[str]:
 
 def _prose(md: str) -> tuple[list[str], list[bool], list[int]]:
     """Tokens, a flag for heading-id tokens, and per token the title length after an id."""
-    marked = _HEADING_ID.sub(lambda m: f"{m[1]}\ue000{m[2]}\ue001", md)
+    marked = _HEADING_ID.sub(
+        lambda m: f"{m[1]}\ue000{m[2]}\ue001" if _ID_SHAPE.match(m[2]) else m[0], md
+    )
     text = _LEADING_BULLET.sub("", strip_markdown(marked))
     tokens: list[str] = []
     structural: list[bool] = []
@@ -193,13 +200,20 @@ def _neighbour_copy(orig: _Side, draft: _Side, neigh_cov: set[int]) -> WordIssue
     return WordIssue("insert", _window(draft.tokens, draft.hit[copied[0]]), "")
 
 
-def _occurs_matched(run: list[str], draft: _Side) -> bool:
+def _excused_block(run: list[str], orig: _Side, draft: _Side) -> bool:
+    """Rule 5c: a whole unmatched segment is moved into its PDF place or a long duplicate."""
     n = len(run)
-    return any(
-        draft.tokens[k : k + n] == run
-        and all(m in draft.matched for m in range(k, k + n))
-        for k in range(len(draft.tokens) - n + 1)
-    )
+    pdf_of_pos = {pos: i for i, pos in draft.hit.items()}
+    for k in range(len(draft.tokens) - n + 1):
+        if draft.tokens[k : k + n] != run or any(
+            m not in draft.matched for m in range(k, k + n)
+        ):
+            continue
+        if n >= DUP_MIN_TOKENS or any(
+            pdf_of_pos[m] not in orig.hit for m in range(k, k + n)
+        ):
+            return True
+    return False
 
 
 def _is_furniture(run: list[str], lines: list[list[str]]) -> bool:
@@ -211,10 +225,18 @@ def _is_furniture(run: list[str], lines: list[list[str]]) -> bool:
     return len(run) in reach
 
 
-def _id_removable(orig: _Side, i: int) -> bool:
-    """An unmatched heading id may go only above a non-empty, fully PDF-matched title."""
+def _id_removable(pdf: list[str], orig: _Side, i: int) -> bool:
+    """An unmatched heading id may go only above a non-empty, fully PDF-matched title.
+
+    Not when the id is itself PDF text sitting just before that title."""
     title = range(i + 1, i + 1 + orig.title[i])
-    return bool(title) and all(k in orig.matched for k in title)
+    if not title or not all(k in orig.matched for k in title):
+        return False
+    first = {pos: k for k, pos in orig.hit.items()}[title[0]]
+    chunk = _tokens(orig.tokens[i])
+    return not (
+        chunk and first >= len(chunk) and pdf[first - len(chunk) : first] == chunk
+    )
 
 
 def _whole_segment(run: list[int], plain_unmatched: set[int]) -> bool:
@@ -241,7 +263,7 @@ def _garble_fix(
 
 
 def _unaccounted_removal(
-    orig: _Side, draft: _Side, edit: list, furniture: Sequence[str]
+    pdf: list[str], orig: _Side, draft: _Side, edit: list, furniture: Sequence[str]
 ) -> WordIssue | None:
     """Rule 5: removed original text the PDF lacks must be an id, a fix, a whole block or furniture."""
     lines = [_tokens(f) for f in furniture]
@@ -252,12 +274,12 @@ def _unaccounted_removal(
             continue
         ids = [i for i in range(i1, i2) if i in unmatched and orig.structural[i]]
         for i in ids:
-            if not _id_removable(orig, i):
+            if not _id_removable(pdf, orig, i):
                 return WordIssue("delete", _window(draft.tokens, j1), orig.tokens[i])
         for run in _runs([i for i in range(i1, i2) if i in plain]):
             words = [orig.tokens[i] for i in run]
             fixed = tag == "replace" and _garble_fix(orig, draft, run, (j1, j2))
-            block = _whole_segment(run, plain) and _occurs_matched(words, draft)
+            block = _whole_segment(run, plain) and _excused_block(words, orig, draft)
             if fixed or block or _is_furniture(words, lines):
                 continue
             return WordIssue(
@@ -288,7 +310,7 @@ def check_words(
         or _foreign_insert(draft, edit)
         or _partial_restore(pdf, orig, draft, neigh_cov)
         or _neighbour_copy(orig, draft, neigh_cov)
-        or _unaccounted_removal(orig, draft, edit, furniture)
+        or _unaccounted_removal(pdf, orig, draft, edit, furniture)
     )
 
 

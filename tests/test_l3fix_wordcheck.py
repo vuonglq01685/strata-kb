@@ -472,3 +472,40 @@ def test_garble_fix_in_place_with_digits_passes():
         )
         is None
     )
+
+
+# --- ruling 4: moved text vs duplicates, id-shaped heading ids only ---
+
+MOVED_PDF = "Nhân viên mới không được nghỉ phép. Khách không được vào kho."
+MOVED_ORIG = "Nhân viên không mới được nghỉ phép. Khách không được vào kho."
+
+
+def test_misplaced_word_dropped_while_same_word_elsewhere_rejected():
+    draft = "Nhân viên mới được nghỉ phép. Khách không được vào kho."
+    assert wordcheck.check_words(MOVED_ORIG, draft, pdf_of(MOVED_PDF)) is not None
+
+
+def test_misplaced_word_moved_into_pdf_place_passes():
+    assert wordcheck.check_words(MOVED_ORIG, MOVED_PDF, pdf_of(MOVED_PDF)) is None
+
+
+def test_misplaced_number_dropped_while_same_number_elsewhere_rejected():
+    pdf = pdf_of("Mức phạt tối đa 5 triệu đồng. Thời hạn nộp 5 ngày.")
+    orig = "Mức phạt 5 tối đa triệu đồng. Thời hạn nộp 5 ngày."
+    draft = "Mức phạt tối đa triệu đồng. Thời hạn nộp 5 ngày."
+    assert wordcheck.check_words(orig, draft, pdf) is not None
+
+
+def test_glued_punctuation_heading_chunk_dropped_rejected():
+    pdf = pdf_of("Cấm: hút thuốc trong kho. Nhân viên vi phạm bị phạt.")
+    orig = "### Cấm: hút thuốc trong kho.\n\nNhân viên vi phạm bị phạt."
+    draft = "### hút thuốc trong kho.\n\nNhân viên vi phạm bị phạt."
+    assert wordcheck.check_words(orig, draft, pdf) is not None
+
+
+@pytest.mark.parametrize("chunk", ["500.000đ", "KHÔNG:", "≤5"])
+def test_heading_first_chunk_removed_rejected(chunk):
+    pdf = pdf_of(f"{chunk} PHỤ CẤP ĂN TRƯA Nhân viên được hưởng.")
+    orig = f"## {chunk} PHỤ CẤP ĂN TRƯA\n\nNhân viên được hưởng."
+    draft = "## PHỤ CẤP ĂN TRƯA\n\nNhân viên được hưởng."
+    assert wordcheck.check_words(orig, draft, pdf) is not None
