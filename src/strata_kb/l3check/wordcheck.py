@@ -1,16 +1,18 @@
 """Word-level check of an AI draft against the PDF text layer (spec §9.4 check 3). Pure.
 
 The unit's text and the draft are each aligned to the PDF tokens. A draft passes when it
-loses no PDF text the original had, adds no token the PDF lacks at that place, and does
-not copy a neighbouring unit's text. Symbols are tokens, so <=/>=, signs, % and decimal
-separators count.
+loses no PDF text the original had, inserts only PDF-matched tokens, restores a missing
+PDF run whole or not at all, does not copy a neighbouring unit's text, and removes
+unmatched original text only when it is a heading id, a replaced garbled run, a
+duplicate or furniture. Symbols are tokens, so <=/>=, signs, % and decimal separators
+count. A heading's first chunk (the section id) is one structural token.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -22,6 +24,9 @@ _SHOWN = 20  # tokens kept in an issue's draft / original fields
 _TOKEN = re.compile(r"[-−+]?\d+(?:[.,]\d+)*%?|[^\W_]+|[^\w\s]")
 _LEADING_BULLET = re.compile(r"^[ \t]*[-*+][ \t]+", re.MULTILINE)
 _BULLETS = frozenset("•◦▪‣●○■□–—-*")
+_HEADING_ID = re.compile(r"^([ \t]*#{1,6}[ \t]+)(\S+)", re.MULTILINE)
+_ID_MARK = re.compile("\ue000(.*?)\ue001")
+_NO_PDF = "no PDF text to verify against"
 
 
 @dataclass(frozen=True)
@@ -37,8 +42,24 @@ def _tokens(text: str) -> list[str]:
     return [t for t in found if t not in _BULLETS]
 
 
+def _prose(md: str) -> tuple[list[str], list[bool]]:
+    """Tokens of the markdown and a parallel flag: True for a heading's id token."""
+    marked = _HEADING_ID.sub(lambda m: f"{m[1]}\ue000{m[2]}\ue001", md)
+    text = _LEADING_BULLET.sub("", strip_markdown(marked))
+    tokens: list[str] = []
+    structural: list[bool] = []
+    pos = 0
+    for m in _ID_MARK.finditer(text):
+        plain = _tokens(text[pos : m.start()])
+        tokens += [*plain, unicodedata.normalize("NFKC", m[1]).casefold()]
+        structural += [False] * len(plain) + [True]
+        pos = m.end()
+    tail = _tokens(text[pos:])
+    return tokens + tail, structural + [False] * len(tail)
+
+
 def prose_tokens(md: str) -> list[str]:
-    return _tokens(_LEADING_BULLET.sub("", strip_markdown(md)))
+    return _prose(md)[0]
 
 
 def _page_tokens(text: str, furniture: list[str]) -> list[str]:
@@ -81,49 +102,163 @@ def _align(pdf: list[str], tokens: list[str]) -> tuple[dict[int, int], list[int]
     return hit, [j for j in range(len(tokens)) if j not in matched]
 
 
-def _first_run(indices: list[int]) -> list[int]:
-    run = indices[:1]
-    for i in indices[1:]:
-        if i != run[-1] + 1:
-            break
-        run.append(i)
-    return run
+@dataclass(frozen=True)
+class _Side:
+    tokens: list[str]
+    structural: list[bool]
+    hit: dict[int, int]  # pdf index -> token index
+    matched: frozenset[int]  # token indices matched to the PDF
 
 
-def _after(draft_hit: dict[int, int], i: int) -> int:
-    """Draft position just after the nearest kept PDF token before PDF index `i`."""
-    before = [draft_hit[k] for k in draft_hit if k < i]
-    return max(before) + 1 if before else 0
+def _side(md: str, pdf: list[str]) -> _Side:
+    tokens, structural = _prose(md)
+    hit, _ = _align(pdf, tokens)
+    return _Side(tokens, structural, hit, frozenset(hit.values()))
 
 
 def _window(tokens: list[str], pos: int) -> str:
     return " ".join(tokens[max(0, pos - ANCHOR) :][:_SHOWN])
 
 
+def _runs(indices: Sequence[int]) -> list[list[int]]:
+    """Maximal runs of consecutive integers in sorted `indices`."""
+    runs: list[list[int]] = []
+    for i in indices:
+        if runs and i == runs[-1][-1] + 1:
+            runs[-1].append(i)
+        else:
+            runs.append([i])
+    return runs
+
+
+def _after(draft: _Side, i: int) -> int:
+    """Draft position just after the nearest kept PDF token before PDF index `i`."""
+    before = [pos for k, pos in draft.hit.items() if k < i]
+    return max(before) + 1 if before else 0
+
+
+def _unmatched_inserts(draft: _Side, edit: list) -> list[int]:
+    """Draft positions inside insert/replace edits the PDF does not have there."""
+    return [
+        j
+        for tag, _, _, j1, j2 in edit
+        if tag in ("insert", "replace")
+        for j in range(j1, j2)
+        if j not in draft.matched and not draft.structural[j]
+    ]
+
+
+def _lost(pdf: list[str], orig: _Side, draft: _Side, edit: list) -> WordIssue | None:
+    """Rule 1: PDF text the original covered is gone."""
+    lost = sorted(set(orig.hit) - set(draft.hit))
+    if not lost:
+        return None
+    run = _runs(lost)[0]
+    original = " ".join(pdf[i] for i in run[:_SHOWN])
+    inserts = _unmatched_inserts(draft, edit)
+    if inserts:
+        return WordIssue("replace", _window(draft.tokens, inserts[0]), original)
+    return WordIssue("delete", _window(draft.tokens, _after(draft, run[0])), original)
+
+
+def _foreign_insert(draft: _Side, edit: list) -> WordIssue | None:
+    """Rule 2: every inserted draft token must be what the PDF has there."""
+    inserts = _unmatched_inserts(draft, edit)
+    return (
+        WordIssue("insert", _window(draft.tokens, inserts[0]), "") if inserts else None
+    )
+
+
+def _partial_restore(
+    pdf: list[str], orig: _Side, draft: _Side, neigh_cov: set[int]
+) -> WordIssue | None:
+    """Rule 3: PDF text neither the unit nor a neighbour has comes back whole or not at all."""
+    known = set(orig.hit) | neigh_cov
+    for gap in _runs([i for i in range(len(pdf)) if i not in known]):
+        back = [i for i in gap if i in draft.hit]
+        if back and len(back) != len(gap):
+            return WordIssue("insert", _window(draft.tokens, draft.hit[back[0]]), "")
+    return None
+
+
+def _neighbour_copy(orig: _Side, draft: _Side, neigh_cov: set[int]) -> WordIssue | None:
+    """Rule 4: text a neighbouring unit holds must not appear in this one."""
+    copied = sorted((set(draft.hit) - set(orig.hit)) & neigh_cov)
+    if not copied:
+        return None
+    return WordIssue("insert", _window(draft.tokens, draft.hit[copied[0]]), "")
+
+
+def _occurs_matched(run: list[str], draft: _Side) -> bool:
+    n = len(run)
+    return any(
+        draft.tokens[k : k + n] == run
+        and all(m in draft.matched for m in range(k, k + n))
+        for k in range(len(draft.tokens) - n + 1)
+    )
+
+
+def _is_furniture(run: list[str], lines: list[list[str]]) -> bool:
+    """True when `run` is a concatenation of furniture lines."""
+    reach = {0}
+    for pos in range(len(run)):
+        if pos in reach:
+            reach |= {pos + len(f) for f in lines if f and run[pos : pos + len(f)] == f}
+    return len(run) in reach
+
+
+def _unaccounted_removal(
+    orig: _Side,
+    draft: _Side,
+    edit: list,
+    orig_unmatched: set[int],
+    furniture: Sequence[str],
+) -> WordIssue | None:
+    """Rule 5: removed original text the PDF lacks must be an id, a fix, a duplicate or furniture."""
+    lines = [_tokens(f) for f in furniture]
+    for tag, i1, i2, j1, j2 in edit:
+        if tag not in ("delete", "replace"):
+            continue
+        for run in _runs([i for i in range(i1, i2) if i in orig_unmatched]):
+            words = [orig.tokens[i] for i in run]
+            if (
+                all(orig.structural[i] for i in run)
+                or (tag == "replace" and j2 > j1)
+                or _occurs_matched(words, draft)
+                or _is_furniture(words, lines)
+            ):
+                continue
+            return WordIssue(
+                "delete", _window(draft.tokens, j1), " ".join(words[:_SHOWN])
+            )
+    return None
+
+
 def check_words(
-    original_md: str, draft_md: str, pdf: list[str], neighbour_md: str = ""
+    original_md: str,
+    draft_md: str,
+    pdf: list[str],
+    neighbour_md: str = "",
+    furniture: Sequence[str] = (),
 ) -> WordIssue | None:
     """First change the PDF does not justify, or None."""
-    a, b = prose_tokens(original_md), prose_tokens(draft_md)
-    orig_hit, orig_extra = _align(pdf, a)
-    draft_hit, draft_extra = _align(pdf, b)
-    lost = sorted(set(orig_hit) - set(draft_hit))
-    new = Counter(b[j] for j in draft_extra) - Counter(a[j] for j in orig_extra)
-    new_pos = next((j for j in draft_extra if new[b[j]] > 0), None)
-    if lost:
-        run = _first_run(lost)
-        original = " ".join(pdf[i] for i in run[:_SHOWN])
-        if new_pos is not None:
-            return WordIssue("replace", _window(b, new_pos), original)
-        return WordIssue("delete", _window(b, _after(draft_hit, run[0])), original)
-    if new_pos is not None:
-        return WordIssue("insert", _window(b, new_pos), "")
-    if neighbour_md:
-        neighbour_hit, _ = _align(pdf, prose_tokens(neighbour_md))
-        copied = sorted((set(draft_hit) - set(orig_hit)) & set(neighbour_hit))
-        if copied:
-            return WordIssue("insert", _window(b, draft_hit[copied[0]]), "")
-    return None
+    orig, draft = _side(original_md, pdf), _side(draft_md, pdf)
+    if not pdf:
+        if orig.tokens == draft.tokens:
+            return None
+        return WordIssue("delete", _window(draft.tokens, 0), _NO_PDF)
+    neigh_cov = set(_side(neighbour_md, pdf).hit) if neighbour_md else set()
+    edit = SequenceMatcher(
+        None, orig.tokens, draft.tokens, autojunk=False
+    ).get_opcodes()
+    orig_unmatched = set(range(len(orig.tokens))) - orig.matched
+    return (
+        _lost(pdf, orig, draft, edit)
+        or _foreign_insert(draft, edit)
+        or _partial_restore(pdf, orig, draft, neigh_cov)
+        or _neighbour_copy(orig, draft, neigh_cov)
+        or _unaccounted_removal(orig, draft, edit, orig_unmatched, furniture)
+    )
 
 
 def uncovered_share(md: str, pdf: list[str]) -> float:

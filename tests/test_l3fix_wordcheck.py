@@ -57,11 +57,21 @@ def test_duplicate_paragraph_removed_passes():
     assert wordcheck.check_words(dup, ORIG, PDF) is None
 
 
+FOOTER = "Quy chế nhân sự Trang 12/40"
+WITH_FOOTER = ORIG.replace("theo\n\nhợp", f"theo\n\n{FOOTER}\n\nhợp")
+FOOTER_PDF = wordcheck.pdf_tokens(
+    {1: PDF_TEXT.replace("theo hợp", f"theo {FOOTER} hợp")}, {1: [FOOTER]}, 1, 1
+)
+
+
 def test_furniture_line_removed_passes():
-    with_footer = ORIG.replace(
-        "theo\n\nhợp", "theo\n\nQuy chế nhân sự Trang 12/40\n\nhợp"
+    assert (
+        wordcheck.check_words(WITH_FOOTER, ORIG, FOOTER_PDF, furniture=[FOOTER]) is None
     )
-    assert wordcheck.check_words(with_footer, ORIG, PDF) is None
+
+
+def test_furniture_line_removed_without_furniture_rejected():
+    assert wordcheck.check_words(WITH_FOOTER, ORIG, FOOTER_PDF) is not None
 
 
 def test_trailing_paragraph_dropped_rejected():
@@ -240,3 +250,126 @@ def test_prose_tokens_keep_symbols_and_drop_bullets():
     ]
     assert wordcheck.prose_tokens("## Tiêu **Đề**") == ["tiêu", "đề"]
     assert wordcheck.prose_tokens("cắt-\nđôi") == ["cắtđôi"]
+
+
+# --- ruling 2: positional rules ---
+
+P1 = "Điều 1. Nhân viên làm việc đủ một năm thì được nghỉ phép năm hưởng nguyên lương theo hợp đồng."
+P2 = "Điều 2. Người thử việc không được hưởng phụ cấp ăn trưa."
+
+
+def test_out_of_order_original_dropping_unmatched_paragraph_rejected():
+    pdf = pdf_of(f"{P1} {P2}")
+    issue = wordcheck.check_words(f"{P2}\n\n{P1}", P1, pdf)
+    assert issue is not None and issue.op == "delete"
+
+
+def test_out_of_order_original_restored_without_negation_rejected():
+    pdf = pdf_of(f"{P1} {P2}")
+    draft = f"{P1}\n\n{P2.replace('không ', '')}"
+    assert wordcheck.check_words(f"{P2}\n\n{P1}", draft, pdf) is not None
+
+
+def test_out_of_order_original_restored_intact_passes():
+    pdf = pdf_of(f"{P1} {P2}")
+    assert wordcheck.check_words(f"{P2}\n\n{P1}", f"{P1}\n\n{P2}", pdf) is None
+
+
+def test_garbled_word_dropped_rejected():
+    pdf = pdf_of("Không được hút thuốc.")
+    issue = wordcheck.check_words("Khônq được hút thuốc.", "Được hút thuốc.", pdf)
+    assert issue is not None and issue.op == "delete"
+
+
+def test_garbled_number_dropped_rejected():
+    pdf = pdf_of("Mức phạt là 500.000 đồng.")
+    assert (
+        wordcheck.check_words("Mức phạt là 5O0.000 đồng.", "Mức phạt là đồng.", pdf)
+        is not None
+    )
+
+
+def test_garbled_word_fixed_to_pdf_word_in_place_passes():
+    pdf = pdf_of("Không được hút thuốc.")
+    assert (
+        wordcheck.check_words("Khônq được hút thuốc.", "Không được hút thuốc.", pdf)
+        is None
+    )
+
+
+def test_stray_word_moved_to_new_place_rejected():
+    pdf = pdf_of("Nhân viên được nghỉ phép năm. Nhân viên được hút thuốc ở sân.")
+    orig = "Nhân viên được nghỉ phép năm. không\n\nNhân viên được hút thuốc ở sân."
+    draft = "Nhân viên được nghỉ phép năm.\n\nNhân viên không được hút thuốc ở sân."
+    issue = wordcheck.check_words(orig, draft, pdf)
+    assert issue is not None and issue.op == "insert"
+
+
+def test_stray_page_number_moved_into_number_rejected():
+    pdf = pdf_of("Thưởng 2 triệu.")
+    assert (
+        wordcheck.check_words("Thưởng 2 triệu.\n\n10", "Thưởng 2 10 triệu.", pdf)
+        is not None
+    )
+
+
+def test_stray_page_number_dropped_with_furniture_passes():
+    pdf = wordcheck.pdf_tokens({1: "Thưởng 2 triệu. 10"}, {1: ["10"]}, 1, 1)
+    assert (
+        wordcheck.check_words(
+            "Thưởng 2 triệu.\n\n10", "Thưởng 2 triệu.", pdf, furniture=["10"]
+        )
+        is None
+    )
+
+
+def test_partial_restore_rejected():
+    pdf = pdf_of("Nhân viên không được hút thuốc trong phòng họp.")
+    orig = "Nhân viên trong phòng họp."
+    issue = wordcheck.check_words(
+        orig, "Nhân viên được hút thuốc trong phòng họp.", pdf
+    )
+    assert issue is not None and issue.op == "insert"
+
+
+def test_whole_restore_passes():
+    pdf = pdf_of("Nhân viên không được hút thuốc trong phòng họp.")
+    draft = "Nhân viên không được hút thuốc trong phòng họp."
+    assert wordcheck.check_words("Nhân viên trong phòng họp.", draft, pdf) is None
+
+
+NO_PDF_ORIG = "Điều 1. Nhân viên không được hút thuốc. Điều 2. Lương 12 tháng."
+
+
+@pytest.mark.parametrize(
+    "draft",
+    [
+        "Điều 1. Nhân viên không được hút thuốc.",
+        "Điều 1. Nhân viên được hút thuốc. Điều 2. Lương 12 tháng.",
+        "Điều 1. Nhân viên không được hút thuốc. Điều 2. Lương 21 tháng.",
+        "Điều 2. Lương 12 tháng. Điều 1. Nhân viên không được hút thuốc.",
+        "",
+    ],
+)
+def test_no_pdf_text_changes_rejected(draft):
+    issue = wordcheck.check_words(NO_PDF_ORIG, draft, [])
+    assert issue is not None and issue.op == "delete"
+
+
+def test_no_pdf_text_identical_passes():
+    assert wordcheck.check_words(NO_PDF_ORIG, NO_PDF_ORIG, []) is None
+
+
+def test_fallback_heading_id_replaced_passes():
+    draft = ORIG.replace("## x1 4.2", "## 4.2")
+    assert wordcheck.check_words(ORIG, draft, PDF) is None
+
+
+def test_heading_id_replaced_by_slug_passes():
+    draft = ORIG.replace("## x1 4.2", "## nghi-phep-nam 4.2")
+    assert wordcheck.check_words(ORIG, draft, PDF) is None
+
+
+def test_heading_text_word_inserted_rejected():
+    draft = ORIG.replace("4.2 NGHỈ PHÉP NĂM", "4.2 KHÔNG NGHỈ PHÉP NĂM")
+    assert wordcheck.check_words(ORIG, draft, PDF) is not None
