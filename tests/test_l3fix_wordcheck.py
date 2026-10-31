@@ -509,3 +509,34 @@ def test_heading_first_chunk_removed_rejected(chunk):
     orig = f"## {chunk} PHỤ CẤP ĂN TRƯA\n\nNhân viên được hưởng."
     draft = "## PHỤ CẤP ĂN TRƯA\n\nNhân viên được hưởng."
     assert wordcheck.check_words(orig, draft, pdf) is not None
+
+
+# --- ruling 5: move and duplicate excuses tied to the PDF ---
+
+MOVED_RESTORE = "Nhân viên mới được nghỉ phép. Khách không được vào kho."
+S = "Mức phạt là 5 triệu đồng."
+DUP_PDF = f"Điều 1. Đi muộn nhiều lần. {S} Điều 2. Hút thuốc trong kho. {S}"
+DUP_ORIG = f"Điều 1. Đi muộn nhiều lần. {S}\n\n{S}\n\nĐiều 2. Hút thuốc trong kho."
+
+
+def test_move_excuse_needs_whole_gap_restore_elsewhere_rejected():
+    pdf = pdf_of(MOVED_PDF)
+    orig = "Nhân viên không mới được nghỉ phép."
+    assert wordcheck.check_words(orig, MOVED_RESTORE, pdf) is not None
+
+
+def test_move_excuse_needs_whole_gap_number_restore_rejected():
+    pdf = pdf_of("Mức phạt tối đa 5 triệu đồng. Thời hạn nộp 5 ngày.")
+    orig = "Mức phạt 5 tối đa triệu đồng."
+    draft = "Mức phạt tối đa triệu đồng. Thời hạn nộp 5 ngày."
+    assert wordcheck.check_words(orig, draft, pdf) is not None
+
+
+def test_duplicate_excuse_pdf_repeats_sentence_deduped_rejected():
+    draft = f"Điều 1. Đi muộn nhiều lần. {S}\n\nĐiều 2. Hút thuốc trong kho."
+    assert wordcheck.check_words(DUP_ORIG, draft, pdf_of(DUP_PDF)) is not None
+
+
+def test_duplicate_excuse_pdf_repeats_sentence_moved_passes():
+    draft = f"Điều 1. Đi muộn nhiều lần. {S}\n\nĐiều 2. Hút thuốc trong kho. {S}"
+    assert wordcheck.check_words(DUP_ORIG, draft, pdf_of(DUP_PDF)) is None

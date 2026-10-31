@@ -200,20 +200,34 @@ def _neighbour_copy(orig: _Side, draft: _Side, neigh_cov: set[int]) -> WordIssue
     return WordIssue("insert", _window(draft.tokens, draft.hit[copied[0]]), "")
 
 
-def _excused_block(run: list[str], orig: _Side, draft: _Side) -> bool:
-    """Rule 5c: a whole unmatched segment is moved into its PDF place or a long duplicate."""
+def _excused_block(
+    run: list[str], pdf: list[str], orig: _Side, draft: _Side, neigh_cov: set[int]
+) -> bool:
+    """Rule 5c: a whole unmatched segment is moved to fill one whole PDF gap, or is a
+    long duplicate the PDF has nowhere else uncovered."""
     n = len(run)
     pdf_of_pos = {pos: i for i, pos in draft.hit.items()}
+    known = set(orig.hit) | neigh_cov
+    gaps = [set(g) for g in _runs([i for i in range(len(pdf)) if i not in known])]
     for k in range(len(draft.tokens) - n + 1):
         if draft.tokens[k : k + n] != run or any(
             m not in draft.matched for m in range(k, k + n)
         ):
             continue
-        if n >= DUP_MIN_TOKENS or any(
-            pdf_of_pos[m] not in orig.hit for m in range(k, k + n)
-        ):
+        if {pdf_of_pos[m] for m in range(k, k + n)} in gaps:
+            return True
+        if n >= DUP_MIN_TOKENS and not _uncovered_copy(pdf, run, draft):
             return True
     return False
+
+
+def _uncovered_copy(pdf: list[str], run: list[str], draft: _Side) -> bool:
+    """True when the PDF has a copy of `run` that the draft leaves partly uncovered."""
+    n = len(run)
+    return any(
+        pdf[i : i + n] == run and any(j not in draft.hit for j in range(i, i + n))
+        for i in range(len(pdf) - n + 1)
+    )
 
 
 def _is_furniture(run: list[str], lines: list[list[str]]) -> bool:
@@ -263,7 +277,12 @@ def _garble_fix(
 
 
 def _unaccounted_removal(
-    pdf: list[str], orig: _Side, draft: _Side, edit: list, furniture: Sequence[str]
+    pdf: list[str],
+    orig: _Side,
+    draft: _Side,
+    edit: list,
+    furniture: Sequence[str],
+    neigh_cov: set[int],
 ) -> WordIssue | None:
     """Rule 5: removed original text the PDF lacks must be an id, a fix, a whole block or furniture."""
     lines = [_tokens(f) for f in furniture]
@@ -279,7 +298,9 @@ def _unaccounted_removal(
         for run in _runs([i for i in range(i1, i2) if i in plain]):
             words = [orig.tokens[i] for i in run]
             fixed = tag == "replace" and _garble_fix(orig, draft, run, (j1, j2))
-            block = _whole_segment(run, plain) and _excused_block(words, orig, draft)
+            block = _whole_segment(run, plain) and _excused_block(
+                words, pdf, orig, draft, neigh_cov
+            )
             if fixed or block or _is_furniture(words, lines):
                 continue
             return WordIssue(
@@ -310,7 +331,7 @@ def check_words(
         or _foreign_insert(draft, edit)
         or _partial_restore(pdf, orig, draft, neigh_cov)
         or _neighbour_copy(orig, draft, neigh_cov)
-        or _unaccounted_removal(pdf, orig, draft, edit, furniture)
+        or _unaccounted_removal(pdf, orig, draft, edit, furniture, neigh_cov)
     )
 
 
