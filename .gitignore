@@ -36,3 +36,6 @@ build/
 
 # GitNexus local code-search index (built by SessionStart hook)
 .gitnexus/
+
+# Mobile UI browser-check output (screenshots, baseline)
+.ui-check/

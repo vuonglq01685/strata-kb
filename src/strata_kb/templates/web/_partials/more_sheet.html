@@ -1,0 +1,12 @@
+{% from "_partials/status_chips.html" import status_chips %}
+<div class="sheet more-sheet" id="sheet_more" aria-label="More">
+  <p class="kicker">Status</p>
+  <div class="more-status">{{ status_chips(shell, verbose=True) }}</div>
+  <div class="more-nav">
+    {% if shell.is_admin %}<a href="/ui/registry" class="{{ 'active' if shell.screen == 'registry' else '' }}">Registry</a>{% endif %}
+    <a href="/ui/login">Sign in</a>
+  </div>
+  <form method="post" action="/ui/logout" class="nav-logout">
+    <button type="submit" class="seg">Sign out</button>
+  </form>
+</div>

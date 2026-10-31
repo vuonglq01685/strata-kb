@@ -1,4 +1,4 @@
-<aside class="rail rail-left" aria-label="Navigation">
+<aside class="rail rail-left" id="sheet_rail_left" aria-label="Navigation">
   <noscript><style>.rail-left [data-filter-list] { display: none }</style></noscript>
   {# the menu a page belongs to: its own kind on a menu screen, the doc's kind in the reader #}
   {% set menu = shell.tree_doc.kind if shell.tree_doc else shell.menu_kind %}

@@ -35,6 +35,7 @@
   <article class="reader-body md-body">{{ content_html | safe }}</article>
 </div>
 {% endblock %}
+{% block rail_label %}{{ 'On this page' if toc else 'Page info' }}{% endblock %}
 {% block rail %}
 {% if toc %}
 <div class="rail-block">

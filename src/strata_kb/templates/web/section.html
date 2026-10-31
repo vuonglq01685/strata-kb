@@ -20,6 +20,7 @@
   {{ pager(doc_id, repo, prev, next) }}
 </div>
 {% endblock %}
+{% block rail_label %}{{ 'On this page' if toc else 'Page info' }}{% endblock %}
 {% block rail %}
 {% if toc %}
 <div class="rail-block">

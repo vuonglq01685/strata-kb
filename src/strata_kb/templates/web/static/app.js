@@ -1,12 +1,33 @@
 // Strata UI enhancements. Progressive only — every page works without this file.
 "use strict";
 
+// Below 900px the search box is hidden until .topbar[data-searching] is set (style.css).
+const PHONE_MQ = window.matchMedia("(max-width: 899px)");
+
+function setSearching(on) {
+  const bar = document.querySelector(".topbar");
+  if (!bar) return;
+  const form = bar.querySelector(".topbar-search");
+  const focusWasInForm = form?.contains(document.activeElement);
+  bar.toggleAttribute("data-searching", on);
+  const opener = bar.querySelector(".topbar-btn[data-search-toggle]");
+  opener?.setAttribute("aria-expanded", on ? "true" : "false");
+  if (on) document.getElementById("global-search")?.focus();
+  // The form is display:none once closed, so focus inside it would be lost; hand it back to the ⌕ button.
+  else if (focusWasInForm && PHONE_MQ.matches) opener?.focus();
+}
+
 document.addEventListener("keydown", (e) => {
   if (typeof e.key !== "string") return;
+  if (e.key === "Escape") { setSearching(false); return; }
   if (e.shiftKey || e.altKey) return;
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     const box = document.getElementById("global-search");
-    if (box) { e.preventDefault(); box.focus(); box.select(); }
+    if (!box) return;
+    e.preventDefault();
+    if (PHONE_MQ.matches) setSearching(true);
+    box.focus();
+    box.select();
   }
 });
 
@@ -31,6 +52,10 @@ function copyText(text, btn) {
 }
 
 document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-search-toggle]")) {
+    setSearching(!document.querySelector(".topbar")?.hasAttribute("data-searching"));
+    return;
+  }
   const copySel = e.target.closest("[data-copy]");
   if (copySel) {
     const node = document.querySelector(copySel.getAttribute("data-copy"));
@@ -264,3 +289,101 @@ document.addEventListener("DOMContentLoaded", () => {
   window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
   window.mermaid.run({ querySelector: "pre.mermaid", suppressErrors: true });
 });
+
+// Bottom sheets (style.css): .rail-left < 900px, .rail-right and .more-sheet < 1280px.
+// Open state = [data-open] on the sheet, aria-expanded on its trigger(s), html.sheet-locked,
+// and the scrim un-hidden. Sheets get dialog semantics and a close button only while open.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const SWIPE_CLOSE_PX = 80;
+let openSheetState = null; // { sheet, id, trigger }
+
+function sheetFocusables(sheet) {
+  return [...sheet.querySelectorAll(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+}
+
+function ensureSheetHead(sheet) {
+  if (sheet.querySelector(":scope > .sheet-head")) return;
+  const head = document.createElement("div");
+  head.className = "sheet-head";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sheet-close";
+  btn.setAttribute("data-sheet-close", "");
+  btn.setAttribute("aria-label", "Close");
+  btn.textContent = "×";
+  head.append(btn);
+  sheet.prepend(head);
+}
+
+function openSheet(id, trigger) {
+  const sheet = document.getElementById(id);
+  if (!sheet) return;
+  closeSheet(false);
+  ensureSheetHead(sheet);
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  sheet.setAttribute("data-open", "");
+  document.querySelectorAll(`[data-sheet-open="${id}"]`).forEach((t) => t.setAttribute("aria-expanded", "true"));
+  document.documentElement.classList.add("sheet-locked");
+  const scrim = document.getElementById("sheet_scrim");
+  if (scrim) scrim.hidden = false;
+  openSheetState = { sheet, id, trigger };
+  (sheetFocusables(sheet)[0] || sheet).focus({ preventScroll: true });
+}
+
+function closeSheet(restoreFocus = true) {
+  if (!openSheetState) return;
+  const { sheet, id, trigger } = openSheetState;
+  openSheetState = null;
+  sheet.removeAttribute("data-open");
+  sheet.removeAttribute("role");
+  sheet.removeAttribute("aria-modal");
+  document.querySelectorAll(`[data-sheet-open="${id}"]`).forEach((t) => t.setAttribute("aria-expanded", "false"));
+  document.documentElement.classList.remove("sheet-locked");
+  const scrim = document.getElementById("sheet_scrim");
+  if (scrim) scrim.hidden = true;
+  if (restoreFocus && trigger) trigger.focus({ preventScroll: true });
+}
+
+document.addEventListener("click", (e) => {
+  const opener = e.target.closest("[data-sheet-open]");
+  if (opener) {
+    const id = opener.getAttribute("data-sheet-open");
+    if (openSheetState?.id === id) closeSheet();
+    else openSheet(id, opener);
+    return;
+  }
+  if (!openSheetState) return;
+  if (e.target.closest("[data-sheet-close]")) { closeSheet(); return; }
+  // In-page anchor (TOC link): close first, then let the browser scroll to it.
+  if (e.target.closest('a[href^="#"]') && openSheetState.sheet.contains(e.target)) closeSheet();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!openSheetState || typeof e.key !== "string") return;
+  if (e.key === "Escape") { closeSheet(); return; }
+  if (e.key !== "Tab") return;
+  const items = sheetFocusables(openSheetState.sheet);
+  if (!items.length) { e.preventDefault(); return; }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (!openSheetState.sheet.contains(active)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+});
+
+// Swipe down on a sheet's top strip (.sheet-head, touch-action: none) closes it.
+let swipeStartY = null;
+document.addEventListener("pointerdown", (e) => {
+  if (!openSheetState || e.target.closest("button") || !e.target.closest(".sheet-head")) return;
+  swipeStartY = e.clientY;
+});
+document.addEventListener("pointermove", (e) => {
+  if (swipeStartY !== null && e.clientY - swipeStartY > SWIPE_CLOSE_PX) { swipeStartY = null; closeSheet(); }
+});
+["pointerup", "pointercancel"].forEach((t) => document.addEventListener(t, () => { swipeStartY = null; }));
+
+// Crossing a breakpoint turns the sheet back into a rail column; a bfcache restore must not show a stale sheet.
+["(min-width: 900px)", "(min-width: 1280px)"].forEach((q) => window.matchMedia(q).addEventListener("change", () => closeSheet()));
+window.addEventListener("pageshow", () => closeSheet(false));

@@ -827,6 +827,7 @@ A hub is **mandatory** — resolved from `--hub`, `STRATA_KB_HUB`, or
 `/ui`, the MCP tools and the REST API search only `federation/` — never the
 server's own working `.kb/`. In the UI, tags render as clickable chips and can be
 used alone to browse matching documents.
+The UI works on phones, foldables and iPads as well as desktops, and every page still works without JavaScript.
 
 The HTTP server keeps the hub fresh by itself: every
 `STRATA_KB_HUB_PULL_INTERVAL` seconds (default `300`, `0` = off) it runs

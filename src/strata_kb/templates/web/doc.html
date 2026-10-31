@@ -37,7 +37,7 @@
     </div>
     <span class="shown" data-shown data-total="{{ manifest.sections | length }}">{{ rows | length }} of {{ manifest.sections | length }} shown</span>
   </form>
-  <div class="panel sec-table">
+  <div class="panel sec-table" data-cards="sections">
     <div class="sec-grid head">
       <span>Section</span><span>Title</span><span>One-line summary</span>
       <span>Status</span><span style="text-align:right">L2 tk</span>
@@ -48,7 +48,7 @@
       <a class="sid" href="/ui/docs/{{ doc_id | urlencode }}/{{ s.id | urlencode }}?repo={{ rid | urlencode }}">§{{ s.id }}</a>
       <span class="title">{{ s.title }}</span>
       <span class="sum">{{ s.summary }}</span>
-      <span>{{ status(s.status) }}</span>
+      <span class="st">{{ status(s.status) }}</span>
       <span class="tk">{{ s.tokens.l2 }}</span>
     </div>
     {% else %}
@@ -57,6 +57,7 @@
   </div>
 </div>
 {% endblock %}
+{% block rail_label %}Coverage{% endblock %}
 {% block rail %}
 <div class="rail-block">
   <p class="kicker">Coverage</p>

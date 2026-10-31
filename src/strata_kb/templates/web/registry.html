@@ -35,17 +35,17 @@
 
   <section class="panel" aria-label="Registered repositories">
     <div class="panel-head"><h2>Repositories</h2><span class="note">{{ rows | length }} registered</span></div>
-    <div class="sec-table">
+    <div class="sec-table" data-cards="registry">
       <div class="reg-grid head">
         <span>Repository</span><span>repo_id</span><span>Kind</span><span>Workflow pin</span><span>Auto-merge</span><span></span>
       </div>
       {% for r in rows %}
       <div class="reg-grid">
         <span class="reg-repo">{{ r.repo }}</span>
-        <span class="mono">{{ r.repo_id }}</span>
-        <span>{% if r.kind %}<span class="badge badge-{{ r.kind }}">{{ r.kind }}</span>{% else %}<span class="muted">inferred</span>{% endif %}</span>
+        <span class="mono reg-id">{{ r.repo_id }}</span>
+        <span class="reg-kind">{% if r.kind %}<span class="badge badge-{{ r.kind }}">{{ r.kind }}</span>{% else %}<span class="muted">inferred</span>{% endif %}</span>
         <span class="mono reg-pin">{% if r.workflow %}{{ r.workflow }}{% else %}<span class="muted">any workflow</span>{% endif %}</span>
-        <span>
+        <span class="reg-auto">
           {% if read_only %}
           <span class="muted">{{ 'on' if r.auto_merge else 'off' }}</span>
           {% else %}
@@ -60,7 +60,7 @@
           </form>
           {% endif %}
         </span>
-        <span>
+        <span class="reg-remove">
           {% if not read_only and confirm != r.repo %}
           <form method="post" action="/ui/registry/remove">
             <input type="hidden" name="csrf" value="{{ csrf }}">

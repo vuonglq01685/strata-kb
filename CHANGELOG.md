@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.32.0 — 2026-10-31
+
+The hub web UI works on phones, foldables and iPads; the desktop layout is unchanged.
+
+- **Web UI behaviour per width.** Below 900px a bottom tab bar (Overview, Docs, Tickets, Code, Q&A) replaces the left menu, and the tag cloud, section tree, store health, filters and table of contents open as bottom sheets from pills above the page. Below 1280px the top bar is compact (hub dot, search, ⋯ More), status chips and Sign out move into the More sheet, and the right rail opens as a Page info sheet. Tables become cards on phones, touch targets are at least 44px on touch screens, inputs are 16px so iOS does not zoom, and content respects notches and home-bar safe areas. From 1280px up nothing changes. Every page, including the sheets, works without JavaScript.
+- **Dev tooling.** `scripts/ui_demo_server.py` serves the hub web UI on seeded demo data, and `scripts/mobile_ui_check.cjs` drives it with Playwright at phone, foldable, iPad and desktop sizes (overflow, sheets, touch targets, no-JS, desktop pixel-compare).
+- **Upgrade.** Upgrade the hub only. No config change, no `kb init` change, no CLI change.
+
 ## 1.31.3 — 2026-10-30
 
 `kb ticket lint` catches a blocker that the ticket names but the mission does not declare.
