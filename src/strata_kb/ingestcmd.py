@@ -16,7 +16,7 @@ from pathlib import Path
 from strata_kb import authored, models, review
 from strata_kb.ingest import parser, pdftext, scaffold, sectioner
 from strata_kb.ingest.scaffold import ScaffoldReport
-from strata_kb.l3check import detect
+from strata_kb.l3check import detect, spans
 from strata_kb.l3check import report as l3report
 
 
@@ -135,39 +135,84 @@ def _chapter_filter(sections: str) -> set[str] | None:
     return {s.strip() for s in sections.split(",") if s.strip()} or None
 
 
-def l3_check(
-    opts: IngestOptions,
-    doc,  # docling document; untyped like parser.py's
+def _section_inputs(
     units: list[sectioner.SectionUnit],
-    notes: sectioner.SectioningNotes,
     slices: dict[str, list[str | None]],
-) -> l3report.L3Check | None:
-    """Check the L3 just written against the PDF's text layer and merge the
-    result into the previous `_l3check.yaml`. `slices` is the written L3
-    (`l3report.l3_slices`). None when the PDF has no readable text layer
-    (nothing to compare against). Writes nothing.
-
-    Every unit is checked, so spans and neighbours are as in a full run; on
-    `--sections` only the findings of the re-ingested chapters are kept."""
-    pdf_pages = pdftext.page_texts(opts.pdf)
-    if not pdf_pages:
-        return None
-    chapters = _chapter_filter(opts.sections)
-    checked = {u.id for u in units if chapters is None or u.chapter in chapters}
-    doc_dir = opts.kb_dir / opts.doc_id
-    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    last_page: int | None,
+) -> list[detect.SectionInput]:
+    """One input per unit: its page span (to the next unit's start page, or
+    `last_page`) and its slice of the written L3."""
     taken: Counter[str] = Counter()
     inputs: list[detect.SectionInput] = []
     for i, unit in enumerate(units):
         end_page = None
         if unit.page is not None:
-            end_page = units[i + 1].page if i + 1 < len(units) else max(pdf_pages)
+            end_page = units[i + 1].page if i + 1 < len(units) else last_page
         pieces = slices.get(unit.id, [])
         piece = pieces[taken[unit.id]] if taken[unit.id] < len(pieces) else None
         taken[unit.id] += 1
         inputs.append(
             detect.SectionInput(unit.id, unit.chapter, unit.page, end_page, piece or "")
         )
+    return inputs
+
+
+def _write_spans(
+    opts: IngestOptions,
+    units: list[sectioner.SectionUnit],
+    notes: sectioner.SectioningNotes,
+    slices: dict[str, list[str | None]],
+    last_page: int | None,
+) -> None:
+    """Save every unit's page span and the fallback ids for the L3 fix."""
+    manifest = models.load_yaml_model(
+        opts.kb_dir / opts.doc_id / "_manifest.yaml", models.Manifest
+    )
+    files = {s.id: s.file for s in manifest.sections}
+    inputs = _section_inputs(units, slices, last_page)
+    spans.save(
+        opts.work_dir,
+        opts.doc_id,
+        spans.SpansFile(
+            doc_id=opts.doc_id,
+            units=[
+                spans.UnitSpan(
+                    id=i.id,
+                    file=files[i.id],
+                    chapter=i.chapter,
+                    page=i.page,
+                    end_page=i.end_page,
+                )
+                for i in inputs
+                if i.id in files
+            ],
+            fallback_units=sorted(detect.fallback_findings(inputs, notes)),
+        ),
+    )
+
+
+def l3_check(
+    opts: IngestOptions,
+    doc,  # docling document; untyped like parser.py's
+    units: list[sectioner.SectionUnit],
+    notes: sectioner.SectioningNotes,
+    slices: dict[str, list[str | None]],
+    pdf_pages: dict[int, str],
+) -> l3report.L3Check | None:
+    """Check the L3 just written against the PDF's text layer (`pdf_pages`) and
+    merge the result into the previous `_l3check.yaml`. `slices` is the written
+    L3 (`l3report.l3_slices`). None when the PDF has no readable text layer
+    (nothing to compare against). Writes nothing.
+
+    Every unit is checked, so spans and neighbours are as in a full run; on
+    `--sections` only the findings of the re-ingested chapters are kept."""
+    if not pdf_pages:
+        return None
+    chapters = _chapter_filter(opts.sections)
+    checked = {u.id for u in units if chapters is None or u.chapter in chapters}
+    doc_dir = opts.kb_dir / opts.doc_id
+    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    inputs = _section_inputs(units, slices, max(pdf_pages))
     found = detect.check_document(
         inputs,
         {u.id: u.title for u in units},
@@ -310,8 +355,10 @@ def _run_ingest(
     )
     _echo_token_stats(report, len(notes.fallbacks), echo)
     slices = l3report.l3_slices(opts.kb_dir, opts.doc_id)
+    pdf_pages = pdftext.page_texts(opts.pdf)
+    _write_spans(opts, units, notes, slices, max(pdf_pages) if pdf_pages else None)
     flagged = _echo_l3_check(
-        l3_check(opts, doc, units, notes, slices),
+        l3_check(opts, doc, units, notes, slices, pdf_pages),
         opts,
         l3report.digest_slices(slices),
         echo,
