@@ -118,3 +118,60 @@ def blocked_ids(kb_dir: Path, doc_id: str) -> list[tuple[str, str]]:
     if rec is None:
         return []
     return blocked(rec, slices.current_digests(kb_dir, doc_id))
+
+
+def unit_files(doc_dir: Path) -> dict[str, str]:
+    """Section id -> chapter file, from the manifest (first row of a repeated id)."""
+    path = doc_dir / "_manifest.yaml"
+    if not path.exists():
+        return {}
+    manifest = models.load_yaml_model(path, models.Manifest)
+    files: dict[str, str] = {}
+    for sec in manifest.sections:
+        files.setdefault(sec.id, sec.file)
+    return files
+
+
+def confirm(
+    doc_dir: Path, ids: list[str], by: str, at: str, digests: dict[str, str]
+) -> None:
+    """A human accepts `ids` as they are now. An AI fix gets its newest entry
+    confirmed; an outside edit gets a new human entry holding the current
+    digest; an outside removal drops the id from baseline and entries. Ids
+    that nothing blocks are left alone."""
+    rec = load(doc_dir)
+    if rec is None:
+        return
+    reasons = dict(blocked(rec, digests))
+    files = unit_files(doc_dir)
+    baseline = dict(rec.baseline)
+    sections = list(rec.sections)
+    for sid in ids:
+        reason = reasons.get(sid)
+        if reason == REMOVED:
+            baseline.pop(sid, None)
+            sections = [e for e in sections if e.id != sid]
+            continue
+        if reason not in (AWAITING, EDITED):
+            continue
+        digest = digests[sid]
+        proof = slices.Confirmation(by=by, at=at, l3_sha256=digest)
+        if reason == AWAITING:
+            at_last = max(i for i, e in enumerate(sections) if e.id == sid)
+            sections[at_last] = sections[at_last].model_copy(
+                update={"confirmed": proof}
+            )
+            continue
+        newest = next((e for e in reversed(sections) if e.id == sid), None)
+        known = newest or baseline.get(sid)
+        sections.append(
+            FixEntry(
+                id=sid,
+                file=known.file if known else files.get(sid, ""),
+                l3_sha256=digest,
+                by="human",
+                at=at,
+                confirmed=proof,
+            )
+        )
+    save(doc_dir, L3Fix(baseline=baseline, sections=sections))

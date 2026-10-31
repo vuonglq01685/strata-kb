@@ -4729,6 +4729,56 @@ def _l3_pending(kb_dir: Path, doc_id: str) -> list[SectionCheck]:
         return []
 
 
+def _l3_fix_lines(kb_dir: Path, doc_id: str) -> dict[str, str]:
+    """Review line per id that `_l3fix.yaml` blocks: AI fixes awaiting review
+    (unverified first), then outside edits and removals. Exit 1 on bad YAML."""
+    from strata_kb.l3check import fixrecord
+
+    path = kb_dir / doc_id / fixrecord.FILE_NAME
+    try:
+        rec = fixrecord.load(kb_dir / doc_id)
+        if rec is None:
+            return {}
+        path = kb_dir / doc_id / "_manifest.yaml"
+        blocked = fixrecord.blocked_ids(kb_dir, doc_id)
+        files = fixrecord.unit_files(kb_dir / doc_id)
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(path, exc)
+        return {}
+    newest = {e.id: e for e in rec.sections}  # later entry overwrites earlier
+
+    def diff_hint(sid: str) -> str:
+        known = newest.get(sid) or rec.baseline.get(sid)
+        file = known.file if known else files.get(sid, "")
+        return f"git diff -- {kb_dir / doc_id / file}.raw.md"
+
+    def unverified(item: tuple[str, str]) -> bool:
+        entry = newest.get(item[0])
+        return (
+            item[1] == fixrecord.AWAITING and entry is not None and not entry.verified
+        )
+
+    lines: dict[str, str] = {}
+    for sid, reason in sorted(blocked, key=lambda i: not unverified(i)):
+        if reason == fixrecord.AWAITING:
+            entry = newest[sid]
+            tag = (
+                "ai-fix"
+                if entry.verified
+                else ("ai-fix, from page image — check against the PDF")
+            )
+            parts = [f"by {entry.by}"]
+            if entry.changes:
+                parts.append(f"changes: {', '.join(entry.changes)}")
+            parts.append(diff_hint(sid))
+            lines[sid] = f"§{sid} [{tag}] " + " · ".join(parts)
+        elif reason == fixrecord.EDITED:
+            lines[sid] = f"§{sid} [{reason}] {diff_hint(sid)}"
+        else:
+            lines[sid] = f"§{sid} [{reason}]"
+    return lines
+
+
 def _l3_finding_lines(finding: Finding) -> list[str]:
     evidence = " | ".join(
         f"{k}: {finding.evidence[k]}"
@@ -4911,11 +4961,14 @@ def l3_report(
         doc_ids = [e.id for e in index.docs]
     total = 0
     for did in doc_ids:
-        pending = _l3_pending(kb_dir, did)
-        if not pending:
+        fix_lines = _l3_fix_lines(kb_dir, did)
+        pending = [s for s in _l3_pending(kb_dir, did) if s.id not in fix_lines]
+        if not pending and not fix_lines:
             continue
-        total += len(pending)
+        total += len(pending) + len(fix_lines)
         typer.echo(did)
+        for line in fix_lines.values():
+            typer.echo(line)
         for sec in pending:
             typer.echo(f"§{sec.id}")
             for finding in sec.findings:
@@ -4980,7 +5033,7 @@ def l3_confirm(
 ) -> None:
     """Record that a reviewer checked flagged L3 sections; unblocks summarize/build/publish."""
     from strata_kb import gitio
-    from strata_kb.l3check import report
+    from strata_kb.l3check import fixrecord, report
     from strata_kb.review import resolve_reviewer
 
     if bool(section) == all_flagged:
@@ -4993,21 +5046,26 @@ def l3_confirm(
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    try:
-        check = report.load(kb_dir / doc_id)
-    except (*_CONFIG_READ_ERRORS, OSError) as exc:
-        _invalid_yaml_exit(kb_dir / doc_id / report.FILE_NAME, exc)
-    if check is None:
+    for load, name in (
+        (report.load, report.FILE_NAME),
+        (fixrecord.load, fixrecord.FILE_NAME),
+    ):
+        try:
+            load(kb_dir / doc_id)
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:
+            _invalid_yaml_exit(kb_dir / doc_id / name, exc)
+    if not any(
+        (kb_dir / doc_id / n).exists() for n in (report.FILE_NAME, fixrecord.FILE_NAME)
+    ):
         typer.secho(f"no {report.FILE_NAME} for {doc_id}", fg=typer.colors.RED)
         raise typer.Exit(1)
-    if (
-        all_flagged
-        and not yes
-        and not typer.confirm(
-            f"Confirm all {len(check.sections)} flagged section(s) of {doc_id}?"
-        )
-    ):
-        raise typer.Abort()
+    if all_flagged and not yes:
+        try:
+            count = len(report.confirmable(kb_dir, doc_id) or [])
+        except (*_CONFIG_READ_ERRORS, OSError) as exc:  # digests read the manifest
+            _invalid_yaml_exit(kb_dir / doc_id / "_manifest.yaml", exc)
+        if not typer.confirm(f"Confirm all {count} flagged section(s) of {doc_id}?"):
+            raise typer.Abort()
     try:
         confirmed = report.confirm(
             kb_dir, doc_id, None if all_flagged else list(section), by=reviewer

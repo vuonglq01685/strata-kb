@@ -23,7 +23,8 @@ def _rec(baseline=None, entries=None) -> L3Fix:
 
 
 def _entry(sid="4.2", sha="h2", file="a", **kw) -> FixEntry:
-    return FixEntry(id=sid, file=file, l3_sha256=sha, by="cursor", at="t", **kw)
+    kw = {"by": "cursor", "at": "t", **kw}
+    return FixEntry(id=sid, file=file, l3_sha256=sha, **kw)
 
 
 def test_baseline_matching_is_not_blocked():
@@ -267,3 +268,24 @@ def test_ingest_with_switch_off_writes_no_l3fix(tmp_path, monkeypatch):
 
     assert not (doc_dir / fixrecord.FILE_NAME).exists()
     assert "AI fix" not in result.output
+
+
+def test_confirm_updates_newest_entry_only(tmp_path):
+    older = _entry("4.2", "h2")
+    newest = _entry("4.2", "h2", by="claude-code")
+    fixrecord.save(tmp_path, _rec(entries=[older, newest]))
+
+    fixrecord.confirm(tmp_path, ["4.2"], "Rev", "t2", {"4.2": "h2"})
+
+    first, second = fixrecord.load(tmp_path).sections
+    assert first.confirmed is None
+    assert second.confirmed == Confirmation(by="Rev", at="t2", l3_sha256="h2")
+
+
+def test_confirm_ignores_ids_not_blocked(tmp_path):
+    rec = _rec(baseline={"1": ("a", "h1")})
+    fixrecord.save(tmp_path, rec)
+
+    fixrecord.confirm(tmp_path, ["1", "nope"], "Rev", "t2", {"1": "h1"})
+
+    assert fixrecord.load(tmp_path) == rec

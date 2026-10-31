@@ -3,7 +3,8 @@ import subprocess
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
-from strata_kb.l3check import report
+from strata_kb.l3check import fixrecord, report
+from strata_kb.l3check.fixrecord import BaselineUnit, FixEntry, L3Fix
 from strata_kb.l3check.report import AgentVerdict, Finding, L3Check, SectionCheck
 from tests.test_l3check_report import _flag, _kb
 
@@ -188,3 +189,173 @@ def test_confirm_section_gone_from_l3_exit_1(tmp_path):
 
     assert result.exit_code == 1
     assert "section not found in L3" in result.output
+
+
+def _fix(kb, *, baseline=None, entries=None):
+    fixrecord.save(
+        kb / "doc",
+        L3Fix(
+            baseline={
+                k: BaselineUnit(file="a", l3_sha256=h)
+                for k, h in (baseline or {}).items()
+            },
+            sections=entries or [],
+        ),
+    )
+
+
+def _fix_entry(sid, sha, **kw):
+    kw = {"by": "cursor", "at": "t", **kw}
+    return FixEntry(id=sid, file="a", l3_sha256=sha, **kw)
+
+
+def test_report_lists_ai_fix_first_with_diff_hint(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _flag(kb, "1")
+    _fix(
+        kb,
+        baseline={"2": digests["2"], "x1": "gone"},
+        entries=[
+            _fix_entry(
+                "1",
+                digests["1"],
+                by="claude-code",
+                verified=False,
+                changes=["text"],
+            )
+        ],
+    )
+    raw = kb / "doc" / "a.raw.md"
+    raw.write_text(raw.read_text(encoding="utf-8").replace("beta", "BETA"), "utf-8")
+    diff = f"git diff -- {kb}/doc/a.raw.md"
+
+    result = _invoke(kb, "report")
+
+    assert result.exit_code == 1
+    lines = result.output.splitlines()
+    assert lines[0] == "doc"
+    assert lines[1:4] == [
+        "§1 [ai-fix, from page image — check against the PDF] "
+        f"by claude-code · changes: text · {diff}",
+        f"§2 [edited outside kb l3 fix apply] {diff}",
+        "§x1 [removed outside kb l3 fix apply]",
+    ]
+    assert "  [content] p.1" not in lines  # §1 already printed as an ai-fix
+    assert "3 section(s) awaiting review." in result.output
+
+
+def test_report_verified_ai_fix_line(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(
+        kb,
+        baseline={"2": digests["2"]},
+        entries=[_fix_entry("1", digests["1"], changes=["re-id", "join"])],
+    )
+
+    result = _invoke(kb, "report")
+
+    assert result.exit_code == 1
+    assert (
+        f"§1 [ai-fix] by cursor · changes: re-id, join · git diff -- {kb}/doc/a.raw.md"
+        in result.output.splitlines()
+    )
+
+
+def test_confirm_ai_fix_unblocks(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(kb, baseline={"2": digests["2"]}, entries=[_fix_entry("1", digests["1"])])
+    assert report.blocked_docs(kb) == [("doc", ["1"])]
+
+    result = _invoke(kb, "confirm", "doc", "--section", "1", "--by", "Rev <r@x>")
+
+    assert result.exit_code == 0
+    assert "confirmed: §1" in result.output
+    assert report.blocked_docs(kb) == []
+    entry = fixrecord.load(kb / "doc").sections[0]
+    assert entry.confirmed.by == "Rev <r@x>"
+    assert entry.confirmed.l3_sha256 == digests["1"]
+
+
+def test_confirm_edited_outside_records_human_entry(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(kb, baseline={"1": "stale", "2": digests["2"]})
+
+    result = _invoke(kb, "confirm", "doc", "--section", "1", "--by", "Rev <r@x>")
+
+    assert result.exit_code == 0
+    assert report.blocked_docs(kb) == []
+    entry = fixrecord.load(kb / "doc").sections[0]
+    assert (entry.id, entry.file, entry.by, entry.changes) == ("1", "a", "human", [])
+    assert entry.l3_sha256 == digests["1"]
+    assert entry.confirmed.by == "Rev <r@x>"
+
+
+def test_confirm_untracked_unit_takes_file_from_manifest(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(kb, baseline={"2": digests["2"]})
+    assert report.blocked_docs(kb) == [("doc", ["1"])]
+
+    _invoke(kb, "confirm", "doc", "--section", "1", "--by", "r")
+
+    assert report.blocked_docs(kb) == []
+    assert fixrecord.load(kb / "doc").sections[0].file == "a"
+
+
+def test_confirm_removed_outside_drops_tracking(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(
+        kb,
+        baseline={"1": digests["1"], "2": digests["2"], "x1": "gone"},
+        entries=[_fix_entry("x1", "gone")],
+    )
+    assert report.blocked_docs(kb) == [("doc", ["x1"])]
+
+    result = _invoke(kb, "confirm", "doc", "--section", "x1", "--by", "r")
+
+    assert result.exit_code == 0
+    assert "confirmed: §x1" in result.output
+    rec = fixrecord.load(kb / "doc")
+    assert sorted(rec.baseline) == ["1", "2"]
+    assert rec.sections == []
+    assert report.blocked_docs(kb) == []
+
+
+def test_confirm_all_covers_both_files(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _flag(kb, "1")
+    _fix(kb, baseline={"1": digests["1"], "2": "stale"})
+
+    declined = runner.invoke(
+        app,
+        ["l3", "confirm", "doc", "--all", "--by", "r", "--kb-dir", str(kb)],
+        input="n\n",
+    )
+    accepted = _invoke(kb, "confirm", "doc", "--all", "--by", "r", "--yes")
+
+    assert "Confirm all 2 flagged section(s) of doc?" in declined.output
+    assert accepted.exit_code == 0
+    assert "confirmed: §1, §2" in accepted.output
+    assert report.load(kb / "doc").sections[0].confirmed is not None
+    assert report.blocked_docs(kb) == []
+
+
+def test_confirm_with_only_l3fix_file(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(kb, baseline={"2": digests["2"]}, entries=[_fix_entry("1", digests["1"])])
+    assert not (kb / "doc" / report.FILE_NAME).exists()
+
+    unknown = _invoke(kb, "confirm", "doc", "--section", "9", "--by", "r")
+    accepted = _invoke(kb, "confirm", "doc", "--all", "--by", "r", "--yes")
+
+    assert unknown.exit_code == 1
+    assert "no flagged section 9 (flagged: 1)" in unknown.output
+    assert accepted.exit_code == 0
+    assert report.blocked_docs(kb) == []

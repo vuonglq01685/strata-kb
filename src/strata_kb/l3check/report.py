@@ -137,14 +137,27 @@ def merge(previous: L3Check | None, fresh: L3Check, rechecked: set[str]) -> L3Ch
     return fresh.model_copy(update={"sections": merged})
 
 
+def confirmable(kb_dir: Path, doc_id: str) -> list[str] | None:
+    """Ids a human may confirm: flagged in `_l3check.yaml`, then those that
+    `_l3fix.yaml` blocks. None when neither file exists."""
+    check = load(kb_dir / doc_id)
+    if check is None and fixrecord.load(kb_dir / doc_id) is None:
+        return None
+    ids = [s.id for s in check.sections] if check is not None else []
+    fix_ids = [sid for sid, _ in fixrecord.blocked_ids(kb_dir, doc_id)]
+    return list(dict.fromkeys([*ids, *fix_ids]))
+
+
 def confirm(
     kb_dir: Path, doc_id: str, section_ids: list[str] | None, by: str
 ) -> list[str]:
-    """Bind a confirmation to each section's current L3 digest. `None` = all."""
-    check = load(kb_dir / doc_id)
-    if check is None:
+    """Bind a confirmation to each section's current L3 digest, in both files.
+    `None` = all."""
+    valid = confirmable(kb_dir, doc_id)
+    if valid is None:
         raise ValueError(f"{doc_id}: no {FILE_NAME} to confirm")
-    valid = [s.id for s in check.sections]
+    check = load(kb_dir / doc_id)
+    flagged = {s.id for s in check.sections} if check is not None else set()
     wanted = valid if section_ids is None else section_ids
     unknown = [i for i in wanted if i not in valid]
     if unknown:
@@ -154,16 +167,21 @@ def confirm(
         )
     digests = current_digests(kb_dir, doc_id)
     for sid in wanted:
-        if sid not in digests:
+        # a fix-blocked id missing from L3 is an outside removal: confirmable
+        if sid not in digests and sid in flagged:
             raise ValueError(f"§{sid}: section not found in L3 — re-ingest {doc_id}")
     at = _now()
-    sections = [
-        s.model_copy(
-            update={"confirmed": Confirmation(by=by, at=at, l3_sha256=digests[s.id])}
-        )
-        if s.id in wanted
-        else s
-        for s in check.sections
-    ]
-    save(kb_dir / doc_id, check.model_copy(update={"sections": sections}))
+    if check is not None:
+        sections = [
+            s.model_copy(
+                update={
+                    "confirmed": Confirmation(by=by, at=at, l3_sha256=digests[s.id])
+                }
+            )
+            if s.id in wanted
+            else s
+            for s in check.sections
+        ]
+        save(kb_dir / doc_id, check.model_copy(update={"sections": sections}))
+    fixrecord.confirm(kb_dir / doc_id, wanted, by, at, digests)
     return [i for i in valid if i in wanted]
