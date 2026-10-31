@@ -16,7 +16,7 @@ from pathlib import Path
 from strata_kb import authored, models, review
 from strata_kb.ingest import parser, pdftext, scaffold, sectioner
 from strata_kb.ingest.scaffold import ScaffoldReport
-from strata_kb.l3check import detect, spans
+from strata_kb.l3check import detect, fixrecord, fixswitch, spans
 from strata_kb.l3check import report as l3report
 
 
@@ -236,6 +236,40 @@ def l3_check(
     )
 
 
+def _reset_fix_record(
+    opts: IngestOptions,
+    units: list[sectioner.SectionUnit],
+    slices: dict[str, list[str | None]],
+    echo: Callable[[str], None],
+) -> None:
+    """Forget `_l3fix.yaml` entries for the files this run rewrote; with the AI
+    fix switch on, baseline their fresh L3 digests."""
+    doc_dir = opts.kb_dir / opts.doc_id
+    chapters = _chapter_filter(opts.sections)
+    manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
+    files = {s.id: s.file for s in manifest.sections}
+    redone = {u.id for u in units if chapters is None or u.chapter in chapters}
+    redone &= files.keys()
+    stems = set(files.values()) if chapters is None else {files[i] for i in redone}
+    digests = l3report.digest_slices(slices)
+    switch_on = fixswitch.is_on(opts.kb_dir)
+    fixrecord.reset_on_ingest(
+        doc_dir,
+        stems,
+        {
+            i: fixrecord.BaselineUnit(file=files[i], l3_sha256=digests[i])
+            for i in redone
+            if i in digests
+        },
+        switch_on,
+    )
+    if switch_on:
+        echo(
+            "AI fix: on — run the kb-l3-fix skill (or /kb-l3-fix), "
+            "then kb l3 report <id>"
+        )
+
+
 def _echo_l3_check(
     check: l3report.L3Check | None,
     opts: IngestOptions,
@@ -363,4 +397,5 @@ def _run_ingest(
         l3report.digest_slices(slices),
         echo,
     )
+    _reset_fix_record(opts, units, slices, echo)
     return replace(report, l3_flagged=flagged)

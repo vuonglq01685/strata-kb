@@ -13,8 +13,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from strata_kb import models, quality
-from strata_kb.mdutils import heading_occurrences, slice_section
+from strata_kb import models
+from strata_kb.l3check import fixrecord
+from strata_kb.l3check.slices import (  # noqa: F401 (re-exported)
+    Confirmation,
+    current_digests,
+    digest_slices,
+    l3_slices,
+)
 
 FILE_NAME = "_l3check.yaml"
 FindingKind = Literal["fallback", "order", "content", "break", "unverifiable"]
@@ -35,14 +41,6 @@ class Finding(BaseModel):
     # keys used: l3, next, pdf, heading, other
     evidence: dict[str, str] = Field(default_factory=dict)
     agent: AgentVerdict | None = None
-
-
-class Confirmation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    by: str
-    at: str
-    l3_sha256: str
 
 
 class SectionCheck(BaseModel):
@@ -81,43 +79,6 @@ def save(doc_dir: Path, check: L3Check) -> None:
         path.unlink(missing_ok=True)
 
 
-def l3_slices(kb_dir: Path, doc_id: str) -> dict[str, list[str | None]]:
-    """Section id -> its L3 slice per manifest row, in manifest order (an id may
-    repeat). None where the `.raw.md` file or the slice is missing."""
-    manifest_path = kb_dir / doc_id / "_manifest.yaml"
-    if not manifest_path.exists():
-        return {}
-    manifest = models.load_yaml_model(manifest_path, models.Manifest)
-    raws: dict[str, str] = {}
-    out: dict[str, list[str | None]] = {}
-    for sec, occ in zip(
-        manifest.sections, heading_occurrences(manifest.sections), strict=True
-    ):
-        if sec.file not in raws:
-            raw = kb_dir / doc_id / f"{sec.file}.raw.md"
-            raws[sec.file] = raw.read_text(encoding="utf-8") if raw.exists() else ""
-        out.setdefault(sec.id, []).append(
-            slice_section(raws[sec.file], sec.id, occurrence=occ)
-        )
-    return out
-
-
-def digest_slices(slices: dict[str, list[str | None]]) -> dict[str, str]:
-    """An id repeated in the manifest digests all its slices joined, so an edit
-    of any occurrence changes it. An id with a missing slice is left out."""
-    return {
-        sid: quality.digest("\n\n".join(p for p in pieces if p is not None))
-        for sid, pieces in slices.items()
-        if None not in pieces
-    }
-
-
-def current_digests(kb_dir: Path, doc_id: str) -> dict[str, str]:
-    """Section id -> digest of its L3 slice now (what `build` compares
-    `l3_sha256` against)."""
-    return digest_slices(l3_slices(kb_dir, doc_id))
-
-
 def unconfirmed(check: L3Check, digests: dict[str, str]) -> list[SectionCheck]:
     return [
         s
@@ -127,15 +88,21 @@ def unconfirmed(check: L3Check, digests: dict[str, str]) -> list[SectionCheck]:
 
 
 def blocked_docs(kb_dir: Path) -> list[tuple[str, list[str]]]:
+    """Per doc, the ids that gate: unconfirmed `_l3check.yaml` sections, then ids
+    that `_l3fix.yaml` blocks (an AI fix not yet confirmed, or L3 edited or
+    removed outside `kb l3 fix apply`)."""
     index = models.load_yaml_model(kb_dir / "index.yaml", models.KBIndex)
     out: list[tuple[str, list[str]]] = []
     for entry in index.docs:
+        ids: list[str] = []
         check = load(kb_dir / entry.id)
-        if check is None:
-            continue
-        pending = unconfirmed(check, current_digests(kb_dir, entry.id))
-        if pending:
-            out.append((entry.id, [s.id for s in pending]))
+        if check is not None:
+            ids = [s.id for s in unconfirmed(check, current_digests(kb_dir, entry.id))]
+        ids += [
+            sid for sid, _ in fixrecord.blocked_ids(kb_dir, entry.id) if sid not in ids
+        ]
+        if ids:
+            out.append((entry.id, ids))
     return out
 
 
