@@ -1,6 +1,10 @@
-# A1/A2 review convergence: two rounds, carry the rest (short design)
+# A1/A2 review convergence and readable hub Q&A (short design)
 
-Date: 2026-11-01 · Size: small change (skill text + template tests, no Python)
+Date: 2026-11-01 · Size: small change (skill text, one hub template, one
+render helper, tests)
+
+Two independent parts in one release: Part 1 (sections Intent to 4) is the
+review loop; Part 2 (section 5) is how Q&A reads on the hub.
 
 ## Intent
 
@@ -39,6 +43,9 @@ document, not the risk.
 4. When execute or TDD makes the code differ from the plan or design, the
    plan/design text is updated back, in the same task, without reopening
    A1/A2.
+5. Every Q&A question, context and answer on the hub is readable and
+   verifiable by a person: rendered, one decision per question, and no
+   reference a reader cannot look up.
 
 ## Non-goals / anti-goals
 
@@ -50,8 +57,11 @@ document, not the risk.
 - Anti-goal: a BLOCKER passing a gate. Anti-goal: a back-update that
   triggers a full A1/A2 again (the "amendment during execution" rounds in
   myflix US3, US6, platform-operations-US1 are the tail this removes).
-- No Python change. `lintcore.REVIEW_ROUND_CAP` is the BA ticket's review
-  record, not the design/plan one; leave it.
+- Part 1 needs no Python change. `lintcore.REVIEW_ROUND_CAP` is the BA
+  ticket's review record, not the design/plan one; leave it.
+- Part 2: no refusal of unformatted Q&A now. `kb_question_ask` and
+  `kb_question_answer` accept any text as today, so questions already open
+  on the hub stay answerable. No rewrite of stored questions.
 
 ## Approaches
 
@@ -148,6 +158,67 @@ carried gaps (section 3).
   orchestrator applies them to `plan.md` / `design.md` at merge-back, before
   A3. Design-only edits in a lane follow the same route.
 
+### 5. Readable hub Q&A (Part 2)
+
+Evidence: hub Q37 (myflix, `content-ingest-US2`, screenshot from the Dev).
+Markdown shows raw (`` `S3_ENDPOINT` `` with its backticks), the whole
+question is one paragraph, one question bundles two decisions (accept a test
+approach; open a new story), its context is only internal codes
+(`design A1 r1 R1-13 — SA-1, DD12, §9.3 T4`), and the answer mixes the
+decision, ticket changes, follow-ups and auto assumptions in one paragraph.
+
+**5a. Render.** `templates/web/questions_ticket.html` shows `question`,
+`context` and `answer` as plain text under `white-space:pre-wrap`. Render the
+three through `web/gfmrender.py` instead, with line breaks kept: today
+`gfmrender.render` turns a single newline into a space (checked:
+`"line one\nline two"` renders as one line) and only a literal `<br>` into a
+break. Old Q&A is plain text whose layout lives in single newlines, so the
+Q&A path needs markdown-it's `breaks` behaviour. Raw HTML stays off, as
+for mission and ticket pages. The `kb_question_list` text output
+(`ticketqa.format_questions`) is unchanged.
+
+**5b. Format for new questions** (skills that call `kb_question_ask`:
+`dev-design`, `dev-plan`, `dev-implement-ticket`, `dev-fix-bug`; the
+`dev-execute` and `dev-sa` routes that reach it inherit it). `question`:
+
+    **Decision needed:** <one sentence>
+
+    **Background:**
+    - <2-4 bullets in plain words>
+
+    **Options:**
+    1. <option> — <consequence>
+    2. <option> — <consequence>
+
+    **Dev recommends:** <option>, because <reason>
+    **AC impact:** <which ACs change, which do not>
+
+Rules: one decision per question (two decisions → two questions); no
+internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is;
+`context` names a place a reader can open, e.g. `design.md §9.3 — test T4`,
+not a review-round code. Labels are fixed English (they match the hub UI
+and a later check can parse them); the content is in the ticket's language.
+
+**5c. Format for answers** (`ba-answer-questions`). `answer`:
+
+    **Decision:** <what the BA chose>
+    **Ticket changes (rev N):**
+    - <section>: <what changed>
+    **Follow-ups:** <new question or story, and its owner>
+    **Assumptions:** <only if any>
+
+The BA's own words go in **Decision**; the skill structures, it does not
+reword.
+
+**5d. Questions already open.** When `ba-answer-questions` shows the BA an
+open question not in the 5b format, it restates it in that format in chat
+only, so the BA can read it. The stored question is never edited. The
+answer is written in the 5c format.
+
+**Later (not this change).** `kb_question_ask` warns on a question missing
+the 5b labels; it refuses only once the hub has no open question in the old
+format.
+
 ## Builder's calls (marked as mine)
 
 - Table names `## Carried gaps` and `## Execution deviations`, and their
@@ -157,6 +228,8 @@ carried gaps (section 3).
 - Lane deviations applied by the orchestrator at merge-back.
 - Delta review uses the existing `design-reviewer` / `plan-reviewer` roles,
   no new role.
+- Q&A labels in English, content in the ticket's language.
+- Restating old questions in chat (5d) instead of migrating stored text.
 
 ## Left to the builder
 
@@ -169,4 +242,10 @@ carried gaps (section 3).
   test compares against it for this change.
 - Guide text in `docs/src` that describes the 3-round cap, if any, and the
   guide PDFs rebuilt the way the repo already does.
+- How 5a keeps line breaks: a second `MarkdownIt` with `breaks` on, or an
+  option on `render`; mission/ticket page rendering must not change. A test
+  renders an old-style plain-text question (single newlines, backticks) and
+  a 5b-format question.
+- Whether the `/ui/questions` list page needs the same render (it shows no
+  question text today).
 - CHANGELOG entry and version bump at the next release.
