@@ -281,7 +281,9 @@ assistant cannot dispatch subagents (the default for the Copilot and Cursor
 wrappers) the review runs as a single pass and is a **report, not a gate**: the
 phase stops and hands you the result. `dev-execute` orders tasks with
 `kb plan waves docs/impl/<id>/plan.md` and runs independent ones in parallel git
-worktree lanes.
+worktree lanes. `kb plan waves` fails on a shared file without a dependency, a cycle, a missing
+`Depends on:` line or an empty `Serial resource:` line; a task with a `Serial resource:` line
+prints after `serial:` and runs alone, never in a parallel lane.
 
 ## 3.3 Questions for the BA
 
@@ -478,6 +480,11 @@ when every story, unparented ticket and bug is `done`. A task process carries
 `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse (`status` still works), so a task can
 neither flip the switch nor start a second loop.
 
+The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT: done`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` or `AUTO-RESULT: failed <reason>`, and nothing
+after it. A missing or malformed line counts as a failed attempt (`no result line`,
+`bad result line`). A skill you write for the runner must end the same way.
+
 ## 4.5 Claude Code cloud
 
 `/kb-auto run` also works in a Claude Code cloud session (detected from
@@ -492,7 +499,11 @@ The session branch cannot push to the default branch. When the default branch's 
 off, `/kb-auto run` opens an `auto/switch` PR that flips only `auto.enabled`, waits for green
 checks, and then **merges that PR itself, telling you first**, with
 `kb pr merge auto/switch --squash --admin --delete-branch`. The same branch-protection
-advice as in 4.1 applies: that merge has no review either. **The session must stay open**
+advice as in 4.1 applies: that merge has no review either. `/kb-auto run` is re-runnable: it
+removes a leftover local `auto/switch` worktree and branch itself. A switch PR left open by a
+failed run (red checks, merge error) and its remote `auto/switch` branch must be closed and
+deleted on GitHub by hand first; the skill stops and says so, and never force-pushes.
+**The session must stay open**
 for the whole run. Not yet verified on real cloud: a session lasting over three hours,
 pushing `auto/*` branches, a merge past a required review, and `gh run` over REST.
 
@@ -673,7 +684,7 @@ hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
 always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
 backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
 come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
-carries an `effective_date`. Switch model at phase boundaries, never inside a phase: a switch
+carries an `effective_date`. A model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate and flagged, so a total that contains them is a lower bound. Switch model at phase boundaries, never inside a phase: a switch
 discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
 strong-model session can cost **more** than not tiering. Check the result with
 `kb usage report`, which breaks spending down by model.

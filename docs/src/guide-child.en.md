@@ -365,7 +365,7 @@ first prints `kind: kb → hub menu: Document`, then:
 | `hub:` only | Mirrors `.kb/` into `federation/<repo-id>/` on the hub and opens a PR there. It needs `gh` able to open a PR on the hub's host. |
 
 `--pr` and `--direct` force a mode: `--direct` commits straight to the hub and is refused on
-a governed hub that has a git remote; with neither flag you get a PR, or a clear refusal.
+a governed hub that has a git remote; with neither flag `kb publish` picks direct only for a hub with no git remote, and otherwise a PR or a clear refusal.
 `kb publish` has no `--intake` flag: it reads `intake:` from the config. `--hub` or the
 `STRATA_KB_HUB` variable overrides `hub:`.
 
@@ -387,9 +387,11 @@ kb get hr-handbook 4.12 --level l2     # or --level l3
 kb tags                                # every tag published on the hub
 ```
 
-Every result cites `<repo-id>:<doc-id> §<section> (<revision>)`. Query in the document's
-own language: the store never translates. `--budget` is a token ceiling and is advisory;
-`--kind kb|ba|dev` filters by hub menu. The same search is available to your assistant over
+Every result starts with `--- [<repo-id>:<doc-id> §<section> (<revision>)] match=<mode> ~<n>tk`
+(`keyword`, `semantic` or `hybrid`) and cites that same form. Query in the document's
+own language: the store never translates. `--budget` is a token ceiling and is advisory:
+the first result is always returned whatever its size, because a section is never cut.
+`--tags` also accepts a document id; `--kind kb|ba|dev` filters by hub menu. The same search is available to your assistant over
 MCP (section 2.4).
 
 ---

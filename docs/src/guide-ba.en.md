@@ -203,7 +203,8 @@ pipeline; your jobs are steps 1, 3 and 9.
 - **Maturity review.** Two independent reviews against `docs/review-rubric.md` (Business
   coverage, Dev implementability). A gap it cannot close becomes an owned open question,
   `OPEN(<owner>)`, never a guess: read those, they are where the agent knew it did not
-  know. Round limits are in the skill.
+  know. Round limits are in the skill. The review scores are agent-reported: `kb ticket lint`
+  checks only that `## Review record` has the right shape, not how a score was reached.
 - **Review and save.** The draft lands in `tickets/<folder>/<ticket-id>.md`. You read it,
   commit it and paste `kb ticket export tickets/<folder>/<ticket-id>.md` into the tracker:
   the ticket without guidance comments, `## Definition of Ready` and `## Review record`.
@@ -257,7 +258,8 @@ first and proposes that story. A dependency that is only `draft` or `ready` stil
 done means published on the hub. A ticket is also `draft`, reason
 `parent mission rev <M> affects this story`, when its mission's `> Revision:` is above the ticket's `@ rev` pin **and** a later
 change-log row lists the story in `Affected`. The command is read-only and exits `0`
-except on a usage error; an unreachable hub or unpublished `-svc` becomes a `note:` line.
+except on a usage error. `--kb-dir` is read first when it holds the `-svc` document (a dev
+machine), the hub second; an unreachable hub or unpublished `-svc` becomes a `note:` line.
 With `--from-hub` (and `--repo <ba-repo-id>`) it reads the published plan instead: a
 published ticket is `ready`, and `draft` cannot be seen.
 
@@ -532,6 +534,11 @@ A task process carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` 
 refuse (`status` still works), so a task can neither flip the switch nor start a second
 loop.
 
+The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT: done`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` or `AUTO-RESULT: failed <reason>`, and nothing
+after it. A missing or malformed line counts as a failed attempt (`no result line`,
+`bad result line`). A skill you write for the runner must end the same way.
+
 ## 4.5 Claude Code cloud
 
 `/kb-auto run` also works in a Claude Code cloud session (detected from
@@ -547,8 +554,10 @@ off, `/kb-auto run` opens an `auto/switch` PR that flips only `auto.enabled`, wa
 green checks and then **merges that PR itself, telling you first**, with
 `kb pr merge auto/switch --squash --admin --delete-branch`. The auto-mode settings must
 already be committed on the default branch. The same branch-protection advice as in 4.1
-applies: that merge has no review either. If a run fails, the PR stays open: close it and
-delete the remote `auto/switch` branch on GitHub before a re-run. **The session must stay
+applies: that merge has no review either. `/kb-auto run` is re-runnable: it removes a
+leftover local `auto/switch` worktree and branch itself. A switch PR left open by a failed run
+(red checks, merge error) and its remote `auto/switch` branch must be closed and deleted on
+GitHub by hand first; the skill stops and says so, and never force-pushes. **The session must stay
 open** for the whole run. Not yet verified on real cloud: a session lasting over three
 hours, pushing `auto/*` branches, a merge past a required review, and `gh run` over REST.
 
@@ -671,7 +680,7 @@ hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
 always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
 backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
 come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
-carries an `effective_date`. Switch model at phase boundaries, never inside a phase: a switch
+carries an `effective_date`. A model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate and flagged, so a total that contains them is a lower bound. Switch model at phase boundaries, never inside a phase: a switch
 discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
 strong-model session can cost **more** than not tiering. Check the result with
 `kb usage report`, which breaks spending down by model.

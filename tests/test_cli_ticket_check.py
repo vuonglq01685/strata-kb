@@ -203,10 +203,8 @@ def test_docs_name_the_check_command():
     readme = (_P(__file__).resolve().parents[1] / "README.md").read_text(
         encoding="utf-8"
     )
-    assert (
-        "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]`"
-        in readme
-    )
+    # The README names the command in its table; the flags are in `--help`.
+    assert "`kb ticket check`" in readme
     # The BA quickstart is a one-page card; the BA guide carries the command.
     guide = (
         _P(__file__).resolve().parents[1] / "docs" / "src" / "guide-ba.en.md"

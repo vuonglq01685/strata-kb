@@ -203,7 +203,8 @@ của bạn là bước 1, 3 và 9.
 - **Maturity review.** Hai lượt review độc lập theo `docs/review-rubric.md` (Business
   coverage, Dev implementability). Khoảng trống mà nó không tự lấp được trở thành một câu hỏi
   mở có chủ, `OPEN(<owner>)`, không bao giờ là phỏng đoán: hãy đọc chúng, đó là chỗ agent biết
-  mình không biết. Giới hạn số vòng nằm trong skill.
+  mình không biết. Giới hạn số vòng nằm trong skill. Điểm review do agent tự báo: `kb ticket lint` chỉ kiểm
+  `## Review record` có đúng dạng, không kiểm điểm đạt được bằng cách nào.
 - **Review và lưu.** Bản nháp nằm ở `tickets/<folder>/<ticket-id>.md`. Bạn đọc, commit và dán
   `kb ticket export tickets/<folder>/<ticket-id>.md` vào công cụ quản lý issue: ticket không có
   comment hướng dẫn, `## Definition of Ready` và `## Review record`.
@@ -256,8 +257,8 @@ Báo cáo kết thúc bằng `Next: <us-id> — <title>`; `/ba-ticket-author` kh
 trước và đề xuất story đó. Một phụ thuộc mới chỉ `draft` hoặc `ready` vẫn chặn: done nghĩa
 là đã publish lên hub. Một ticket cũng là `draft`, lý do
 `parent mission rev <M> affects this story`, khi `> Revision:` của mission cao hơn pin `@ rev` của ticket **và** một dòng change log sau
-đó liệt kê story trong `Affected`. Lệnh chỉ đọc và thoát `0` trừ khi dùng sai lệnh; hub
-không tới được hay `-svc` chưa publish chỉ thành một dòng `note:`. Với `--from-hub` (và
+đó liệt kê story trong `Affected`. Lệnh chỉ đọc và thoát `0` trừ khi dùng sai lệnh. `--kb-dir` được đọc trước khi nó chứa tài liệu `-svc` (máy dev), hub
+đọc sau; hub không tới được hay `-svc` chưa publish chỉ thành một dòng `note:`. Với `--from-hub` (và
 `--repo <ba-repo-id>`) nó đọc kế hoạch đã publish thay vào đó: ticket đã publish là `ready`,
 và không thấy được `draft`.
 
@@ -531,6 +532,11 @@ Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, trong đó `kb auto on`, 
 chối (`status` vẫn chạy), nên task không thể bật công tắc cũng không thể khởi động vòng lặp
 thứ hai.
 
+Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có
+gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần thử thất bại (`no result line`,
+`bad result line`). Skill bạn tự viết cho runner phải kết thúc theo cùng cách.
+
 ## 4.5 Claude Code cloud
 
 `/kb-auto run` cũng chạy được trong một phiên Claude Code cloud (nhận diện qua
@@ -545,8 +551,10 @@ Nhánh của phiên không push được lên nhánh mặc định. Khi công t�
 `/kb-auto run` mở một PR `auto/switch` chỉ bật `auto.enabled`, chờ check xanh rồi **tự merge
 PR đó, báo bạn trước**, bằng `kb pr merge auto/switch --squash --admin --delete-branch`. Các
 thiết lập auto-mode phải đã được commit trên nhánh mặc định. Lời khuyên branch protection
-giống như ở 4.1 áp dụng: lần merge đó cũng không có review. Nếu một lượt chạy thất bại, PR
-vẫn mở: hãy đóng nó và xóa nhánh `auto/switch` từ xa trên GitHub trước khi chạy lại. **Phiên
+giống như ở 4.1 áp dụng: lần merge đó cũng không có review. `/kb-auto run` chạy lại được: nó tự
+gỡ worktree và nhánh `auto/switch` cục bộ còn sót. PR chuyển công tắc bị bỏ mở sau một lượt
+chạy thất bại (check đỏ, lỗi merge) và nhánh `auto/switch` từ xa của nó phải được đóng và
+xóa trên GitHub bằng tay trước; skill dừng lại và nói rõ, và không bao giờ force-push. **Phiên
 phải được giữ mở** trong suốt lượt chạy. Chưa được kiểm chứng trên cloud thật: phiên kéo dài
 hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt buộc, và `gh run` qua REST.
 
@@ -668,7 +676,7 @@ nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log
 hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
 `kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
 không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
-từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Đổi model ở ranh giới phase, không bao
+từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh giới phase, không bao
 giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
 model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
 `kb usage report`, vốn chia chi tiêu theo model.

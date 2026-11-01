@@ -365,8 +365,8 @@ in trước `kind: kb → hub menu: Document`, rồi:
 | Chỉ có `hub:` | Mirror `.kb/` vào `federation/<repo-id>/` trên hub và mở một PR ở đó. Cần `gh` mở được PR trên host của hub. |
 
 `--pr` và `--direct` ép một chế độ: `--direct` commit thẳng vào hub và bị từ chối trên hub
-đã được quản trị có git remote; không có cờ nào thì bạn nhận một PR, hoặc một lời từ chối
-rõ ràng. `kb publish` không có cờ `--intake`: nó đọc `intake:` từ config. `--hub` hoặc
+đã được quản trị có git remote; không có cờ nào thì `kb publish` chỉ chọn direct với hub không có git remote, còn lại là một PR
+hoặc một lời từ chối rõ ràng. `kb publish` không có cờ `--intake`: nó đọc `intake:` từ config. `--hub` hoặc
 biến `STRATA_KB_HUB` ghi đè `hub:`.
 
 Publish chỉ sao chép **artefact trong `.kb/`**: tài liệu, index, manifest và `assets/`.
@@ -387,9 +387,11 @@ kb get hr-handbook 4.12 --level l2     # or --level l3
 kb tags                                # every tag published on the hub
 ```
 
-Mỗi kết quả trích dẫn `<repo-id>:<doc-id> §<section> (<revision>)`. Hãy truy vấn bằng
+Mỗi kết quả bắt đầu bằng `--- [<repo-id>:<doc-id> §<section> (<revision>)] match=<mode> ~<n>tk`
+(`keyword`, `semantic` hoặc `hybrid`) và trích dẫn đúng dạng đó. Hãy truy vấn bằng
 chính ngôn ngữ của tài liệu: kho không bao giờ dịch. `--budget` là trần token và chỉ mang
-tính tham khảo; `--kind kb|ba|dev` lọc theo menu của hub. Cùng việc tìm kiếm này có sẵn
+tính tham khảo: kết quả đầu tiên luôn được trả về dù lớn đến đâu, vì section không bao giờ bị cắt.
+`--tags` cũng nhận id tài liệu; `--kind kb|ba|dev` lọc theo menu của hub. Cùng việc tìm kiếm này có sẵn
 cho trợ lý của bạn qua MCP (mục 2.4).
 
 ---

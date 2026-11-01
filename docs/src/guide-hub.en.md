@@ -599,7 +599,7 @@ The server exposes fourteen tools. Only `kb_question_ask` and `kb_question_answe
 
 | Tool | Purpose |
 |---|---|
-| `kb_search` | find sections by natural language; returns L2 within a token budget, with citations (`query`, `tags`, `budget`, `kinds`). Each leg is capped at 50 results before fusion, and the tool says when matches were dropped |
+| `kb_search` | find sections by natural language; returns L2 within a token budget, with citations (`query`, `tags`, `budget`, `kinds`). Each leg is capped at 50 results before fusion, and the tool says when matches were dropped. It also flags when the top two results are the same section published by two repos, when their keyword scores tie exactly, or when both are hybrid-confirmed within the ambiguity ratio |
 | `kb_get_section` | fetch exactly one section at L2 or L3 |
 | `kb_context_new` | pin a `kb-context` citation block at the hub's current commit, from confirmed refs |
 | `kb_resolve` | resolve a `kb-context` block (or a ticket containing one): the sections at the pinned version plus their freshness |
@@ -670,4 +670,4 @@ publish") until the BA's new ticket revision is on the hub, then it is *answered
 
 `0` ok, `1` error or misconfiguration, `2` a stale citation (for `kb doctor`, a stale hub
 cache) or a CLI usage error. `kb code-sync scan` and `run`: `0` nothing to do, `2` findings,
-`1` error; `kb code-sync issue`: `0` a usable issue, `2` none, `1` error.
+`1` error; `kb code-sync issue`: `0` a usable issue, `2` none, `1` error. Exit `2` for a stale citation comes from `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale` and `kb mission lint --fail-on-stale`; `kb doctor` also exits `2`, with or without `--context`, when the hub cache itself is stale.

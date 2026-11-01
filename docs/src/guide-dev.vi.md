@@ -271,7 +271,9 @@ luồng và chuyển cho bạn. Nếu trợ lý của bạn không điều phố
 wrapper Copilot và Cursor), lượt review chạy như một lượt đơn và chỉ là **báo cáo, không
 phải cổng**: phase dừng và giao kết quả cho bạn. `dev-execute` sắp thứ tự task bằng
 `kb plan waves docs/impl/<id>/plan.md` và chạy các task độc lập song song trong các lane
-git worktree.
+git worktree. `kb plan waves` báo lỗi khi có file dùng chung mà không có phụ thuộc, khi có chu
+trình, khi thiếu dòng `Depends on:` hoặc dòng `Serial resource:` rỗng; task có dòng
+`Serial resource:` được in sau `serial:` và chạy một mình, không bao giờ trong lane song song.
 
 ## 3.3 Câu hỏi cho BA
 
@@ -464,6 +466,11 @@ thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không c�
 `done`. Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off`
 và `run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa khởi động vòng lặp thứ hai.
 
+Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có
+gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần thử thất bại (`no result line`,
+`bad result line`). Skill bạn tự viết cho runner phải kết thúc theo cùng cách.
+
 ## 4.5 Claude Code cloud
 
 `/kb-auto run` cũng chạy trong một phiên Claude Code cloud (nhận biết qua
@@ -478,6 +485,10 @@ Nhánh của phiên không push được lên nhánh mặc định. Khi công t�
 `/kb-auto run` mở một PR `auto/switch` chỉ đổi `auto.enabled`, chờ check xanh, rồi **tự
 merge PR đó, báo cho bạn trước**, bằng `kb pr merge auto/switch --squash --admin --delete-branch`.
 Lời khuyên branch protection ở 4.1 áp dụng y nguyên: lần merge đó cũng không có review.
+`/kb-auto run` chạy lại được: nó tự gỡ worktree và nhánh `auto/switch` cục bộ còn sót. PR
+chuyển công tắc bị bỏ mở sau một lượt chạy thất bại (check đỏ, lỗi merge) và nhánh
+`auto/switch` từ xa của nó phải được đóng và xóa trên GitHub bằng tay trước; skill dừng lại
+và nói rõ, và không bao giờ force-push.
 **Phiên phải luôn mở** suốt lượt chạy. Chưa được kiểm chứng trên cloud thật: phiên kéo dài
 hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt buộc, và `gh run` qua REST.
 
@@ -659,7 +670,7 @@ nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log
 hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
 `kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
 không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
-từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Đổi model ở ranh giới phase, không bao
+từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh giới phase, không bao
 giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
 model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
 `kb usage report`, vốn chia chi tiêu theo model.

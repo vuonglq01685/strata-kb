@@ -586,7 +586,7 @@ Server cung cấp mười bốn công cụ. Chỉ `kb_question_ask` và `kb_ques
 
 | Công cụ | Mục đích |
 |---|---|
-| `kb_search` | tìm section bằng ngôn ngữ tự nhiên; trả L2 trong một ngân sách token, kèm trích dẫn (`query`, `tags`, `budget`, `kinds`). Mỗi nhánh bị giới hạn 50 kết quả trước khi hợp nhất, và công cụ báo khi có kết quả bị bỏ |
+| `kb_search` | tìm section bằng ngôn ngữ tự nhiên; trả L2 trong một ngân sách token, kèm trích dẫn (`query`, `tags`, `budget`, `kinds`). Mỗi nhánh bị giới hạn 50 kết quả trước khi hợp nhất, và công cụ báo khi có kết quả bị bỏ. Nó cũng báo khi hai kết quả đầu là cùng một section do hai repo publish, khi điểm từ khoá của chúng bằng nhau tuyệt đối, hoặc khi cả hai đều được hybrid xác nhận và nằm trong ngưỡng nhập nhằng |
 | `kb_get_section` | lấy đúng một section ở L2 hoặc L3 |
 | `kb_context_new` | ghim một khối trích dẫn `kb-context` tại commit hiện tại của hub, từ các ref đã xác nhận |
 | `kb_resolve` | phân giải một khối `kb-context` (hoặc một ticket chứa nó): các section ở version đã ghim cùng độ mới của chúng |
@@ -654,4 +654,4 @@ section thay đổi cho mỗi câu trả lời, và tối đa 50 câu hỏi mở
 
 `0` ổn, `1` lỗi hoặc cấu hình sai, `2` một trích dẫn cũ (với `kb doctor` là cache hub cũ)
 hoặc lỗi cách dùng CLI. `kb code-sync scan` và `run`: `0` không có gì cần làm, `2` có phát
-hiện, `1` lỗi; `kb code-sync issue`: `0` có issue dùng được, `2` không có, `1` lỗi.
+hiện, `1` lỗi; `kb code-sync issue`: `0` có issue dùng được, `2` không có, `1` lỗi. Mã `2` cho trích dẫn cũ đến từ `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale` và `kb mission lint --fail-on-stale`; `kb doctor` cũng thoát `2`, dù có hay không có `--context`, khi chính cache hub đã cũ.

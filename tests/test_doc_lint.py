@@ -17,9 +17,6 @@ DOCS: list[Path] = [
     *sorted((SRC / "templates/init").glob("QUICKSTART-*.md")),
 ]
 
-# Cleared by the guides rewrite: the last task touching the offending files removes the mark.
-REWRITE_PENDING = pytest.mark.xfail(strict=True, reason="cleared by the guides rewrite")
-
 # `kb <name>[ <sub>]` where the backtick opens the span, so prose like "`kb` itself" is skipped.
 KB_COMMAND = re.compile(r"`kb ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?")
 SLASH_COMMAND = re.compile(r"`/((?:kb|ba|dev|sa)-[a-z0-9-]+)")
