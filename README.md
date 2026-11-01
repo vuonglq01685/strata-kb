@@ -123,6 +123,7 @@ Needs **Python 3.11+** and **Git**.
 pip install strata-kb            # kb CLI + MCP server
 pip install "strata-kb[ingest]"  # + PDF ingestion (docling)
 pip install "strata-kb[embed]"   # + semantic search
+pip install "strata-kb[server]"  # + hosting the shared HTTP server and Web UI login
 pip install "strata-kb[code]"    # + routes, pages, jobs, symbols in `kb code-ingest`
 pip install "strata-kb[s3]"      # + S3 asset offloading
 ```

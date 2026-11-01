@@ -664,7 +664,10 @@ def test_docs_name_the_next_command():
     # The README keeps one command-table line per group; the BA guide carries
     # the states and the lookup order (flags are in `kb mission next --help`).
     readme = (root / "README.md").read_text(encoding="utf-8")
-    assert "| `kb mission` |" in readme and "`next`" in readme
+    row = next(
+        line for line in readme.splitlines() if line.startswith("| `kb mission` |")
+    )
+    assert "`next`" in row
     assert "`kb ticket tidy`" in readme
     guide = " ".join(
         (root / "docs" / "src" / "guide-ba.en.md").read_text(encoding="utf-8").split()

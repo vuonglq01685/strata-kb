@@ -202,7 +202,9 @@ def _section(text: str, heading: str) -> str:
 def test_docs_stats_examples_sit_inside_the_l2_budget():
     """B17: the old example showed L2 = 89 % of L3 -- a store that fails the
     product's own `kb build --strict`. No doc shows `kb stats` output today;
-    if one is added it must stay inside the budget."""
+    if one is added it must stay inside the budget. The README's stated L2
+    figure is pinned so the test cannot pass vacuously."""
+    assert "~20–30% of the original" in _readme_text()
     for name, path in _doc_paths().items():
         for block in re.findall(
             r"\$ kb stats\n(.*?)```", path.read_text("utf-8"), re.S
@@ -383,6 +385,10 @@ def test_guides_document_ticket_qa_rules():
     assert "Any other target is refused" in hub
     assert "`/ui/questions`" in hub
     assert "`/ui/questions/ticket?repo=<repo-id>&ticket=<id>`" in hub
+    # the runner's read-only poll of the Q&A store
+    assert "polls `GET /api/questions` with the same bearer token" in hub
+    assert "`status` (`open` by default, `waiting`, `answered` or `all`" in hub
+    assert "`GET /api/questions`" in _doc("guide-hub.vi.md")
     ba = _doc("guide-ba.en.md")
     assert "**Re-tick the Definition of Ready.**" in ba
     assert "Trigger `question`" in ba

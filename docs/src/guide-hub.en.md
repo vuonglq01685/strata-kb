@@ -666,6 +666,11 @@ sections per answer, and at most 50 open questions per ticket. A question is *op
 answered; an answer that changes the ticket stays *waiting* (shown as "waiting for
 publish") until the BA's new ticket revision is on the hub, then it is *answered*.
 
+The auto runner of a `ba` or `dev` repo polls `GET /api/questions` with the same bearer token.
+It is read-only and returns `{"questions": [...]}`. Parameters: `repo`, `ticket`, and `status`
+(`open` by default, `waiting`, `answered` or `all`; anything else is a `400`). A hub without a
+Q&A store answers an empty list; a hub that does not serve its own checkout answers `503`.
+
 ## 6.6 Exit codes
 
 `0` ok, `1` error or misconfiguration, `2` a stale citation (for `kb doctor`, a stale hub

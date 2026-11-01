@@ -650,6 +650,11 @@ section thay đổi cho mỗi câu trả lời, và tối đa 50 câu hỏi mở
 "waiting for publish") cho đến khi revision ticket mới của BA có trên hub, rồi nó là
 *answered*.
 
+Runner tự động của repo `ba` hoặc `dev` thăm dò `GET /api/questions` bằng cùng bearer token.
+Nó chỉ đọc và trả `{"questions": [...]}`. Tham số: `repo`, `ticket`, và `status` (mặc định
+`open`, hoặc `waiting`, `answered`, `all`; giá trị khác là `400`). Hub chưa có kho Q&A trả về
+danh sách rỗng; hub không phục vụ chính checkout của nó trả `503`.
+
 ## 6.6 Mã thoát
 
 `0` ổn, `1` lỗi hoặc cấu hình sai, `2` một trích dẫn cũ (với `kb doctor` là cache hub cũ)
