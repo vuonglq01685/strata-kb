@@ -1,188 +1,62 @@
 # Strata Quickstart (main hub)
 
-This repo IS the hub: it hosts `federation/` (the single source of truth for
-search) and runs the shared HTTP MCP server + Web UI. Child repos publish
-into it; merging their PRs here is the review gate.
+This repo IS the hub. Its `federation/` folder holds the one searchable copy of everything
+the organisation publishes, and the hub serves it over HTTP MCP, the REST API and the Web UI.
+Nothing a child, BA or Dev repo publishes is searchable until a pull request on this hub
+merges. You are that gate.
 
-1. **Set up Docker serving** — run `kb docker-setup` (in Claude Code /
-   Copilot Chat / Cursor: `/kb-docker-setup`). It creates `.env`, generates
-   `STRATA_KB_HTTP_TOKEN`, and starts the service (`docker compose up -d`) —
-   web UI at http://localhost:8321/ui (sign in with a hub account — create
-   the first one in step 5). The token is auto-generated for convenience —
-   replace it with your own secret for real deployments. It serves `/api`,
-   `/mcp` and CI; people sign in to the UI with an account. Manual fallback: `cp .env.example .env`, edit the token,
-   then `docker compose up -d`. Without Docker:
-   `python -m strata_kb.mcp --hub . --transport http`
-   (requires the `STRATA_KB_HTTP_TOKEN` env var). The server pulls the hub
-   checkout every 5 minutes, so merged hub PRs go live without a restart —
-   set `STRATA_KB_HUB_PULL_INTERVAL` (seconds, `0` = off) to change it.
-2. **Ingest this repo's own documents (optional)** — the hub may keep its own
-   `.kb/`: put the PDF in `source/`, then
-   `kb ingest source/my-doc.pdf --id my-doc --tags "tag1,tag2"`
-   (prefer the `/kb-ingest` slash command; or run inside Docker:
-   `docker compose run --rm hub kb ingest source/my-doc.pdf --id my-doc`)
-   If the L3 check flags sections, review them first: `kb l3 report my-doc`,
-   then `kb l3 confirm my-doc --section <id>` (or `--all`); until then the
-   document cannot be summarized, built or published.
-   Summaries: automatic with a local LLM CLI, or `/kb-summarize`; validate
-   with `kb build`; then `kb publish` mirrors into `federation/<repo-id>/`.
-3. **Query** — `kb query "your question"`, the web UI, or MCP. The local
-   `.mcp.json` / `.cursor/mcp.json` run the stdio server for the hub
-   maintainer; remote clients (child repos, BA machines) use the HTTP
-   endpoint instead:
-   `http://<host>:8321/mcp` with header `Authorization: Bearer <token>`.
-4. **Register child repos (optional)** — lets child repos publish from CI via
-   OIDC with zero secrets, instead of pushing directly. Create
-   `federation/registry.yaml` on the hub with one line per child:
-   `owner/repo: repo-id` under a `repos:` key, or `owner/repo: {repo_id:
-   repo-id, kind: kb|ba|dev}` to pin what the repo holds (`kb` documents,
-   `ba` tickets, `dev` code; an entry without `kind` has it inferred from
-   what it publishes). On an existing hub, `kb init --kind hub` proposes
-   the kinds for your kind-less entries and asks before writing them
-   (`--yes` skips the question; it never commits — open a PR). **This also makes the hub
-   *governed*:** once the file is non-empty, `kb publish` on the git path
-   refuses any repo-id not listed here and refuses direct pushes — every
-   child that publishes over git, not only those using this OIDC
-   intake, must be registered. Then install a GitHub App on the hub repo
-   (permissions `Contents: Read and write` + `Pull requests: Read and
-   write`) and set `STRATA_KB_GH_APP_ID`, `STRATA_KB_GH_APP_KEY`,
-   `STRATA_KB_INTAKE_AUDIENCE` on the server — see
-   `docs/deploy-remote-mcp.md` § "Publish intake" for the full setup.
-   **Warning:** `repo-id` here must exactly match `repo_id:` in the child's
-   `.kb/config.yaml`. On the **git** path a mismatch is refused before
-   anything is written, naming both ids. On this **intake** path publish
-   still succeeds and the PR opens, but the dev CLI will time out waiting
-   for a PR that actually opened, and uploads lose incrementality (every
-   publish becomes a full upload).
-   Upgrading to 1.31.1: tell child repos to bump their CI pin to
-   `strata-kb==1.31.1`; an older CI has no L3 review gate (the hub intake
-   never receives `_l3check.yaml` either way).
-5. **Create the first admin account** — people sign in to the web UI with a
-   username and password; the bearer token is for `/api`, `/mcp` and CI. The
-   accounts live in `.kb-auth/` (`users.db` and `session.key`) in the hub
-   root. **Never commit `.kb-auth/`** — a new hub's `.gitignore` lists it, and the
-   running hub adds it to `.git/info/exclude`. Deleting `.kb-auth/session.key`
-   logs everyone out. Pick one way:
-   - **Setup page (default):** open the hub in a browser. While no account
-     exists it shows `/ui/setup`. Read the one-time setup code from the hub log
-     (`docker compose logs hub`; it is printed at start and changes on every
-     restart), enter it with a username and password, and that account becomes
-     the `admin`. The bearer token does not work here.
-   - **Command:** `docker compose exec hub kb user add <name> --role admin`
-     (prompts for the password twice).
-   - **Bootstrap env:** set `STRATA_KB_BOOTSTRAP_ADMIN=<name>` and
-     `STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'` in `.env`, where `<hash>` is
-     the output of `kb user hash` (it prompts for the password and prints a
-     ready-to-paste line; run it on any machine with strata-kb installed).
-     **Keep the single quotes**: Docker Compose expands `$` in `.env`, and the
-     hash contains several. Plaintext passwords are never accepted. The pair applies only while no account exists; once one does,
-     a stale value is ignored.
+**Full guide:** https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-hub.en.md
+(Tiếng Việt: https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-hub.vi.md)
 
-   Roles are `admin`, `ba` and `dev`. More commands:
-   `kb user passwd|role|remove|list`. The last admin cannot be removed or demoted. Only an
-   `admin` sees and uses the **Registry** page (step 6); the bearer token can
-   view the UI read-only but never opens it.
-6. **Manage the registry and auto-merge from the UI (optional)** — an admin
-   opens **Registry** (`/ui/registry`) to add or remove a child repo, and to
-   switch **auto-merge** on or off per repo. Each change is a commit on the
-   hub's default branch (`registry: <action> <repo> (by <user>)`), pushed
-   by the same GitHub App as in step 4, and never force-pushed. The page is
-   read-only (a banner says why) when intake is not configured or the hub
-   has no git remote. **If the default branch is protected, the App must be
-   allowed to push to it**, or every edit is rejected. With auto-merge on
-   for a repo, the intake merges that repo's publish PR itself right after
-   opening it; the App needs `Contents: Read and write` and `Pull requests:
-   Read and write` (the same two permissions as step 4). Auto-merge merges
-   the **whole** PR, so a `-svc` amend riding along merges without a hub
-   review — that review happens in the dev's repo before publish. If the
-   merge fails the PR stays open for a human and the publish still counts as
-   done; `kb publish` and `kb ci-publish` print "merged" only when it merged.
-7. **Ticket Q&A (nothing to set up)** — a Dev asks the BA about a published
-   ticket, the BA answers, and the hub keeps the thread. The questions live in
-   SQLite at `.kb-qa/qa.db` in the hub root; **never commit `.kb-qa/`** — a new
-   hub's `.gitignore` lists it, and the hub also adds it to `.git/info/exclude`
-   when the web UI starts. Back it up with the rest of the hub volume (in
-   Docker: `/data/.kb-qa/qa.db`); the file is created, and git-excluded, on the
-   first Q&A call. Three MCP tools use it (`kb_question_ask`,
-   `kb_question_list`, `kb_question_answer`); `kb_question_ask` and
-   `kb_question_answer` are the first MCP tools that write. They work only on
-   the hub itself: this shared hub's HTTP server, or the stdio server run
-   inside the hub's own checkout (`--kb <hub>/.kb`). Any other target is
-   refused: a dev repo's stdio server, or a hub URL read through a local cache
-   clone, answers `Q&A needs the shared hub server — point MCP at it
-   (kb mcp-setup)`, list included. BA and Dev repos point MCP at the
-   hub's HTTP server with `kb mcp-setup`. Any caller the hub authenticates may ask and answer (the
-   bearer token, or a session of any role); `asked_by` and `answered_by` are
-   names the caller types, so they track who said what and do not
-   authenticate anyone. At most 50 questions per ticket can be open at once.
-   The read-only **Q&A** menu (`/ui/questions`) lists the tickets that have
-   questions, per BA repo, with open, waiting and answered counts;
-   `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` shows one ticket's
-   questions. A question is **open** until answered. An answer that changes
-   the ticket stays **waiting for publish** until the BA's new ticket revision
-   reaches the hub, then it is **answered**. The existing ticket page shows an
-   "N unresolved questions" link when any are open or waiting.
+## Set up (once)
 
-## Asset storage
+1. **Start the service.** `kb docker-setup` (in your assistant: `/kb-docker-setup`) writes
+   `.env` with a fresh `STRATA_KB_HTTP_TOKEN`, adds `.env` to `.gitignore` and runs
+   `docker compose up -d`. The Web UI is on port 8321 at `/ui`. Without the helper:
+   `cp .env.example .env`, put your own token in it, `docker compose up -d`. Without Docker:
+   `python -m strata_kb.mcp --hub . --transport http --host 0.0.0.0` (needs
+   `STRATA_KB_HTTP_TOKEN`).
+2. **Before you expose it.** The generated token is a convenience: replace it with your own
+   secret (32 or more printable ASCII characters). Behind a reverse proxy, set
+   `STRATA_KB_TRUSTED_PROXIES` and `STRATA_KB_ALLOWED_HOSTS`. After any change to `.env`:
+   `docker compose up -d --force-recreate`.
+3. **Create the first admin.** Open the hub in a browser and use `/ui/setup` with the code from
+   `docker compose logs hub`, or run
+   `docker compose exec hub kb user add <name> --role admin`. **Never commit `.kb-auth/`**
+   (accounts). Deleting `.kb-auth/session.key` logs everyone out.
+4. **Register the publishers.** Add every repo to `federation/registry.yaml` with a normal
+   PR: `owner/repo: repo-id` under `repos:`, or `{repo_id: ..., kind: kb|ba|dev}`. Once the
+   file is non-empty the hub is *governed*: unlisted repos cannot publish. `repo-id` must
+   exactly match `repo_id:` in that repo's `.kb/config.yaml`. Protect the default branch.
+   To accept CI publishes, install a GitHub App on the hub repo (`Contents: Read and write`,
+   `Pull requests: Read and write`) and set `STRATA_KB_GH_APP_ID`, `STRATA_KB_GH_APP_KEY`
+   and `STRATA_KB_INTAKE_AUDIENCE` on the server.
+5. **Give repo owners their settings.** The hub's git URL for `hub:` and the intake URL for
+   `intake:` in their `.kb/config.yaml` (**never a token in either**), and the hub's HTTP base
+   URL plus the bearer token for `kb mcp-setup`. Tell them whether auto-merge is on for
+   their repo.
+6. **One version for every repo.** Every repo runs the hub's strata-kb version; `kb doctor`
+   syncs it after `kb mcp-setup`.
 
-Image assets (`assets/<sha256>.png|webp`, referenced from markdown) live
-either in git or in an S3-compatible object store, per `asset_store.mode` in
-the hub's `.kb/config.yaml`. Configured once, hub-side — a child never
-configures asset storage of its own.
+Optional: asset storage in S3, chained hubs. The guide covers both.
 
-- **`mode: none`** (the default) — assets stay in git under
-  `federation/<rid>/assets/` and `.kb/<doc>/assets/`. Fine for a compressed
-  corpus; `kb doctor` warns once the total crosses ~100 MB, suggesting
-  `mode: s3` (`kb assets migrate`) or git-LFS.
-- **Switching to s3** — create a **private** bucket (block public access),
-  then credentials scoped to Get/Put/Head on the `assets/` prefix only.
-  Export them via the standard AWS env chain (`AWS_ACCESS_KEY_ID` /
-  `AWS_SECRET_ACCESS_KEY` / region) — set `endpoint` in the config instead
-  for MinIO/R2 or another S3-compatible host. Install the extra:
-  `pip install "strata-kb[s3]"`. Run `kb init --assets s3` (or hand-edit the
-  `asset_store:` block already in `.kb/config.yaml`) and fill in `bucket` /
-  `region` / `endpoint`. `kb doctor` confirms the store is reachable. If
-  assets already exist in git, `kb assets migrate` diverts them rid by rid
-  (idempotent, commits `federation/`); then `kb assets verify` confirms
-  every `_assets.yaml` record resolves and every markdown reference is
-  covered. That commit is local only — `kb assets migrate` never pushes, so
-  push it like any other hub commit if the hub has a remote.
-- **Manual rollback (s3 → none)** — for each rid, download every
-  `assets/<sha>` named in that rid's `_assets.yaml` back into its tree,
-  delete the `_assets.yaml` files, set `mode: none`, and commit. The
-  local-first resolver keeps serving throughout, so there's no downtime.
-- **Large `mode: none` corpora** — if s3 isn't an option but the repo is
-  outgrowing plain git, git-LFS for `assets/**` is a reasonable alternative;
-  `strata-kb` doesn't manage LFS itself, but the local-first read path works
-  either way.
+## Daily commands
 
-## CLI reference
+| Task | Command |
+|---|---|
+| Review and merge a publish PR | on your Git host; merging is the gate |
+| Add or change an account | `kb user add\|passwd\|role\|remove\|list` |
+| Add a repo, switch auto-merge | Registry page (`/ui/registry`, admin only), or a PR on `federation/registry.yaml` |
+| Read ticket questions | Q&A menu (`/ui/questions`); the store is `.kb-qa/qa.db`, **never commit `.kb-qa/`** |
+| Search | `kb query "your question"`, `kb get <doc> <section>`, `kb tags`, the Web UI |
+| Author on the hub itself | `kb ingest source/my-doc.pdf --id my-doc` (`/kb-ingest`), `/kb-summarize`, `kb build`, `/kb-approve`, then `kb publish` (`/kb-publish`); steps in the child guide |
+| Check health | `kb doctor`, and `kb reindex` when `federation/index.yaml` drifts |
+| Upgrade | `pip install --upgrade strata-kb`, `kb init --kind hub`, `docker compose pull && docker compose up -d`, `kb doctor`; then owners run `kb doctor` |
 
-- `kb init` — scaffold or refresh a KB repo (asks hub|child; updates skills/templates; keeps `.kb/index.yaml`)
-- `kb docker-setup` — prepare Docker: hub creates `.env` + the HTTP token and
-  starts the service; child repos pull the ingest image
-  (in your assistant: `/kb-docker-setup`)
-- `kb ingest <pdf> --id <id>` — parse a PDF into `.kb/` sections
-  (in Claude Code / Copilot Chat / Cursor: `/kb-ingest`)
-- `kb l3 report [<doc-id>]` / `kb l3 confirm <doc-id> --section <id> | --all` —
-  list the L3 sections awaiting review, then record the reviewer's
-  confirmation; run both between `kb ingest` and `kb summarize`
-- `kb summarize` — fill pending summaries via a headless LLM CLI
-  (in your assistant: `/kb-summarize`)
-- `kb approve <doc-id> [--section <id>]` — mark summarized sections as
-  reviewed after SME check; `--all-changed --against <rev>` approves what
-  changed since a rev (in your assistant: `/kb-approve`)
-- `kb status` — list docs and their pending sections
-- `kb build` — validate the KB (manifests, tables, tokens)
-- `kb query "<question>"` — hybrid search (keyword + semantic) over the summaries
-- `kb tags` — list every tag published on the hub federation
-- `kb get <doc> <section> [--level l2|l3]` — read one section
-- `kb stats` — token counts per level
-- `kb diff <doc> --against <rev>` — changed sections vs a git rev
-- `kb publish` — mirror `.kb/` to the federation hub (hub from
-  `.kb/config.yaml` or `--hub`); opens a PR on the hub by default
-  (in your assistant: `/kb-publish` runs diff → confirm → publish)
-- `kb resolve <file>` — resolve a kb-context block and check freshness
-- `kb doctor` — sanity-check the setup
-- `kb ticket lint <file|->` — Definition-of-Ready gate for BA tickets (in
-  your assistant: part of /ba-ticket-author)
+## Automation
+
+A hub has no `kb auto`. It auto-pulls merged PRs (`STRATA_KB_HUB_PULL_INTERVAL`, default
+300 seconds), accepts CI publishes through the intake, can auto-merge a repo's publish PR
+(per repo, on the Registry page), and runs the daily code-sync scan in the `hub-sync`
+service. Auto-merge merges the whole PR with no review on the hub: turn it on only for repos
+you do not need to review here. See the guide's Automation modes section.

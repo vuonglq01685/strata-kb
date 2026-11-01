@@ -198,7 +198,6 @@ def test_hub_not_needed_when_the_document_is_local(code_doc, tmp_path):
 
 
 def test_docs_name_the_check_command():
-    from importlib import resources
     from pathlib import Path as _P
 
     readme = (_P(__file__).resolve().parents[1] / "README.md").read_text(
@@ -208,15 +207,11 @@ def test_docs_name_the_check_command():
         "`kb ticket check <file\\|-> [--kb-dir <dir>] [--hub <url>] [--json] [--missions-dir <dir>] [--heading <h2>]`"
         in readme
     )
-    quick = (
-        resources.files("strata_kb")
-        .joinpath("templates/init/QUICKSTART-ba.md")
-        .read_text(encoding="utf-8")
-    )
-    assert (
-        "- `kb ticket check <file> [--missions-dir <dir>] [--heading <h2>] [--hub <url>]`"
-        in quick
-    )
+    # The BA quickstart is a one-page card; the BA guide carries the command.
+    guide = (
+        _P(__file__).resolve().parents[1] / "docs" / "src" / "guide-ba.en.md"
+    ).read_text(encoding="utf-8")
+    assert "`kb ticket check`" in guide
     for name in (
         "claude-skill-sa-ticket-ground.md",
         "copilot-sa-ticket-ground.prompt.md",

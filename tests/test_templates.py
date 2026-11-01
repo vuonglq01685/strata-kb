@@ -1270,9 +1270,16 @@ def test_config_dev_yaml_no_longer_carries_the_stage_a_interim_fallback():
     assert "until Stage C" not in text
 
 
-def test_quickstart_dev_documents_the_context_cache():
-    text = _read_init_template("QUICKSTART-dev.md")
-    assert "<ticket-id>/context.md" in text
+def _guide_text(kind: str) -> str:
+    """The English role guide the quickstart card points at (the full source)."""
+    return (
+        Path(__file__).resolve().parent.parent / "docs" / "src" / f"guide-{kind}.en.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_dev_guide_documents_the_context_cache():
+    text = _guide_text("dev")
+    assert "docs/impl/<id>/context.md" in text
     assert "docs/impl/.gitignore" in text
 
 
@@ -1965,10 +1972,12 @@ def test_dev_handover_leaves_exemptions_in_the_plan():
 
 
 def test_quickstart_dev_names_the_pr_gate_and_the_required_check():
-    text = _read_init_template("QUICKSTART-dev.md")
-    assert "kb pr lint" in text
-    assert "docs/tdd-exemptions.md" in text
-    assert "required check" in text
+    card = _read_init_template("QUICKSTART-dev.md")
+    assert "pr-lint" in card
+    assert "required check" in card
+    guide = _guide_text("dev")
+    assert "kb pr lint" in guide
+    assert "required check" in guide
 
 
 SUMMARIZE_WRAPPERS = [
@@ -2029,10 +2038,12 @@ def test_claude_skill_summarize_contract_and_validation():
 
 
 def test_quickstart_ba_does_not_claim_ci_enforces_stale_refs():
-    text = _read_init_template("QUICKSTART-ba.md")
-    enforced, _, not_enforced = text.partition("What lint does **not** enforce")
+    text = _guide_text("ba")
+    _, _, gate = text.partition("## 6.3 What the gate checks")
+    gate = gate.partition("## 6.4")[0]
+    enforced, _, warnings = gate.partition("**Warnings (your judgement):**")
     assert "stale" not in enforced.lower()
-    assert "stale" in not_enforced.lower()
+    assert "stale" in warnings.lower()
     assert "--fail-on-stale" in text
 
 
@@ -2122,9 +2133,13 @@ def test_ticket_lint_workflow_keeps_a_non_https_hub_scheme():
 
 def test_quickstart_ba_documents_the_ci_variables():
     text = _read_init_template("QUICKSTART-ba.md")
-    assert "vars.STRATA_KB_HUB" in text
-    assert "secrets.KB_HUB_TOKEN" in text
+    assert "`STRATA_KB_HUB`" in text
+    assert "`KB_HUB_TOKEN`" in text
     assert "fork" in text.lower()
+    # the workflow itself reads them as Actions expressions
+    workflow = _read_init_template("kb-ticket-lint.yml")
+    assert "vars.STRATA_KB_HUB" in workflow
+    assert "secrets.KB_HUB_TOKEN" in workflow
 
 
 def test_pr_workflow_checks_out_the_branch_read_only_for_the_plan_file():
@@ -2204,14 +2219,12 @@ def test_dev_implement_ticket_names_every_re_entry_case():
 
 
 def test_quickstart_dev_separates_machine_enforced_from_prompt_only():
-    text = _read_init_template("QUICKSTART-dev.md")
-    _, _, rest = text.partition("## What is enforced")
-    machine, _, prompt_only = rest.partition("### Prompt-only")
-    assert "### Machine-enforced" in machine
-    assert "`kb pr lint`" in machine and "`kb build`" in machine
-    for rule in ("TDD", "verbatim", "read-only", "GATE 1", "OPEN(BA)"):
-        assert rule in prompt_only, rule
-    assert "nothing in `kb` enforces or measures" in prompt_only
+    text = _guide_text("dev")
+    _, _, rest = text.partition("## 6.4 What is enforced, and what is only asked")
+    section = _normalised(rest.partition("## 6.5")[0])
+    assert "`kb pr lint`" in section and "`kb build`" in section
+    assert "GATE 1" in section
+    assert "prompt discipline that nothing in `kb` measures" in section
     assert "No such command 'pr'" not in text
 
 
@@ -2866,12 +2879,10 @@ def test_copilot_and_cursor_ba_sa_wrappers_differ_only_on_frontmatter_line_two()
 
 
 def test_quickstart_ba_folds_the_sa_step_into_the_pipeline():
-    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
-    assert "Greenfield repos: what `[NEW: D<n>]` means" in text
-    assert "7. **Ground technical**" in text
+    text = _normalised(_guide_text("ba"))
     assert "Ground services" in text
-    assert "--missions-dir" in text
-    # The manual step 6 is gone — the agent invokes the SA itself.
+    assert "7 Ground technical" in text
+    # The manual step 6 is gone: the agent invokes the SA itself.
     assert "6. **Ground the technical half**" not in text
 
 
@@ -2928,10 +2939,9 @@ def test_ba_ticket_full_wrappers_teach_the_ticket_split():
 
 
 def test_quickstart_ba_gate_list_names_the_size_gates():
-    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
+    text = _normalised(_guide_text("ba"))
     assert (
-        "At most 10 acceptance criteria and exactly one `As a … I want … so "
-        "that …` story — a bigger scope is two tickets"
+        "more than 10 acceptance criteria or more than one user story (split the ticket)"
     ) in text
 
 
@@ -2961,14 +2971,6 @@ def test_review_rubric_dev_axis_checks_compose_literals_against_grounding():
         "matches the value on the corresponding `## Technical grounding` line, or carries `[NEW: D<n>]`"
         in text
     )
-
-
-def test_quickstarts_name_the_compose_facts():
-    ba = _read_init_template("QUICKSTART-ba.md")
-    dev = _read_init_template("QUICKSTART-dev.md")
-    assert "volumes, healthcheck commands and device reservations" in ba
-    assert "`Volumes:` / `Healthchecks:` / `Devices:`" in ba
-    assert "named volumes, the healthcheck command and device reservations" in dev
 
 
 @pytest.mark.parametrize(
@@ -3045,12 +3047,9 @@ def test_dev_execute_runs_plan_waves_and_lanes():
 
 
 def test_quickstart_dev_documents_plan_waves_and_lanes():
-    text = _normalised(_read_init_template("QUICKSTART-dev.md"))
-    assert "### Waves and lanes" in text
-    assert "`Depends on:` line" in text
-    assert "`kb plan waves docs/impl/<ticket-id>/plan.md`" in text
-    assert "at most 3 lanes at a time" in text
-    assert "- `kb plan waves <plan-file> [--json]`" in text
+    text = _normalised(_guide_text("dev"))
+    assert "`kb plan waves docs/impl/<id>/plan.md`" in text
+    assert "worktree lanes" in text
 
 
 # --- mission next (spec 2026-09-24 §4.5): templates ---------------------------
@@ -3219,14 +3218,9 @@ def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
 
 
 def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
-    text = _normalised(_read_init_template("QUICKSTART-ba.md"))
-    assert "## Which ticket next" in text
+    text = _normalised(_guide_text("ba"))
+    assert "## 3.4 Which story next" in text
     assert "`kb mission next`" in text
-    assert "### Greenfield: decide the D-rows once" in text
-    assert (
-        "- `kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--hub <url>] [--json]`"
-        in text
-    )
     for word in (
         "`done`",
         "`ready`",
@@ -3279,9 +3273,9 @@ def test_dev_implement_ticket_local_fallback_note_is_neutral():
         assert "hub unreachable" not in text, name
         assert "checked against the local -code, not the hub's copy" in text, name
         assert "once the hub is reachable and holds the -code" in text, name
-    quick = _normalised(_read_init_template("QUICKSTART-dev.md"))
-    assert "hub unreachable" not in quick
-    assert "checked against the local -code, not the hub's copy" in quick
+    guide = _normalised(_guide_text("dev"))
+    assert "hub unreachable" not in guide
+    assert "`checked against the local -code`" in guide
 
 
 def test_ba_mission_plan_non_architecture_skip_reason_is_current():

@@ -97,7 +97,6 @@ def test_docs_name_only_real_slash_commands():
     assert not bad, bad
 
 
-@REWRITE_PENDING
 def test_guides_and_quickstarts_carry_no_version_numbers():
     files = [
         *DOCS_SRC.glob("guide-*.md"),
