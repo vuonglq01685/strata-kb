@@ -136,7 +136,8 @@ authors), write its decision into the draft's `## Technical decisions` as
 `git config user.name`; when that is empty, ask the Dev for a name once and
 reuse it), with `question` and `context` as **Question format** below
 says, and move the item to the draft's `## Open questions` as
-`- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
+`- Q<id> — <question> — blocks: <AC ids|none>`, where `<question>` is the
+**Decision needed** sentence on one line; a `business question:`
 returned by `dev-sa` is handled the same way. **Preservation rule.** Remove
 each handled item from `## Questions raised`. Every author and fix round keeps
 `## Technical decisions` and `## Open questions` verbatim and never

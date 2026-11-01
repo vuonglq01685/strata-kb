@@ -150,7 +150,8 @@ does not:
   the Dev for a name once and reuse it; `context` = where in the
   plan it came up, as **Question format** below says; `blocks` = the AC
   ids, or empty) and move the item to the draft's `## Open questions` as
-  `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
+  `- Q<id> — <question> — blocks: <AC ids|none>`, where `<question>` is the
+  **Decision needed** sentence on one line. When `dev-sa` returns
   `business question:`, treat the item as business and handle it the same
   way.
 

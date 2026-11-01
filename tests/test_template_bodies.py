@@ -1871,3 +1871,28 @@ def test_ba_answer_questions_formats_answers_and_restates_old_questions():
     n = _normal(t)
     assert "in chat only" in n and "never edited" in n
     assert "the BA's own words go in **Decision**" in n
+
+
+def test_auto_answers_use_the_answer_format():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    assert "state that assumption under **Assumptions:** in the answer" in n
+    assert "state that assumption in the answer text" not in n
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["bodies/dev-design.md", "bodies/dev-plan.md", "claude-command-dev-design.md", "claude-command-dev-plan.md"],
+)
+def test_open_question_line_carries_only_the_decision_sentence(name):
+    n = _normal(_raw(name))
+    assert "`<question>` is the **Decision needed** sentence on one line" in n
+
+
+@pytest.mark.parametrize("name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"])
+def test_handover_auto_question_uses_the_question_format(name):
+    t = _raw(name)
+    for label in QA_Q_LABELS:
+        assert label in t, (name, label)
+    n = _normal(t)
+    assert "one decision per question" in n
+    assert "a place a reader can open" in n
