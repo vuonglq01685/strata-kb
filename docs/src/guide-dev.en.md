@@ -65,20 +65,7 @@ code. Without it those sections are reported as `not scanned`, jobs stay
 skills for all three assistants, the CI workflows (`kb-pr-lint.yml`, `kb-code.yml`,
 `kb-doctor.yml`), `docs/impl/`, the PR template and a conventions pack for each
 detected language. Use `--lang <name>` (repeatable) for a language it cannot
-detect from a manifest. Re-running `kb init` creates missing files and refreshes
-scaffold files; `.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json`
-are protected (`--force` replaces them; `.claude/settings.json` is merged
-otherwise), and your `*.local.md` files are never touched.
-
-**One version for every repo.** Every repo runs the hub's strata-kb version.
-Upgrade the hub first. Then run `kb doctor` in this repo: it installs the hub's
-version, sets the `strata-kb==<hub version>` pins in `.github/workflows/`, and
-refreshes the skills and commands. It does not do this in CI; there it reports a
-mismatch as an error. The files under `.github/instructions/` and `.cursor/rules/`
-(the Copilot and Cursor `kb-summarize` files and the per-language coding rules)
-refresh only through `kb init`. An unpinned `pip install strata-kb` in a job that
-holds `id-token: write` would let every run pick up whatever PyPI serves, in a
-job able to write to the hub; that is why the workflows are pinned.
+detect from a manifest. Re-running it is safe (see the appendix).
 
 ## 2.2 Point at the hub and register the repo
 
@@ -138,6 +125,18 @@ The MCP config reads those variables from your environment, not from `.env`, at
 the moment your assistant starts. Load the file (`set -a; source .env; set +a`,
 or use direnv) and restart the assistant.
 
+**One version for every repo.** Every repo runs the hub's strata-kb version.
+Upgrade the hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it installs the hub's
+version, sets the `strata-kb==<hub version>` pins in `.github/workflows/`, and
+refreshes the skills and commands. It does not do this in CI; there it reports a
+mismatch as an error. The files under `.github/instructions/` and `.cursor/rules/`
+(the Copilot and Cursor `kb-summarize` files and the per-language coding rules)
+refresh only through `kb init`. An unpinned `pip install strata-kb` in a job that
+holds `id-token: write` would let every run pick up whatever PyPI serves, in a
+job able to write to the hub; that is why the workflows are pinned.
+With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the MCP path and the version
+check, and only reports that the version was not checked against the hub.
+
 ## 2.4 Turn on the PR gate and the daily sweep
 
 `kb init` writes `.github/workflows/kb-pr-lint.yml` but cannot enable branch
@@ -154,22 +153,18 @@ for a private hub only, the Actions **secret** `KB_HUB_TOKEN` (a read token).
 
 ## 2.5 Ask whether the hub auto-merges your repo
 
-Auto-merge is a per-repo switch on the hub's Registry page, turned on by a hub
-admin. Ask your hub maintainer whether it is on, and know what it does:
+Auto-merge is a per-repo switch on the hub's Registry page, turned on by a hub admin.
+Ask your hub maintainer whether it is on, and know what it does:
 
-> `kb ci-publish` opens **one** hub pull request per push, not one per document.
-> The intake keys the publish branch by repository id and reuses it while a PR is
-> pending, so a push carrying a regenerated `-code` alongside an already-merged
-> `-svc` amend lands **both** in that PR.
->
-> With the switch on, the hub merges the **whole** PR right after opening it,
-> `-svc` content included. The `-svc` review therefore happens locally, in
-> `/dev-code-seed` step 4, before the section reaches `reviewed`, never at the hub.
+> `kb ci-publish` opens **one** hub pull request per push, and the intake reuses the
+> publish branch while a PR is pending, so a regenerated `-code` and an already-merged
+> `-svc` amend land **both** in that PR. With the switch on, the hub merges the **whole**
+> PR right after opening it, `-svc` content included. The `-svc` review therefore happens
+> locally, in `/dev-code-seed` step 4, before the section reaches `reviewed`, never at the hub.
 
-If the merge fails, the PR stays open for the hub maintainer and the publish still
-counts as done. `kb publish` and `kb ci-publish` print "merged" when it merged.
-With the switch off, every push adds to one pending hub PR that someone has to
-merge, and `kb doctor` reports when the hub's `-code` lags.
+If the merge fails, the PR stays open and the publish still counts as done. With the
+switch off, every push adds to one pending hub PR that someone has to merge, and
+`kb doctor` reports when the hub's `-code` lags.
 
 ## 2.6 Seed `-svc` for an existing project (once)
 
@@ -196,13 +191,10 @@ blank page: run the one-time seed.
 > touches a domain standard, cite `doc-id §section` from the hub instead of
 > restating the rule.
 
-Budget 10 to 15 minutes per service for step 4. It is a one-time cost; after the
-seed, `-code` regenerates itself and `-svc` accrues a few lines per ticket. Skip
-step 6 freely: a missing flow beats a guessed one. Use `kb publish --pr` for this
-first publish: no merge has happened yet, so there is no tag for `kb-code.yml` to
-react to, and plain `kb publish` would wait up to ten minutes for a CI run that
-never starts. A hub analyst or architect reviews that PR like any other hub
-content, unless the hub auto-merges your repo (section 2.5).
+Budget 10 to 15 minutes per service for step 4; it is a one-time cost. Skip step 6
+freely: a missing flow beats a guessed one. Use `kb publish --pr` for this first
+publish: no merge has happened yet, so there is no tag for `kb-code.yml` to react to,
+and plain `kb publish` would wait up to ten minutes for a CI run that never starts.
 
 ---
 
@@ -216,8 +208,7 @@ branch and the PR, never in the conversation.
 
 | Situation | Run | Result |
 |---|---|---|
-| New ticket, nothing started | `/dev-implement-ticket <ticket>` | claims the ticket, fetches it, checks it, then walks design, plan, execute, handover |
-| Small ticket, obvious change | `/dev-implement-ticket <ticket>` | the flow collapses itself; a bounded design is still written |
+| New ticket, nothing started (small ones collapse themselves) | `/dev-implement-ticket <ticket>` | claims the ticket, fetches it, checks it, then walks design, plan, execute, handover |
 | Design approved, no plan yet | `/dev-plan <id>` | `docs/impl/<id>/plan.md` |
 | Plan approved, or execution in progress | `/dev-execute <id>` | code, task by task |
 | Code written by hand, needs a PR write-up | `/dev-handover <id>` | the PR body, the `kb svc note` history rows |
@@ -283,18 +274,13 @@ a context of its own, never the agent that produced it:
 | A5 | `dev-handover`, before GATE 3 | is merging into the default branch safe |
 
 Criteria live in `docs/pr-review-rubric.md`, overridden by
-`docs/pr-review-rubric.local.md`. A3, A4 and A5 allow at most three fix passes;
-a BLOCKER or SUGGESTED finding still standing after round 3 stops the flow and
-hands it to you. A1 and A2 stop after one review plus one verification round.
-Where your assistant cannot dispatch subagents (the default for the Copilot and
-Cursor wrappers) the review runs as a single pass and is a **report, not a gate**:
-the phase stops and hands you the result.
-
-The `plan.md` tasks carry `Depends on:` lines; `kb plan waves docs/impl/<id>/plan.md`
-turns them into waves and fails on a shared file without a dependency, a cycle, an
-unknown task, a missing `Depends on:` line or an empty `Serial resource:`.
-`dev-execute` runs it for you and runs a multi-task wave in parallel git worktree
-lanes, at most three at a time.
+`docs/pr-review-rubric.local.md`. The round limits are in the skills; a finding
+still open after the last round stops the flow and hands it to you. Where your
+assistant cannot dispatch subagents (the default for the Copilot and Cursor
+wrappers) the review runs as a single pass and is a **report, not a gate**: the
+phase stops and hands you the result. `dev-execute` orders tasks with
+`kb plan waves docs/impl/<id>/plan.md` and runs independent ones in parallel git
+worktree lanes.
 
 ## 3.3 Questions for the BA
 
@@ -311,31 +297,24 @@ lanes, at most three at a time.
   `/ba-answer-questions`.
 
 A question that blocks an acceptance criterion stops the gate: the skill gives you
-the hub's Q&A link to paste in chat. A question that blocks nothing does not.
-On every entry `/dev-implement-ticket` reads the ticket's questions
-(`kb_question_list`) and shows the state in the Next-step block as
-`BA-Q: none | open Q<ids> | waiting Q<ids>`. An *answered* question is applied to the
-draft (re-fetch the ticket, mark the line `answered rev N`, redraft); a *waiting* one
-(answered, but the BA's new ticket revision is not on the hub yet) is information
-only; an *open* blocking one stops the flow.
-
-Q&A works only when MCP points at the hub's HTTP server (`kb mcp-setup`).
+the hub's Q&A link to paste in chat. On every entry `/dev-implement-ticket` reads the
+ticket's questions and shows `BA-Q: none | open Q<ids> | waiting Q<ids>`; a *waiting*
+question is information only, an *open* blocking one stops the flow. Q&A works only
+when MCP points at the hub's HTTP server (`kb mcp-setup`).
 
 ## 3.4 Fix a bug
 
-A bug the BA published is `BUG-<n>`. It has no story and no acceptance criteria:
-it is done when its steps no longer reproduce the wrong result.
-`/dev-fix-bug BUG-<n>` runs it in the style of systematic debugging:
+A bug the BA published is `BUG-<n>`: no story, no acceptance criteria, done when its
+steps no longer reproduce the wrong result. `/dev-fix-bug BUG-<n>` runs:
 
-1. **Intake**: `kb ticket fetch BUG-<n>` writes `docs/impl/<id>/ticket.md` and
-   copies the bug's screenshots to `docs/impl/<id>/assets/`. Branch `fix/<BUG-id>`,
-   or `hotfix/<BUG-id>` from the production line you name.
+1. **Intake**: `kb ticket fetch BUG-<n>` (also copies the screenshots to
+   `docs/impl/<id>/assets/`); branch `fix/<BUG-id>`, or `hotfix/<BUG-id>`.
 2. **Reproduce**: a failing test that shows the Actual result. No fix without it.
-3. **Root cause**: written hypotheses in `docs/impl/<id>/rootcause.md`. Three failed
-   hypotheses stop the flow for an architecture talk with you.
+3. **Root cause**: hypotheses in `docs/impl/<id>/rootcause.md`; three failed ones stop
+   the flow for an architecture talk with you.
 4. **Fix**: one change at the root cause, full suite green.
-5. **Handover**: `/dev-handover` with bug rules; the reproduction test and the root
-   cause replace the design and plan.
+5. **Handover**: `/dev-handover` with bug rules; the reproduction test and root cause
+   replace the design and plan.
 
 ## 3.5 Several Devs on one repo: claims
 
@@ -343,30 +322,27 @@ A **ticket claim** on the hub keeps two Devs off the same ticket.
 `/dev-implement-ticket` and `/dev-fix-bug` run `kb claim take <id>`, and every later
 phase refreshes it.
 
-- The claim names its holder (`<git user.name>@<hostname>`, or `STRATA_KB_CLAIM_AS`
-  or `--as`) and a phase: `claimed`, `design`, `plan`, `execute`, `handover`,
-  `waiting-qa`, `review`, `publishing`. A second Dev gets
-  `taken by <holder> (<phase>, updated <x> ago)` and exit `3`: pick another ticket or
-  ask a hub admin to release it.
-- It expires after 4 hours without an update. Once you have opened the PR, run
-  `/dev-handover <id>` again: it finds the PR and sets `review` with its URL. A claim
-  in `review` or `publishing` with a PR, or one the auto runner marked `stopped`,
-  never expires.
-- After an expiry or release, the next Dev who claims the ticket and finds its branch
-  on `origin` continues on it. If your own claim is released while you work, the next
-  update exits `3` (`lost: <reason> by <who>`) and the skill stops without pushing.
-- `kb claim list [--json]` shows what is held; `kb claim release <ticket> [--reason TEXT]`
-  gives yours back; `kb claim update <ticket> --phase <p>` sets the phase by hand.
-  A hub admin can release anyone's claim from the ticket page.
-- The commands need `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`.
+- The claim names its holder (`<git user.name>@<hostname>`, or `STRATA_KB_CLAIM_AS` or
+  `--as`) and a phase (`claimed`, `design`, `plan`, `execute`, `handover`, `waiting-qa`,
+  `review`, `publishing`). A second Dev gets `taken by <holder> (<phase>, updated <x> ago)`
+  and exit `3`: pick another ticket or ask a hub admin to release it.
+- By default it expires after 4 hours without an update. Once you have opened the PR, run
+  `/dev-handover <id>` again: it sets `review` with the PR URL. A claim in `review` or
+  `publishing` with a PR, or marked `stopped` by the auto runner, never expires. If your
+  claim is released while you work, the next update exits `3` (`lost: <reason> by <who>`)
+  and the skill stops without pushing.
+- `kb claim list [--json]`, `kb claim release <ticket> [--reason TEXT]` and
+  `kb claim update <ticket> --phase <p>` manage claims. These commands need
+  `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`.
 
 ## 3.6 Publish after the merge
 
 A push to the default branch publishes nothing; the intake accepts a publish only
-from a `kb-publish/*` tag. After your PR merges, publish from the default branch:
+from a `kb-publish/*` tag. After your PR merges, publish from your default branch
+(`<default>`):
 
 ```bash
-git fetch origin && git switch main && git pull --ff-only origin main
+git fetch origin && git switch <default> && git pull --ff-only origin <default>
 kb publish
 ```
 
@@ -401,22 +377,15 @@ version and leave a citation comment next to it.
 
 Neither document needs new per-ticket discipline from you.
 
-- **`-code` needs nothing.** It is never committed (`.gitignore` carries
-  `.kb/*-code/`). `kb svc note`, `kb build`, `kb doctor` and `kb publish` regenerate
-  it first when it is missing, older than `HEAD`, or your tracked files changed (a new
-  file counts once it is tracked with `git add`). `--no-refresh` skips that. Its only
-  producer is `kb code-ingest`; `kb summarize` refuses it. `--scaffold-svc` is
-  deliberately never passed in CI, because CI must never create `pending` content that
-  would fail its own build.
-- **`-svc` accrues at handover.** `dev-handover` runs, for every service a ticket touched,
-  `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint" --refs "payments-spec §4.2"`.
-  It appends one row to `hist.<service>`, idempotently per ticket. Never edit `hist.*`
-  by hand; those rows are facts and need no review. It exits `1` on an unknown service
-  (a typo must not invent one), a missing `-svc` or `-code`, or an unreadable manifest.
-- **Responsibility text can drift, and the system reports rather than repairs.** When
-  `kb code-ingest --scaffold-svc` refreshes the evidence of a `reviewed` service and
-  anything beyond whitespace changed, it prints `stale-risk: svc.<name>`. It never
-  touches the summary; it flags that a human should look.
+- **`-code` needs nothing.** It is never committed (`.gitignore` carries `.kb/*-code/`).
+  `kb svc note`, `kb build`, `kb doctor` and `kb publish` regenerate it first when it is
+  stale (`--no-refresh` skips that). CI never passes `--scaffold-svc`, because it must
+  never create `pending` content.
+- **`-svc` accrues at handover.** `dev-handover` runs
+  `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` for every service
+  a ticket touched. It appends one `hist.<service>` row, idempotently; never edit `hist.*`.
+- **Drift is reported, not repaired.** When refreshed evidence of a `reviewed` service changes,
+  `kb code-ingest --scaffold-svc` prints `stale-risk: svc.<name>` and leaves the summary alone.
 
 ---
 
@@ -498,19 +467,15 @@ One fresh `claude -p` process per task. In order:
 3. The first `ready` ticket that has no mission and is not a bug (`/dev-implement-ticket`).
 4. The first `ready` story in mission order whose dependencies are `done`.
 
-When a business question blocks a ticket, the Dev asks the BA through hub Q&A and
-waits; once every question is answered, the same ticket resumes in a fresh process.
-The loop holds the claim and refreshes it every `auto.claim_heartbeat` seconds.
-
-It stops after two failed attempts at one ticket (a red CI after two fix rounds stops it
-at once); fix the cause and run `kb auto run` again. A command outside the allowlist ends
-the task `failed command-denied <command>`: add it to `permissions.allow` in
-`.claude/settings.json` by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure.
-It finishes, exit `0`, when every story, unparented ticket and bug is `done`.
-
-A task process carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run`
-refuse (`status` still works), so a task can neither flip the switch nor start a second
-loop.
+When a business question blocks a ticket, the Dev asks the BA through hub Q&A and waits;
+once answered, the same ticket resumes in a fresh process. It stops after two failed
+attempts at one ticket (a red CI after two fix rounds stops it at once); fix the cause and
+run `kb auto run` again. A command outside the allowlist ends the task
+`failed command-denied <command>`: add it to `permissions.allow` in `.claude/settings.json`
+by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure. It finishes, exit `0`,
+when every story, unparented ticket and bug is `done`. A task process carries
+`STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse, so a task can
+neither flip the switch nor start a second loop.
 
 ## 4.5 Claude Code cloud
 
@@ -528,7 +493,7 @@ checks, and then **merges that PR itself, telling you first**, with
 `kb pr merge auto/switch --squash --admin --delete-branch`. The same branch-protection
 advice as in 4.1 applies: that merge has no review either. **The session must stay open**
 for the whole run. Not yet verified on real cloud: a session lasting over three hours,
-pushing `auto/*` branches, and a merge past a required review.
+pushing `auto/*` branches, a merge past a required review, and `gh run` over REST.
 
 ---
 
@@ -557,16 +522,10 @@ pushing `auto/*` branches, and a merge past a required review.
 | `kb ticket fetch`: "is not on the hub" | The BA has not published it, or left it out of the plan | Ask the BA to `kb publish`; or pass the ticket file or paste the body |
 | `kb ticket fetch`: "published by several repos" | Two BA repos publish the same id | `kb ticket fetch <repo>:<id>` |
 | `kb ticket fetch` cannot reach the hub | `hub:` unset or unreachable | Fix `hub:` in `.kb/config.yaml` (or `STRATA_KB_HUB`) |
-| `kb ticket check` fails with `re-run /sa-ticket-ground` | A fact the ticket cites is gone from `-code` | Stop; the BA's SA re-grounds it |
-| A citation resolves `stale` mid-implementation | The hub published after the ticket was written | `kb diff`, then ask the analyst. Do not reinterpret the AC |
-| `kb claim` exits 3: `taken by ...` | Another Dev holds the ticket | Pick another ticket or ask a hub admin to release it |
 | `kb claim`: "hub server has no /api/claims" | The hub is older than this CLI | Upgrade the hub, then run `kb doctor` here |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP points at a local cache clone, a stdio server or any target other than the hub's HTTP server | Run `kb mcp-setup` and restart the assistant |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`); it says which one. A bare re-run re-verifies without retyping |
 | `kb mcp-setup`: "token was rejected" after you got a fresh token | A bare re-run reads the *old* token from `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete that line from `.env` and re-run |
-| `kb auto run` refuses | See the reasons it printed (4.3) | Fix each; commit and push `.kb/config.yaml` and `.claude/settings.json` |
-| Auto task ends `failed command-denied <command>` | The command is not in `permissions.allow` | Add it to `.claude/settings.json` by hand |
-| `/kb-summarize` does nothing in Copilot | Copilot has instructions, not a prompt | Work inside `.kb/**` so the instructions apply |
 
 The hub-lag check runs a full `code-ingest` in a temporary worktree on every
 `kb doctor`; expect it to take real time. On Windows a glob-casing difference can make
@@ -584,14 +543,13 @@ not drift.
 | `kind`, `hub`, `repo_id`, `intake` | see 2.2. Never put a token in `hub:` or `intake:` |
 | `langs` | languages for the conventions pack and the auto-mode allowlist; set by `--lang` or detection |
 | `code_ingest.db`, `code_ingest.tags` | SQLite files (explicit only) and extra index tags for every `-code` refresh |
-| `auto.enabled`, `auto.qa_interval`, `auto.idle_interval`, `auto.hotfix_base`, `auto.claim_heartbeat` | auto mode; `claim_heartbeat` is seconds between claim refreshes, default `900` |
+| `auto.enabled`, `auto.qa_interval`, `auto.idle_interval`, `auto.hotfix_base`, `auto.claim_heartbeat` | auto mode; `hotfix_base` empty = default branch (the skills currently assume `main`); `claim_heartbeat` is seconds between claim refreshes, default `900` |
+| `kb init` re-run | creates missing files and refreshes scaffold files; `.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json` are protected (`--force` replaces them; `.claude/settings.json` is merged otherwise); `*.local.md` files are never touched |
 | `.kb/index.yaml` `llm:` | `runner` (`auto`, `claude`, `copilot`, `none`), `model`, `effort`, `max_workers`, `timeout`, used by `kb summarize <repo_id>-svc` |
 | `STRATA_KB_HUB` | overrides `hub:`; carries a credentialed URL in CI (an Actions variable) |
 | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | the hub's HTTP base URL and bearer token: MCP, claims, the auto runner |
 | `KB_HUB_TOKEN` | Actions secret, a read token, private hub only (`kb-doctor.yml`) |
-| `STRATA_KB_CLAIM_AS` | claim holder name |
-| `STRATA_KB_AUTO_TASK` | set by the runner on task processes; `kb auto on/off/run` refuse under it |
-| `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | Claude Code cloud detection |
+| `STRATA_KB_CLAIM_AS`, `STRATA_KB_AUTO_TASK`, `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | claim holder name; set by the runner on task processes; Claude Code cloud detection |
 
 Exit codes: `0` ok, `1` error, `2` stale citation (or a usage error), `3` claim taken or
 lost, `8` `kb pr checks` still pending. `kb auto run`: `0` done, `2` stopped, `1` refused,
@@ -603,11 +561,8 @@ lost, `8` `kb pr checks` still pending. `kb auto run`: `0` done, `2` stopped, `1
 |---|---|---|
 | `docs/impl/<id>/design.md`, `plan.md` | the design and the plan, each with a `## Review record` table | yes |
 | `docs/impl/<id>/ticket.md` | the ticket fetched from the hub | no, never edit |
-| `docs/impl/<id>/context.md` | resolved-context cache | no |
-| `docs/impl/<id>/review/` | review rounds, per-task diffs, the merge-risk report | no |
-| `docs/impl/<id>/assets/` | bug screenshots (may show personal data) | no |
-| `.kb/*-code/`, `.kb/auto/` | derived `-code` and the auto runner's state | no |
-| `.env` | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | no |
+| `docs/impl/<id>/context.md`, `review/`, `assets/` | context cache, review artefacts, bug screenshots (may show personal data) | no |
+| `.kb/*-code/`, `.kb/auto/`, `.env` | derived `-code`, the auto runner's state, the MCP credentials | no |
 
 `kb init` and `kb impl tidy` move an old flat layout (`docs/impl/<id>-plan.md`, ...) into
 `docs/impl/<id>/` without overwriting; commit the renames. Never commit `.kb-qa/`: it
@@ -643,19 +598,10 @@ directory), and every extractor reports into `struct.coverage`. `kb code-ingest`
 when none of `services`, `deps`, `commands`, `schema`, `integrations` and `api` found
 anything: a folder listing alone is a misconfiguration, not knowledge.
 
-Supported frameworks:
+Route frameworks: NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut, ASP.NET Core,
+FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
 
-- **Routes:** NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut, ASP.NET Core,
-  FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
-- **Pages:** Next.js, Nuxt, SvelteKit, Angular, Vue, React (react-router), Flutter (go_router).
-- **Jobs:** NestJS, Spring / Quarkus / Micronaut, Hangfire, Quartz and .NET hosted services,
-  Celery, Laravel, Symfony, node-cron, BullMQ, robfig/cron, tokio-cron-scheduler,
-  Kubernetes `CronJob`.
-
-The four source-reading extractors cover JS/TS, Java/Kotlin, C#, Python, PHP, Go, Rust, Swift
-and Dart, plus CSS/SCSS custom properties. The `tree-sitter-language-pack` pin is exact so
-the same commit gives the same bytes on every machine. Only names are emitted; env values,
-constant values and enum member values never are.
+The `tree-sitter-language-pack` pin is exact, so the same commit gives the same bytes on every machine. Only names are emitted; env values, constant values and enum member values never are.
 
 **Two security properties.** (1) The integrations extractor emits **keys, never values**: the
 only env file it opens is `.env.example`, `.sample` or `.template`, never a real `.env`, and
@@ -682,14 +628,7 @@ partition, index or primary key, the SA writes a new thing as new only when that
 as its own `Files:` entry for a file. Otherwise it is an `Open decisions` item that quotes the
 status, and `kb ticket check` enforces it.
 
-Stated limits: `schema` replays `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` and index and key
-statements in sorted filename order and implements no SQL dialect; a statement it cannot apply
-makes the scope `partial` and names `file:line`; EF Core migrations are recognised by table name
-only; `build.gradle` is matched by regex. If `.kb/<doc_id>/` already holds a document that
-`kb code-ingest` did not write, it exits 1 and writes nothing (no override flag; move the
-document or pick another `--doc-id`). Re-running on the same commit and platform produces
-byte-identical files; the manifest revision comes from `HEAD`, so a dirty tree prints a
-`dirty_tree` warning.
+Limits: `schema` does not implement a SQL dialect; a statement it cannot apply makes the scope `partial` and names `file:line`. If `.kb/<doc_id>/` holds a document `kb code-ingest` did not write, it exits 1 and writes nothing (move it or pick another `--doc-id`). A dirty tree prints a `dirty_tree` warning.
 
 ## 6.4 What is enforced, and what is only asked
 
@@ -703,33 +642,29 @@ byte-identical files; the manifest revision comes from `HEAD`, so a dirty tree p
 attacker-controlled text, and keeping it out of argv stops a caller from interpolating it into
 a shell command.
 
-Everything else is prompt discipline that nothing in `kb` measures; the check is you, at the gate.
-Test-first (exemptions in `docs/tdd-exemptions.md`), shown verification, pinned values copied
-verbatim, a read-only ticket, GATE 1 and GATE 2, `OPEN(BA)` escalation of an ambiguous
-acceptance criterion, and the reviews A1 to A4. Only A5 has teeth, through the `Blocking:` line.
+Everything else (test-first, shown verification, GATE 1 and GATE 2, A1 to A4) is prompt discipline that nothing in `kb` measures; the check is you, at the gate. Only A5 has teeth, through the `Blocking:` line.
 
 ## 6.5 Auto-mode permissions
 
-`kb init --kind dev` writes `.claude/settings.json` (merged into your file). **Allowed:** `git`
-add, commit, status, diff, log, fetch, pull, switch to `auto/*`, `fix/*` and `hotfix/*`, branch
-creation, worktree, merge and `push -u origin HEAD`; `gh pr` and `gh run`; `Read`, `Edit`, `Write`;
-the `strata-kb` MCP tools; many `kb` subcommands; and the test, install, lint and build commands
-of your `langs`. **Denied:** any `git push` that names `main` or `master`, force-push, `+` and `:`
-refspecs and `--delete`; `git checkout`, `switch` and `branch` forms that move onto, create,
-rename or delete `main` or `master`; `git reset --hard`; `gh repo delete`, `gh run delete`;
-`kb init`; `rm -rf /*`; and editing `.claude/settings.json`, `.claude/settings.local.json` and
-`.git/**`. The same file registers the `Stop` and `SubagentStop` hooks that run
-`kb usage ingest-transcript --hook-stdin` for cost reports (`kb usage report`).
+`kb init --kind dev` merges `.claude/settings.json` into your file. **Allowed:** everyday `git`
+(add, commit, fetch, pull, switch to `auto/*`, `fix/*`, `hotfix/*`, branch, worktree, merge,
+`push -u origin HEAD`), `gh pr` and `gh run`, `Read`/`Edit`/`Write`, the `strata-kb` MCP tools,
+many `kb` subcommands, and the test, install, lint and build commands of your `langs`.
+**Denied:** any `git push` that names `main` or `master`, force-push, `+` and `:` refspecs and
+`--delete`; `git checkout`, `switch` and `branch` forms that move onto, create, rename or
+delete `main` or `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
+`rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and `.git/**`.
+The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin` for cost reports.
 
 ## 6.6 Hub Q&A rules that touch you
 
 Questions and answers live in the hub's Q&A store, written only through `kb_question_ask`
 (Dev) and `kb_question_answer` (BA). `asked_by` and `answered_by` are names the caller types
-(the skills pass `git config user.name`): tracking, not authentication. Any other target than
-the hub's HTTP server is refused. Limits: question and answer 4000 characters, context 1000,
-names 100, at most 50 open questions per ticket. The MCP tools your skills call are
-`kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`, `kb_ticket_lint`,
-`kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask` and `kb_question_list`.
+(the skills pass `git config user.name`): tracking, not authentication. Limits: 4000 characters
+for a question or answer, 1000 for context, 100 for names, at most 50 open questions per
+ticket. The MCP tools your skills call: `kb_search`, `kb_get_section`, `kb_context_new`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask`,
+`kb_question_list`.
 
 ## 6.7 Reserved names
 

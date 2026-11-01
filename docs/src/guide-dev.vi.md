@@ -62,20 +62,7 @@ section đó được báo là `not scanned`, job vẫn là `partial`, SA phải
 trợ lý, các workflow CI (`kb-pr-lint.yml`, `kb-code.yml`, `kb-doctor.yml`),
 `docs/impl/`, mẫu PR và một bộ quy ước cho mỗi ngôn ngữ phát hiện được. Dùng
 `--lang <tên>` (lặp lại được) cho ngôn ngữ không nhận ra được từ manifest. Chạy lại
-`kb init` sẽ tạo file còn thiếu và làm mới các file dựng khung; `.kb/config.yaml`,
-`.kb/index.yaml` và `.claude/settings.json` được bảo vệ (`--force` ghi đè chúng; nếu
-không, `.claude/settings.json` được gộp), còn các file `*.local.md` của bạn không bao
-giờ bị đụng tới.
-
-**Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy
-nâng cấp hub trước. Sau đó chạy `kb doctor` trong repo này: nó cài phiên bản của hub,
-đặt các pin `strata-kb==<phiên bản của hub>` trong `.github/workflows/`, và làm mới
-skill cùng command. Nó không làm vậy trong CI; ở đó nó báo sai lệch phiên bản như một
-lỗi. Các file trong `.github/instructions/` và `.cursor/rules/` (file `kb-summarize`
-của Copilot và Cursor, cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`.
-Nếu `pip install strata-kb` không ghim phiên bản nằm trong một job có
-`id-token: write`, mỗi lần chạy sẽ lấy bất cứ bản nào PyPI đang phục vụ, trong một job
-có quyền ghi vào hub; đó là lý do các workflow được ghim phiên bản.
+lệnh này là an toàn (xem phụ lục).
 
 ## 2.2 Trỏ tới hub và đăng ký repo
 
@@ -130,6 +117,18 @@ Cấu hình MCP đọc hai biến đó từ môi trường của bạn, không �
 lý khởi động. Hãy nạp file (`set -a; source .env; set +a`, hoặc dùng direnv) rồi khởi
 động lại trợ lý.
 
+**Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy
+nâng cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo này: nó cài phiên bản của hub,
+đặt các pin `strata-kb==<phiên bản của hub>` trong `.github/workflows/`, và làm mới
+skill cùng command. Nó không làm vậy trong CI; ở đó nó báo sai lệch phiên bản như một
+lỗi. Các file trong `.github/instructions/` và `.cursor/rules/` (file `kb-summarize`
+của Copilot và Cursor, cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`.
+Nếu `pip install strata-kb` không ghim phiên bản nằm trong một job có
+`id-token: write`, mỗi lần chạy sẽ lấy bất cứ bản nào PyPI đang phục vụ, trong một job
+có quyền ghi vào hub; đó là lý do các workflow được ghim phiên bản.
+Khi `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra
+phiên bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub.
+
 ## 2.4 Bật cổng PR và lượt quét hằng ngày
 
 `kb init` ghi `.github/workflows/kb-pr-lint.yml` nhưng không bật được branch
@@ -149,19 +148,15 @@ tư, **secret** Actions `KB_HUB_TOKEN` (một token chỉ đọc).
 Auto-merge là công tắc theo từng repo trên trang Registry của hub, do admin hub bật.
 Hãy hỏi người quản trị hub xem nó đang bật chưa, và hiểu nó làm gì:
 
-> `kb ci-publish` mở **một** pull request trên hub cho mỗi lần push, không phải mỗi
-> tài liệu một PR. Intake đặt tên nhánh publish theo id repository và dùng lại nó khi
-> còn PR đang chờ, nên một lần push mang `-code` mới sinh cùng một bản sửa `-svc` đã
-> merge sẽ đưa **cả hai** vào PR đó.
->
-> Khi công tắc bật, hub merge **toàn bộ** PR ngay sau khi mở, kể cả nội dung `-svc`.
-> Vì vậy việc review `-svc` diễn ra ở máy bạn, trong bước 4 của `/dev-code-seed`, trước
-> khi section thành `reviewed`, không bao giờ diễn ra trên hub.
+> `kb ci-publish` mở **một** pull request trên hub cho mỗi lần push, và intake dùng lại
+> nhánh publish khi còn PR đang chờ, nên `-code` mới sinh cùng một bản sửa `-svc` đã
+> merge sẽ đưa **cả hai** vào PR đó. Khi công tắc bật, hub merge **toàn bộ** PR ngay sau
+> khi mở, kể cả nội dung `-svc`. Vì vậy việc review `-svc` diễn ra ở máy bạn, trong bước 4
+> của `/dev-code-seed`, trước khi section thành `reviewed`, không bao giờ diễn ra trên hub.
 
-Nếu merge thất bại, PR vẫn mở cho người quản trị hub và lần publish vẫn tính là xong.
-`kb publish` và `kb ci-publish` in "merged" khi đã merge. Khi công tắc tắt, mỗi lần
-push cộng thêm vào một PR hub đang chờ mà ai đó phải merge, và `kb doctor` báo khi
-`-code` của hub bị trễ.
+Nếu merge thất bại, PR vẫn mở và lần publish vẫn tính là xong. Khi công tắc tắt, mỗi lần
+push cộng thêm vào một PR hub đang chờ mà ai đó phải merge, và `kb doctor` báo khi `-code`
+của hub bị trễ.
 
 ## 2.6 Seed `-svc` cho dự án có sẵn (một lần)
 
@@ -188,13 +183,10 @@ trắng: hãy chạy bước seed một lần.
 > trách nhiệm chạm tới một chuẩn nghiệp vụ, hãy trích `doc-id §section` từ hub thay vì
 > diễn đạt lại quy tắc.
 
-Dành 10 đến 15 phút cho mỗi service ở bước 4. Đây là chi phí một lần; sau khi seed,
-`-code` tự sinh lại còn `-svc` tích lũy vài dòng mỗi ticket. Bước 6 cứ bỏ qua thoải
-mái: thiếu một flow vẫn tốt hơn đoán một flow. Dùng `kb publish --pr` cho lần publish
-đầu tiên này: chưa có merge nào xảy ra, nên không có tag nào để `kb-code.yml` phản
-ứng, và `kb publish` thường sẽ chờ tới mười phút cho một lượt CI không bao giờ chạy.
-Một analyst hoặc architect trên hub review PR đó như mọi nội dung hub khác, trừ khi hub
-tự merge repo của bạn (mục 2.5).
+Dành 10 đến 15 phút cho mỗi service ở bước 4; đây là chi phí một lần. Bước 6 cứ bỏ qua
+thoải mái: thiếu một flow vẫn tốt hơn đoán một flow. Dùng `kb publish --pr` cho lần
+publish đầu tiên này: chưa có merge nào xảy ra, nên không có tag nào để `kb-code.yml`
+phản ứng, và `kb publish` thường sẽ chờ tới mười phút cho một lượt CI không bao giờ chạy.
 
 ---
 
@@ -208,8 +200,7 @@ và PR, không bao giờ nằm trong cuộc trò chuyện.
 
 | Tình huống | Chạy | Kết quả |
 |---|---|---|
-| Ticket mới, chưa làm gì | `/dev-implement-ticket <ticket>` | claim ticket, lấy về, kiểm tra, rồi đi qua design, plan, execute, handover |
-| Ticket nhỏ, thay đổi hiển nhiên | `/dev-implement-ticket <ticket>` | luồng tự thu gọn; vẫn viết một bản design có giới hạn |
+| Ticket mới, chưa làm gì (ticket nhỏ tự thu gọn) | `/dev-implement-ticket <ticket>` | claim ticket, lấy về, kiểm tra, rồi đi qua design, plan, execute, handover |
 | Design đã duyệt, chưa có plan | `/dev-plan <id>` | `docs/impl/<id>/plan.md` |
 | Plan đã duyệt, hoặc đang execute dở | `/dev-execute <id>` | code, từng task một |
 | Code viết tay, cần bản mô tả PR | `/dev-handover <id>` | nội dung PR, các dòng lịch sử `kb svc note` |
@@ -273,17 +264,12 @@ ngữ cảnh riêng của nó, không bao giờ là chính agent đã làm ra n�
 | A5 | `dev-handover`, trước GATE 3 | merge vào nhánh mặc định có an toàn không |
 
 Tiêu chí nằm trong `docs/pr-review-rubric.md`, được `docs/pr-review-rubric.local.md`
-ghi đè. A3, A4 và A5 cho phép tối đa ba lượt sửa; một finding BLOCKER hoặc SUGGESTED
-còn tồn tại sau vòng 3 sẽ dừng luồng và chuyển cho bạn. A1 và A2 dừng sau một lượt
-review cộng một vòng xác minh. Nếu trợ lý của bạn không điều phối được subagent (mặc
-định với wrapper Copilot và Cursor), lượt review chạy như một lượt đơn và chỉ là
-**báo cáo, không phải cổng**: phase dừng và giao kết quả cho bạn.
-
-Các task trong `plan.md` mang dòng `Depends on:`; `kb plan waves docs/impl/<id>/plan.md`
-biến chúng thành các wave và báo lỗi khi hai task dùng chung file mà không có phụ
-thuộc, khi có chu trình, task không tồn tại, thiếu dòng `Depends on:` hoặc
-`Serial resource:` rỗng. `dev-execute` tự chạy lệnh này và chạy wave nhiều task song
-song trong các lane git worktree, tối đa ba lane cùng lúc.
+ghi đè. Giới hạn số vòng nằm trong các skill; một finding còn mở sau vòng cuối sẽ dừng
+luồng và chuyển cho bạn. Nếu trợ lý của bạn không điều phối được subagent (mặc định với
+wrapper Copilot và Cursor), lượt review chạy như một lượt đơn và chỉ là **báo cáo, không
+phải cổng**: phase dừng và giao kết quả cho bạn. `dev-execute` sắp thứ tự task bằng
+`kb plan waves docs/impl/<id>/plan.md` và chạy các task độc lập song song trong các lane
+git worktree.
 
 ## 3.3 Câu hỏi cho BA
 
@@ -292,33 +278,27 @@ nghi ngờ được gắn nhãn `business` hoặc `technical`:
 
 - **Kỹ thuật** (xây thế nào, đặt ở đâu) chuyển cho `dev-sa`, kiến trúc sư giải pháp của
   repo này. Nó đọc mã nguồn và các tài liệu `-code`, `-svc` và miền của hub, và quyết
-  định được ghi vào bản nháp dưới dạng `- SA-<n>: <quyết định> — vì sao — bằng chứng`.
+  định được ghi vào bản nháp dưới dạng `- SA-<n>: <decision> — why — evidence`.
   Bạn có thể tự gọi: `/dev-sa <câu hỏi>`.
 - **Nghiệp vụ** đi tới BA qua Q&A của hub (MCP `kb_question_ask`) và xuất hiện dưới dạng
-  `- Q<id> — <câu hỏi> — blocks: <AC id|none>`. BA trả lời bằng `/ba-answer-questions`.
+  `- Q<id> — <question> — blocks: <AC ids|none>`. BA trả lời bằng `/ba-answer-questions`.
 
 Một câu hỏi chặn một tiêu chí chấp nhận (AC) sẽ dừng cổng: skill đưa bạn đường dẫn Q&A
-của hub để dán vào chat. Câu hỏi không chặn gì thì không dừng. Ở mỗi lần vào,
-`/dev-implement-ticket` đọc các câu hỏi của ticket (`kb_question_list`) và hiển thị
-trạng thái trong khối Next-step dưới dạng `BA-Q: none | open Q<ids> | waiting Q<ids>`.
-Câu hỏi *answered* được áp vào bản nháp (lấy lại ticket, đánh dấu dòng
-`answered rev N`, soạn lại); câu hỏi *waiting* (đã trả lời nhưng bản ticket mới của BA
-chưa lên hub) chỉ để biết; câu hỏi *open* đang chặn thì dừng luồng.
-
-Q&A chỉ hoạt động khi MCP trỏ tới máy chủ HTTP của hub (`kb mcp-setup`).
+của hub để dán vào chat. Ở mỗi lần vào, `/dev-implement-ticket` đọc các câu hỏi của ticket
+và hiển thị `BA-Q: none | open Q<ids> | waiting Q<ids>`; câu hỏi *waiting* chỉ để biết,
+câu hỏi *open* đang chặn thì dừng luồng. Q&A chỉ hoạt động khi MCP trỏ tới máy chủ HTTP
+của hub (`kb mcp-setup`).
 
 ## 3.4 Sửa một bug
 
-Bug do BA publish có dạng `BUG-<n>`. Nó không có story và không có tiêu chí chấp nhận:
-xong khi các bước của nó không còn tái hiện kết quả sai. `/dev-fix-bug BUG-<n>` chạy
-theo phong cách debug có hệ thống:
+Bug do BA publish có dạng `BUG-<n>`: không có story, không có tiêu chí chấp nhận, xong
+khi các bước của nó không còn tái hiện kết quả sai. `/dev-fix-bug BUG-<n>` chạy:
 
-1. **Intake**: `kb ticket fetch BUG-<n>` ghi `docs/impl/<id>/ticket.md` và sao chép ảnh
-   chụp màn hình của bug vào `docs/impl/<id>/assets/`. Nhánh `fix/<BUG-id>`, hoặc
-   `hotfix/<BUG-id>` từ nhánh production bạn chỉ định.
+1. **Intake**: `kb ticket fetch BUG-<n>` (cũng sao chép ảnh chụp màn hình vào
+   `docs/impl/<id>/assets/`); nhánh `fix/<BUG-id>`, hoặc `hotfix/<BUG-id>`.
 2. **Reproduce**: một test fail cho thấy kết quả Actual. Không có test này thì không fix.
-3. **Root cause**: các giả thuyết ghi rõ trong `docs/impl/<id>/rootcause.md`. Ba giả
-   thuyết thất bại thì luồng dừng lại để bàn về kiến trúc với bạn.
+3. **Root cause**: các giả thuyết trong `docs/impl/<id>/rootcause.md`; ba giả thuyết thất
+   bại thì luồng dừng lại để bàn về kiến trúc với bạn.
 4. **Fix**: một thay đổi tại nguyên nhân gốc, toàn bộ test xanh.
 5. **Handover**: `/dev-handover` với quy tắc cho bug; test tái hiện và nguyên nhân gốc
    thay thế design và plan.
@@ -329,30 +309,26 @@ Một **claim ticket** trên hub giữ hai Dev khỏi làm cùng một ticket.
 `/dev-implement-ticket` và `/dev-fix-bug` chạy `kb claim take <id>`, và mọi phase sau
 đó làm mới nó.
 
-- Claim ghi tên người giữ (`<git user.name>@<hostname>`, hoặc `STRATA_KB_CLAIM_AS`
-  hay `--as`) và một phase: `claimed`, `design`, `plan`, `execute`, `handover`,
-  `waiting-qa`, `review`, `publishing`. Dev thứ hai nhận
-  `taken by <holder> (<phase>, updated <x> ago)` và mã thoát `3`: chọn ticket khác hoặc
-  nhờ admin hub giải phóng.
-- Nó hết hạn sau 4 giờ không cập nhật. Khi bạn đã mở PR, chạy lại `/dev-handover <id>`:
-  nó tìm PR và đặt `review` kèm URL. Claim ở `review` hoặc `publishing` có PR, hay claim
-  mà auto runner đánh dấu `stopped`, không bao giờ hết hạn.
-- Sau khi hết hạn hoặc được giải phóng, Dev kế tiếp claim ticket và thấy nhánh của nó
-  trên `origin` sẽ tiếp tục trên nhánh đó. Nếu claim của chính bạn bị giải phóng khi bạn
-  đang làm, lần cập nhật kế tiếp thoát với mã `3` (`lost: <reason> by <who>`) và skill
-  dừng mà không push.
-- `kb claim list [--json]` cho xem những gì đang được giữ; `kb claim release <ticket> [--reason TEXT]`
-  trả claim của bạn; `kb claim update <ticket> --phase <p>` đặt phase bằng tay. Admin hub
-  giải phóng claim của bất kỳ ai từ trang ticket.
-- Các lệnh này cần `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`.
+- Claim ghi tên người giữ (`<git user.name>@<hostname>`, hoặc `STRATA_KB_CLAIM_AS` hay
+  `--as`) và một phase (`claimed`, `design`, `plan`, `execute`, `handover`, `waiting-qa`,
+  `review`, `publishing`). Dev thứ hai nhận `taken by <holder> (<phase>, updated <x> ago)`
+  và mã thoát `3`: chọn ticket khác hoặc nhờ admin hub giải phóng.
+- Theo mặc định nó hết hạn sau 4 giờ không cập nhật. Khi bạn đã mở PR, chạy lại
+  `/dev-handover <id>`: nó đặt `review` kèm URL của PR. Claim ở `review` hoặc `publishing`
+  có PR, hay claim mà auto runner đánh dấu `stopped`, không bao giờ hết hạn. Nếu claim của
+  chính bạn bị giải phóng khi bạn đang làm, lần cập nhật kế tiếp thoát với mã `3`
+  (`lost: <reason> by <who>`) và skill dừng mà không push.
+- `kb claim list [--json]`, `kb claim release <ticket> [--reason TEXT]` và
+  `kb claim update <ticket> --phase <p>` quản lý claim. Các lệnh này cần
+  `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`.
 
 ## 3.6 Publish sau khi merge
 
 Push lên nhánh mặc định không publish gì; intake chỉ nhận publish từ tag `kb-publish/*`.
-Sau khi PR của bạn merge, hãy publish từ nhánh mặc định:
+Sau khi PR của bạn merge, hãy publish từ nhánh mặc định của bạn (`<default>`):
 
 ```bash
-git fetch origin && git switch main && git pull --ff-only origin main
+git fetch origin && git switch <default> && git pull --ff-only origin <default>
 kb publish
 ```
 
@@ -387,23 +363,17 @@ comment trích dẫn ngay cạnh.
 
 Không tài liệu nào đòi hỏi kỷ luật mới theo từng ticket từ bạn.
 
-- **`-code` không cần làm gì.** Nó không bao giờ được commit (`.gitignore` có
-  `.kb/*-code/`). `kb svc note`, `kb build`, `kb doctor` và `kb publish` sinh lại nó
-  trước khi chạy khi nó thiếu, cũ hơn `HEAD`, hoặc các file đang được theo dõi có thay
-  đổi (file mới chỉ được tính khi đã được theo dõi bằng `git add`). `--no-refresh` bỏ qua
-  việc đó. Nơi duy nhất sinh ra nó là `kb code-ingest`; `kb summarize` từ chối nó.
-  `--scaffold-svc` cố ý không bao giờ được truyền trong CI, vì CI không được tạo nội dung
-  `pending` làm hỏng chính bước build của nó.
-- **`-svc` tích lũy ở handover.** `dev-handover` chạy, cho mỗi service mà ticket đã chạm
-  tới, `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint" --refs "payments-spec §4.2"`.
-  Lệnh thêm một dòng vào `hist.<service>`, idempotent theo ticket. Đừng bao giờ sửa
-  `hist.*` bằng tay; các dòng đó là sự kiện và không cần review. Lệnh thoát với mã `1` khi
-  service không tồn tại (gõ sai không được tạo ra service mới), thiếu `-svc` hoặc `-code`,
-  hay manifest không đọc được.
-- **Văn bản trách nhiệm có thể trôi, và hệ thống báo cáo chứ không tự sửa.** Khi
-  `kb code-ingest --scaffold-svc` làm mới bằng chứng của một service đã `reviewed` và có
-  thay đổi vượt quá khoảng trắng, nó in `stale-risk: svc.<name>`. Nó không bao giờ đụng
-  tới phần tóm tắt; nó chỉ báo rằng một con người nên xem lại.
+- **`-code` không cần làm gì.** Nó không bao giờ được commit (`.gitignore` có `.kb/*-code/`).
+  `kb svc note`, `kb build`, `kb doctor` và `kb publish` sinh lại nó trước khi chạy khi nó
+  đã cũ (`--no-refresh` bỏ qua việc đó). CI không bao giờ truyền `--scaffold-svc`, vì CI
+  không được tạo nội dung `pending`.
+- **`-svc` tích lũy ở handover.** `dev-handover` chạy
+  `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` cho mỗi service
+  mà ticket đã chạm tới. Lệnh thêm một dòng `hist.<service>`, idempotent; đừng bao giờ sửa
+  `hist.*`.
+- **Trôi lệch thì được báo, không tự sửa.** Khi bằng chứng làm mới của một service đã
+  `reviewed` thay đổi, `kb code-ingest --scaffold-svc` in `stale-risk: svc.<name>` và để
+  nguyên phần tóm tắt.
 
 ---
 
@@ -482,20 +452,15 @@ Mỗi task một tiến trình `claude -p` mới. Theo thứ tự:
 3. Ticket `ready` đầu tiên không thuộc mission nào và không phải bug (`/dev-implement-ticket`).
 4. Story `ready` đầu tiên theo thứ tự mission mà các phụ thuộc đã `done`.
 
-Khi một câu hỏi nghiệp vụ chặn ticket, Dev hỏi BA qua Q&A của hub và chờ; khi mọi câu hỏi
-đã được trả lời, cùng ticket đó chạy tiếp trong một tiến trình mới. Vòng lặp giữ claim và
-làm mới nó mỗi `auto.claim_heartbeat` giây.
-
-Nó dừng sau hai lần thử hỏng ở một ticket (CI đỏ sau hai vòng sửa thì dừng ngay); hãy sửa
-nguyên nhân rồi chạy lại `kb auto run`. Một lệnh nằm ngoài allowlist kết thúc task bằng
+Khi một câu hỏi nghiệp vụ chặn ticket, Dev hỏi BA qua Q&A của hub và chờ; khi đã trả lời,
+cùng ticket đó chạy tiếp trong một tiến trình mới. Nó dừng sau hai lần thử hỏng ở một
+ticket (CI đỏ sau hai vòng sửa thì dừng ngay); hãy sửa nguyên nhân rồi chạy lại
+`kb auto run`. Một lệnh nằm ngoài allowlist kết thúc task bằng
 `failed command-denied <command>`: hãy thêm nó vào `permissions.allow` trong
-`.claude/settings.json` bằng tay. Chờ vì chạm giới hạn sử dụng (15, 30, 60 phút) không
-phải thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không có mission và bug
-đều `done`.
-
-Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off` và
-`run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa khởi động
-vòng lặp thứ hai.
+`.claude/settings.json` bằng tay. Chờ vì chạm giới hạn sử dụng (15, 30, 60 phút) không phải
+thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không có mission và bug đều
+`done`. Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off`
+và `run` từ chối, nên một task không thể vừa bật công tắc vừa khởi động vòng lặp thứ hai.
 
 ## 4.5 Claude Code cloud
 
@@ -512,7 +477,7 @@ Nhánh của phiên không push được lên nhánh mặc định. Khi công t�
 merge PR đó, báo cho bạn trước**, bằng `kb pr merge auto/switch --squash --admin --delete-branch`.
 Lời khuyên branch protection ở 4.1 áp dụng y nguyên: lần merge đó cũng không có review.
 **Phiên phải luôn mở** suốt lượt chạy. Chưa được kiểm chứng trên cloud thật: phiên kéo dài
-hơn ba giờ, push các nhánh `auto/*`, và merge vượt qua một review bắt buộc.
+hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt buộc, và `gh run` qua REST.
 
 ---
 
@@ -541,16 +506,10 @@ hơn ba giờ, push các nhánh `auto/*`, và merge vượt qua một review b�
 | `kb ticket fetch`: "is not on the hub" | BA chưa publish, hoặc bỏ nó khỏi plan | Nhờ BA `kb publish`; hoặc đưa file ticket hay dán nội dung |
 | `kb ticket fetch`: "published by several repos" | Hai repo BA publish cùng một id | `kb ticket fetch <repo>:<id>` |
 | `kb ticket fetch` không với tới hub | `hub:` chưa đặt hoặc không với tới được | Sửa `hub:` trong `.kb/config.yaml` (hoặc `STRATA_KB_HUB`) |
-| `kb ticket check` lỗi với `re-run /sa-ticket-ground` | Một sự kiện ticket trích dẫn không còn trong `-code` | Dừng; SA của BA bám lại ticket |
-| Một trích dẫn thành `stale` giữa chừng khi hiện thực | Hub đã publish sau khi ticket được viết | `kb diff`, rồi hỏi analyst. Đừng tự diễn giải lại AC |
-| `kb claim` thoát 3: `taken by ...` | Dev khác đang giữ ticket | Chọn ticket khác hoặc nhờ admin hub giải phóng |
 | `kb claim`: "hub server has no /api/claims" | Hub cũ hơn CLI này | Nâng cấp hub, rồi chạy `kb doctor` ở đây |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP trỏ tới một bản clone cache cục bộ, một máy chủ stdio hoặc mục tiêu nào khác ngoài máy chủ HTTP của hub | Chạy `kb mcp-setup` và khởi động lại trợ lý |
 | Không với tới máy chủ MCP | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`); nó cho biết biến nào. Chạy lại không kèm gì sẽ xác minh mà không cần nhập lại |
 | `kb mcp-setup`: "token was rejected" sau khi bạn có token mới | Chạy lại không kèm gì đọc token *cũ* từ `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, hoặc xóa dòng đó khỏi `.env` rồi chạy lại |
-| `kb auto run` từ chối | Xem các lý do nó đã in (4.3) | Sửa từng lý do; commit và push `.kb/config.yaml` và `.claude/settings.json` |
-| Task auto kết thúc `failed command-denied <command>` | Lệnh không có trong `permissions.allow` | Thêm nó vào `.claude/settings.json` bằng tay |
-| `/kb-summarize` không làm gì trong Copilot | Copilot có instructions, không có prompt | Làm việc trong `.kb/**` để instructions có hiệu lực |
 
 Kiểm tra độ trễ hub chạy một `code-ingest` đầy đủ trong worktree tạm ở mỗi lần
 `kb doctor`; hãy chuẩn bị là nó tốn thời gian thật. Trên Windows, chênh lệch về chữ hoa
@@ -568,14 +527,13 @@ luận biến mất trên Linux (CI) là do chuyện đó, không phải trôi l
 | `kind`, `hub`, `repo_id`, `intake` | xem 2.2. Đừng bao giờ đặt token vào `hub:` hay `intake:` |
 | `langs` | ngôn ngữ cho bộ quy ước và allowlist của chế độ auto; đặt bởi `--lang` hoặc tự phát hiện |
 | `code_ingest.db`, `code_ingest.tags` | file SQLite (chỉ khi nêu rõ) và tag index bổ sung cho mọi lần làm mới `-code` |
-| `auto.enabled`, `auto.qa_interval`, `auto.idle_interval`, `auto.hotfix_base`, `auto.claim_heartbeat` | chế độ auto; `claim_heartbeat` là số giây giữa các lần làm mới claim, mặc định `900` |
+| `auto.enabled`, `auto.qa_interval`, `auto.idle_interval`, `auto.hotfix_base`, `auto.claim_heartbeat` | chế độ auto; `hotfix_base` rỗng = nhánh mặc định (hiện các skill giả định `main`); `claim_heartbeat` là số giây giữa các lần làm mới claim, mặc định `900` |
+| `kb init` chạy lại | tạo file còn thiếu và làm mới các file dựng khung; `.kb/config.yaml`, `.kb/index.yaml` và `.claude/settings.json` được bảo vệ (`--force` ghi đè chúng; nếu không, `.claude/settings.json` được gộp); các file `*.local.md` không bao giờ bị đụng tới |
 | `.kb/index.yaml` `llm:` | `runner` (`auto`, `claude`, `copilot`, `none`), `model`, `effort`, `max_workers`, `timeout`, dùng bởi `kb summarize <repo_id>-svc` |
 | `STRATA_KB_HUB` | ghi đè `hub:`; mang URL có credential trong CI (một variable Actions) |
 | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | địa chỉ HTTP gốc và bearer token của hub: MCP, claim, auto runner |
 | `KB_HUB_TOKEN` | secret Actions, token chỉ đọc, chỉ cho hub riêng tư (`kb-doctor.yml`) |
-| `STRATA_KB_CLAIM_AS` | tên người giữ claim |
-| `STRATA_KB_AUTO_TASK` | do runner đặt trên các tiến trình task; `kb auto on/off/run` từ chối khi có nó |
-| `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | nhận biết Claude Code cloud |
+| `STRATA_KB_CLAIM_AS`, `STRATA_KB_AUTO_TASK`, `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | tên người giữ claim; do runner đặt trên các tiến trình task; nhận biết Claude Code cloud |
 
 Mã thoát: `0` ok, `1` lỗi, `2` trích dẫn stale (hoặc lỗi cách dùng), `3` claim bị người khác
 giữ hoặc bị mất, `8` `kb pr checks` còn đang chờ. `kb auto run`: `0` xong, `2` đã dừng,
@@ -587,11 +545,8 @@ giữ hoặc bị mất, `8` `kb pr checks` còn đang chờ. `kb auto run`: `0`
 |---|---|---|
 | `docs/impl/<id>/design.md`, `plan.md` | design và plan, mỗi file có bảng `## Review record` | có |
 | `docs/impl/<id>/ticket.md` | ticket lấy từ hub | không, đừng bao giờ sửa |
-| `docs/impl/<id>/context.md` | cache ngữ cảnh đã phân giải | không |
-| `docs/impl/<id>/review/` | các vòng review, diff từng task, báo cáo rủi ro merge | không |
-| `docs/impl/<id>/assets/` | ảnh chụp màn hình bug (có thể lộ dữ liệu cá nhân) | không |
-| `.kb/*-code/`, `.kb/auto/` | `-code` suy ra và trạng thái của auto runner | không |
-| `.env` | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | không |
+| `docs/impl/<id>/context.md`, `review/`, `assets/` | cache ngữ cảnh, tệp review, ảnh chụp màn hình bug (có thể lộ dữ liệu cá nhân) | không |
+| `.kb/*-code/`, `.kb/auto/`, `.env` | `-code` suy ra, trạng thái của auto runner, thông tin đăng nhập MCP | không |
 
 `kb init` và `kb impl tidy` chuyển bố cục phẳng cũ (`docs/impl/<id>-plan.md`, ...) vào
 `docs/impl/<id>/` mà không ghi đè; hãy commit các lần đổi tên. Đừng bao giờ commit
@@ -627,19 +582,12 @@ và mọi extractor báo cáo vào `struct.coverage`. `kb code-ingest` thoát v�
 không extractor nào trong `services`, `deps`, `commands`, `schema`, `integrations` và
 `api` tìm thấy gì: chỉ một danh sách thư mục là cấu hình sai, không phải tri thức.
 
-Framework được hỗ trợ:
+Framework route được hỗ trợ: NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut,
+ASP.NET Core, FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
 
-- **Route:** NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut, ASP.NET Core,
-  FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
-- **Page:** Next.js, Nuxt, SvelteKit, Angular, Vue, React (react-router), Flutter (go_router).
-- **Job:** NestJS, Spring / Quarkus / Micronaut, Hangfire, Quartz và .NET hosted service,
-  Celery, Laravel, Symfony, node-cron, BullMQ, robfig/cron, tokio-cron-scheduler,
-  Kubernetes `CronJob`.
-
-Bốn extractor đọc mã nguồn bao gồm JS/TS, Java/Kotlin, C#, Python, PHP, Go, Rust, Swift và
-Dart, cùng CSS/SCSS custom property. Pin `tree-sitter-language-pack` là chính xác để cùng
-một commit cho ra cùng các byte trên mọi máy. Chỉ có tên được phát ra; giá trị biến môi
-trường, giá trị hằng và giá trị thành viên enum không bao giờ được phát.
+Pin `tree-sitter-language-pack` là chính xác để cùng một commit cho ra cùng các byte trên mọi
+máy. Chỉ có tên được phát ra; giá trị biến môi trường, giá trị hằng và giá trị thành viên enum
+không bao giờ được phát.
 
 **Hai thuộc tính bảo mật.** (1) Extractor integrations phát ra **khóa, không bao giờ giá
 trị**: file env duy nhất nó mở là `.env.example`, `.sample` hoặc `.template`, không bao giờ
@@ -667,14 +615,10 @@ hay partition, index hoặc primary key của bảng, SA chỉ viết một th�
 `<path> [NEW: D<n>]` làm một mục `Files:` riêng cho file. Nếu không, đó là một mục
 `Open decisions` trích dẫn trạng thái, và `kb ticket check` thực thi điều này.
 
-Các giới hạn đã nêu: `schema` phát lại `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` và các
-câu lệnh index, key theo thứ tự tên file đã sắp, không hiện thực dialect SQL nào; câu
-lệnh nó không áp dụng được làm phạm vi thành `partial` và nêu `file:line`; migration EF
-Core chỉ được nhận ra theo tên bảng; `build.gradle` được so khớp bằng regex. Nếu
-`.kb/<doc_id>/` đã chứa một tài liệu mà `kb code-ingest` không viết ra, nó thoát với mã 1
-và không ghi gì (không có cờ ghi đè; hãy chuyển tài liệu đi hoặc chọn `--doc-id` khác).
-Chạy lại trên cùng commit và cùng nền tảng cho ra các file giống hệt từng byte; revision
-của manifest lấy từ `HEAD`, nên cây bẩn in cảnh báo `dirty_tree`.
+Giới hạn: `schema` không hiện thực dialect SQL nào; câu lệnh nó không áp dụng được làm phạm vi
+thành `partial` và nêu `file:line`. Nếu `.kb/<doc_id>/` chứa một tài liệu mà `kb code-ingest`
+không viết ra, nó thoát với mã 1 và không ghi gì (hãy chuyển tài liệu đi hoặc chọn `--doc-id`
+khác). Cây bẩn in cảnh báo `dirty_tree`.
 
 ## 6.4 Cái gì được thực thi, cái gì chỉ được yêu cầu
 
@@ -688,35 +632,31 @@ của manifest lấy từ `HEAD`, nên cây bẩn in cảnh báo `dirty_tree`.
 PR là văn bản do kẻ tấn công kiểm soát được, và giữ nó ngoài argv ngăn người gọi nhúng nó
 vào một lệnh shell.
 
-Mọi thứ khác là kỷ luật qua prompt mà không gì trong `kb` đo được; người kiểm tra là bạn,
-tại cổng. Test-first (ngoại lệ ở `docs/tdd-exemptions.md`), bằng chứng xác minh được
-trình ra, giá trị đã ghim chép nguyên văn, ticket chỉ đọc, GATE 1 và GATE 2, chuyển
-`OPEN(BA)` cho tiêu chí chấp nhận mơ hồ, và các lượt review A1 đến A4. Chỉ A5 có răng,
-qua dòng `Blocking:`.
+Mọi thứ khác (test-first, bằng chứng xác minh, GATE 1 và GATE 2, A1 đến A4) là kỷ luật qua
+prompt mà không gì trong `kb` đo được; người kiểm tra là bạn, tại cổng. Chỉ A5 có răng, qua
+dòng `Blocking:`.
 
 ## 6.5 Quyền của chế độ auto
 
-`kb init --kind dev` ghi `.claude/settings.json` (gộp vào file của bạn). **Cho phép:** `git`
-add, commit, status, diff, log, fetch, pull, switch sang `auto/*`, `fix/*` và `hotfix/*`,
-tạo nhánh, worktree, merge và `push -u origin HEAD`; `gh pr` và `gh run`; `Read`, `Edit`,
-`Write`; các công cụ MCP `strata-kb`; nhiều lệnh con `kb`; và các lệnh test, install, lint,
-build của `langs` bạn. **Từ chối:** mọi `git push` nêu `main` hay `master`, force-push,
-refspec `+` và `:` cùng `--delete`; các dạng `git checkout`, `switch` và `branch` chuyển
-tới, tạo, đổi tên hay xóa `main` hoặc `master`; `git reset --hard`; `gh repo delete`,
-`gh run delete`; `kb init`; `rm -rf /*`; và việc sửa `.claude/settings.json`,
-`.claude/settings.local.json` và `.git/**`. Cùng file đó đăng ký các hook `Stop` và
-`SubagentStop` chạy `kb usage ingest-transcript --hook-stdin` cho báo cáo chi phí
-(`kb usage report`).
+`kb init --kind dev` gộp `.claude/settings.json` vào file của bạn. **Cho phép:** `git` thông
+thường (add, commit, fetch, pull, switch sang `auto/*`, `fix/*`, `hotfix/*`, branch, worktree,
+merge, `push -u origin HEAD`), `gh pr` và `gh run`, `Read`/`Edit`/`Write`, các công cụ MCP
+`strata-kb`, nhiều lệnh con `kb`, và các lệnh test, install, lint, build của `langs` bạn.
+**Từ chối:** mọi `git push` nêu `main` hay `master`, force-push, refspec `+` và `:` cùng
+`--delete`; các dạng `git checkout`, `switch` và `branch` chuyển tới, tạo, đổi tên hay xóa
+`main` hoặc `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
+`rm -rf /*`; việc sửa `.claude/settings.json`, `.claude/settings.local.json` và `.git/**`.
+Các hook `Stop` và `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin` cho báo cáo
+chi phí.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 
 Câu hỏi và câu trả lời nằm trong kho Q&A của hub, chỉ được ghi qua `kb_question_ask` (Dev)
-và `kb_question_answer` (BA). `asked_by` và `answered_by` là tên do người gọi tự gõ (các
-skill truyền `git config user.name`): để theo dõi, không phải xác thực. Mọi mục tiêu nào
-khác ngoài máy chủ HTTP của hub đều bị từ chối. Giới hạn: câu hỏi và câu trả lời 4000 ký
-tự, context 1000, tên 100, tối đa 50 câu hỏi mở cho mỗi ticket. Các công cụ MCP mà skill
-của bạn gọi là `kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`,
-`kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask` và
+và `kb_question_answer` (BA). `asked_by` và `answered_by` là tên do người gọi tự gõ (các skill
+truyền `git config user.name`): để theo dõi, không phải xác thực. Giới hạn: 4000 ký tự cho câu
+hỏi hoặc câu trả lời, 1000 cho context, 100 cho tên, tối đa 50 câu hỏi mở cho mỗi ticket. Các
+công cụ MCP mà skill của bạn gọi: `kb_search`, `kb_get_section`, `kb_context_new`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask`,
 `kb_question_list`.
 
 ## 6.7 Tên dành riêng
