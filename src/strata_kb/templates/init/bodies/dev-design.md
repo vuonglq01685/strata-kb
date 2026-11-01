@@ -281,6 +281,7 @@ so `design ✅` reads correctly if the ticket is re-opened.
   the session default silently.
 - Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
   standing after round 3 stops the flow and goes to the Dev.
+- A1 and A2 stop after round 1 plus one verification round; see their **Stop.** rule.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
 - Criteria come from the source that matches the review: the rubric's
