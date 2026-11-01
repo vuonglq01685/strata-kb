@@ -3,6 +3,19 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.34.0 — 2026-11-01
+
+The design and plan reviews (A1, A2) now stop after two rounds, leftover gaps are carried into execution, and Dev questions and BA answers have a fixed format.
+
+- **Two-round review.** A1 and A2 stop after round 1 plus one verification round; there is no third round and no trend stop. A gap the verification round finds outside the fix diff is recorded as `round-1 coverage miss` and does not block unless it is a BLOCKER. A3, A4 and A5 keep at most 3 rounds.
+- **Carried gaps.** A design or plan lists leftover gaps in a `## Carried gaps` table (Gap, Class, Severity, Raised in, Target task, Status). Every `execute-verifiable` gap and every round-2 SUGGESTED gap outside the fix diff goes in. GATE 1 and GATE 2 are offered once no BLOCKER is open and every open SUGGESTED gap has a target task. The rubric gains `### Execute-verifiable gaps`.
+- **Execution deviations.** `dev-execute` hands each task its carried rows. When the code differs from the plan or design, the implementer edits that text in the same commit and adds a row to `## Execution deviations` in `plan.md`. A parallel lane returns its rows and edits, and the orchestrator applies them at merge-back. Spec review checks both.
+- **Delta review.** A deviation that changes an AC or a public contract gets one review of that doc edit by a fresh `design-reviewer` or `plan-reviewer` before A3. Auto mode ends `AUTO-RESULT: failed design-review` or `failed plan-review` on a BLOCKER.
+- **Rendered Q&A.** The hub's ticket Q&A page renders question, context and answer as markdown, with a single newline as a line break and raw HTML off. Mission and ticket pages are unchanged.
+- **Q&A format.** A Dev question has `**Decision needed:**`, `**Background:**`, `**Options:**`, `**Dev recommends:**` and `**AC impact:**`; the open-question line carries the Decision needed sentence. A BA answer has `**Decision:**`, `**Ticket changes (rev N):**`, `**Follow-ups:**` and `**Assumptions:**`. The labels are fixed English; the content is in the ticket's language. `kb_question_ask` and `kb_question_answer` do not refuse other text.
+- **Docs.** The Dev and BA guides (EN, VI) and `QUICKSTART-dev.md` describe all of this. The guide PDFs under `docs/` are still not rebuilt: `docs/src/build_pdf.py` needs the macOS fonts and the `markdown` package; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI and the hub (the Q&A page). Run `kb init` to get the new skills. No CI pin change is needed.
+
 ## 1.33.1 — 2026-11-01
 
 Finishes what 1.33.0 left open in the L3 AI fix. Nothing changes for a KB that does not run `kb l3 fix on`.
