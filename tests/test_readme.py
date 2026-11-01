@@ -373,7 +373,7 @@ def test_guides_document_ticket_qa_in_both_languages():
         )
         assert "## 3.10" in ba and "/ba-answer-questions" in ba, lang
         assert "Trigger `question`" in _normalised(ba), lang
-        assert "## 4.6" in dev and "/dev-sa" in dev, lang
+        assert "## 3.3" in dev and "/dev-sa" in dev, lang
         assert "BA-Q: none | open Q<ids> | waiting Q<ids>" in dev, lang
         assert "`.kb-qa/qa.db`" in hub or "`.kb-qa/`" in hub, lang
         for text in (ba, dev, hub):
