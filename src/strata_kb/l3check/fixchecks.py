@@ -106,27 +106,54 @@ def _check_tables(t: _Target, draft: str) -> None:
 
 # `![alt](T)` / `[text](T)` (T keeps any title), `[ref]: T` definitions, <autolinks>
 _LINK_TARGET = re.compile(
-    r"(!?)\[[^\]]*\]\(([^)]*)\)"
+    r"(!?)\[([^\]]*)\]\(([^)]*)\)"
     r"|^[ ]{0,3}\[[^\]]+\]:[ \t]*(\S+)"
     r"|<((?:https?|mailto):[^>\s]+)>",
     re.MULTILINE,
 )
+_IMAGE_MD = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_NONE = ("(none)", "")
 
 
-def _link_targets(text: str) -> list[str]:
+def _link_targets(text: str) -> list[tuple[str, str]]:
+    """(target, alt) per link in order; alt only for images, "" for links."""
     return [
-        ((m.group(1) or "") + (m.group(2) or m.group(3) or m.group(4) or "")).strip()
+        (
+            (
+                (m.group(1) or "") + (m.group(3) or m.group(4) or m.group(5) or "")
+            ).strip(),
+            m.group(2).strip() if m.group(1) else "",
+        )
         for m in _LINK_TARGET.finditer(text)
     ]
 
 
+def _without_images(md: str) -> str:
+    """Image syntax out of the word check: its alt is OCR the PDF text layer
+    lacks, and `_check_links` already holds each image's target and alt exact."""
+    return _IMAGE_MD.sub(" ", md)
+
+
 def _check_links(t: _Target, draft: str) -> None:
     """Images and links carry content the word check cannot see: the ordered
-    targets must be the same as in the current L3."""
+    (target, alt) pairs must be the same as in the current L3, except that a
+    copy of a pair the L3 repeats may go (deleting a repeated block) while one
+    stays. Images are content-addressed, so the same image is the same target."""
     old, new = _link_targets(t.run), _link_targets(draft)
-    for a, b in zip_longest(old, new, fillvalue="(none)"):
-        if a != b:
-            raise _Reject(f"links: {_clip(b if b != '(none)' else a)}")
+    kept: list[tuple[str, str]] = []
+    j = 0
+    for a in old:
+        if j < len(new) and new[j] == a:
+            kept.append(a)
+            j += 1
+        elif old.count(a) < 2 or a not in new:
+            kept.append(a)  # not droppable: leave it in so the mismatch below names it
+    for a, b in zip_longest(kept, new, fillvalue=_NONE):
+        if a == b:
+            continue
+        if a[0] == b[0]:
+            raise _Reject(f'links: {_clip(b[0])} alt "{_clip(b[1])}"')
+        raise _Reject(f"links: {_clip(b[0] if b != _NONE else a[0])}")
 
 
 def _check_contract(
@@ -192,7 +219,13 @@ def _check_words(
         _check_image(t, pdf_pages, furniture)
         return True
     pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
-    issue = wordcheck.check_words(t.run, draft, pdf, t.neighbours, t.furniture)
+    issue = wordcheck.check_words(
+        _without_images(t.run),
+        _without_images(draft),
+        pdf,
+        _without_images(t.neighbours),
+        t.furniture,
+    )
     if issue is not None:
         raise _Reject(
             f'words: {issue.op}: draft "{issue.draft}" vs original "{issue.original}"'

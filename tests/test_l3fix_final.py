@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import SimpleNamespace
+
 import pytest
 
 from strata_kb.cli import app
-from strata_kb.l3check import fixrecord, report
+from strata_kb.l3check import fixchecks, fixrecord, report
+from tests import test_l3fix_apply
 from tests.test_l3fix_apply import (
+    BROKEN_BODY,
     FIXED_42,
     IMAGE,
     NOTE,
@@ -177,6 +182,57 @@ def test_unchanged_links_pass(kb):
     _draft(kb, "x1", FIXED_42)
 
     assert _apply(kb)[0].status == "applied"
+
+
+IMG_A_TARGET = "!assets/" + "a" * 64 + ".png"
+IMG_C = "![Bảng tổng hợp](assets/" + "c" * 64 + ".png)"
+
+
+def test_repeated_image_block_removed_passes(tmp_path, monkeypatch):
+    block = f"{NOTE}\n\n{IMG_C}"
+    units = test_l3fix_apply._units()
+    units[1] = replace(
+        units[1], body_md=BROKEN_BODY.replace(NOTE, f"{block}\n\n{block}")
+    )
+    monkeypatch.setattr(test_l3fix_apply, "_units", lambda: units)
+    kb = _build(tmp_path)
+    _draft(kb, "x1", FIXED_42.replace(NOTE, block))
+
+    [r] = _apply(kb)
+
+    assert r.status == "applied", r.reason
+
+
+def _links(run: str, draft: str) -> None:
+    fixchecks._check_links(SimpleNamespace(run=run), draft)  # type: ignore[arg-type]
+
+
+def test_triple_image_keeps_one_passes():
+    _links(f"{IMAGE}\n\n{IMAGE}\n\n{NOTE}\n\n{IMAGE}", f"{IMAGE}\n\n{NOTE}")
+
+
+def test_repeated_image_all_copies_removed_rejected():
+    with pytest.raises(fixchecks._Reject, match=f"^links: {IMG_A_TARGET}$"):
+        _links(f"{IMAGE}\n\n{IMAGE}\n\n{NOTE}", NOTE)
+
+
+def test_repeated_image_reorder_rejected():
+    with pytest.raises(fixchecks._Reject, match="^links: "):
+        _links(f"{IMAGE}\n\n{IMG_B}\n\n{IMAGE}", f"{IMAGE}\n\n{IMAGE}\n\n{IMG_B}")
+
+
+def test_single_image_removed_still_rejected():
+    with pytest.raises(fixchecks._Reject, match=f"^links: {IMG_A_TARGET}$"):
+        _links(f"{IMAGE}\n\n{NOTE}", NOTE)
+
+
+def test_changed_image_alt_is_rejected(kb):
+    _draft(kb, "x1", FIXED_42.replace("Sơ đồ phê duyệt", "Sơ đồ khác"))
+
+    [r] = _apply(kb)
+
+    assert r.status == "rejected"
+    assert r.reason == f'links: {IMG_A_TARGET} alt "Sơ đồ khác"'
 
 
 def test_skill_body_says_report_exit_1_is_normal():
