@@ -38,6 +38,13 @@ a denial to report. Stop only when the MCP tool fails too.
    question with its context, the AC ids it blocks and who asked, beside the
    relevant part of the local ticket file (`tickets/<folder>/<ticket-id>.md`).
    A ticket that is not in this repo's working tree: say so and skip it.
+   A question not in the Dev's format is restated in that format in chat
+   only, so the BA can read it. The format has these labels, in this order:
+   **Decision needed:** (one sentence), **Background:** (2-4 bullets),
+   **Options:** (numbered, each with its consequence), **Dev recommends:**
+   and **AC impact:**. Fill them from the stored question and its context
+   alone; where the question does not say, write `not stated`, and add no
+   fact. The stored question is never edited.
 3. **Answer** — the BA gives each answer in their own words; do not write
    one for them. If an answer does not change the ticket (the HUB revision
    already carries it — `kb_question_list` prints `hub rev` per question —
@@ -76,9 +83,21 @@ a denial to report. Stop only when the MCP tool fails too.
      `> Parent mission:` line pass `ticket_id` and `mission_markdown`. Until
      `kb ticket lint` passes, record nothing for that ticket.
 4. **Record** — call `kb_question_answer` once per question, with `id` (an
-   integer: the number without the `Q`), `answer` (the BA's words) and
-   `answered_by` = `git config user.name`. `ticket_sections` is a list of
-   section names.
+   integer: the number without the `Q`), `answer` (the BA's words) set out
+   as below and `answered_by` = `git config user.name`. `ticket_sections`
+   is a list of section names.
+   - The `answer` is markdown and keeps its line breaks. The labels are
+     fixed English words; the content is in the ticket's language:
+
+         **Decision:** <what the BA chose>
+         **Ticket changes (rev N):**
+         - <section>: <what changed>
+         **Follow-ups:** <new question or story, and its owner>
+         **Assumptions:** <only if any>
+
+     The rule is that the BA's own words go in **Decision**: the skill
+     structures them and does not reword them. Leave **Assumptions** out
+     when there are none. A label with nothing to list reads `none`.
    - ticket amended, or the answer exists only in a local revision R higher
      than the hub revision: `answer_rev` = R (N+1 for an amendment made
      now) and `ticket_sections` = the Affected of that change-log row (the

@@ -106,7 +106,8 @@ authors), write its decision into the draft's `## Technical decisions` as
 `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
 `kb_question_ask(ticket, question, asked_by, context, blocks)` (`asked_by` =
 `git config user.name`; when that is empty, ask the Dev for a name once and
-reuse it) and move the item to the draft's `## Open questions` as
+reuse it), with `question` and `context` as **Question format** below
+says, and move the item to the draft's `## Open questions` as
 `- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
 returned by `dev-sa` is handled the same way. **Preservation rule.** Remove
 each handled item from `## Questions raised`. Every author and fix round keeps
@@ -131,6 +132,27 @@ answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
 `— re-draft`, re-dispatch the `design-author` with the re-fetched ticket, then strip
 that suffix (the line keeps `— answered rev N`). A line with
 `— answered rev N` and no `— re-draft` is already handled.
+
+**Question format.** The `question` is markdown and keeps its line breaks.
+Write it as below. The labels are fixed English words; the content is in
+the ticket's language.
+
+    **Decision needed:** <one sentence>
+
+    **Background:**
+    - <2-4 bullets in plain words>
+
+    **Options:**
+    1. <option> — <consequence>
+    2. <option> — <consequence>
+
+    **Dev recommends:** <option>, because <reason>
+    **AC impact:** <which ACs change, which do not>
+
+Ask one decision per question: two decisions are two questions. Name no
+internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is.
+The `context` names a place a reader can open, such as
+`design.md §9.3 — test T4`, never a review-round code.
 
 ## A1 — independent design review (before GATE 1)
 

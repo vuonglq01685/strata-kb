@@ -256,6 +256,22 @@ The runner starts this skill as `/dev-fix-bug <BUG-id>`. Nobody answers question
 
 **A real blocker is a BA question.** A blocker is something only the BA can settle: a bug that cannot be reproduced, a broken pinned citation, or a failed `kb ticket check`. Call `kb_question_ask(ticket, question, asked_by, context, blocks)`: `asked_by` is `kb-auto`; a bug has no ACs, so `blocks` is empty; `context` says what was tried. Skip the call when `kb_question_list` already shows the same question. Then end `AUTO-RESULT: blocked-qa Q<id>`. When Q&A is unavailable, end `AUTO-RESULT: failed qa-unavailable` instead.
 
+**Question format.** The `question` is markdown and keeps its line breaks. Write it as below. The labels are fixed English words; the content is in the ticket's language.
+
+    **Decision needed:** <one sentence>
+
+    **Background:**
+    - <2-4 bullets in plain words>
+
+    **Options:**
+    1. <option> — <consequence>
+    2. <option> — <consequence>
+
+    **Dev recommends:** <option>, because <reason>
+    **AC impact:** <which ACs change, which do not; a bug has no ACs, so write none>
+
+Ask one decision per question: two decisions are two questions. Name no internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is. The `context` says what was tried and names a place a reader can open, such as `docs/impl/<BUG-id>/rootcause.md`, never a review-round code.
+
 - **Intake: "create the branch once the Dev agrees"; a hotfix — "ask the Dev which production line to branch from"** → branch at once, from the base above. The production line is `hotfix_base`, or `main` when it is empty.
 - **Intake: a stale pinned citation — "the Dev decides"; a `broken` one is a STOP, a blocker for the BA** → `broken` and a failed `kb ticket check` are real blockers. For `stale`, read both versions: when the difference does not touch the bug's Expected result, continue on the pinned text and log both sides in an Auto decision line; otherwise it is a real blocker.
 - **Reproduce: "Report to the BA what was tried and what is missing; ask for a sharper bug"** → ask through a BA question that says what was tried and what is missing. No fix is written for a bug you cannot reproduce.

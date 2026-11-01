@@ -1823,3 +1823,51 @@ def test_execute_auto_mode_fails_a_blocking_delta_review():
     (gate,) = [g for g in gates if "delta review" in g.split(" → ")[0]]
     for phrase in ("failed design-review", "failed plan-review", "open classes"):
         assert phrase in gate, phrase
+
+
+# --- Q&A question and answer format in the skills (review convergence, Task 6) ---
+
+QA_Q_LABELS = (
+    "**Decision needed:**",
+    "**Background:**",
+    "**Options:**",
+    "**Dev recommends:**",
+    "**AC impact:**",
+)
+QA_A_LABELS = (
+    "**Decision:**",
+    "**Ticket changes (rev N):**",
+    "**Follow-ups:**",
+    "**Assumptions:**",
+)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "bodies/dev-implement-ticket.md",
+        "bodies/dev-fix-bug.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_asker_skills_state_the_question_format(name):
+    t = _raw(name)
+    for label in QA_Q_LABELS:
+        assert label in t, (name, label)
+    n = _normal(t)
+    assert "one decision per question" in n
+    assert "a place a reader can open" in n
+
+
+def test_ba_answer_questions_formats_answers_and_restates_old_questions():
+    t = _raw("bodies/ba-answer-questions.md")
+    for label in QA_A_LABELS:
+        assert label in t, label
+    n = _normal(t)
+    assert "in chat only" in n and "never edited" in n
+    assert "the BA's own words go in **Decision**" in n
