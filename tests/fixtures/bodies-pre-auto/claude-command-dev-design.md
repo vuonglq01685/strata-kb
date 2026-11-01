@@ -218,7 +218,7 @@ previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions. A new gap outside the diff
 is recorded as `round-1 coverage miss`. It does not block, unless it is a
 BLOCKER: a coverage miss that is not a BLOCKER goes to `## Carried gaps`, and
-a BLOCKER blocks. A full review runs again only for not-checked cells or a
+a BLOCKER that is not `execute-verifiable` blocks. A full review runs again only for not-checked cells or a
 slice the diff mostly rewrote.
 
 **Stop.** Record every round in the design file's `## Review record` table,
@@ -229,9 +229,10 @@ creating it below the design body on round 1:
     | <date> | 1 | BLOCKER x1 | design-reviewer | 38/40 | precondition not set up | AC3 not addressed |
 
 Coverage is checked cells over all cells. A1 stops after round 1 plus one
-verification round; there is no third round. A BLOCKER still open after the
-verification round stops the flow and goes to the Dev, with the open classes.
-NOTE and NITS are recorded, not fixed.
+verification round; there is no third round. A gap that still blocks after the
+verification round — a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with
+no `## Carried gaps` row — stops the flow and goes to the Dev, with the open
+classes. NOTE and NITS are recorded, not fixed.
 
 Leftover gaps go in a `## Carried gaps` table below `## Review record`:
 

@@ -267,14 +267,15 @@ previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions, and it still runs
 `kb plan waves`. A new gap outside the diff is recorded as `round-1 coverage
 miss`. It does not block, unless it is a BLOCKER: a coverage miss that is not
-a BLOCKER goes to `## Carried gaps`, and a BLOCKER blocks. A full review runs
+a BLOCKER goes to `## Carried gaps`, and a BLOCKER that is not `execute-verifiable` blocks. A full review runs
 again only for not-checked cells or a slice the diff mostly rewrote.
 
 **Stop.** Record each round in the plan file's `## Review record` table,
 same shape as the design file's: the verdict counts, coverage (checked cells
 over all cells) and the defect classes found. A2 stops after round 1 plus
-one verification round; there is no third round. A BLOCKER still open after
-the verification round stops the flow and goes to the Dev, with the open
+one verification round; there is no third round. A gap that still blocks after
+the verification round — a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with
+no `## Carried gaps` row — stops the flow and goes to the Dev, with the open
 classes. NOTE and NITS are recorded, not fixed.
 
 Leftover gaps go in a `## Carried gaps` table below `## Review record`, with
@@ -386,7 +387,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 - **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
 - **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.
 - **Class-wide fix: an instance whose fix would change the design "goes to the Dev, unfixed"** → decide: when the finding is right, fix the design file, re-run `dev-design`'s A1 review, flip the design to `status: approved` again, then fix the plan. When the finding is wrong, leave the plan and record why. Either way, log an Auto decision line.
-- **Review contract: "round 3 stops the flow and goes to the Dev"** → A2 stops after round 2, as its **Stop.** rule says: a BLOCKER open after round 2 ends `AUTO-RESULT: failed plan-review`, with the open classes in the reply.
+- **Review contract: "round 3 stops the flow and goes to the Dev"** → A2 stops after round 2, as its **Stop.** rule says: a gap that still blocks after round 2 (a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with no `## Carried gaps` row) ends `AUTO-RESULT: failed plan-review`, with the open classes in the reply.
 - **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
 - **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
 - **Claim: "no claim held ... run `kb claim take <ticket-id>` first"** → in Auto mode the runner holds the claim before this skill starts and drops its local token when it sees the claim lost, so `no claim held` here means the claim was lost: STOP and report it to the orchestrator, which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run, end it yourself). Never run `kb claim take` in Auto mode.
