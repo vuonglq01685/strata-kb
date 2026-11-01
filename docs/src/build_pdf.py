@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """Render the Markdown sources in this directory to PDFs in docs/.
 
-Usage:  python docs/src/build_pdf.py [name ...]
+Rebuild by hand on Windows, Linux or macOS:
 
-Fonts come from macOS's Supplemental directory because they carry the full
-Vietnamese diacritic set; ReportLab's built-in Helvetica does not.
+    pip install -e ".[docs]"
+    python docs/src/build_pdf.py [name ...]
+
+Fonts are vendored in docs/src/fonts: Liberation Sans/Mono 2.1.5 (SIL OFL
+1.1), metric-compatible with Arial/Courier New and carrying the full
+Vietnamese diacritic set that ReportLab's built-in Helvetica lacks. A glyph
+none of them can draw fails the build instead of leaving a blank box.
 """
 
 from __future__ import annotations
 
-import shutil
+import logging
 import sys
-import tempfile
+from datetime import date
 from pathlib import Path
 
 import markdown
@@ -20,7 +25,7 @@ from xhtml2pdf import pisa
 SRC = Path(__file__).resolve().parent
 OUT = SRC.parent
 REPO_ROOT = OUT.parent
-FONT_DIR = Path("/System/Library/Fonts/Supplemental")
+FONT_DIR = SRC / "fonts"
 
 TITLES = {
     "architecture.en": ("Strata — Architecture", "Knowledge Base as Code"),
@@ -49,12 +54,12 @@ CSS = """
   @frame footer { -pdf-frame-content: footer; bottom: 9mm; left: 18mm; right: 18mm; height: 8mm; }
 }
 
-@font-face { font-family: Body; src: url("FONTS/body-regular.ttf"); }
-@font-face { font-family: Body; src: url("FONTS/body-bold.ttf"); font-weight: bold; }
-@font-face { font-family: Body; src: url("FONTS/body-italic.ttf"); font-style: italic; }
-@font-face { font-family: Body; src: url("FONTS/body-bolditalic.ttf"); font-weight: bold; font-style: italic; }
-@font-face { font-family: Mono; src: url("FONTS/mono-regular.ttf"); }
-@font-face { font-family: Mono; src: url("FONTS/mono-bold.ttf"); font-weight: bold; }
+@font-face { font-family: Body; src: url("FONT_BODY_REGULAR"); }
+@font-face { font-family: Body; src: url("FONT_BODY_BOLD"); font-weight: bold; }
+@font-face { font-family: Body; src: url("FONT_BODY_ITALIC"); font-style: italic; }
+@font-face { font-family: Body; src: url("FONT_BODY_BOLDITALIC"); font-weight: bold; font-style: italic; }
+@font-face { font-family: Mono; src: url("FONT_MONO_REGULAR"); }
+@font-face { font-family: Mono; src: url("FONT_MONO_BOLD"); font-weight: bold; }
 
 body { font-family: Body; font-size: 9.5pt; line-height: 1.45; color: #1c1c1e; }
 
@@ -117,31 +122,43 @@ PAGE = """<!DOCTYPE html>
 """
 
 
-STAGED = {
-    "body-regular.ttf": "Arial.ttf",
-    "body-bold.ttf": "Arial Bold.ttf",
-    "body-italic.ttf": "Arial Italic.ttf",
-    "body-bolditalic.ttf": "Arial Bold Italic.ttf",
-    "mono-regular.ttf": "Courier New.ttf",
-    "mono-bold.ttf": "Courier New Bold.ttf",
+FONT_FILES = {
+    "FONT_BODY_REGULAR": "LiberationSans-Regular.ttf",
+    "FONT_BODY_BOLD": "LiberationSans-Bold.ttf",
+    "FONT_BODY_ITALIC": "LiberationSans-Italic.ttf",
+    "FONT_BODY_BOLDITALIC": "LiberationSans-BoldItalic.ttf",
+    "FONT_MONO_REGULAR": "LiberationMono-Regular.ttf",
+    "FONT_MONO_BOLD": "LiberationMono-Bold.ttf",
 }
 
+MISSING_GLYPH = "No font this document has can draw"
 
-def stage_fonts(target: Path) -> Path:
-    """Copy the Vietnamese-capable system fonts under space-free names.
 
-    xhtml2pdf refuses to read anything outside the document's own directory
-    tree, so the fonts are copied under space-free names into a temporary
-    directory inside the repository. Nothing is committed: the directory is
-    removed when the build finishes.
+def font_css(font_dir: Path) -> str:
+    """Return CSS with each @font-face url pointing at a font in `font_dir`.
+
+    Forward slashes (as_posix) keep the url valid on Windows too.
     """
-    target.mkdir(parents=True, exist_ok=True)
-    for alias, filename in STAGED.items():
-        source = FONT_DIR / filename
-        if not source.is_file():
-            raise SystemExit(f"missing font: {source}")
-        shutil.copyfile(source, target / alias)
-    return target
+    css = CSS
+    for placeholder, filename in FONT_FILES.items():
+        path = font_dir / filename
+        if not path.is_file():
+            raise SystemExit(f"missing font: {path}")
+        css = css.replace(placeholder, path.as_posix())
+    return css
+
+
+class _GlyphGuard(logging.Handler):
+    """Collect xhtml2pdf's missing-glyph warnings during one render."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.missing: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if MISSING_GLYPH in message:
+            self.missing.append(message.split(";")[0])
 
 
 def project_version() -> str:
@@ -167,8 +184,25 @@ def render(name: str, version: str, stamp: str, css: str) -> Path:
         stamp=stamp,
     )
     dest = OUT / f"strata-{name.replace('.', '.')}.pdf"
-    with dest.open("wb") as fh:
-        result = pisa.CreatePDF(html, dest=fh, encoding="utf-8")
+    guard = _GlyphGuard()
+    logger = logging.getLogger("xhtml2pdf")
+    logger.addHandler(guard)
+    try:
+        with dest.open("wb") as fh:
+            # xhtml2pdf only reads files under the document's directory (cwd
+            # by default); anchoring it at docs/src lets it read fonts/ from
+            # any working directory.
+            result = pisa.CreatePDF(
+                html,
+                dest=fh,
+                encoding="utf-8",
+                path=str(FONT_DIR.parent / f"{name}.html"),
+            )
+    finally:
+        logger.removeHandler(guard)
+    if guard.missing:
+        dest.unlink(missing_ok=True)
+        raise SystemExit(f"{name}: " + "; ".join(guard.missing))
     if result.err:
         raise SystemExit(f"{name}: {result.err} rendering error(s)")
     return dest
@@ -177,12 +211,11 @@ def render(name: str, version: str, stamp: str, css: str) -> Path:
 def main() -> None:
     names = sys.argv[1:] or sorted(TITLES)
     version = project_version()
-    stamp = "2026-09-19"
-    with tempfile.TemporaryDirectory(prefix=".strata-fonts-", dir=REPO_ROOT) as tmp:
-        css = CSS.replace("FONTS", str(stage_fonts(Path(tmp))))
-        for name in names:
-            dest = render(name, version, stamp, css)
-            print(f"{dest.relative_to(REPO_ROOT)}  ({dest.stat().st_size // 1024} KB)")
+    stamp = date.today().isoformat()
+    css = font_css(FONT_DIR)
+    for name in names:
+        dest = render(name, version, stamp, css)
+        print(f"{dest.relative_to(REPO_ROOT)}  ({dest.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":
