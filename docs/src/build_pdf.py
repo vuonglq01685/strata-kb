@@ -178,8 +178,10 @@ def project_version() -> str:
 
 # The guides and the architecture document sit side by side in docs/ as PDFs, so a
 # relative `.md` link between them becomes a link to the sibling PDF (a PDF has no
-# heading anchors, so the `#fragment` is dropped). `../deploy-remote-mcp.md` has no PDF,
-# so it points at the file on GitHub.
+# heading anchors, so the `#fragment` is dropped). The `file:` scheme is needed:
+# xhtml2pdf draws only links that have a scheme (or start with `#`), and reportlab
+# refuses a URI without one; viewers resolve `file:name.pdf` against the open PDF's
+# folder. `../deploy-remote-mcp.md` has no PDF, so it points at the file on GitHub.
 _SIBLING_LINK = re.compile(
     r"\]\(((?:guide-[a-z]+|architecture)\.(?:en|vi))\.md(?:#[^)\s]*)?\)"
 )
@@ -191,7 +193,7 @@ DEPLOY_URL = (
 
 def rewrite_links(md: str) -> str:
     """Make links between the sources work inside the PDFs."""
-    md = _SIBLING_LINK.sub(lambda m: f"](strata-{m.group(1)}.pdf)", md)
+    md = _SIBLING_LINK.sub(lambda m: f"](file:strata-{m.group(1)}.pdf)", md)
     return _DEPLOY_LINK.sub(lambda m: f"]({DEPLOY_URL}{m.group(1)})", md)
 
 

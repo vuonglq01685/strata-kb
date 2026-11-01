@@ -111,8 +111,8 @@ def test_rewrite_links_points_sibling_docs_at_their_pdfs():
         "[deploy](../deploy-remote-mcp.md#tls) [x](https://example.com/guide-a.en.md)"
     )
     assert bp.rewrite_links(md) == (
-        "[child](strata-guide-child.en.pdf) [dev](strata-guide-dev.vi.pdf) "
-        "[arch](strata-architecture.vi.pdf) [same page](#3-daily-work) "
+        "[child](file:strata-guide-child.en.pdf) [dev](file:strata-guide-dev.vi.pdf) "
+        "[arch](file:strata-architecture.vi.pdf) [same page](#3-daily-work) "
         f"[deploy]({bp.DEPLOY_URL}#tls) [x](https://example.com/guide-a.en.md)"
     )
 
@@ -124,8 +124,19 @@ def test_every_sibling_link_in_the_sources_has_a_matching_pdf_name():
         rewritten = bp.rewrite_links(text)
         assert not re.search(r"\]\((?:guide-|architecture\.)[^)]*\.md", rewritten), name
         assert "](../deploy-remote-mcp.md" not in rewritten, name
-        for target in re.findall(r"\]\((strata-[^)]+\.pdf)\)", rewritten):
+        for target in re.findall(r"\]\(file:(strata-[^)]+\.pdf)\)", rewritten):
             assert target.removesuffix(".pdf").removeprefix("strata-") in bp.TITLES, (
                 name,
                 target,
             )
+
+
+def test_rendered_pdf_carries_a_link_to_the_sibling_pdf(tmp_path, monkeypatch):
+    pypdf = pytest.importorskip("pypdf")
+    pdf = render_sample(tmp_path, monkeypatch, "[hub](guide-hub.vi.md#2-setup)\n")
+    uris = [
+        annot.get_object()["/A"]["/URI"]
+        for page in pypdf.PdfReader(pdf).pages
+        for annot in page.get("/Annots") or []
+    ]
+    assert uris == ["file:strata-guide-hub.vi.pdf"]
