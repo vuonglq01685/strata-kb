@@ -104,6 +104,8 @@ Allowed:
 Forbidden:
 - Adding, rewording, translating or "cleaning up" any text.
 - Any change to a table.
+- Any change to an image or a link (target, alt text or order), except
+  dropping the copy inside a removed repeated block.
 - Touching `.kb/` files directly instead of writing a draft.
 
 ## Section ids
