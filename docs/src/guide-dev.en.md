@@ -4,15 +4,10 @@ You write product code. Tickets reach you already grounded in the organisation's
 knowledge base, with citations pinned to a specific version of a specific
 document, and you implement them.
 
-Strata does two things for you.
-
-**It tells you what the source actually said.** Not "check the handbook": the
-exact section, at the exact revision the analyst was reading, with a warning if
-it has changed since.
-
-**It publishes what your codebase is**, so analysts, other teams and future you
-can search your services, dependencies, endpoints and schema without reading
-your repository.
+Strata gives you **the exact section the analyst cited**, at the revision they read, with
+a warning if it has changed since. It also **publishes what your codebase is**, so analysts,
+other teams and future you can search your services, dependencies, endpoints and schema
+without reading your repository.
 
 | A dev repo does | A dev repo does not |
 |---|---|
@@ -125,17 +120,19 @@ The MCP config reads those variables from your environment, not from `.env`, at
 the moment your assistant starts. Load the file (`set -a; source .env; set +a`,
 or use direnv) and restart the assistant.
 
-**One version for every repo.** Every repo runs the hub's strata-kb version.
-Upgrade the hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it installs the hub's
-version, sets the `strata-kb==<hub version>` pins in `.github/workflows/`, and
-refreshes the skills and commands. It does not do this in CI; there it reports a
-mismatch as an error. The files under `.github/instructions/` and `.cursor/rules/`
-(the Copilot and Cursor `kb-summarize` files and the per-language coding rules)
-refresh only through `kb init`. An unpinned `pip install strata-kb` in a job that
-holds `id-token: write` would let every run pick up whatever PyPI serves, in a
-job able to write to the hub; that is why the workflows are pinned.
-With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the MCP path and the version
-check, and only reports that the version was not checked against the hub.
+**One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
+hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
+installs the hub's version, sets the `strata-kb==<hub version>` pins in
+`.github/workflows/`, and refreshes the skills and commands. In CI it never installs
+or rewrites anything; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN` set reports a version mismatch as an error instead (none of the
+scaffolded workflows runs it). With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips
+the MCP path and the version check, and only reports that the version was not checked
+against the hub. The files under `.github/instructions/` and `.cursor/rules/` (the
+Copilot and Cursor `kb-summarize` files and the per-language coding rules) refresh only
+through `kb init`. An unpinned `pip install strata-kb` in a job that holds
+`id-token: write` would let every run pick up whatever PyPI serves, in a job able to
+write to the hub; that is why the workflows are pinned.
 
 ## 2.4 Turn on the PR gate and the daily sweep
 
@@ -379,7 +376,7 @@ Neither document needs new per-ticket discipline from you.
 
 - **`-code` needs nothing.** It is never committed (`.gitignore` carries `.kb/*-code/`).
   `kb svc note`, `kb build`, `kb doctor` and `kb publish` regenerate it first when it is
-  stale (`--no-refresh` skips that). CI never passes `--scaffold-svc`, because it must
+  missing, older than `HEAD`, or your tracked files changed (`--no-refresh` skips that). CI never passes `--scaffold-svc`, because it must
   never create `pending` content.
 - **`-svc` accrues at handover.** `dev-handover` runs
   `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` for every service
@@ -474,7 +471,7 @@ run `kb auto run` again. A command outside the allowlist ends the task
 `failed command-denied <command>`: add it to `permissions.allow` in `.claude/settings.json`
 by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure. It finishes, exit `0`,
 when every story, unparented ticket and bug is `done`. A task process carries
-`STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse, so a task can
+`STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse (`status` still works), so a task can
 neither flip the switch nor start a second loop.
 
 ## 4.5 Claude Code cloud
@@ -505,17 +502,15 @@ pushing `auto/*` branches, a merge past a required review, and `gh run` over RES
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing | `pip install "strata-kb[code]"` |
 | `kb doctor` warns a tracked `.kb/config.yaml` carries a credential in `hub:` or `intake:` | A token was committed | Rewrite the URL without it, pass it in `STRATA_KB_HUB`, rotate the token (it is in git history) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb, or a CI pin, differs from the hub's | Upgrade the hub, then run `kb doctor` locally. In CI it only reports |
-| `kb doctor`: "hub `<repo>`-code lags origin/main" | The last `-code` publish has not merged on the hub, or the last `kb-code.yml` run failed | Open the hub PR named in the job summary and merge it, or fix the run; `kb publish` re-publishes |
+| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb, or a CI pin, differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset (that variable skips the sync). It never installs in CI |
+| `kb doctor`: "hub `<repo>`-code lags origin/main" | The last `-code` publish has not merged on the hub, or the last `kb-code.yml` run failed | Open the hub PR named in the job summary and merge it, or fix the run; `kb publish` re-publishes. The check runs a full `code-ingest` (slow); on Windows a glob-casing difference can show `lags` that vanishes on Linux CI |
 | `kb doctor`: "kb-code.yml passes --db" | Ingest configuration lives in the workflow | Move the paths to `code_ingest.db` in `.kb/config.yaml`, then `kb init --kind dev` |
 | `kb doctor`: "`.kb/<repo>-code` is tracked by git" | `-code` was committed | `git rm -r --cached .kb/<repo>-code` and commit |
 | `kb doctor`: "hub lag not judged — ..." naming `origin/HEAD` | `origin/HEAD` was never set | `git remote set-head origin --auto` |
 | `kb build` fails in CI on a `-svc` section | A `pending` section was committed | Finish the seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | A typo, or the new service's files are not tracked yet | Copy the id from `services.md`; `git add` the new files and retry |
-| `kb publish` hangs, then fails citing the Actions run | Plain `kb publish` on a repo whose CI has no tag trigger (the seed) | Use `kb publish --pr` |
 | `kb publish`: "behind origin/..." | The checkout is behind the default branch | Pull the default branch, then `kb publish` |
 | `kb ci-publish` refused, or HTTP 403 | The repo is not in the hub's `federation/registry.yaml`, `repo_id` differs from the registered id, or the run was not on a `kb-publish/*` tag | Ask the hub maintainer to register it; fix `repo_id`; publish with `kb publish` (the intake accepts only `refs/tags/kb-publish/*`) |
-| `dirty_tree` warning | Uncommitted changes while the manifest revision comes from HEAD | Harmless locally; CI always runs clean |
 | `pr-lint` fails on a Dependabot PR | The gate never self-skips once required | Expected. Decide whether to keep it required for bot PRs |
 | `pr-lint` fails: `no-review-verdict` | The `## Testing` section has no `Blocking:` line | Run A5 (`dev-handover`'s merge-risk review) and record its verdict, even `Blocking: No` |
 | `pr-lint` fails: `review-blocking` | The `## Testing` section says `Blocking: Yes` | Fix the BLOCKER findings and re-review |
@@ -526,11 +521,6 @@ pushing `auto/*` branches, a merge past a required review, and `gh run` over RES
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP points at a local cache clone, a stdio server or any target other than the hub's HTTP server | Run `kb mcp-setup` and restart the assistant |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`); it says which one. A bare re-run re-verifies without retyping |
 | `kb mcp-setup`: "token was rejected" after you got a fresh token | A bare re-run reads the *old* token from `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete that line from `.env` and re-run |
-
-The hub-lag check runs a full `code-ingest` in a temporary worktree on every
-`kb doctor`; expect it to take real time. On Windows a glob-casing difference can make
-an unchanged repo compare as `lags`; a verdict that disappears on Linux (CI) is that,
-not drift.
 
 ---
 
@@ -549,11 +539,12 @@ not drift.
 | `STRATA_KB_HUB` | overrides `hub:`; carries a credentialed URL in CI (an Actions variable) |
 | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | the hub's HTTP base URL and bearer token: MCP, claims, the auto runner |
 | `KB_HUB_TOKEN` | Actions secret, a read token, private hub only (`kb-doctor.yml`) |
-| `STRATA_KB_CLAIM_AS`, `STRATA_KB_AUTO_TASK`, `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | claim holder name; set by the runner on task processes; Claude Code cloud detection |
+| `STRATA_KB_CLAIM_AS` | claim holder name |
+| `STRATA_KB_AUTO_TASK` | set by the runner on task processes; `kb auto on`, `off` and `run` refuse under it |
+| `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | force or detect Claude Code cloud |
 
 Exit codes: `0` ok, `1` error, `2` stale citation (or a usage error), `3` claim taken or
-lost, `8` `kb pr checks` still pending. `kb auto run`: `0` done, `2` stopped, `1` refused,
-`130` interrupted.
+lost, `8` `kb pr checks` still pending.
 
 ## 6.2 Work folders and what is git-ignored
 
@@ -601,7 +592,9 @@ anything: a folder listing alone is a misconfiguration, not knowledge.
 Route frameworks: NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut, ASP.NET Core,
 FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
 
-The `tree-sitter-language-pack` pin is exact, so the same commit gives the same bytes on every machine. Only names are emitted; env values, constant values and enum member values never are.
+The `tree-sitter-language-pack` pin is exact, so the same commit gives the same bytes on
+every machine. Only names are emitted; env values, constant values and enum member values
+never are.
 
 **Two security properties.** (1) The integrations extractor emits **keys, never values**: the
 only env file it opens is `.env.example`, `.sample` or `.template`, never a real `.env`, and
@@ -628,7 +621,10 @@ partition, index or primary key, the SA writes a new thing as new only when that
 as its own `Files:` entry for a file. Otherwise it is an `Open decisions` item that quotes the
 status, and `kb ticket check` enforces it.
 
-Limits: `schema` does not implement a SQL dialect; a statement it cannot apply makes the scope `partial` and names `file:line`. If `.kb/<doc_id>/` holds a document `kb code-ingest` did not write, it exits 1 and writes nothing (move it or pick another `--doc-id`). A dirty tree prints a `dirty_tree` warning.
+Limits: `schema` does not implement a SQL dialect; a statement it cannot apply makes the
+scope `partial` and names `file:line`. If `.kb/<doc_id>/` holds a document that
+`kb code-ingest` did not write, it exits 1 and writes nothing (move it or pick another
+`--doc-id`). A dirty tree prints a `dirty_tree` warning.
 
 ## 6.4 What is enforced, and what is only asked
 
@@ -642,14 +638,17 @@ Limits: `schema` does not implement a SQL dialect; a statement it cannot apply m
 attacker-controlled text, and keeping it out of argv stops a caller from interpolating it into
 a shell command.
 
-Everything else (test-first, shown verification, GATE 1 and GATE 2, A1 to A4) is prompt discipline that nothing in `kb` measures; the check is you, at the gate. Only A5 has teeth, through the `Blocking:` line.
+Everything else (test-first, shown verification, GATE 1 and GATE 2, A1 to A4) is prompt
+discipline that nothing in `kb` measures; the check is you, at the gate. Only A5 has
+teeth, through the `Blocking:` line.
 
 ## 6.5 Auto-mode permissions
 
-`kb init --kind dev` merges `.claude/settings.json` into your file. **Allowed:** everyday `git`
-(add, commit, fetch, pull, switch to `auto/*`, `fix/*`, `hotfix/*`, branch, worktree, merge,
-`push -u origin HEAD`), `gh pr` and `gh run`, `Read`/`Edit`/`Write`, the `strata-kb` MCP tools,
-many `kb` subcommands, and the test, install, lint and build commands of your `langs`.
+`kb init --kind dev` merges its permissions into your `.claude/settings.json`.
+**Allowed:** everyday `git` (add, commit, status, diff, log, fetch, pull, switch to `auto/*`,
+`fix/*`, `hotfix/*`, branch, worktree, merge, `push -u origin HEAD`), `gh pr` and `gh run`,
+`Read`/`Edit`/`Write`, the `strata-kb` MCP tools, many `kb` subcommands, and the test,
+install, lint and build commands of your `langs`.
 **Denied:** any `git push` that names `main` or `master`, force-push, `+` and `:` refspecs and
 `--delete`; `git checkout`, `switch` and `branch` forms that move onto, create, rename or
 delete `main` or `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
@@ -677,7 +676,3 @@ domain document must never take either suffix. Section prefixes are a published 
 | `svc.<name>` | `-code` and `-svc` | extractor (evidence) and you (model-drafted responsibility) |
 | `flow.<name>` | `-svc` | you |
 | `hist.<name>` | `-svc` | `kb svc note` only |
-
-`svc.<name>` collides across the two documents on purpose: it is the join key that lets a C4
-`Container(alias, label, technology, description)` take the first three from `-code` and the
-fourth from `-svc`.

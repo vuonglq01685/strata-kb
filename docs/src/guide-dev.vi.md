@@ -4,14 +4,10 @@ Bạn viết code sản phẩm. Ticket đến tay bạn đã được bám vào 
 chức, kèm trích dẫn ghim vào một phiên bản cụ thể của một tài liệu cụ thể, và bạn
 hiện thực chúng.
 
-Strata làm hai việc cho bạn.
-
-**Nó cho bạn biết bản gốc thực sự nói gì.** Không phải "xem sổ tay đi", mà là đúng
-section đó, ở đúng phiên bản mà người viết yêu cầu đã đọc, kèm cảnh báo nếu nó đã
-thay đổi kể từ đó.
-
-**Nó publish ra codebase của bạn là gì**, để BA, nhóm khác và chính bạn sau này tìm
-được service, dependency, endpoint và schema mà không phải đọc repository.
+Strata cho bạn **đúng section mà analyst đã trích dẫn**, ở phiên bản họ đã đọc, kèm cảnh
+báo nếu nó đã thay đổi kể từ đó. Nó cũng **publish ra codebase của bạn là gì**, để
+analyst, nhóm khác và chính bạn sau này tìm được service, dependency, endpoint và schema
+mà không phải đọc repository.
 
 | Repo dev có làm | Repo dev không làm |
 |---|---|
@@ -117,17 +113,19 @@ Cấu hình MCP đọc hai biến đó từ môi trường của bạn, không �
 lý khởi động. Hãy nạp file (`set -a; source .env; set +a`, hoặc dùng direnv) rồi khởi
 động lại trợ lý.
 
-**Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy
-nâng cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo này: nó cài phiên bản của hub,
-đặt các pin `strata-kb==<phiên bản của hub>` trong `.github/workflows/`, và làm mới
-skill cùng command. Nó không làm vậy trong CI; ở đó nó báo sai lệch phiên bản như một
-lỗi. Các file trong `.github/instructions/` và `.cursor/rules/` (file `kb-summarize`
-của Copilot và Cursor, cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`.
-Nếu `pip install strata-kb` không ghim phiên bản nằm trong một job có
-`id-token: write`, mỗi lần chạy sẽ lấy bất cứ bản nào PyPI đang phục vụ, trong một job
-có quyền ghi vào hub; đó là lý do các workflow được ghim phiên bản.
-Khi `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra
-phiên bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub.
+**Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy nâng
+cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo
+này: nó cài phiên bản của hub, đặt các pin `strata-kb==<phiên bản của hub>` trong
+`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài hay
+sửa gì; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được
+đặt sẽ báo sai lệch phiên bản như một lỗi (không workflow dựng sẵn nào chạy nó). Khi
+`STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra phiên
+bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file trong
+`.github/instructions/` và `.cursor/rules/` (file `kb-summarize` của Copilot và Cursor,
+cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`. Nếu `pip install strata-kb`
+không ghim phiên bản nằm trong một job có `id-token: write`, mỗi lần chạy sẽ lấy bất cứ bản
+nào PyPI đang phục vụ, trong một job có quyền ghi vào hub; đó là lý do các workflow được
+ghim phiên bản.
 
 ## 2.4 Bật cổng PR và lượt quét hằng ngày
 
@@ -365,7 +363,7 @@ Không tài liệu nào đòi hỏi kỷ luật mới theo từng ticket từ b�
 
 - **`-code` không cần làm gì.** Nó không bao giờ được commit (`.gitignore` có `.kb/*-code/`).
   `kb svc note`, `kb build`, `kb doctor` và `kb publish` sinh lại nó trước khi chạy khi nó
-  đã cũ (`--no-refresh` bỏ qua việc đó). CI không bao giờ truyền `--scaffold-svc`, vì CI
+  thiếu, cũ hơn `HEAD`, hoặc các file đang được theo dõi có thay đổi (`--no-refresh` bỏ qua việc đó). CI không bao giờ truyền `--scaffold-svc`, vì CI
   không được tạo nội dung `pending`.
 - **`-svc` tích lũy ở handover.** `dev-handover` chạy
   `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` cho mỗi service
@@ -460,7 +458,7 @@ ticket (CI đỏ sau hai vòng sửa thì dừng ngay); hãy sửa nguyên nhân
 `.claude/settings.json` bằng tay. Chờ vì chạm giới hạn sử dụng (15, 30, 60 phút) không phải
 thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không có mission và bug đều
 `done`. Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off`
-và `run` từ chối, nên một task không thể vừa bật công tắc vừa khởi động vòng lặp thứ hai.
+và `run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa khởi động vòng lặp thứ hai.
 
 ## 4.5 Claude Code cloud
 
@@ -489,17 +487,15 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | `kb code-ingest` thoát 1: destination refused | Một tài liệu soạn tay nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb doctor`: "strata-kb[code] is not installed" | Thiếu extra `code` | `pip install "strata-kb[code]"` |
 | `kb doctor` cảnh báo `.kb/config.yaml` được theo dõi mang credential trong `hub:` hoặc `intake:` | Một token đã bị commit | Viết lại URL không có nó, truyền qua `STRATA_KB_HUB`, đổi token (nó đã nằm trong lịch sử git) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài, hoặc một pin CI, khác phiên bản của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy bạn. Trong CI nó chỉ báo cáo |
-| `kb doctor`: "hub `<repo>`-code lags origin/main" | Lần publish `-code` gần nhất chưa merge trên hub, hoặc lượt `kb-code.yml` gần nhất lỗi | Mở PR hub nêu trong tóm tắt job và merge, hoặc sửa lượt chạy; `kb publish` publish lại |
+| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài, hoặc một pin CI, khác phiên bản của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy bạn khi `STRATA_KB_HUB` chưa đặt (biến đó bỏ qua bước đồng bộ). Nó không bao giờ cài trong CI |
+| `kb doctor`: "hub `<repo>`-code lags origin/main" | Lần publish `-code` gần nhất chưa merge trên hub, hoặc lượt `kb-code.yml` gần nhất lỗi | Mở PR hub nêu trong tóm tắt job và merge, hoặc sửa lượt chạy; `kb publish` publish lại. Phép kiểm tra chạy một `code-ingest` đầy đủ (chậm); trên Windows, chênh lệch hoa/thường trong glob có thể hiện `lags` nhưng biến mất trên Linux CI |
 | `kb doctor`: "kb-code.yml passes --db" | Cấu hình ingest nằm trong workflow | Chuyển các đường dẫn sang `code_ingest.db` trong `.kb/config.yaml`, rồi `kb init --kind dev` |
 | `kb doctor`: "`.kb/<repo>-code` is tracked by git" | `-code` đã bị commit | `git rm -r --cached .kb/<repo>-code` rồi commit |
 | `kb doctor`: "hub lag not judged — ..." nêu `origin/HEAD` | `origin/HEAD` chưa bao giờ được đặt | `git remote set-head origin --auto` |
 | `kb build` lỗi trong CI ở một section `-svc` | Một section `pending` đã bị commit | Hoàn tất seed: summarize, review, `kb approve` |
 | `kb svc note`: "unknown service" | Gõ sai, hoặc file của service mới chưa được theo dõi | Chép id từ `services.md`; `git add` file mới rồi thử lại |
-| `kb publish` treo, rồi lỗi nêu lượt chạy Actions | `kb publish` thường trên repo mà CI không có trigger theo tag (lúc seed) | Dùng `kb publish --pr` |
 | `kb publish`: "behind origin/..." | Checkout đang tụt sau nhánh mặc định | Pull nhánh mặc định, rồi `kb publish` |
 | `kb ci-publish` bị từ chối, hoặc HTTP 403 | Repo không có trong `federation/registry.yaml` của hub, `repo_id` khác id đã đăng ký, hoặc lượt chạy không nằm trên tag `kb-publish/*` | Nhờ người quản trị hub đăng ký; sửa `repo_id`; publish bằng `kb publish` (intake chỉ nhận `refs/tags/kb-publish/*`) |
-| Cảnh báo `dirty_tree` | Có thay đổi chưa commit trong khi revision của manifest lấy từ HEAD | Vô hại ở máy bạn; CI luôn chạy trên cây sạch |
 | `pr-lint` lỗi trên PR của Dependabot | Cổng không bao giờ tự bỏ qua khi đã bắt buộc | Đúng như dự kiến. Hãy quyết định có giữ bắt buộc cho PR của bot không |
 | `pr-lint` lỗi: `no-review-verdict` | Mục `## Testing` không có dòng `Blocking:` | Chạy A5 (review rủi ro merge của `dev-handover`) và ghi kết luận của nó, kể cả `Blocking: No` |
 | `pr-lint` lỗi: `review-blocking` | Mục `## Testing` ghi `Blocking: Yes` | Sửa các finding BLOCKER và review lại |
@@ -510,11 +506,6 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP trỏ tới một bản clone cache cục bộ, một máy chủ stdio hoặc mục tiêu nào khác ngoài máy chủ HTTP của hub | Chạy `kb mcp-setup` và khởi động lại trợ lý |
 | Không với tới máy chủ MCP | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`); nó cho biết biến nào. Chạy lại không kèm gì sẽ xác minh mà không cần nhập lại |
 | `kb mcp-setup`: "token was rejected" sau khi bạn có token mới | Chạy lại không kèm gì đọc token *cũ* từ `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, hoặc xóa dòng đó khỏi `.env` rồi chạy lại |
-
-Kiểm tra độ trễ hub chạy một `code-ingest` đầy đủ trong worktree tạm ở mỗi lần
-`kb doctor`; hãy chuẩn bị là nó tốn thời gian thật. Trên Windows, chênh lệch về chữ hoa
-chữ thường trong glob có thể khiến một repo không đổi bị so sánh thành `lags`; một kết
-luận biến mất trên Linux (CI) là do chuyện đó, không phải trôi lệch thật.
 
 ---
 
@@ -533,11 +524,12 @@ luận biến mất trên Linux (CI) là do chuyện đó, không phải trôi l
 | `STRATA_KB_HUB` | ghi đè `hub:`; mang URL có credential trong CI (một variable Actions) |
 | `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | địa chỉ HTTP gốc và bearer token của hub: MCP, claim, auto runner |
 | `KB_HUB_TOKEN` | secret Actions, token chỉ đọc, chỉ cho hub riêng tư (`kb-doctor.yml`) |
-| `STRATA_KB_CLAIM_AS`, `STRATA_KB_AUTO_TASK`, `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | tên người giữ claim; do runner đặt trên các tiến trình task; nhận biết Claude Code cloud |
+| `STRATA_KB_CLAIM_AS` | tên người giữ claim |
+| `STRATA_KB_AUTO_TASK` | do runner đặt trên các tiến trình task; `kb auto on`, `off` và `run` từ chối khi có nó |
+| `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | ép buộc hoặc nhận biết Claude Code cloud |
 
 Mã thoát: `0` ok, `1` lỗi, `2` trích dẫn stale (hoặc lỗi cách dùng), `3` claim bị người khác
-giữ hoặc bị mất, `8` `kb pr checks` còn đang chờ. `kb auto run`: `0` xong, `2` đã dừng,
-`1` bị từ chối, `130` bị ngắt.
+giữ hoặc bị mất, `8` `kb pr checks` còn đang chờ.
 
 ## 6.2 Thư mục làm việc và những gì bị git bỏ qua
 
@@ -585,9 +577,9 @@ không extractor nào trong `services`, `deps`, `commands`, `schema`, `integrati
 Framework route được hỗ trợ: NestJS, Express, Next.js, Nuxt, Spring Boot, Quarkus, Micronaut,
 ASP.NET Core, FastAPI, Flask, Django, Gin, Laravel, Symfony, Actix Web, Axum, Rocket, Vapor.
 
-Pin `tree-sitter-language-pack` là chính xác để cùng một commit cho ra cùng các byte trên mọi
-máy. Chỉ có tên được phát ra; giá trị biến môi trường, giá trị hằng và giá trị thành viên enum
-không bao giờ được phát.
+Pin `tree-sitter-language-pack` là chính xác để cùng một commit cho ra cùng các byte trên
+mọi máy. Chỉ có tên được phát ra; giá trị biến môi trường, giá trị hằng và giá trị thành
+viên enum không bao giờ được phát.
 
 **Hai thuộc tính bảo mật.** (1) Extractor integrations phát ra **khóa, không bao giờ giá
 trị**: file env duy nhất nó mở là `.env.example`, `.sample` hoặc `.template`, không bao giờ
@@ -615,10 +607,10 @@ hay partition, index hoặc primary key của bảng, SA chỉ viết một th�
 `<path> [NEW: D<n>]` làm một mục `Files:` riêng cho file. Nếu không, đó là một mục
 `Open decisions` trích dẫn trạng thái, và `kb ticket check` thực thi điều này.
 
-Giới hạn: `schema` không hiện thực dialect SQL nào; câu lệnh nó không áp dụng được làm phạm vi
-thành `partial` và nêu `file:line`. Nếu `.kb/<doc_id>/` chứa một tài liệu mà `kb code-ingest`
-không viết ra, nó thoát với mã 1 và không ghi gì (hãy chuyển tài liệu đi hoặc chọn `--doc-id`
-khác). Cây bẩn in cảnh báo `dirty_tree`.
+Giới hạn: `schema` không hiện thực dialect SQL nào; câu lệnh nó không áp dụng được làm
+phạm vi thành `partial` và nêu `file:line`. Nếu `.kb/<doc_id>/` chứa một tài liệu mà `kb
+code-ingest` không viết ra, nó thoát với mã 1 và không ghi gì (hãy chuyển tài liệu đi hoặc
+chọn `--doc-id` khác). Cây bẩn in cảnh báo `dirty_tree`.
 
 ## 6.4 Cái gì được thực thi, cái gì chỉ được yêu cầu
 
@@ -633,15 +625,16 @@ PR là văn bản do kẻ tấn công kiểm soát được, và giữ nó ngoà
 vào một lệnh shell.
 
 Mọi thứ khác (test-first, bằng chứng xác minh, GATE 1 và GATE 2, A1 đến A4) là kỷ luật qua
-prompt mà không gì trong `kb` đo được; người kiểm tra là bạn, tại cổng. Chỉ A5 có răng, qua
-dòng `Blocking:`.
+prompt mà không gì trong `kb` đo được; người kiểm tra là bạn, tại cổng. Chỉ A5 có răng,
+qua dòng `Blocking:`.
 
 ## 6.5 Quyền của chế độ auto
 
-`kb init --kind dev` gộp `.claude/settings.json` vào file của bạn. **Cho phép:** `git` thông
-thường (add, commit, fetch, pull, switch sang `auto/*`, `fix/*`, `hotfix/*`, branch, worktree,
-merge, `push -u origin HEAD`), `gh pr` và `gh run`, `Read`/`Edit`/`Write`, các công cụ MCP
-`strata-kb`, nhiều lệnh con `kb`, và các lệnh test, install, lint, build của `langs` bạn.
+`kb init --kind dev` gộp các quyền của nó vào `.claude/settings.json` của bạn.
+**Cho phép:** `git` thông thường (add, commit, status, diff, log, fetch, pull, switch sang
+`auto/*`, `fix/*`, `hotfix/*`, branch, worktree, merge, `push -u origin HEAD`), `gh pr` và
+`gh run`, `Read`/`Edit`/`Write`, các công cụ MCP `strata-kb`, nhiều lệnh con `kb`, và các
+lệnh test, install, lint, build của `langs` bạn.
 **Từ chối:** mọi `git push` nêu `main` hay `master`, force-push, refspec `+` và `:` cùng
 `--delete`; các dạng `git checkout`, `switch` và `branch` chuyển tới, tạo, đổi tên hay xóa
 `main` hoặc `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
@@ -671,7 +664,3 @@ này; tài liệu nghiệp vụ không bao giờ được dùng hai hậu tố �
 | `svc.<name>` | `-code` và `-svc` | extractor (bằng chứng) và bạn (trách nhiệm do model soạn) |
 | `flow.<name>` | `-svc` | bạn |
 | `hist.<name>` | `-svc` | chỉ `kb svc note` |
-
-`svc.<name>` va nhau giữa hai tài liệu một cách có chủ đích: đó là khóa nối cho phép
-`Container(alias, label, technology, description)` của C4 lấy ba giá trị đầu từ `-code` và
-giá trị thứ tư từ `-svc`.
