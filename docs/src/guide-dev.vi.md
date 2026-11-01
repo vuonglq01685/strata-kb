@@ -27,6 +27,10 @@ thư mục. `-svc` là khẳng định của con người: mỗi service thực 
 về cái gì. Chúng dùng chung id section (`svc.<name>` có ở cả hai), nên BA vẽ
 container C4 lấy alias, nhãn và công nghệ từ `-code`, còn phần mô tả từ `-svc`.
 
+Các khái niệm dùng chung, như các lớp L0 đến L3 và trích dẫn `kb-context`, được giải thích
+trong [tài liệu kiến trúc](architecture.vi.md). Phía analyst có trong [tài liệu về
+BA](guide-ba.vi.md).
+
 **Slash command.** Mọi slash command trong tài liệu này đều có cho Claude Code,
 GitHub Copilot và Cursor, trừ các ngoại lệ sau:
 
@@ -116,16 +120,16 @@ lý khởi động. Hãy nạp file (`set -a; source .env; set +a`, hoặc dùng
 **Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy nâng
 cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo
 này: nó cài phiên bản của hub, đặt các pin `strata-kb==<phiên bản của hub>` trong
-`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài, đặt lại
-pin hay làm mới skill; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được
-đặt sẽ báo sai lệch phiên bản như một lỗi (không workflow dựng sẵn nào chạy nó). Khi
-`STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra phiên
-bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file trong
-`.github/instructions/` và `.cursor/rules/` (file `kb-summarize` của Copilot và Cursor,
-cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`. Nếu `pip install strata-kb`
-không ghim phiên bản nằm trong một job có `id-token: write`, mỗi lần chạy sẽ lấy bất cứ bản
-nào PyPI đang phục vụ, trong một job có quyền ghi vào hub; đó là lý do các workflow được
-ghim phiên bản.
+`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài, đặt
+lại pin hay làm mới skill; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và
+`STRATA_KB_HTTP_TOKEN` được đặt sẽ báo sai lệch phiên bản như một lỗi (không workflow dựng
+sẵn nào chạy nó). Khi `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP
+và việc kiểm tra phiên bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file
+trong `.github/instructions/` và `.cursor/rules/` (file `kb-summarize` của Copilot và
+Cursor, cùng rule code theo ngôn ngữ) chỉ được làm mới qua `kb init`. Nếu `pip install
+strata-kb` không ghim phiên bản nằm trong một job có `id-token: write`, mỗi lần chạy sẽ
+lấy bất cứ bản nào PyPI đang phục vụ, trong một job có quyền ghi vào hub; đó là lý do các
+workflow được ghim phiên bản.
 
 ## 2.4 Bật cổng PR và lượt quét hằng ngày
 
@@ -669,21 +673,23 @@ lệnh test, install, lint, build của `langs` bạn.
 Các hook `Stop` và `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin` cho báo cáo
 chi phí.
 
-**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`).
-`kb usage report` ghi `.kb/usage/report.html`, theo ticket, phase và model; với
-`--ticket <id> --md` nó in một bảng Markdown. Hook lỗi thì im lặng theo thiết kế (hook
-`Stop` không thể chặn một lượt kết thúc), nên nếu `.kb/usage/*.jsonl` không tăng, hãy đọc
-`.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi bên trong `kb` hiện ra. Ingest lại một transcript
-luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
-`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là
-khuyến nghị, không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm
-gói, ghi đè theo từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không
-có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được
-tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh
-giới phase, không bao giờ giữa một phase: đổi model làm mất prompt cache và phải trả một
-lần ghi cache mới, nên vài lượt model rẻ giữa một phiên model mạnh có thể tốn **nhiều
-hơn** không phân tầng. Kiểm tra kết quả bằng `kb usage report`, vốn chia chi tiêu theo
-model.
+**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`). `kb
+usage report` ghi `.kb/usage/report.html`, theo ticket, phase và model; với `--ticket <id>
+--md` nó in một bảng Markdown. Hook lỗi thì im lặng theo thiết kế (hook `Stop` không thể
+chặn một lượt kết thúc), nên nếu `.kb/usage/*.jsonl` không tăng, hãy đọc
+`.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi bên trong `kb` hiện ra. Ingest lại
+một transcript đã kết thúc là an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua: `kb
+usage ingest-transcript <path>` nạp bù một transcript. Chỉ chạy nó trên phiên đã kết thúc:
+một lệnh gọi còn đang stream sẽ bị lưu với số token đầu ra chưa đầy đủ, và một dòng đã lưu
+không bao giờ thay đổi. `report.html` được tạo lại từ sổ cái ở mỗi lần chạy, nên sổ cái
+mới là bản ghi, không phải báo cáo. **Phân tầng model** chỉ là khuyến nghị, không có gì
+trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo từng
+model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không có dòng giá được báo là
+`unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được tính theo giá chuẩn và đánh
+dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh giới phase, không bao giờ
+giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài
+lượt model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra
+kết quả bằng `kb usage report`, vốn chia chi tiêu theo model.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 

@@ -25,6 +25,9 @@ version without giving the requirements process a way to change the knowledge it
 The one thing you send to the hub is your own plan: the missions and tickets you have
 reviewed, as one generated document. It sits next to the knowledge and never edits it.
 
+Shared concepts, such as the L0 to L3 layers and `kb-context` citations, are explained in
+the [architecture document](architecture.en.md).
+
 **Slash commands.** Every slash command in this guide exists for Claude Code, GitHub
 Copilot and Cursor, with these exceptions:
 
@@ -151,7 +154,7 @@ neither: they authenticate with OIDC.
 | Answer a Dev's question | `/ba-answer-questions` | the ticket amended, the answer on the hub |
 | Change a mission or ticket | `/ba-mission-plan --amend M-<slug>`, `/ba-ticket-author --amend <ticket>` | one revision, one change-log row |
 | See which story is next | `kb mission next` | done / ready / draft / to-draft / blocked |
-| Publish the plan | `/kb-publish`, or merge to the default branch | the plan on the hub |
+| Publish the plan | `/kb-publish`, or merge to `main` (as scaffolded) | the plan on the hub |
 
 Everything the agent does, you can do at a terminal: `kb query "<text>" [--tags t]`,
 `kb get <doc> <section> [--level l2]`, `kb context new --refs "doc §4.2, doc §4.3"` (paste
@@ -678,21 +681,24 @@ delete `main` or `master` (a branch id that merely contains the word, like
 `kb usage ingest-transcript --hook-stdin`; `kb usage report` turns that ledger into a cost
 report (`.kb/usage/report.html`).
 
-**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
-`kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
-`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a
-`Stop` hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
-read `.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows. Re-ingesting a
-transcript is always safe, because a call already in the ledger is skipped:
-`kb usage ingest-transcript <path>` backfills one. **Model tiering** is a recommendation
-that nothing in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped,
-overridable per model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A
-model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at
-the standard rate and flagged, so a total that contains them is a lower bound. Switch
-model at phase boundaries, never inside a phase: a switch discards the prompt cache and
-pays a fresh cache write, so a few cheap-model turns inside a strong-model session can
-cost **more** than not tiering. Check the result with `kb usage report`, which breaks
-spending down by model.
+**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`). `kb
+usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with `--ticket
+<id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop` hook
+cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
+`.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows.
+Re-ingesting an ended transcript is safe, because a call already in the ledger is skipped:
+`kb usage ingest-transcript <path>` backfills one. Run it only on a session that has
+ended: a call still streaming would be stored with a partial output count, and a stored
+row never changes. `report.html` is regenerated from the ledger on every run, so the
+ledger is the record, not the report. **Model tiering** is a recommendation that nothing
+in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped, overridable per
+model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A model with no row
+is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate
+and flagged, so a total that contains them is a lower bound. Switch model at phase
+boundaries, never inside a phase: a switch discards the prompt cache and pays a fresh
+cache write, so a few cheap-model turns inside a strong-model session can cost **more**
+than not tiering. Check the result with `kb usage report`, which breaks spending down by
+model.
 
 ## 6.6 Hub Q&A rules that touch you
 

@@ -20,7 +20,9 @@ DOCS: list[Path] = [
 # `kb <name>[ <sub>]` where the backtick opens the span, so prose like "`kb` itself" is skipped.
 KB_COMMAND = re.compile(r"`kb ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?")
 SLASH_COMMAND = re.compile(r"`/((?:kb|ba|dev|sa)-[a-z0-9-]+)")
-VERSION = re.compile(r"\bv?1\.\d{1,2}\.\d{1,2}\b")
+# Any dotted version number, not just 1.x. A dotted quad (127.0.0.1, 0.0.0.0) is an IP
+# address, not a version: the lookarounds skip a match that is part of a longer dotted run.
+VERSION = re.compile(r"(?<![\d.])\bv?\d+\.\d+\.\d+\b(?!\.?\d)")
 MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^(#{1,3}) ", re.MULTILINE)
 FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)

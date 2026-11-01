@@ -35,8 +35,8 @@ merges. You are that gate.
    `intake:` in their `.kb/config.yaml` (**never a token in either**), and the hub's HTTP base
    URL plus the bearer token for `kb mcp-setup`. Tell them whether auto-merge is on for
    their repo.
-6. **One version for every repo.** Every repo runs the hub's strata-kb version; `kb doctor`
-   syncs it after `kb mcp-setup`.
+6. **One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
+   hub first (Daily commands: Upgrade); repo owners then run `kb doctor` in their repos.
 
 Optional: asset storage in S3, chained hubs. The guide covers both.
 

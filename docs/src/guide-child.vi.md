@@ -13,8 +13,12 @@ thể tìm kiếm. Một repository làm việc này là **child**.
 | Tóm tắt, kiểm tra hợp lệ, duyệt và publish chúng | Tự duyệt bất cứ thứ gì: duyệt là hành động của con người và không bao giờ tự động |
 | Đọc tri thức đã publish trên hub (`kb query`, MCP) | Publish ticket hay tri thức về code: repo `ba` và `dev` có tài liệu riêng |
 
-Repo hub có thể biên soạn tài liệu bằng đúng những bước này (mục 3), nên
-[tài liệu về hub](guide-hub.vi.md#35-biên-soạn-ngay-trên-hub) trỏ về đây thay vì lặp lại.
+Repo hub có thể biên soạn tài liệu bằng cùng các bước này cho đến khi publish (mục 3), nên
+[tài liệu về hub](guide-hub.vi.md#35-biên-soạn-ngay-trên-hub) trỏ về đây thay vì lặp lại
+và liệt kê các điểm khác.
+
+Các khái niệm dùng chung, như các lớp L0 đến L3 và trích dẫn `kb-context`, được giải thích
+trong [tài liệu kiến trúc](architecture.vi.md).
 
 **Slash command.** Mọi slash command trong tài liệu này đều có cho Claude Code, GitHub
 Copilot và Cursor, trừ các ngoại lệ sau:
@@ -121,8 +125,10 @@ lại trợ lý.
 cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo
 này: nó cài phiên bản của hub, đặt các bản ghim `strata-kb==<phiên bản của hub>` trong
 `.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài, đặt lại
-pin hay làm mới skill. Khi `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP
-và bước kiểm tra phiên bản, chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file
+pin hay làm mới skill; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và
+`STRATA_KB_HTTP_TOKEN` được đặt sẽ báo phiên bản lệch như một lỗi (không workflow nào được
+scaffold chạy lệnh này). Khi `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua
+đường MCP và bước kiểm tra phiên bản, chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file
 dưới `.github/instructions/` và `.cursor/rules/` (các file `kb-summarize` của Copilot và
 Cursor) chỉ được làm mới qua `kb init`. Bản ghim là có lý do: một `pip install strata-kb`
 không ghim trong job có `id-token: write` sẽ để mỗi lần chạy lấy bất cứ gì PyPI đang
@@ -132,7 +138,8 @@ phát, trong một job có quyền ghi vào hub.
 
 Admin hub có thể bật **auto-merge** cho từng repo trong trang Registry của hub. Khi đó hub
 merge PR publish của bạn ngay sau khi intake mở nó, không có review phía hub, và
-`kb publish` in `kb publish: merged on the hub` thay vì link PR. Hãy hỏi người quản trị
+`kb publish` in `kb publish: merged on the hub — <link PR>` thay vì
+`kb publish: PR on the hub — <link PR>`. Hãy hỏi người quản trị
 hub bạn thuộc trường hợp nào: khi auto-merge tắt, một người trên hub review và merge mọi
 PR publish.
 
@@ -362,7 +369,7 @@ in trước `kind: kb → hub menu: Document`, rồi:
 | Config của bạn | `kb publish` làm gì |
 |---|---|
 | Có `intake:` | Cần `.kb/` sạch và đã commit. Gắn tag `kb-publish/<ts>` vào commit, push tag, và CI của bạn publish (mục 4.2). Lệnh chờ tối đa 600 giây và in link PR. |
-| Chỉ có `hub:` | Mirror `.kb/` vào `federation/<repo-id>/` trên hub và mở một PR ở đó. Cần `gh` mở được PR trên host của hub. |
+| Chỉ có `hub:` | Mirror `.kb/` vào `federation/<repo-id>/` trên hub và mở một PR ở đó. Cần `gh` mở được PR trên host của hub. Đường dẫn hub trên đĩa không có git remote thì được commit trực tiếp. |
 
 `--pr` và `--direct` ép một chế độ: `--direct` commit thẳng vào hub và bị từ chối trên hub
 đã được quản trị có git remote; không có cờ nào thì `kb publish` chỉ chọn direct với hub
@@ -371,8 +378,9 @@ cờ `--intake`: nó đọc `intake:` từ config. `--hub` hoặc biến `STRATA
 `hub:`.
 
 Publish chỉ sao chép **artefact trong `.kb/`**: tài liệu, index, manifest và `assets/`.
-File cấu hình, dotfile, `_l3check.yaml` và `_l3fix.yaml` ở lại; file bị giữ lại được nêu
-tên trong dòng `[warn] ... (allowlist)`. Đây là chủ ý: một `config.yaml` mà ai đó đã để
+File cấu hình và dotfile ở lại, và mọi file bị giữ lại đều được nêu tên trong dòng
+`[warn] ... (allowlist)`. `_l3check.yaml` và `_l3fix.yaml` cũng bị giữ lại nhưng không có
+cảnh báo. Đây là chủ ý: một `config.yaml` mà ai đó đã để
 thông tin xác thực vào thì không bao giờ được tới hub.
 
 `kb publish` và `kb ci-publish` cảnh báo có bao nhiêu section được gửi đi mà chưa review;
@@ -466,7 +474,7 @@ tự chọn container khi `docker info` chạy được và `docker-compose.yml`
 |---|---|
 | `kb ingest`: "Docling is not installed" | `pip install "strata-kb[ingest]"`, hoặc dùng container (4.3) |
 | `kb ingest` lần đầu mất nhiều phút | Mô hình bố cục (khoảng 500 MB) đang được tải một lần; các lần sau dùng cache |
-| `Summarize skipped until the L3 review is confirmed`, hoặc `L3 review pending in N doc(s)` từ build hay publish | Mục 3.2: `kb l3 report <id>`, kiểm tra từng section với PDF, `kb l3 confirm` |
+| `Summarize skipped until the L3 review is confirmed`, hoặc `L3 review pending` từ build hay publish | Mục 3.2: `kb l3 report <id>`, kiểm tra từng section với PDF, `kb l3 confirm` |
 | `Summarize skipped while L3 fix is on` | Bình thường: chạy `/kb-l3-fix`, `kb l3 fix apply`, `kb l3 report`, rồi `kb summarize` (3.3), hoặc `kb l3 fix off` |
 | `kb l3 fix apply`: `L3 fix is off` | Một người chạy `kb l3 fix on` |
 | `kb l3 fix apply`: `rejected: words` | Bản nháp đổi chữ mà PDF không có: sửa bản nháp về đúng chữ của PDF |
@@ -483,7 +491,7 @@ tự chọn container khi `docker info` chạy được và `docker-compose.yml`
 | `kb publish`: `gh` không mở được pull request | Cài và đăng nhập `gh` cho host của hub (`GH_HOST=<host>` với Enterprise) cho đến khi `gh repo view` chạy được, rồi `--pr` |
 | `kb publish`: push trực tiếp bị từ chối trên hub được quản trị | Dùng đường PR mặc định, hoặc publish từ CI |
 | `kb publish` hết thời gian chờ intake, hoặc `kb ci-publish` bị từ chối / HTTP 403 | Mở lần chạy Actions của tag `kb-publish/<ts>`. Nguyên nhân thường gặp: repo không có trong `federation/registry.yaml` của hub, `repo_id` khác id đã đăng ký, hoặc registry có ghim `workflow:`. Hãy hỏi người quản trị hub; hub được quản trị đòi mọi publisher qua git đều phải được đăng ký |
-| `kb publish` bị từ chối: registry ghi một kind khác | Kind trong registry thắng; nhờ người quản trị hub sửa mục đó |
+| `kb publish` bị từ chối: registry ghi một kind khác (`kind mismatch`) | Sửa `kind:` trong `federation/registry.yaml` của hub (nhờ người quản trị hub) hoặc trong `.kb/config.yaml` của repo này, tùy bên nào sai |
 | Nội dung đã merge trên repo của bạn chưa tìm kiếm được | Nó tìm kiếm được khi PR trên **hub** được merge: `kb publish`, rồi merge PR trên hub |
 | Mọi lệnh hub đều lỗi xác thực | Kiểm tra `git --version`: dưới 2.31 với URL hub có thông tin xác thực thì không có gì chạy được. Nâng cấp Git |
 | `kb doctor` cảnh báo `source/ holds N file(s) tracked by git` | `git rm --cached <file>` rồi commit; không bao giờ commit file nguồn |
@@ -512,6 +520,10 @@ tự chọn container khi `docker info` chạy được và `docker-compose.yml`
 
 `asset_store` chỉ dành cho hub: hình của child đi cùng bản publish.
 
+Hai lưu ý. `kb mcp-setup --token` để lại token trong lịch sử shell: hãy dùng ô nhập ẩn hoặc
+`STRATA_KB_HTTP_TOKEN`. `kb publish` và `kb ci-publish` cảnh báo có bao nhiêu section được
+gửi đi mà chưa review; `--require-reviewed` biến cảnh báo đó thành lỗi.
+
 ## 6.2 Cái gì được commit, cái gì không
 
 | Đường dẫn | Chứa | Commit |
@@ -533,7 +545,8 @@ nằm ngay trong skill.
 ## 6.4 Mã thoát
 
 `0` ok, `1` lỗi hoặc từ chối (một lỗi `kb build`, `kb l3 report` khi còn phát hiện được
-liệt kê, `kb l3 fix apply` có bản nháp bị từ chối), `2` lỗi cách dùng.
+liệt kê, `kb l3 fix apply` có bản nháp bị từ chối), `2` lỗi cách dùng, cache hub cũ trong
+`kb doctor`, hoặc citation cũ trong `kb resolve`.
 
 ## 6.5 Chạy lại `kb init`, Windows, và phía hub
 

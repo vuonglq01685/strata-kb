@@ -18,10 +18,13 @@ documents.
   the document's.
 
 ```bash
-pip install strata-kb
+pip install "strata-kb[ingest]"
+mkdir my-hub && cd my-hub && git init
 kb init --kind hub
 kb ingest source/employee-handbook.pdf --id hr-handbook --tags hr,policy
+kb summarize     # needs the claude or copilot CLI on your PATH
 kb build
+kb publish       # a hub searches only federation/, so it publishes to itself first
 kb query "parental leave eligibility"
 ```
 
@@ -180,8 +183,9 @@ and the few that differ per assistant.
 `ba` and `dev` repos can run unattended (`/kb-auto`, `kb auto`). **Read the
 Automation modes section of the [BA](docs/src/guide-ba.en.md) or
 [Dev](docs/src/guide-dev.en.md) guide before turning it on:** an unattended run
-merges pull requests with admin rights and publishes with no human review, and it
-needs branch protection on `main` first.
+merges its own pull requests with the rights of your `gh` login (`--admin` changes
+nothing) and publishes with no human review, and it needs branch protection on
+`main` first; see Automation modes, Security.
 
 ---
 

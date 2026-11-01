@@ -2398,9 +2398,11 @@ def test_guides_document_the_ingest_errors_log(kind):
 @pytest.mark.parametrize("kind", ["ba", "dev"])
 def test_guides_document_that_reingesting_is_safe(kind):
     # A call already in the ledger is skipped (uuid de-duplication), so
-    # re-ingesting a transcript is always safe.
+    # re-ingesting an ended transcript is safe. A session still running
+    # would freeze a partial output count, because a stored row never changes.
     guide = _guide_flat(kind)
-    assert "Re-ingesting a transcript is always safe" in guide
+    assert "Re-ingesting an ended transcript is safe" in guide
+    assert "only on a session that has ended" in guide
     assert "a call already in the ledger is skipped" in guide
     assert "kb usage ingest-transcript <path>" in guide
 

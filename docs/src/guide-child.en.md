@@ -13,8 +13,12 @@ search it. A repository that does this is a **child**.
 | Summarize, validate, approve and publish them | Approve anything by itself: approval is a human act and is never automatic |
 | Read the hub's published knowledge (`kb query`, MCP) | Publish tickets or code knowledge: `ba` and `dev` repos have their own guides |
 
-A hub repo can author documents with exactly the same steps (section 3), so the
-[hub guide](guide-hub.en.md#35-author-on-the-hub-itself) links here instead of repeating them.
+A hub repo can author documents with the same steps up to publish (section 3), so the
+[hub guide](guide-hub.en.md#35-author-on-the-hub-itself) links here instead of repeating them
+and lists the differences.
+
+Shared concepts, such as the L0 to L3 layers and `kb-context` citations, are explained in
+the [architecture document](architecture.en.md).
 
 **Slash commands.** Every slash command in this guide exists for Claude Code, GitHub
 Copilot and Cursor, with these exceptions:
@@ -124,8 +128,11 @@ restart the assistant.
 hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
 installs the hub's version, sets the `strata-kb==<hub version>` pins in
 `.github/workflows/`, and refreshes the skills and commands. In CI it never installs,
-re-pins or refreshes skills. With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the MCP path and
-the version check, and only reports that the version was not checked against the hub. The
+re-pins or refreshes skills; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN` set reports a version mismatch as an error instead (none of the
+scaffolded workflows runs it). With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the
+MCP path and the version check, and only reports that the version was not checked against
+the hub. The
 files under `.github/instructions/` and `.cursor/rules/` (the Copilot and Cursor
 `kb-summarize` files) refresh only through `kb init`. The pin matters: an unpinned
 `pip install strata-kb` in a job that holds `id-token: write` would let every run pick up
@@ -135,7 +142,8 @@ whatever PyPI serves, in a job able to write to the hub.
 
 A hub admin can switch **auto-merge** on per repo in the hub's Registry page. Then the hub
 merges your publish PR right after the intake opens it, with no review on the hub side, and
-`kb publish` prints `kb publish: merged on the hub` instead of a PR link. Ask the hub
+`kb publish` prints `kb publish: merged on the hub — <PR link>` instead of
+`kb publish: PR on the hub — <PR link>`. Ask the hub
 maintainer which you have: with auto-merge off, a person on the hub reviews and merges
 every publish PR.
 
@@ -362,7 +370,7 @@ first prints `kind: kb → hub menu: Document`, then:
 | Your config | What `kb publish` does |
 |---|---|
 | `intake:` set | Needs a clean, committed `.kb/`. Tags the commit `kb-publish/<ts>`, pushes the tag, and your CI publishes (section 4.2). The command waits up to 600 seconds and prints the PR link. |
-| `hub:` only | Mirrors `.kb/` into `federation/<repo-id>/` on the hub and opens a PR there. It needs `gh` able to open a PR on the hub's host. |
+| `hub:` only | Mirrors `.kb/` into `federation/<repo-id>/` on the hub and opens a PR there. It needs `gh` able to open a PR on the hub's host. A hub path on disk with no git remote gets a direct commit instead. |
 
 `--pr` and `--direct` force a mode: `--direct` commits straight to the hub and is refused
 on a governed hub that has a git remote; with neither flag `kb publish` picks direct only
@@ -371,8 +379,9 @@ for a hub with no git remote, and otherwise a PR or a clear refusal. `kb publish
 variable overrides `hub:`.
 
 Publishing copies **`.kb/` artefacts only**: documents, indexes, manifests and `assets/`.
-Configuration files, dotfiles, `_l3check.yaml` and `_l3fix.yaml` stay behind; a withheld
-file is named in a `[warn] ... (allowlist)` line. That is deliberate: a `config.yaml` that
+Configuration files and dotfiles stay behind, and any withheld file is named in a
+`[warn] ... (allowlist)` line. `_l3check.yaml` and `_l3fix.yaml` are also withheld, but
+silently. That is deliberate: a `config.yaml` that
 someone put a credential in must never reach the hub.
 
 `kb publish` and `kb ci-publish` warn how many sections ship unreviewed; `--require-reviewed`
@@ -466,7 +475,7 @@ hub`.
 |---|---|
 | `kb ingest`: "Docling is not installed" | `pip install "strata-kb[ingest]"`, or use the container (4.3) |
 | First `kb ingest` takes many minutes | The layout model (about 500 MB) is downloading once; later runs use the cache |
-| `Summarize skipped until the L3 review is confirmed`, or `L3 review pending in N doc(s)` from build or publish | Section 3.2: `kb l3 report <id>`, check each section against the PDF, `kb l3 confirm` |
+| `Summarize skipped until the L3 review is confirmed`, or `L3 review pending` from build or publish | Section 3.2: `kb l3 report <id>`, check each section against the PDF, `kb l3 confirm` |
 | `Summarize skipped while L3 fix is on` | Expected: run `/kb-l3-fix`, `kb l3 fix apply`, `kb l3 report`, then `kb summarize` (3.3), or `kb l3 fix off` |
 | `kb l3 fix apply`: `L3 fix is off` | A person runs `kb l3 fix on` |
 | `kb l3 fix apply`: `rejected: words` | The draft changed text the PDF does not show: correct the draft to the PDF's text |
@@ -483,7 +492,7 @@ hub`.
 | `kb publish`: `gh` cannot open a pull request | Install and authenticate `gh` for the hub's host (`GH_HOST=<host>` for Enterprise) until `gh repo view` works, then `--pr` |
 | `kb publish`: direct push refused on a governed hub | Use the default PR route, or publish from CI |
 | `kb publish` times out waiting for the intake, or `kb ci-publish` is refused / HTTP 403 | Open the Actions run for the `kb-publish/<ts>` tag. Usual causes: the repo is not in the hub's `federation/registry.yaml`, `repo_id` differs from the registered id, or the registry has a `workflow:` pin. Ask the hub maintainer; a governed hub needs every git publisher registered |
-| `kb publish` refused: registry says another kind | The registry's kind wins; ask the hub maintainer to fix the entry |
+| `kb publish` refused: registry says another kind (`kind mismatch`) | Fix `kind:` in the hub's `federation/registry.yaml` (ask the hub maintainer) or in this repo's `.kb/config.yaml`, whichever is wrong |
 | Content merged on your repo is not searchable | It becomes searchable when the **hub** PR merges: `kb publish`, then merge the PR on the hub |
 | Every hub command fails with an authentication error | Check `git --version`: below 2.31 with a credentialed hub URL nothing works. Upgrade Git |
 | `kb doctor` warns `source/ holds N file(s) tracked by git` | `git rm --cached <file>` and commit; never commit sources |
@@ -512,6 +521,10 @@ hub`.
 
 `asset_store` is hub-only: a child's figures travel with the publish.
 
+Two reminders. `kb mcp-setup --token` leaves the token in your shell history: prefer the
+hidden prompt or `STRATA_KB_HTTP_TOKEN`. `kb publish` and `kb ci-publish` warn how many
+sections ship unreviewed; `--require-reviewed` makes that fatal.
+
 ## 6.2 What is committed, and what is not
 
 | Path | Holds | Committed |
@@ -533,7 +546,8 @@ the skill itself.
 ## 6.4 Exit codes
 
 `0` ok, `1` error or refusal (a `kb build` error, `kb l3 report` while findings are listed,
-`kb l3 fix apply` with a rejection), `2` a usage error.
+`kb l3 fix apply` with a rejection), `2` a usage error, a stale hub cache in `kb doctor`, or
+a stale citation in `kb resolve`.
 
 ## 6.5 Re-running `kb init`, Windows, and the hub's side
 

@@ -19,6 +19,9 @@ Repo hub có thể biên soạn tài liệu bằng đúng những bước như r
 (mục 3.5 nói về điểm khác trên hub). Repo BA và repo Dev publish lên cùng hub này và có tài
 liệu riêng: [BA](guide-ba.vi.md) và [Developer](guide-dev.vi.md).
 
+Các khái niệm dùng chung, như các lớp L0 đến L3 và trích dẫn `kb-context`, được giải thích
+trong [tài liệu kiến trúc](architecture.vi.md).
+
 **Slash command.** Mọi slash command trong tài liệu này đều có cho Claude Code, GitHub
 Copilot và Cursor, trừ các ngoại lệ sau:
 
@@ -97,9 +100,10 @@ mặt:
 Hub là bắt buộc: server lấy nó từ `--hub`, rồi `STRATA_KB_HUB`, rồi `.kb/config.yaml`, và từ
 chối khởi động nếu không có.
 
-**Token.** Server HTTP từ chối khởi động nếu thiếu `STRATA_KB_HTTP_TOKEN`, và từ chối giá trị
-mẫu `change-me`, token ngắn hơn 32 ký tự, hoặc token không phải ASCII in được, không có dấu
-cách (tài liệu có bản quyền: không bao giờ chạy HTTP mà không xác thực). Token phục vụ `/api`, `/mcp` và CI; con người đăng nhập `/ui` bằng tài khoản.
+**Token.** Server HTTP từ chối khởi động nếu thiếu `STRATA_KB_HTTP_TOKEN`, và từ chối giá
+trị mẫu `change-me`, token ngắn hơn 32 ký tự, hoặc token không phải ASCII in được, không
+có dấu cách (tài liệu có bản quyền: không bao giờ chạy HTTP mà không xác thực). Token phục
+vụ `/api`, `/mcp` và CI; con người đăng nhập `/ui` bằng tài khoản.
 
 ## 2.3 Trước khi mở ra ngoài
 

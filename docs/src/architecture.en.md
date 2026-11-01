@@ -384,10 +384,10 @@ separate.
 | `<repo_id>-code` | `kb code-ingest`, deterministic, no model | on demand from the working tree; CI publishes on each `kb publish` tag | no | `code, generated` |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by a human | never | yes | `code, curated` |
 
-They cannot share one document for three independent reasons: `-code` is
-overwritten wholesale while `-svc` accumulates; `-svc` carries `pending` sections
-during a seed while `-code` must always build clean; and `-code` may be
-merged without a human by the repo's auto-merge switch while `-svc` needs human review (done locally, before publish).
+They cannot share one document for three independent reasons: `-code` is overwritten
+wholesale while `-svc` accumulates; `-svc` carries `pending` sections during a seed while
+`-code` must always build clean; and `-code` may be merged without a human by the repo's
+auto-merge switch while `-svc` needs human review (done locally, before publish).
 
 `-code` is never committed: its revision lives in its manifest, not in
 `index.yaml`, so a dev repo's committed index does not change when code does.
@@ -516,10 +516,11 @@ repo uses:
 
 The registry entry, never the payload, decides the repo id it may write. (Its
 optional `workflow:` pin is compared with the full `job_workflow_ref`, which
-includes the tag, so it stays unset for tag-triggered publishing.) A merge to the default branch that touches `missions/` or `tickets/`
-tags the merged commit and publishes (`kb-publish-request.yml`); the analyst can
-also run `/kb-publish`, which shows what changed before asking. A repo with no
-`intake:` configured falls back to the snapshot route.
+includes the tag, so it stays unset for tag-triggered publishing.) A merge to `main`
+(as scaffolded) that touches `missions/` or `tickets/` tags the merged commit and
+publishes (`kb-publish-request.yml`); the analyst can also run `/kb-publish`, which
+shows what changed before asking. A repo with no `intake:` configured falls back to
+the snapshot route.
 
 ## 8.3 Drift: keeping missions and tickets current
 
@@ -611,14 +612,14 @@ loudly and none of which can be skipped.
 | Prose is constrained, not free-form | Fixed summarization rules plus quality checks | Warnings by default, errors under `--strict` |
 | A human agrees before anyone can read it | The pull request on the hub | Content is unreachable through query, MCP and the UI until it merges |
 
-Note what is *not* claimed. The model is not trusted, and the design does not
-require it to be: it is confined to prose, its output is bounded by automated
-checks, and it cannot publish. Equally, the hub registry is a **mistake guard**,
-not an authentication mechanism — a publisher's remote URL is self-asserted.
-Branch protection on the hub and the OIDC intake are the controls that actually
-hold. The same holds for a `ba` repository's plan: what ships is chosen by a
-human's ticked Definition of Ready, on a tag from the analyst's `kb publish` or from the merge workflow, and it still
-reaches readers only through a hub pull request.
+Note what is *not* claimed. The model is not trusted, and the design does not require it
+to be: it is confined to prose, its output is bounded by automated checks, and it cannot
+publish. Equally, the hub registry is a **mistake guard**, not an authentication mechanism
+— a publisher's remote URL is self-asserted. Branch protection on the hub and the OIDC
+intake are the controls that actually hold. The same holds for a `ba` repository's plan:
+what ships is chosen by a human's ticked Definition of Ready, on a tag from the analyst's
+`kb publish` or from the merge workflow, and it still reaches readers only through a hub
+pull request.
 
 ## 9.1 Service security
 

@@ -19,6 +19,9 @@ in the [child guide](guide-child.en.md#3-daily-work); this guide does not repeat
 (section 3.5 covers what differs on a hub). BA repos and Dev repos publish to the same hub
 and have their own guides: [BA](guide-ba.en.md) and [Developer](guide-dev.en.md).
 
+Shared concepts, such as the L0 to L3 layers and `kb-context` citations, are explained in
+the [architecture document](architecture.en.md).
+
 **Slash commands.** Every slash command in this guide exists for Claude Code, GitHub
 Copilot and Cursor, with these exceptions:
 

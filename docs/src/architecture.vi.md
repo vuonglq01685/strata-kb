@@ -513,11 +513,10 @@ nhận push nhánh), nên plan đi theo cùng con đường dựa trên tag mà 
 
 Mục trong registry, không bao giờ là payload, quyết định repo id mà nó được ghi. (Ghim
 `workflow:` tuỳ chọn của nó được so với toàn bộ `job_workflow_ref`, trong đó có tag,
-nên để trống với publish kích hoạt bằng tag.) Một lần merge vào nhánh mặc định
+nên để trống với publish kích hoạt bằng tag.) Một lần merge vào `main` (như đã scaffold)
 có đụng tới `missions/` hoặc `tickets/` sẽ gắn tag cho commit đã merge rồi publish
 (`kb-publish-request.yml`); BA cũng có thể chạy `/kb-publish`, lệnh này cho xem thay
-đổi trước khi hỏi. Repo chưa cấu
-hình `intake:` sẽ quay về đường snapshot.
+đổi trước khi hỏi. Repo chưa cấu hình `intake:` sẽ quay về đường snapshot.
 
 ## 8.3 Drift: giữ mission và ticket luôn cập nhật
 
@@ -554,24 +553,24 @@ kèm `[note]` khi các section được trích không đổi, hoặc `[warn]` k�
 section đã đổi. Một fact được trích đã mất → FAIL với `re-run /sa-ticket-ground`.
 Lỗi về quyết định không bao giờ mang dòng đó.
 
-Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại
-trigger của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và
-thêm một dòng change log. Một lần amend ticket luôn chạy `kb ticket check`
-và gọi SA với trigger `architecture`, hoặc khi check fail với `re-run
-/sa-ticket-ground`; một lần amend mission chỉ gọi SA và check với `architecture`. Story đã giao không bao giờ bị viết lại: thay đổi đến dưới dạng story mới
-hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `> Parent mission:
-M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã đổi
-story đó.
+Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại trigger
+của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và thêm một dòng
+change log. Một lần amend ticket luôn chạy `kb ticket check` và gọi SA với trigger
+`architecture`, hoặc khi check fail với `re-run /sa-ticket-ground`; một lần amend mission
+chỉ gọi SA và check với `architecture`. Story đã giao không bao giờ bị viết lại: thay đổi
+đến dưới dạng story mới hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `>
+Parent mission: M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã
+đổi story đó.
 
 ## 8.4 Trạng thái trên hub
 
-Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm
-trong một dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish,
-`not ready` khi chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở
-CLI; menu **Ticket** của Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu
-Ticket, không nằm ở Document, và trang tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi.
-Theo chiều ngược lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc
-ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
+Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm trong một
+dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish, `not ready` khi
+chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở CLI; menu **Ticket** của
+Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu Ticket, không nằm ở Document, và trang
+tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi. Theo chiều ngược
+lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc ticket từ `-plan` của
+hub và khôi phục dạng nguồn của nó.
 
 ## 8.5 Câu hỏi về ticket
 
@@ -607,42 +606,41 @@ có thể hỏng một cách ồn ào, và không mắt nào được phép bỏ
 | Văn xuôi bị ràng buộc, không tự do | Quy tắc tóm tắt cố định cộng kiểm tra chất lượng | Cảnh báo mặc định, thành lỗi với `--strict` |
 | Có người đồng ý trước khi ai đọc được | Pull request trên hub | Nội dung không truy cập được qua query, MCP và UI cho tới khi PR merge |
 
-Hãy để ý điều **không** được khẳng định. Model không được tin cậy, và thiết kế
-cũng không cần nó đáng tin: nó bị giới hạn trong văn xuôi, đầu ra của nó bị chặn
-bởi các phép kiểm tra tự động, và nó không publish được. Tương tự, registry trên
-hub là **hàng rào chống nhầm lẫn**, không phải cơ chế xác thực — URL remote của
-bên publish là do chính bên đó tự khai. Branch protection trên hub và intake OIDC
-mới là những biện pháp thực sự có hiệu lực. Điều này cũng đúng với plan của repo
-`ba`: thứ được gửi đi do Definition of Ready mà một con người tick chọn ra, trên một
-tag từ `kb publish` của BA hoặc từ workflow chạy khi merge, và nó vẫn chỉ tới tay người đọc qua một pull request trên
-hub.
+Hãy để ý điều **không** được khẳng định. Model không được tin cậy, và thiết kế cũng không
+cần nó đáng tin: nó bị giới hạn trong văn xuôi, đầu ra của nó bị chặn bởi các phép kiểm
+tra tự động, và nó không publish được. Tương tự, registry trên hub là **hàng rào chống
+nhầm lẫn**, không phải cơ chế xác thực — URL remote của bên publish là do chính bên đó tự
+khai. Branch protection trên hub và intake OIDC mới là những biện pháp thực sự có hiệu
+lực. Điều này cũng đúng với plan của repo `ba`: thứ được gửi đi do Definition of Ready mà
+một con người tick chọn ra, trên một tag từ `kb publish` của BA hoặc từ workflow chạy khi
+merge, và nó vẫn chỉ tới tay người đọc qua một pull request trên hub.
 
 ## 9.1 An toàn của dịch vụ
 
-- Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính
-  sách referrer và permissions; HSTS trên https.
-- Cookie phiên của UI là giá trị đã ký, có hạn, dùng khoá `<hub>/.kb-auth/session.key`
-  — không bao giờ là bearer token, thứ mà mọi repo con đều giữ. Cookie mang tên
-  người dùng chứ không mang vai trò; vai trò được đọc từ CSDL tài khoản ở mỗi
-  request. Tài khoản nằm trong `.kb-auth/`, không bao giờ được commit.
-- Trang Registry (`/ui/registry`) chỉ dành cho admin, nên bearer token xem được UI
-  nhưng không bao giờ sửa được registry. Mỗi lần sửa là một commit trên nhánh mặc
-  định của hub, đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc
-  `auto_merge` của repo khiến intake merge cả PR publish ngay sau khi mở; merge
-  thất bại thì PR vẫn mở và publish vẫn `done` với `merged: false`.
-- Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi
-  ba MCP tool `kb_question_*`, và chỉ trên chính hub (không phải bản clone cache). Mọi bên gọi mà hub
-  xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì và không
-  xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
-- Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form
-  đăng nhập, nên không thể né khoá bằng cách chuyển sang header.
-- Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc
-  định là bỏ qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc
-  định khi đứng sau proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và
-  một người gọi có thể làm cạn giới hạn của tất cả.
-- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục
-  bộ cho UI — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
-  cho Internet công cộng.
+- Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính sách
+  referrer và permissions; HSTS trên https.
+- Cookie phiên của UI là giá trị đã ký, có hạn, dùng khoá `<hub>/.kb-auth/session.key` —
+  không bao giờ là bearer token, thứ mà mọi repo con đều giữ. Cookie mang tên người dùng
+  chứ không mang vai trò; vai trò được đọc từ CSDL tài khoản ở mỗi request. Tài khoản nằm
+  trong `.kb-auth/`, không bao giờ được commit.
+- Trang Registry (`/ui/registry`) chỉ dành cho admin, nên bearer token xem được UI nhưng
+  không bao giờ sửa được registry. Mỗi lần sửa là một commit trên nhánh mặc định của hub,
+  đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc `auto_merge` của repo
+  khiến intake merge cả PR publish ngay sau khi mở; merge thất bại thì PR vẫn mở và
+  publish vẫn `done` với `merged: false`.
+- Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi ba
+  MCP tool `kb_question_*`, và chỉ trên chính hub (không phải bản clone cache). Mọi bên
+  gọi mà hub xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì
+  và không xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
+- Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form đăng
+  nhập, nên không thể né khoá bằng cách chuyển sang header.
+- Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc định là bỏ
+  qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc định khi đứng sau
+  proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và một người gọi có thể làm
+  cạn giới hạn của tất cả.
+- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục bộ cho UI
+  — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng cho Internet công
+  cộng.
 
 ---
 

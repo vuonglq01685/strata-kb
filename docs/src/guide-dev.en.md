@@ -28,6 +28,10 @@ endpoints, schema, folders. `-svc` is human claim: what each service is
 analyst drawing a C4 container gets the alias, label and technology from `-code`
 and the description from `-svc`.
 
+Shared concepts, such as the L0 to L3 layers and `kb-context` citations, are explained in
+the [architecture document](architecture.en.md). The analyst's side is in the [BA
+guide](guide-ba.en.md).
+
 **Slash commands.** Every slash command in this guide exists for Claude Code,
 GitHub Copilot and Cursor, with these exceptions:
 
@@ -276,16 +280,16 @@ a context of its own, never the agent that produced it:
 | A5 | `dev-handover`, before GATE 3 | is merging into the default branch safe |
 
 Criteria live in `docs/pr-review-rubric.md`, overridden by
-`docs/pr-review-rubric.local.md`. The round limits are in the skills; a finding
-still open after the last round stops the flow and hands it to you. Where your
-assistant cannot dispatch subagents (the default for the Copilot and Cursor
-wrappers) the review runs as a single pass and is a **report, not a gate**: the
-phase stops and hands you the result. `dev-execute` orders tasks with
-`kb plan waves docs/impl/<id>/plan.md` and runs independent ones in parallel git
-worktree lanes. `kb plan waves` fails on a shared file without a dependency, a cycle, a task that lists
-no paths under **Files**, a missing `Depends on:` line or one that names a task that does
-not exist, or an empty `Serial resource:` line; a task with a `Serial resource:` line
-prints after `serial:` and runs alone, never in a parallel lane.
+`docs/pr-review-rubric.local.md`. The round limits are in the skills; a finding still open
+after the last round stops the flow and hands it to you. Where your assistant cannot
+dispatch subagents (the default for the Copilot and Cursor wrappers) the review runs as a
+single pass and is a **report, not a gate**: the phase stops and hands you the result.
+`dev-execute` orders tasks with `kb plan waves docs/impl/<id>/plan.md` and runs
+independent ones in parallel git worktree lanes. `kb plan waves` fails on a shared file
+without a dependency, a cycle, a task that lists no paths under **Files**, a missing
+`Depends on:` line or one that names a task that does not exist, or an empty `Serial
+resource:` line; a task with a `Serial resource:` line prints after `serial:` and runs
+alone, never in a parallel lane.
 
 ## 3.3 Questions for the BA
 
@@ -680,21 +684,24 @@ delete `main` or `master`; `git reset --hard`; `gh repo delete`, `gh run delete`
 `rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and `.git/**`.
 The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin` for cost reports.
 
-**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
-`kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
-`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a
-`Stop` hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
-read `.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows. Re-ingesting a
-transcript is always safe, because a call already in the ledger is skipped:
-`kb usage ingest-transcript <path>` backfills one. **Model tiering** is a recommendation
-that nothing in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped,
-overridable per model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A
-model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at
-the standard rate and flagged, so a total that contains them is a lower bound. Switch
-model at phase boundaries, never inside a phase: a switch discards the prompt cache and
-pays a fresh cache write, so a few cheap-model turns inside a strong-model session can
-cost **more** than not tiering. Check the result with `kb usage report`, which breaks
-spending down by model.
+**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`). `kb
+usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with `--ticket
+<id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop` hook
+cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
+`.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows.
+Re-ingesting an ended transcript is safe, because a call already in the ledger is skipped:
+`kb usage ingest-transcript <path>` backfills one. Run it only on a session that has
+ended: a call still streaming would be stored with a partial output count, and a stored
+row never changes. `report.html` is regenerated from the ledger on every run, so the
+ledger is the record, not the report. **Model tiering** is a recommendation that nothing
+in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped, overridable per
+model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A model with no row
+is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate
+and flagged, so a total that contains them is a lower bound. Switch model at phase
+boundaries, never inside a phase: a switch discards the prompt cache and pays a fresh
+cache write, so a few cheap-model turns inside a strong-model session can cost **more**
+than not tiering. Check the result with `kb usage report`, which breaks spending down by
+model.
 
 ## 6.6 Hub Q&A rules that touch you
 

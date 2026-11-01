@@ -147,10 +147,11 @@ def test_docs_pin_the_registry_mistake_guard_framing():
 
 
 def test_hub_guide_pins_the_exit_code_contract():
-    """M11 (task 8): usage errors now exit 1, not 2 -- exit 2 means
-    citation stale, and the citation-stale producers are `kb resolve`, `kb
-    doctor --context`, `kb ticket lint --fail-on-stale`, and `kb mission
-    lint --fail-on-stale`. There is no `kb ba lint` command.
+    """Exit 1 is an error or misconfiguration; exit 2 is a stale citation
+    (for `kb doctor`, a stale hub cache) or a CLI usage error. The
+    citation-stale producers are `kb resolve`, `kb doctor --context`,
+    `kb ticket lint --fail-on-stale`, and `kb mission lint --fail-on-stale`.
+    There is no `kb ba lint` command.
 
     Release 0.25.0 fix round 1, Important 1: the table used to add "only"
     after that list, which is false -- `cli.py`'s `doctor` command exits 2
@@ -185,6 +186,18 @@ def test_guides_say_usage_counts_subagents_and_never_guess_a_price():
         )
         assert "A model with no row is reported `unpriced`, never guessed" in text
         assert "so a total that contains them is a lower bound" in text
+        # Backfilling a session that is still running freezes a partial count.
+        assert "Re-ingesting an ended transcript is safe" in text
+        assert (
+            "a call still streaming would be stored with a partial output "
+            "count, and a stored row never changes"
+        ) in text
+        vi = _doc(f"guide-{guide}.vi.md")
+        assert "Ingest lại một transcript đã kết thúc là an toàn" in vi
+        assert (
+            "số token đầu ra chưa đầy đủ, và một dòng đã lưu không bao giờ thay đổi"
+            in vi
+        )
 
 
 # --- 2026-10-10 review batch 1c: README matches the code -------------------
@@ -542,7 +555,7 @@ def test_docs_describe_full_auto_mode():
     Dev guides carry the note and the facts a runner's owner must set up."""
     readme = _normalised(_readme_text())
     for phrase in (
-        "merges pull requests with admin rights",
+        "with the rights of your `gh` login",
         "branch protection on `main`",
     ):
         assert phrase in readme, phrase
