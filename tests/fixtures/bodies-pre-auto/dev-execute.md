@@ -116,8 +116,9 @@ hub.
   - Verify the wave: run `cmd.test` and `cmd.lint` once after the last
     merge of the wave and show the output.
   - A3 per task as below, from the lane **branch**, with the diff
-    written from `git diff <merge-commit>^1...<lane-branch>`; tick only
-    after A3 is clean, then delete the lane branch. A3 fix commits land
+    written from `git diff <merge-commit>^1...<lane-branch>` plus the diff of
+    the orchestrator's doc-apply commit, so A3 sees the applied plan/design
+    text; tick only after A3 is clean, then delete the lane branch. A3 fix commits land
     on the ticket branch after the merge (the lane is done); when any
     fix landed, re-run the wave's `cmd.test` / `cmd.lint` before
     ticking. A3 re-review after a fix diffs `<merge-commit>^1...HEAD`
@@ -220,7 +221,8 @@ hub.
   given the doc diff of that commit only as a file path, against the
   rubric's `## Pre-code axes`, one round, no loop. A BLOCKER from a delta
   review goes to the Dev. A SUGGESTED finding becomes a row in
-  `## Carried gaps`. A changed AC meaning still takes the "AC not
+  `plan.md`'s `## Carried gaps`, with the deviating task as `Target task` (its
+  A3 then checks it). A changed AC meaning still takes the "AC not
   implementable as written" route below; the delta review does not
   replace it.
 

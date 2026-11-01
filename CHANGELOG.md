@@ -13,7 +13,7 @@ The design and plan reviews (A1, A2) now stop after two rounds, leftover gaps ar
 - **Delta review.** A deviation that changes an AC or a public contract gets one review of that doc edit by a fresh `design-reviewer` or `plan-reviewer` before A3. Auto mode ends `AUTO-RESULT: failed design-review` or `failed plan-review` on a BLOCKER.
 - **Rendered Q&A.** The hub's ticket Q&A page renders question, context and answer as markdown, with a single newline as a line break and raw HTML off. Mission and ticket pages are unchanged.
 - **Q&A format.** A Dev question has `**Decision needed:**`, `**Background:**`, `**Options:**`, `**Dev recommends:**` and `**AC impact:**`; the open-question line carries the Decision needed sentence. A BA answer has `**Decision:**`, `**Ticket changes (rev N):**`, `**Follow-ups:**` and `**Assumptions:**`. The labels are fixed English; the content is in the ticket's language. `kb_question_ask` and `kb_question_answer` do not refuse other text.
-- **Docs.** The Dev and BA guides (EN, VI) and `QUICKSTART-dev.md` describe all of this. The guide PDFs under `docs/` are still not rebuilt: `docs/src/build_pdf.py` needs the macOS fonts and the `markdown` package; the Markdown sources are current.
+- **Docs.** The Dev and BA guides (EN, VI) and `QUICKSTART-dev.md` describe all of this. The guide PDFs under `docs/` are still not rebuilt: `docs/src/build_pdf.py` needs the macOS fonts (its `markdown` package is the `docs` extra); the Markdown sources are current.
 - **Upgrade.** Upgrade the CLI and the hub (the Q&A page). Run `kb init` to get the new skills. No CI pin change is needed.
 
 ## 1.33.1 — 2026-11-01

@@ -397,11 +397,12 @@ Two kinds of row go in. One is every `execute-verifiable` gap from any round
 the fix diff. In a design the target task reads `plan` until the plan names one.
 GATE 1 and GATE 2 are offered once no BLOCKER is open and every open SUGGESTED
 gap has a target task in the table. An `execute-verifiable` gap never counts
-toward the gate, whatever its severity.
+toward the gate, whatever its severity, and it never goes to the fix subagent:
+it is carried unfixed, not fixed on paper.
 
 During `dev-execute`, the implementer of a task receives the carried rows that
-name it and must resolve them. Spec review checks that it did, and sets `Status`
-to `closed task <n>` when the task is ticked.
+name it and must resolve them. Spec review checks that it did; the orchestrator sets
+`Status` to `closed task <n>` when the task is ticked.
 
 **Deviations.** When the code of a task differs from its task block or from a
 design section, the implementer changes that plan or design text in the same

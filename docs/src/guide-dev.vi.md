@@ -396,10 +396,11 @@ code hoặc test mới giải quyết được; rubric liệt kê chúng ở `##
 gaps`). Hai là mọi gap SUGGESTED của lượt 2 nằm ngoài diff của bản fix. Trong thiết
 kế, task đích ghi `plan` cho tới khi kế hoạch gọi tên một task. GATE 1 và GATE 2 chỉ
 được đưa ra khi không còn BLOCKER nào mở và mọi gap SUGGESTED còn mở đều có task đích
-trong bảng. Gap `execute-verifiable` không bao giờ tính vào cổng, dù mức độ nào.
+trong bảng. Gap `execute-verifiable` không bao giờ tính vào cổng, dù mức độ nào, và không bao giờ
+được gửi cho fix subagent: nó được mang theo chưa sửa, không sửa trên giấy.
 
 Trong `dev-execute`, implementer của một task nhận các dòng carried gọi tên task đó
-và phải giải quyết chúng. Spec review kiểm tra điều đó, và đặt `Status` thành
+và phải giải quyết chúng. Spec review kiểm tra điều đó; orchestrator đặt `Status` thành
 `closed task <n>` khi task được tick.
 
 **Deviations.** Khi code của một task khác với khối task của nó hoặc với một phần của

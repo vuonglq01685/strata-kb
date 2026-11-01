@@ -1805,6 +1805,8 @@ def test_execute_carries_gaps_and_writes_deviations_back(name):
         "the paths of `plan.md` and `design.md`, handed only to edit the text that deviates",
         "a one-line test summary, the `## Execution deviations` rows it added, and concerns",
         "A lane implementer edits neither file",
+        "becomes a row in `plan.md`'s `## Carried gaps`, with the deviating task as `Target task`",
+        "plus the diff of the orchestrator's doc-apply commit",
         "A deviation the implementer returned that changes the meaning",
     ):
         assert needle in t, (name, needle)

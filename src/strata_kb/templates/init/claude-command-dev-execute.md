@@ -102,7 +102,8 @@ with `git merge --no-ff
 `dev-plan` naming the two tasks — otherwise its report is copied out of
 the lane if it did not land in the merge and its worktree removed, then
 the full `cmd.test` / `cmd.lint` run once after the wave, A3 per task from
-the lane branch (`git diff <merge-commit>^1...<lane-branch>`), the lane
+the lane branch (`git diff <merge-commit>^1...<lane-branch>` plus the diff of the
+orchestrator's doc-apply commit), the lane
 branch deleted after A3 is clean; A3 fix commits land on the ticket
 branch after the merge, a re-review after a fix diffing
 `<merge-commit>^1...HEAD` limited to the task's paths, with the wave's
@@ -173,7 +174,8 @@ the doc edit (in a lane, after the merge-back) and before A3: a fresh
 `design-reviewer` for design text or `plan-reviewer` for plan text, given the
 doc diff of that commit only as a file path, against the rubric's
 `## Pre-code axes`, one round, no loop. A BLOCKER from a delta review goes to
-the Dev. A SUGGESTED finding becomes a row in `## Carried gaps`. A changed AC
+the Dev. A SUGGESTED finding becomes a row in `plan.md`'s `## Carried gaps`,
+with the deviating task as `Target task` (its A3 then checks it). A changed AC
 meaning still takes the "AC not implementable as written" route below; the
 delta review does not replace it. A task block carrying
 an `Exempt:` line skips step 1 and runs the verification that line names

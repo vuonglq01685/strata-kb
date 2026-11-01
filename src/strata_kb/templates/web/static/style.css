@@ -207,6 +207,10 @@ main.content { padding: 28px 32px 56px; min-width: 0; }
 .queue-row .cite { font: 600 12px/1.4 var(--mono); color: var(--accent); min-width: 130px; }
 .queue-row .file { font-size: 13px; flex: 1; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
+/* Q&A panel: markdown blocks stay inside the panel, long code lines scroll */
+.queue-row .md-body { max-width: 100%; min-width: 0; }
+.queue-row .md-body pre { overflow-x: auto; max-width: 100%; }
+.queue-row .md-body ul, .queue-row .md-body ol { padding-left: 1.4em; }
 
 /* search results */
 .result-card { display: flex; flex-direction: column; gap: 9px; padding: 15px 18px;

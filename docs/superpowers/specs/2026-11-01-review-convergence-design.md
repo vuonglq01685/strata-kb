@@ -204,6 +204,7 @@ and a later check can parse them); the content is in the ticket's language.
     **Decision:** <what the BA chose>
     **Ticket changes (rev N):**
     - <section>: <what changed>
+
     **Follow-ups:** <new question or story, and its owner>
     **Assumptions:** <only if any>
 

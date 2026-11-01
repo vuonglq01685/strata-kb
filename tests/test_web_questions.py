@@ -326,3 +326,38 @@ def test_render_default_output_is_unchanged_by_the_breaks_option():
 
     assert render("a\nb") == "<p>a\nb</p>\n"
     assert "<br" in render("a\nb", breaks=True)
+
+
+def test_full_answer_and_question_labels_are_their_own_paragraphs(
+    web_client_logged_in, hub_with_ticket
+):
+    hub = hub_with_ticket(rev=1)
+    q = ask_question(
+        hub,
+        _store(hub),
+        US1,
+        "**Decision needed:** pick one\n\n**Background:**\n- fact\n\n"
+        "**Options:**\n1. A — fast\n2. B — safe\n\n"
+        "**Dev recommends:** A, because fast\n**AC impact:** none",
+        "dev1",
+    )
+    answer_question(
+        hub,
+        _store(hub),
+        q.id,
+        "**Decision:** A\n**Ticket changes (rev 2):**\n- Scope: adds export\n\n"
+        "**Follow-ups:** none\n**Assumptions:** none",
+        "ba1",
+        2,
+        ["Scope"],
+    )
+    main = _main(
+        web_client_logged_in.get(f"/ui/questions/ticket?repo={REPO}&ticket={US1}").text
+    )
+    for label in ("Follow-ups", "Assumptions", "Dev recommends", "AC impact"):
+        assert f"<strong>{label}:</strong>" in main, label
+    assert not re.search(
+        r"<li>(?:(?!</li>).)*<strong>(Follow-ups|Assumptions|Dev recommends|AC impact):",
+        main,
+        re.S,
+    )

@@ -225,14 +225,15 @@ this size.
 
 **Class-wide fix.** Copy the design to
 `docs/impl/<ticket-id>/review/design-r<n>.md`, then apply BLOCKER and
-SUGGESTED gaps through a fix subagent. For every gap it fixes the cited
+SUGGESTED gaps through a fix subagent, except `execute-verifiable` gaps: they go
+to `## Carried gaps` unfixed, never fixed on paper. For every gap it fixes the cited
 instance, sweeps the whole design for the same defect class, and writes each
 further instance it fixed to `review/a1-r<n>-sweep.md`; then it re-runs the
 author self-check. The fix
 subagent gets the same Questions rule and preservation rule as the
 author.
 
-**Verification rounds.** Round 2 and later are not a fresh full review. A
+**Verification rounds.** Round 2 is not a fresh full review. A
 `design-reviewer` with a fresh context gets the round-1 inputs, the previous
 gap list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
@@ -240,7 +241,7 @@ fix against the design, written to `review/a1-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions. A new gap outside the diff
 is recorded as `round-1 coverage miss`. It does not block, unless it is a
-BLOCKER: a coverage miss that is not a BLOCKER goes to `## Carried gaps`, and
+BLOCKER: a SUGGESTED coverage miss goes to `## Carried gaps` (NOTE and NITS are recorded only), and
 a BLOCKER that is not `execute-verifiable` blocks. A full review runs again
 only for not-checked cells or a slice the diff mostly rewrote.
 

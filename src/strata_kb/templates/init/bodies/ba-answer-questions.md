@@ -92,6 +92,7 @@ a denial to report. Stop only when the MCP tool fails too.
          **Decision:** <what the BA chose>
          **Ticket changes (rev N):**
          - <section>: <what changed>
+
          **Follow-ups:** <new question or story, and its owner>
          **Assumptions:** <only if any>
 

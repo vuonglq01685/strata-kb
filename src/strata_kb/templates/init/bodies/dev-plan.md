@@ -298,7 +298,8 @@ this size.
 
 **Class-wide fix.** Copy the plan to
 `docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
-with the report's BLOCKER and SUGGESTED gaps. For every gap it fixes the cited
+with the report's BLOCKER and SUGGESTED gaps, except `execute-verifiable` gaps: they go to
+`## Carried gaps` unfixed, never fixed on paper. For every gap it fixes the cited
 instance, sweeps the
 whole plan for the same defect class, and writes each further instance it
 fixed to `review/a2-r<n>-sweep.md`; then it re-runs the author self-check. An
@@ -306,7 +307,7 @@ instance whose fix would change what the approved design mandates goes to the
 Dev, unfixed. The fix subagent gets the same
 Questions rule and preservation rule as the author.
 
-**Verification rounds.** Round 2 and later are not a fresh full review. A
+**Verification rounds.** Round 2 is not a fresh full review. A
 `plan-reviewer` with a fresh context gets the round-1 inputs, the previous gap
 list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
@@ -314,8 +315,8 @@ fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions, and it still runs
 `kb plan waves`. A new gap outside the diff is recorded as `round-1 coverage
-miss`. It does not block, unless it is a BLOCKER: a coverage miss that is not
-a BLOCKER goes to `## Carried gaps`, and a BLOCKER that is not
+miss`. It does not block, unless it is a BLOCKER: a SUGGESTED coverage
+miss goes to `## Carried gaps` (NOTE and NITS are recorded only), and a BLOCKER that is not
 `execute-verifiable` blocks. A full review runs again only for not-checked
 cells or a slice the diff mostly rewrote.
 
@@ -431,7 +432,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-- **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER is open and every open SUGGESTED gap is in `## Carried gaps` with a target task; an `execute-verifiable` gap never counts), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps through the fix subagent and re-review once: A2 runs at most 2 rounds, round 1 plus one verification round (not 3). A plan that is still not clean after round 2 stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
+- **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER is open and every open SUGGESTED gap is in `## Carried gaps` with a target task; an `execute-verifiable` gap never counts), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps that are not `execute-verifiable` through the fix subagent (an `execute-verifiable` gap goes to `## Carried gaps` unfixed) and re-review once: A2 runs at most 2 rounds, round 1 plus one verification round (not 3). A plan that is still not clean after round 2 stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
 - **No `-code` document yet — "ask the Dev once for the build/test/lint commands"** → never ask; read them from the repo, in this order: the `run:` lines of `.github/workflows/*.yml` (skip the scaffolded `kb-pr-lint.yml`, `kb-doctor.yml` and `kb-code.yml`; `kb-test.yml` counts), `docs/conventions/<lang>.md` and its `testing.md`, then the package manifests and task files (`package.json` scripts, `pyproject.toml`, `Makefile`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Package.swift`). `cmd.lint` and `cmd.build` come only from commands that `docs/conventions/<lang>.md` and its pack files name for the repo's languages, in the families the allowlist permits per language (test runner, install, lint, type check and build: for example `ruff`, `npm run lint`, `go vet`, `cargo clippy`, `dotnet build`); a command outside those families is denied in a headless run, so choose another one the conventions name. Record the commands in the `cmd.test:` / `cmd.lint:` header lines and log where each came from. A repo with no test command at all gets `AUTO-RESULT: failed no-test-command`.
 - **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
 - **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.

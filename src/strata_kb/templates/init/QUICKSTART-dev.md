@@ -361,8 +361,8 @@ the ticket and the design. A gap that still blocks after the verification
 round (a BLOCKER that cannot be checked at execution, or a SUGGESTED gap with no
 row in `## Carried gaps`) stops the flow and goes to you. Leftover gaps go in a
 `## Carried gaps` table below `## Review record`: every `execute-verifiable`
-gap, and every round-2 SUGGESTED gap outside the fix diff, each with a target
-task. The gate is offered once no BLOCKER is open and every open SUGGESTED gap
+gap (carried unfixed, never fixed on paper), and every round-2 SUGGESTED gap
+outside the fix diff, each with a target task. The gate is offered once no BLOCKER is open and every open SUGGESTED gap
 has a target task. `dev-execute` hands each task its carried rows, and when
 code differs from the plan or design it edits that text in the same commit and
 adds a row to `## Execution deviations` in `plan.md`.

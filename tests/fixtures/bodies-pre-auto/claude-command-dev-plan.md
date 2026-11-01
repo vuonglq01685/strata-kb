@@ -273,7 +273,8 @@ this size.
 
 **Class-wide fix.** Copy the plan to
 `docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
-with the report's BLOCKER and SUGGESTED gaps. For every gap it fixes the cited
+with the report's BLOCKER and SUGGESTED gaps, except `execute-verifiable` gaps: they go to
+`## Carried gaps` unfixed, never fixed on paper. For every gap it fixes the cited
 instance, sweeps the
 whole plan for the same defect class, and writes each further instance it
 fixed to `review/a2-r<n>-sweep.md`; then it re-runs the author self-check. An
@@ -281,7 +282,7 @@ instance whose fix would change what the approved design mandates goes to the
 Dev, unfixed. The fix subagent gets the same
 Questions rule and preservation rule as the author.
 
-**Verification rounds.** Round 2 and later are not a fresh full review. A
+**Verification rounds.** Round 2 is not a fresh full review. A
 `plan-reviewer` with a fresh context gets the round-1 inputs, the previous gap
 list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
@@ -289,8 +290,8 @@ fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions, and it still runs
 `kb plan waves`. A new gap outside the diff is recorded as `round-1 coverage
-miss`. It does not block, unless it is a BLOCKER: a coverage miss that is not
-a BLOCKER goes to `## Carried gaps`, and a BLOCKER that is not
+miss`. It does not block, unless it is a BLOCKER: a SUGGESTED coverage
+miss goes to `## Carried gaps` (NOTE and NITS are recorded only), and a BLOCKER that is not
 `execute-verifiable` blocks. A full review runs again only for not-checked
 cells or a slice the diff mostly rewrote.
 
