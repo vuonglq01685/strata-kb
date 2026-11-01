@@ -368,9 +368,7 @@ def test_guides_document_ticket_qa_in_both_languages():
     for lang in ("en", "vi"):
         ba = (REPO_ROOT / f"docs/src/guide-ba.{lang}.md").read_text(encoding="utf-8")
         dev = (REPO_ROOT / f"docs/src/guide-dev.{lang}.md").read_text(encoding="utf-8")
-        hub = (REPO_ROOT / f"docs/src/guide-hub-child.{lang}.md").read_text(
-            encoding="utf-8"
-        )
+        hub = (REPO_ROOT / f"docs/src/guide-hub.{lang}.md").read_text(encoding="utf-8")
         assert "## 3.6" in ba and "/ba-answer-questions" in ba, lang
         assert "Trigger `question`" in _normalised(ba), lang
         assert "## 3.3" in dev and "/dev-sa" in dev, lang
@@ -521,10 +519,10 @@ def test_readme_and_changelog_pin_the_rerunnable_cloud_switch():
         assert "git branch -D auto/switch" not in text
 
 
-def test_readme_and_hub_child_guides_document_the_l3_ai_fix():
+def test_readme_and_child_guides_document_the_l3_ai_fix():
     texts = {"README.md": _readme_text()}
     for lang in ("en", "vi"):
-        name = f"docs/src/guide-hub-child.{lang}.md"
+        name = f"docs/src/guide-child.{lang}.md"
         texts[name] = (REPO_ROOT / name).read_text(encoding="utf-8")
     for name, text in texts.items():
         flat = _normalised(text)

@@ -13,8 +13,8 @@ search it. A repository that does this is a **child**.
 | Summarize, validate, approve and publish them | Approve anything by itself: approval is a human act and is never automatic |
 | Read the hub's published knowledge (`kb query`, MCP) | Publish tickets or code knowledge: `ba` and `dev` repos have their own guides |
 
-A hub repo can author documents with exactly the same steps (section 3), so the hub guide
-links here instead of repeating them.
+A hub repo can author documents with exactly the same steps (section 3), so the
+[hub guide](guide-hub.en.md#35-author-on-the-hub-itself) links here instead of repeating them.
 
 **Slash commands.** Every slash command in this guide exists for Claude Code, GitHub
 Copilot and Cursor, with these exceptions:
@@ -542,5 +542,7 @@ refreshes only the agent files (`.claude/skills/`, `.claude/commands/`, `.github
 `git config core.longpaths true`. `.gitattributes` keeps `.kb/**` untouched by line-ending
 conversion (`-text`).
 
-The hub guide covers what the hub operator does with your publish: registering the repo,
-auto-merge, and reviewing the PR.
+The [hub guide](guide-hub.en.md) covers what the hub operator does with your publish:
+[registering the repo](guide-hub.en.md#25-register-the-publishers),
+[auto-merge](guide-hub.en.md#43-auto-merge-per-repo), and
+[reviewing the PR](guide-hub.en.md#31-review-and-merge-publish-prs).

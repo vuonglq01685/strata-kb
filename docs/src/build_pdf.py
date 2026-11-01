@@ -38,14 +38,8 @@ FONT_DIR = SRC / "fonts"
 TITLES = {
     "architecture.en": ("Strata — Architecture", "Knowledge Base as Code"),
     "architecture.vi": ("Strata — Kiến trúc hệ thống", "Knowledge Base as Code"),
-    "guide-hub-child.en": (
-        "Strata — Hub & Child Guide",
-        "For knowledge owners and authors",
-    ),
-    "guide-hub-child.vi": (
-        "Strata — Hướng dẫn Hub & Child",
-        "Dành cho người quản trị và biên soạn tri thức",
-    ),
+    "guide-hub.en": ("Strata — Hub Guide", "For hub operators"),
+    "guide-hub.vi": ("Strata — Hướng dẫn Hub", "Dành cho người vận hành hub"),
     "guide-child.en": ("Strata — Child Guide", "For document authors"),
     "guide-child.vi": ("Strata — Hướng dẫn Child", "Dành cho người biên soạn tài liệu"),
     "guide-ba.en": ("Strata — BA Guide", "For business analysts"),

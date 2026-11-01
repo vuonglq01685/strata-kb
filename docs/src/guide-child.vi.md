@@ -13,8 +13,8 @@ thể tìm kiếm. Một repository làm việc này là **child**.
 | Tóm tắt, kiểm tra hợp lệ, duyệt và publish chúng | Tự duyệt bất cứ thứ gì: duyệt là hành động của con người và không bao giờ tự động |
 | Đọc tri thức đã publish trên hub (`kb query`, MCP) | Publish ticket hay tri thức về code: repo `ba` và `dev` có tài liệu riêng |
 
-Repo hub có thể biên soạn tài liệu bằng đúng những bước này (mục 3), nên tài liệu về hub
-trỏ về đây thay vì lặp lại.
+Repo hub có thể biên soạn tài liệu bằng đúng những bước này (mục 3), nên
+[tài liệu về hub](guide-hub.vi.md#35-biên-soạn-ngay-trên-hub) trỏ về đây thay vì lặp lại.
 
 **Slash command.** Mọi slash command trong tài liệu này đều có cho Claude Code, GitHub
 Copilot và Cursor, trừ các ngoại lệ sau:
@@ -542,5 +542,7 @@ chúng. File dựng khung tên `*.local.md` không bao giờ được làm mới
 `git config core.longpaths true`. `.gitattributes` giữ `.kb/**` không bị chuyển đổi kết
 thúc dòng (`-text`).
 
-Tài liệu về hub nói về những gì người vận hành hub làm với bản publish của bạn: đăng ký
-repo, auto-merge và review PR.
+[Tài liệu về hub](guide-hub.vi.md) nói về những gì người vận hành hub làm với bản publish của
+bạn: [đăng ký repo](guide-hub.vi.md#25-đăng-ký-các-publisher),
+[auto-merge](guide-hub.vi.md#43-auto-merge-theo-từng-repo) và
+[review PR](guide-hub.vi.md#31-review-và-merge-pr-publish).
