@@ -16,6 +16,7 @@ import re
 import shutil
 from pathlib import Path
 
+from strata_kb.errors import KbError
 from strata_kb.ingest import images, pdftext, tableimages
 from strata_kb.ingest.sectioner import (
     DocItem,
@@ -161,7 +162,7 @@ def load_or_parse(pdf_path: Path, work_dir: Path):
             DoclingDocument,
         )
     except ImportError as exc:
-        raise RuntimeError(
+        raise KbError(
             'Docling is not installed. Run: pip install "strata-kb[ingest]"'
         ) from exc
 
