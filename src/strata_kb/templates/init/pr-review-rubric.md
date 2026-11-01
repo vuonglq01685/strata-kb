@@ -38,6 +38,23 @@ Used by A1 (design review) and A2 (plan review), before any human gate.
       `Q<id>` asked through hub Q&A, never resolved by guessing. A listed
       question with `blocks: none` is a known open item, not a gap. **BLOCKER**
 
+### Execute-verifiable gaps
+
+Some gaps cannot be settled by reading the text; only running something
+settles them. A reviewer tags a gap of one of these classes
+`execute-verifiable`:
+
+- a verification command that fails as written;
+- an expected red mis-stated (the test fails for another reason, or does not
+  fail at all);
+- a line-number pin (a reference that breaks when the file shifts);
+- an e2e timeout or margin not measured;
+- a fixture assumption a run checks.
+
+Any review round may raise such a gap. It goes to the `## Carried gaps` table
+with a target task. It never blocks a gate and is never fixed on paper: TDD
+and CI check it in that task.
+
 ## Merge-risk axes
 
 Used by A5 in `dev-handover`, reviewing the whole branch as a tech lead would

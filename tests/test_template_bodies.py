@@ -652,6 +652,21 @@ def test_pr_review_rubric_pre_code_axis_accepts_a_hub_question_as_open_ba():
     assert "carried as `OPEN(BA)`, never" not in text
 
 
+def test_pr_review_rubric_names_execute_verifiable_classes():
+    text = " ".join(read_template("pr-review-rubric.md").split())
+    pre = text[text.index("## Pre-code axes") : text.index("## Merge-risk axes")]
+    assert "`execute-verifiable`" in pre
+    for cls in (
+        "verification command that fails as written",
+        "expected red mis-stated",
+        "line-number pin",
+        "e2e timeout or margin not measured",
+        "fixture assumption a run checks",
+    ):
+        assert cls in pre, cls
+    assert "never blocks a gate" in pre and "never fixed on paper" in pre
+
+
 @pytest.mark.parametrize(
     "name",
     [
