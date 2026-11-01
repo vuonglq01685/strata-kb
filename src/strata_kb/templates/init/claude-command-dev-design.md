@@ -218,8 +218,8 @@ previous gap is closed, spot-checks instances of each class outside the
 sweep list, and checks the diff for regressions. A new gap outside the diff
 is recorded as `round-1 coverage miss`. It does not block, unless it is a
 BLOCKER: a coverage miss that is not a BLOCKER goes to `## Carried gaps`, and
-a BLOCKER that is not `execute-verifiable` blocks. A full review runs again only for not-checked cells or a
-slice the diff mostly rewrote.
+a BLOCKER that is not `execute-verifiable` blocks. A full review runs again
+only for not-checked cells or a slice the diff mostly rewrote.
 
 **Stop.** Record every round in the design file's `## Review record` table,
 creating it below the design body on round 1:
@@ -230,9 +230,9 @@ creating it below the design body on round 1:
 
 Coverage is checked cells over all cells. A1 stops after round 1 plus one
 verification round; there is no third round. A gap that still blocks after the
-verification round — a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with
-no `## Carried gaps` row — stops the flow and goes to the Dev, with the open
-classes. NOTE and NITS are recorded, not fixed.
+verification round — a BLOCKER that is not `execute-verifiable`, or a
+SUGGESTED gap with no `## Carried gaps` row — stops the flow and goes to the
+Dev, with the open classes. NOTE and NITS are recorded, not fixed.
 
 Leftover gaps go in a `## Carried gaps` table below `## Review record`:
 
@@ -342,7 +342,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-- **GATE 1 — Dev approval before any plan is written** → the A1 review, run by a `design-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A1 comes back clean (no BLOCKER is open and every open SUGGESTED gap is in `## Carried gaps` with a target task), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-plan` in the same turn; the "same turn" ban belongs to the Dev. A spike's design is flipped the same way. Otherwise send the gaps through the fix subagent and re-review once: A1 runs at most 2 rounds, round 1 plus one verification round (not 3). A design that is still not clean after round 2 stays `draft`: end `AUTO-RESULT: failed design-review`, and name the open classes in the reply.
+- **GATE 1 — Dev approval before any plan is written** → the A1 review, run by a `design-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A1 comes back clean (no BLOCKER is open and every open SUGGESTED gap is in `## Carried gaps` with a target task; an `execute-verifiable` gap never counts), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-plan` in the same turn; the "same turn" ban belongs to the Dev. A spike's design is flipped the same way. Otherwise send the gaps through the fix subagent and re-review once: A1 runs at most 2 rounds, round 1 plus one verification round (not 3). A design that is still not clean after round 2 stays `draft`: end `AUTO-RESULT: failed design-review`, and name the open classes in the reply.
 - **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
 - **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.
 - **Review contract: "round 3 stops the flow and goes to the Dev"** → A1 stops after round 2, as its **Stop.** rule says: a gap that still blocks after round 2 (a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with no `## Carried gaps` row) ends `AUTO-RESULT: failed design-review`, with the open classes in the reply.
