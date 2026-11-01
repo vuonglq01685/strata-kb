@@ -371,7 +371,7 @@ def test_guides_document_ticket_qa_in_both_languages():
         hub = (REPO_ROOT / f"docs/src/guide-hub-child.{lang}.md").read_text(
             encoding="utf-8"
         )
-        assert "## 3.10" in ba and "/ba-answer-questions" in ba, lang
+        assert "## 3.6" in ba and "/ba-answer-questions" in ba, lang
         assert "Trigger `question`" in _normalised(ba), lang
         assert "## 3.3" in dev and "/dev-sa" in dev, lang
         assert "BA-Q: none | open Q<ids> | waiting Q<ids>" in dev, lang
