@@ -101,3 +101,31 @@ def test_render_confines_reads_to_font_dir_not_document_path(tmp_path, monkeypat
     render_sample(tmp_path, monkeypatch, "ể →\n")
     assert Path(seen["resource_policy"].base_dir) == bp.FONT_DIR
     assert "path" not in seen
+
+
+def test_rewrite_links_points_sibling_docs_at_their_pdfs():
+    bp = load_build_pdf()
+    md = (
+        "[child](guide-child.en.md#35-validate) [dev](guide-dev.vi.md) "
+        "[arch](architecture.vi.md#6-citations) [same page](#3-daily-work) "
+        "[deploy](../deploy-remote-mcp.md#tls) [x](https://example.com/guide-a.en.md)"
+    )
+    assert bp.rewrite_links(md) == (
+        "[child](strata-guide-child.en.pdf) [dev](strata-guide-dev.vi.pdf) "
+        "[arch](strata-architecture.vi.pdf) [same page](#3-daily-work) "
+        f"[deploy]({bp.DEPLOY_URL}#tls) [x](https://example.com/guide-a.en.md)"
+    )
+
+
+def test_every_sibling_link_in_the_sources_has_a_matching_pdf_name():
+    bp = load_build_pdf()
+    for name in bp.TITLES:
+        text = (REPO_ROOT / "docs/src" / f"{name}.md").read_text(encoding="utf-8")
+        rewritten = bp.rewrite_links(text)
+        assert not re.search(r"\]\((?:guide-|architecture\.)[^)]*\.md", rewritten), name
+        assert "](../deploy-remote-mcp.md" not in rewritten, name
+        for target in re.findall(r"\]\((strata-[^)]+\.pdf)\)", rewritten):
+            assert target.removesuffix(".pdf").removeprefix("strata-") in bp.TITLES, (
+                name,
+                target,
+            )

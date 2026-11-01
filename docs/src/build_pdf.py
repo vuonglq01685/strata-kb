@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -175,9 +176,28 @@ def project_version() -> str:
     return "0.0.0"
 
 
+# The guides and the architecture document sit side by side in docs/ as PDFs, so a
+# relative `.md` link between them becomes a link to the sibling PDF (a PDF has no
+# heading anchors, so the `#fragment` is dropped). `../deploy-remote-mcp.md` has no PDF,
+# so it points at the file on GitHub.
+_SIBLING_LINK = re.compile(
+    r"\]\(((?:guide-[a-z]+|architecture)\.(?:en|vi))\.md(?:#[^)\s]*)?\)"
+)
+_DEPLOY_LINK = re.compile(r"\]\(\.\./deploy-remote-mcp\.md((?:#[^)\s]*)?)\)")
+DEPLOY_URL = (
+    "https://github.com/vuonglq01685/strata-kb/blob/main/docs/deploy-remote-mcp.md"
+)
+
+
+def rewrite_links(md: str) -> str:
+    """Make links between the sources work inside the PDFs."""
+    md = _SIBLING_LINK.sub(lambda m: f"](strata-{m.group(1)}.pdf)", md)
+    return _DEPLOY_LINK.sub(lambda m: f"]({DEPLOY_URL}{m.group(1)})", md)
+
+
 def render(name: str, version: str, stamp: str, css: str) -> Path:
     title, subtitle = TITLES[name]
-    md = (SRC / f"{name}.md").read_text(encoding="utf-8")
+    md = rewrite_links((SRC / f"{name}.md").read_text(encoding="utf-8"))
     body = markdown.markdown(
         md, extensions=["tables", "fenced_code", "sane_lists", "attr_list"]
     )
