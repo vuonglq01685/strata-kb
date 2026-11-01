@@ -24,6 +24,7 @@ kb init --kind hub
 kb ingest source/employee-handbook.pdf --id hr-handbook --tags hr,policy
 kb summarize     # needs the claude or copilot CLI on your PATH
 kb build
+git add -A && git commit -m "kb: hr-handbook"   # publish ships committed content
 kb publish       # a hub searches only federation/, so it publishes to itself first
 kb query "parental leave eligibility"
 ```

@@ -3,6 +3,18 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.34.1 — 2026-11-01
+
+Docs release: the role guides, quickstarts and README are rewritten for daily work, and the guide PDFs build on any OS.
+
+- **Guide PDFs on Windows, Linux and macOS.** `docs/src/build_pdf.py` uses Liberation Sans/Mono vendored in `docs/src/fonts/` (SIL OFL 1.1) instead of macOS system fonts. Run `uv run --extra docs python docs/src/build_pdf.py`. Any xhtml2pdf warning fails the build, including a missing glyph. Cross-guide links in a PDF point at the sibling PDF. All ten PDFs are rebuilt.
+- **One guide per repo kind.** `guide-hub`, `guide-child`, `guide-ba` and `guide-dev` are rewritten in English and Vietnamese from the 1.34 code. `guide-hub-child` is retired. Each guide has first-time setup, daily work, automation modes, troubleshooting and a short appendix. Every repo runs the hub's strata-kb version, and `kb doctor` syncs it after `kb mcp-setup`.
+- **Quickstarts.** The `QUICKSTART*.md` files that `kb init` writes are one-page cards. Each links to the full guide.
+- **README.** Shortened to the problem, the method, install, repo kinds, the command table and links to the guides.
+- **Docs agree with the code.** The auto-mode security text says merges use the rights of your `gh` login, and `--admin` changes nothing. A BA merge of `missions/` or `tickets/` to `main` publishes the plan. A dev or child merge publishes nothing.
+- **Doc lint.** `tests/test_doc_lint.py` fails when docs name a `kb` command or slash command that does not exist, carry a version-history string, have a broken link or anchor, or have a VI guide whose headings do not mirror the EN one.
+- `xhtml2pdf>=0.2.20` in the `docs` extra.
+
 ## 1.34.0 — 2026-11-01
 
 The design and plan reviews (A1, A2) now stop after two rounds, leftover gaps are carried into execution, and Dev questions and BA answers have a fixed format.
