@@ -14,6 +14,16 @@ from strata_kb.cli import app
 from strata_kb.initcmd import expected_files, init_repo
 from tests.cli_stub import write_cli_stub
 
+GUIDES = Path(__file__).resolve().parent.parent / "docs" / "src"
+
+
+def _guide_flat(kind: str) -> str:
+    """Whitespace-flattened English guide: the full source the quickstart cards point at."""
+    return " ".join(
+        (GUIDES / f"guide-{kind}.en.md").read_text(encoding="utf-8").split()
+    )
+
+
 # The CI dispatch step under test is a bash script, and the workflow that
 # runs it is `runs-on: ubuntu-latest` — it never executes on Windows in
 # production, so skipping there is the contract, not a coverage gap.
@@ -304,26 +314,31 @@ def test_quickstart_and_instructions_have_cli_reference(tmp_path: Path, kind: st
     instr = (
         tmp_path / ".github" / "instructions" / "kb-summarize.instructions.md"
     ).read_text(encoding="utf-8")
-    for text in (quick, instr):
-        assert "## CLI reference" in text
-        # every kb command appears
-        for cmd in (
-            "kb init",
-            "kb ingest",
-            "kb summarize",
-            "kb status",
-            "kb build",
-            "kb query",
-            "kb get",
-            "kb stats",
-            "kb diff",
-            "kb publish",
-            "kb resolve",
-            "kb doctor",
-        ):
-            assert cmd in text, cmd
-        assert "--level l2|l3" in text
-        assert "l1|l2|l3" not in text
+    assert "## CLI reference" in instr
+    # every kb command appears
+    for cmd in (
+        "kb init",
+        "kb ingest",
+        "kb summarize",
+        "kb status",
+        "kb build",
+        "kb query",
+        "kb get",
+        "kb stats",
+        "kb diff",
+        "kb publish",
+        "kb resolve",
+        "kb doctor",
+    ):
+        assert cmd in instr, cmd
+    assert "--level l2|l3" in instr
+    assert "l1|l2|l3" not in instr
+    # The quickstart is a one-page card: daily commands, not the full reference
+    # (the guide and the README carry that).
+    assert "## Daily commands" in quick
+    assert "l1|l2|l3" not in quick
+    for cmd in ("kb ingest", "kb publish", "kb query", "kb doctor"):
+        assert cmd in quick, cmd
     assert "/kb-ingest" in quick
     assert "/kb-publish" in quick
     assert "/kb-summarize" in quick
@@ -402,7 +417,7 @@ def test_quickstarts_match_kind(tmp_path: Path):
     assert "docker compose up -d" not in child_q
     assert "hub:" in child_q and "kb publish" in child_q
     for text in (hub_q, child_q):
-        assert "## CLI reference" in text
+        assert "## Daily commands" in text
         assert "/kb-ingest" in text and "/kb-publish" in text
 
 
@@ -2160,35 +2175,30 @@ def test_quickstart_dev_content(tmp_path: Path):
     assert "STRATA_KB_HTTP_TOKEN" in text
     assert "federation/registry.yaml" in text
     assert "docs/impl/" in text
-    # Task D2: Stage C shipped `dev-code-seed` + `kb svc note` on this
-    # branch, so `<repo_id>-svc` is no longer "not available yet" — that
-    # interim claim is now false and was cleared (README R2 sibling fix).
-    # Assert the corrected, present-tense framing instead.
-    assert "`<repo_id>-svc`) is not available yet" not in text
-    # Fix round 1, Minor 4: `"curated" in text.lower()` pins nothing —
-    # any document containing that one word passes. Pin the actual
-    # corrected sentence instead.
-    assert "Curated responsibility knowledge" in text
+    # `<repo_id>-svc` is shipped (dev-code-seed + `kb svc note`); the interim
+    # "not available yet" claim must stay gone from the card and the guide.
+    for flat in (" ".join(text.split()), _guide_flat("dev")):
+        assert "`<repo_id>-svc`) is not available yet" not in flat
+    assert "curated responsibility knowledge" in " ".join(text.split())
 
 
 def test_quickstart_dev_documents_the_auto_merge_policy(tmp_path: Path):
-    # Task review, Important 8: the plan never said where the auto-merge
-    # policy is documented; the shipped README pointed at "that hub's own
-    # setup", which doesn't exist anywhere. Spec Sec11 says it belongs in
-    # QUICKSTART-DEV -- this asserts it is actually there, not just
-    # claimed to be.
+    # The auto-merge policy (a per-repo switch on the hub's Registry page that
+    # merges the whole PR, so the -svc review happens locally) is on the card;
+    # the guide carries the full statement (2.5).
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
     flat = " ".join(text.split())
     assert "auto-merg" in text.lower()
-    # 1.26.0: a per-repo switch on the Registry page that merges the whole PR
     assert "per-repo switch" in flat
     assert "merges the **whole** publish PR" in flat
-    assert "hub-side branch-protection" not in text
-    assert "path-scoped" not in text
-    assert "never auto-merged" not in text
-    # step 7: an auto-merge repo's seed PR merges on its own
-    assert "unless the hub has auto-merge switched on" in flat
+    assert "`/dev-code-seed` step 4" in flat
+    guide = _guide_flat("dev")
+    assert "per-repo switch" in guide
+    assert "the hub merges the **whole**" in guide
+    for stale in ("hub-side branch-protection", "path-scoped", "never auto-merged"):
+        assert stale not in text
+        assert stale not in guide
 
 
 def test_init_kind_dev_scaffolds_the_code_workflow(tmp_path: Path):
@@ -2243,106 +2253,71 @@ def test_quickstart_dev_documents_the_seed_and_service_history(tmp_path: Path):
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
     assert "/dev-code-seed" in text
-    assert "kb svc note" in text
     assert "-code" in text and "-svc" in text
     assert "auto-merge" in text
-    assert "10-15 min" in text or "10–15 min" in text
+    assert "10 to 15 minutes per service" in " ".join(text.split())
+    # The service-history rows (`kb svc note`) accrue at handover: the guide
+    # carries that, the card does not repeat it.
+    assert "kb svc note" in _guide_flat("dev")
 
 
-def test_quickstart_ba_points_at_code_knowledge(tmp_path: Path):
+def test_ba_card_links_the_guide_that_carries_code_knowledge(tmp_path: Path):
     init_repo(tmp_path, "ba")
     text = (tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8")
-    assert "-code" in text
-    assert "-svc" in text
-    # Fix round 1, Minor 5 (plan-mandated): `"-code" in text` is satisfied
-    # by any mention of `kb-code.yml`, and neither original assertion
-    # touched the new section's own load-bearing strings. Pin those.
-    assert "Code knowledge on the hub" in text
-    assert "%%TODO: verify against codebase%%" in text
-    assert "/sa-ticket-ground" in text
-    assert "## Technical grounding" in text
-    assert "kb ticket check" in text
-    # The BA skills no longer read the code documents themselves.
-    assert "The BA skills do not read them" in text
+    assert "docs/src/guide-ba.en.md" in text
+    # The code-knowledge section lives in the BA guide (6.4).
+    guide = _guide_flat("ba")
+    assert "## 6.4 Code knowledge in tickets" in (GUIDES / "guide-ba.en.md").read_text(
+        encoding="utf-8"
+    )
+    assert "-code" in guide
+    assert "-svc" in guide
+    assert "%%TODO: verify against codebase%%" in guide
+    assert "/sa-ticket-ground" in guide
+    assert "`kb ticket check`" in guide
+    assert "The BA skills never read either themselves" in guide
 
 
-def test_quickstart_dev_documents_the_redo_consequence(tmp_path: Path):
-    # Fix round 1, Minor 6 (pins R3 — the `kb summarize --redo` truth this
-    # branch fought over across four review passes). `--redo` is not a
-    # blanket data-loss event (the accrued `hist.*` history survives) but
-    # it genuinely is one for a service's human-corrected responsibility
-    # prose, which is gone from L2/the manifest summary and recoverable
-    # only from git, not from `kb summarize` itself.
+def test_dev_guide_documents_the_redo_consequence(tmp_path: Path):
+    # `kb summarize --redo --include-reviewed` removes a reviewed section's text
+    # and sign-off and re-summarizes in the same command (cli.py
+    # `_confirm_and_apply_redo`: "recoverable with git checkout"). The guide says
+    # so; the dev-code-seed skill keeps its own, stronger sentence (see the
+    # Follow-ups in the fact map: the skill says "reviewed sections included",
+    # which the code only does with --include-reviewed).
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
-    assert "for the accrued ticket history" in text
-    assert "come back only from git" in text
-    # Fix round 1 follow-up (same false-claim class, caught by a sibling
-    # task's reviewer while verifying its own fix to the dev-code-seed
-    # wrappers): `cli.py:570-586` shows `kb summarize --redo` does not
-    # stop at the reset — it re-summarizes in the same invocation.
-    assert "re-summarizes in the same command" in text
-    assert "goes back to `pending`" not in text
-    # Fix round 2, Minor 2: "never stuck at `pending`" (this test's own
-    # prior pin) was itself a false absolute — summarize.py:230-236
-    # leaves a section whose LLM call fails at `pending`
-    # (cli.py:591-596: "Some sections stay pending"). The verified
-    # claude-skill-dev-code-seed.md:77 model makes no end-status promise
-    # at all; matched that here too. Ban the disproven absolute instead
-    # of re-pinning a replacement one.
-    assert "never stuck at `pending`" not in text
+    guide = _guide_flat("dev")
+    assert "`kb summarize <repo_id>-svc --redo --include-reviewed`" in guide
+    assert "re-summarizes in the same command" in guide
+    assert "comes back only from git" in guide
+    for flat in (" ".join(text.split()), guide):
+        assert "goes back to `pending`" not in flat
+        assert "never stuck at `pending`" not in flat
 
 
-def test_quickstart_dev_documents_the_first_run_stale_risk_warning(tmp_path: Path):
-    # Fix round 1, Minor 6 (pins R4 — the first `--scaffold-svc` run after
-    # this release will flag every already-`reviewed` svc.* section as
-    # stale-risk purely from the tables:/files: L3 relabel, not from any
-    # real code change).
+def test_dev_guide_documents_that_stale_risk_is_reported_not_repaired():
+    guide = _guide_flat("dev")
+    assert "prints `stale-risk: svc.<name>` and leaves the summary alone" in guide
+
+
+def test_dev_card_and_guide_do_not_overstate_the_stale_risk_comparison(
+    tmp_path: Path,
+):
+    # `core.py` compares `.strip()`-ed L3 bodies, not literal bytes.
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
-    assert "even though nothing in your code changed" in text
-
-
-def test_quickstart_dev_states_the_stale_risk_comparison_precisely(tmp_path: Path):
-    # Final review, Minor 6: `core.py:1130` compares `.strip()`-ed L3
-    # bodies, not literal bytes, and not "any" change either -- a change
-    # of nothing but leading/trailing whitespace does not flag. "byte-
-    # for-byte" and the bare "**Any** change" overstate that by exactly
-    # the whitespace-trim case; state the comparison precisely instead.
-    # Whitespace-normalised (`" ".join(text.split())`) the same way
-    # test_templates.py's `_normalised` matches hand-wrapped prose --
-    # this two-word needle spans a line break in the actual file.
-    init_repo(tmp_path, "dev")
-    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
-    normalised = " ".join(text.split())
-    assert "byte-for-byte" not in normalised
-    assert "whole-body, whitespace-trimmed" in normalised
+    for flat in (" ".join(text.split()), _guide_flat("dev")):
+        assert "byte-for-byte" not in flat
 
 
 def test_quickstart_dev_orients_the_reused_kb_summarize_wrapper(tmp_path: Path):
-    # Fix round 1, Minor 6 (pins R5 — the reused `kb-summarize` wrapper's
-    # own "after `kb ingest`" wording is false on a `dev` repo; readers
-    # must be told to read it as `kb code-ingest --scaffold-svc` instead).
-    init_repo(tmp_path, "dev")
-    text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
-    assert "read every `kb ingest` mention in that wrapper as" in text
-
-
-def test_quickstart_ba_documents_the_tag_lint_break(tmp_path: Path):
-    init_repo(tmp_path, "ba")
-    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
-    # The break itself, the fix, and the lookup — all three, or a BA hits a
-    # red lint with no way out.
-    assert "v0.19.0 makes an unknown `kb-context` tag a lint error" in text
-    assert "delete the tag from the block" in text
-    assert "never re-run `kb context new`" in text
-    assert "kb tags" in text
-
-
-def test_quickstart_ba_documents_that_tags_are_derived(tmp_path: Path):
-    init_repo(tmp_path, "ba")
-    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
-    assert "tags are derived from the documents your refs pin" in text
+    # The seed is one command: the guide's table names the extract and draft
+    # steps, so a reader need not map the reused `kb-summarize` wrapper's
+    # "after `kb ingest`" wording by hand.
+    guide = _guide_flat("dev")
+    assert "`kb code-ingest --scaffold-svc` regenerates `-code`" in guide
+    assert "`kb summarize <repo_id>-svc`" in guide
 
 
 # --- Phase 5 (kb usage measurement): the Stop hook scaffold ------------------
@@ -2394,87 +2369,91 @@ def test_settings_json_is_merged_not_overwritten_by_a_second_init(tmp_path: Path
     assert "Bash(kb ticket *)" in settings["permissions"]["allow"]
 
 
-def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):
-    init_repo(tmp_path, "ba")
-    text = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
-    assert "kb usage report" in text
-    assert "adds about 0.6s per turn" in text
-    assert "kb usage ingest-transcript" in text
-    # The ledger is the record; the HTML is derived. Someone who commits the
-    # HTML and edits it has edited nothing that survives the next report run.
-    assert "generated, not a record" in text
+def test_ba_guide_documents_the_usage_hook():
+    guide = _guide_flat("ba")
+    assert "kb usage report" in guide
+    assert "kb usage ingest-transcript" in guide
+    assert ".kb/usage/report.html" in guide
+    assert "adds about 0.6 s per turn" in guide
 
 
-def test_quickstart_dev_documents_the_usage_hook(tmp_path: Path):
-    init_repo(tmp_path, "dev")
-    text = " ".join(
-        (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split()
+def test_dev_guide_documents_the_usage_hook():
+    guide = _guide_flat("dev")
+    assert "kb usage ingest-transcript --hook-stdin" in guide
+    assert "`Stop` and `SubagentStop` hooks" in guide
+    assert "kb usage report" in guide
+    assert "adds about 0.6 s per turn" in guide
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_the_ingest_errors_log(kind):
+    # `_usage_log_error` calls this file the ONLY diagnostic channel a silent
+    # Stop hook has; a guide that never names it leaves a user with no way to
+    # discover why the ledger is not growing.
+    guide = _guide_flat(kind)
+    assert "`.kb/usage/ingest-errors.log`" in guide
+    assert "the only place a failure inside `kb` shows" in guide
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_that_reingesting_is_safe(kind):
+    # A call already in the ledger is skipped (uuid de-duplication), so
+    # re-ingesting an ended transcript is safe. A session still running
+    # would freeze a partial output count, because a stored row never changes.
+    guide = _guide_flat(kind)
+    assert "Re-ingesting an ended transcript is safe" in guide
+    assert "only on a session that has ended" in guide
+    assert "a call already in the ledger is skipped" in guide
+    assert "kb usage ingest-transcript <path>" in guide
+
+
+def _tiering_paragraph(guide: str) -> str:
+    start = guide.index("**Model tiering**")
+    return guide[start : start + 900]
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_model_tiering(kind):
+    paragraph = _tiering_paragraph(_guide_flat(kind))
+    assert "usage-prices.yaml" in paragraph
+    assert "`effective_date`" in paragraph
+    # The caveat is the load-bearing sentence: without it the advice raises the
+    # bill while everyone believes it lowers it.
+    assert "discards the prompt cache" in paragraph
+    assert "can cost **more** than not tiering" in paragraph
+    # And it says how to check rather than asking for trust.
+    assert "kb usage report" in paragraph
+
+
+def test_ba_guide_names_the_unknown_tag_fix_and_where_tags_come_from():
+    guide = _guide_flat("ba")
+    assert "is not published by any document on the hub federation" in guide
+    assert "Delete the tag from the block" in guide
+    assert "Never re-run `kb context new`" in guide
+    assert "`kb tags` lists the real ones" in guide
+    assert "Tags are derived from the documents your refs pin" in guide
+
+
+def test_quickstarts_force_clause_names_all_three_protected_files():
+    # `--force` replaces .kb/config.yaml, .kb/index.yaml and
+    # .claude/settings.json outright; the guides' appendices say so.
+    ba = _guide_flat("ba")
+    assert "--force` replaces all three outright" in ba
+    dev = _guide_flat("dev")
+    assert (
+        "`.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json` are protected"
+        in dev
     )
-    assert "kb usage report" in text
-    assert "adds about 0.6s per turn" in text
+    assert "`--force` replaces them" in dev
 
 
-def test_quickstarts_document_the_ingest_errors_log(tmp_path: Path):
-    # _usage_log_error's own docstring calls this file the ONLY diagnostic
-    # channel a silent Stop hook has; a QUICKSTART that never names it leaves
-    # a dev with no way to discover why the ledger isn't growing.
-    for kind, fname in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
-        target = tmp_path / kind
-        init_repo(target, kind)
-        text = (target / fname).read_text(encoding="utf-8")
-        assert ".kb/usage/ingest-errors.log" in text, kind
-
-
-def test_quickstarts_force_clause_names_all_three_protected_files(tmp_path: Path):
-    # The pre-branch text said '--force overwrites them too' (all protected
-    # files); the rewrite named only settings.json after '--force', losing
-    # "too"'s antecedent — and --force really does replace .kb/config.yaml
-    # (kind, repo_id, asset_store) too, so the warning undersold the risk.
-    for kind, fname in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
-        target = tmp_path / kind
-        init_repo(target, kind)
-        text = " ".join((target / fname).read_text(encoding="utf-8").split())
-        assert "--force` replaces all three outright" in text, kind
-
-
-def test_quickstarts_state_the_hooks_version_floor(tmp_path: Path):
-    # An older kb has no `usage` command, so the hook exits 2 -- and a Stop hook
-    # exiting 2 blocks the turn instead of failing quietly, with nothing in
-    # ingest-errors.log because the failure precedes `kb usage` entirely.
-    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
-        target = tmp_path / kind
-        init_repo(target, kind)
-        text = " ".join((target / name).read_text(encoding="utf-8").split())
-        assert "must be 0.19.0 or newer" in text, kind
-        assert "blocks the turn from ending" in text, kind
-
-
-def test_quickstarts_document_subagent_usage(tmp_path: Path):
-    # 1.9.0: a repo set up earlier has Stop and not SubagentStop, and its
-    # hand-merge snippet is the only place it learns the second hook exists.
-    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
-        target = tmp_path / kind
-        init_repo(target, kind)
-        text = " ".join((target / name).read_text(encoding="utf-8").split())
-        assert '"SubagentStop": [{"hooks": [' in text, kind
-        assert (
-            "`kb doctor` warns when `Stop` is there and `SubagentStop` is not" in text
-        ), kind
-        assert "Subagent cost needs 1.9.0" in text, kind
-        assert "also ingests its subagents" in text, kind
-        assert "run it only on a session that has ended" in text, kind
-        assert "it is never priced as its family" in text, kind
-
-
-def test_quickstarts_document_the_reingest_repair(tmp_path: Path):
-    # The repair path that actually works: delete the file and re-ingest, which
-    # is safe because a call already in the ledger is skipped.
-    for kind, name in (("ba", "QUICKSTART-BA.md"), ("dev", "QUICKSTART-DEV.md")):
-        target = tmp_path / kind
-        init_repo(target, kind)
-        text = " ".join((target / name).read_text(encoding="utf-8").split())
-        assert "Re-ingesting is always safe" in text, kind
-        assert "kb usage ingest-transcript" in text, kind
+def test_quickstarts_document_subagent_usage():
+    # Both ba and dev repos ship the Stop and SubagentStop hooks; the guides name
+    # both (the per-version "needs 1.9.0" wording is history and is gone).
+    for kind in ("ba", "dev"):
+        guide = _guide_flat(kind)
+        assert "`Stop` and `SubagentStop` hooks" in guide, kind
+        assert "kb usage ingest-transcript --hook-stdin" in guide, kind
 
 
 # --- Batch 5 (D conventions pack): dev-kind post-step -----------------------
@@ -2542,40 +2521,20 @@ def test_init_non_dev_kinds_gain_no_conventions(tmp_path: Path):
         assert not (repo / "CLAUDE.md").exists(), kind
 
 
-def _tiering_section(text: str) -> str:
-    start = text.index("## Model tiering")
-    rest = text.index("\n## ", start + 1)
-    return text[start:rest]
-
-
-def test_quickstarts_document_model_tiering(tmp_path: Path):
-    for kind, quickstart in (("dev", "QUICKSTART-DEV.md"), ("ba", "QUICKSTART-BA.md")):
-        target = tmp_path / kind
-        target.mkdir()
-        init_repo(target, kind)
-        section = _tiering_section((target / quickstart).read_text(encoding="utf-8"))
-        assert "usage-prices.yaml" in section, kind
-        assert "effective_date" in section, kind
-        # The caveat is the load-bearing sentence: without it the advice
-        # raises the bill while everyone believes it lowers it.
-        assert "discards the prompt cache" in section, kind
-        assert "2x at 1h" in section, kind
-        assert "can cost **more** than not tiering" in section, kind
-        # And it must say how to check rather than asking for trust.
-        assert "kb usage report" in section, kind
-
-
 def test_model_tiering_names_no_model_ids(tmp_path: Path):
-    # The decision this pins: tiers are abstract here, and the model names
-    # live only in the price table, which carries an effective_date and warns
-    # when it is stale. A name copied into prose has no such guard.
+    # Tiers are abstract in user docs; model names live only in the price table,
+    # which carries an effective_date and warns when it is stale. A name copied
+    # into prose has no such guard.
     for kind, quickstart in (("dev", "QUICKSTART-DEV.md"), ("ba", "QUICKSTART-BA.md")):
         target = tmp_path / kind
         target.mkdir()
         init_repo(target, kind)
-        section = _tiering_section((target / quickstart).read_text(encoding="utf-8"))
-        for banned in ("claude-opus-", "claude-sonnet-", "claude-haiku-"):
-            assert banned not in section, f"{kind}: {banned}"
+        for text in (
+            (target / quickstart).read_text(encoding="utf-8"),
+            _guide_flat(kind),
+        ):
+            for banned in ("claude-opus-", "claude-sonnet-", "claude-haiku-"):
+                assert banned not in text, f"{kind}: {banned}"
 
 
 # --- Batch 7 (E1 + E2): the PR gate is scaffolded for kind dev only --------
@@ -2635,16 +2594,24 @@ def test_hub_scaffold_ignores_the_accounts_directory(tmp_path: Path):
 
 def test_hub_quickstart_documents_accounts_registry_and_auto_merge(tmp_path: Path):
     init_repo(tmp_path, "hub")
-    flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
-    assert "sign in with the token" not in flat
-    assert "docker compose exec hub kb user add <name> --role admin" in flat
-    assert "kb user hash" in flat
-    assert "STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'" in flat
-    assert "Never commit `.kb-auth/`" in flat
-    assert "Deleting `.kb-auth/session.key` logs everyone out" in flat
-    assert "/ui/registry" in flat
-    assert "`Contents: Read and write` and `Pull requests: Read and write`" in flat
-    assert "the App must be allowed to push to it" in flat
+    card = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    # The security warnings stay on the card ...
+    assert "sign in with the token" not in card
+    assert "docker compose exec hub kb user add <name> --role admin" in card
+    assert "Never commit `.kb-auth/`" in card
+    assert "Deleting `.kb-auth/session.key` logs everyone out" in card
+    assert "/ui/registry" in card
+    # ... and the full account, registry and App setup is in the hub guide.
+    guide = _guide_flat("hub")
+    assert "sign in with the token" not in guide
+    assert "docker compose exec hub kb user add <name> --role admin" in guide
+    assert "kb user hash" in guide
+    assert "STRATA_KB_BOOTSTRAP_PASSWORD_HASH='<hash>'" in guide
+    assert "Never commit that directory" in guide
+    assert "Deleting `session.key` logs everyone out" in guide
+    assert "/ui/registry" in guide
+    assert "`Contents: Read and write` and `Pull requests: Read and write`" in guide
+    assert "the App must be allowed to push to it" in guide
 
 
 def test_hub_scaffold_ignores_the_ticket_qa_store(tmp_path: Path):
@@ -2657,62 +2624,52 @@ def test_hub_scaffold_ignores_the_ticket_qa_store(tmp_path: Path):
 
 def test_hub_quickstart_documents_ticket_qa(tmp_path: Path):
     init_repo(tmp_path, "hub")
-    flat = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    card = " ".join((tmp_path / "QUICKSTART.md").read_text(encoding="utf-8").split())
+    assert "`.kb-qa/qa.db`" in card
+    assert "**never commit `.kb-qa/`**" in card
+    assert "/ui/questions" in card
+    # The full Q&A rules live in the hub guide (6.5).
+    flat = _guide_flat("hub")
     assert "`.kb-qa/qa.db`" in flat
-    assert "**never commit `.kb-qa/`**" in flat
-    assert "They work only on the hub itself" in flat
+    assert "**Never commit `.kb-qa/`**" in flat
+    assert "The three tools work only against the hub itself" in flat
     assert "the stdio server run inside the hub's own checkout" in flat
     assert "a hub URL read through a local cache clone" in flat
     assert "(`--kb <hub>/.kb`)" in flat
     assert "Any other target is refused" in flat
-    assert "created, and git-excluded, on the first Q&A call" in flat
-    assert (
-        "`kb_question_ask` and `kb_question_answer` are the first MCP tools that write"
-        in flat
-    )
+    assert "created and git-excluded on the first Q&A call" in flat
     assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
-    assert "list included" in flat
     assert "Any caller the hub authenticates may ask and answer" in flat
     assert "names the caller types" in flat
-    assert "do not authenticate anyone" in flat
-    assert "At most 50 questions per ticket" in flat
-    assert "**waiting for publish**" in flat
+    assert "tracking, not authentication" in flat
+    assert "at most 50 open questions per ticket" in flat
+    assert '"waiting for publish"' in flat
     assert "/ui/questions" in flat
 
 
 def test_ba_quickstart_documents_answering_questions(tmp_path: Path):
-    init_repo(tmp_path, "ba")
-    flat = " ".join((tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8").split())
+    # The Q&A flow for the BA is in the BA guide (3.6 and 6.6).
+    flat = _guide_flat("ba")
     assert "`/ba-answer-questions`" in flat
-    assert "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)" in flat
-    assert "Any authenticated caller may write" in flat
-    assert "self-declared" in flat
+    assert "Q&A needs the shared hub server" in flat
+    assert "tracking, not authentication" in flat
     assert "Trigger `question`" in flat
     assert "Re-tick the Definition of Ready" in flat
-    assert "It never commits, pushes or publishes" in flat
-    assert "**waiting for publish**" in flat
-    assert "`question` is written only by `/ba-answer-questions`" in flat
+    assert "The skill never commits, pushes or publishes" in flat
+    assert "*waiting for publish*" in flat
 
 
 def test_dev_quickstart_documents_questions_and_dev_sa(tmp_path: Path):
-    init_repo(tmp_path, "dev")
-    flat = " ".join(
-        (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8").split()
-    )
-    assert "`## Questions raised`" in flat
+    # The Dev side of Q&A is in the Dev guide (3.3 and 6.6).
+    flat = _guide_flat("dev")
     assert "`business` or `technical`" in flat
     assert "- SA-<n>: <decision> — why — evidence" in flat
     assert "- Q<id> — <question> — blocks: <AC ids|none>" in flat
     assert "`kb_question_ask`" in flat
-    assert "A blocking question stops the gate" in flat
+    assert "stops the gate" in flat
     assert "`BA-Q: none | open Q<ids> | waiting Q<ids>`" in flat
-    assert "fifth marker" in flat
-    assert "`BA-Q: unknown (Q&A unavailable)`" in flat
     assert "/dev-sa <question>" in flat
-    assert "Only on the shared hub server" in flat
-    assert "the names are self-declared" in flat
-    assert "accepts a `Q<id>`" in flat
-    assert "`OPEN(BA)` stays for the case `dev-execute` meets" in flat
+    assert "tracking, not authentication" in flat
 
 
 def test_hub_gitignore_is_protected_from_a_second_init(tmp_path: Path):

@@ -6,8 +6,8 @@ review được bằng pull request, còn AI agent truy vấn đúng đoạn c�
 Tài liệu này mô tả **hệ thống được xây dựng như thế nào**: mô hình dữ liệu, các
 thành phần, đảm bảo mà mỗi thành phần cung cấp, và các mô hình triển khai. Đối
 tượng đọc là kiến trúc sư, platform engineer và technical lead đang đánh giá hoặc
-vận hành Strata. Hướng dẫn thao tác hằng ngày nằm ở ba tài liệu hướng dẫn theo
-vai trò đi kèm.
+vận hành Strata. Hướng dẫn thao tác hằng ngày nằm ở bốn tài liệu hướng dẫn theo
+vai trò (hub, child, ba, dev) đi kèm.
 
 Strata không gắn với lĩnh vực nào. Không có chỗ nào trong thiết kế mã hoá một
 ngành, một họ tài liệu hay một ngôn ngữ cụ thể. Đơn vị công việc là "một tài liệu
@@ -169,13 +169,17 @@ Một file thực thi duy nhất, nhóm theo giai đoạn vòng đời.
 
 | Nhóm | Lệnh |
 |---|---|
-| Dựng khung | `init`, `docker-setup` |
-| Biên soạn | `ingest`, `summarize`, `status`, `build`, `approve` |
+| Dựng khung | `init`, `docker-setup`, `mcp-setup` |
+| Biên soạn | `ingest`, `l3`, `summarize`, `status`, `build`, `approve`, `authored` |
 | Truy hồi | `query`, `get`, `stats`, `tags` |
-| Liên kết | `publish`, `ci-publish`, `reindex`, `doctor`, `assets` |
+| Liên kết | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync` |
 | Trích dẫn | `context new`, `resolve`, `diff` |
 | Tri thức code | `code-ingest`, `svc note` |
-| Cổng kiểm tra | `ticket lint`, `mission lint`, `pr lint` |
+| Tri thức plan | `plan-ingest`, `mission next`, `ticket fetch` |
+| Cổng kiểm tra | `ticket lint`, `ticket check`, `ticket stale`, `mission lint`, `pr lint`, `plan waves` |
+| Dọn dẹp và xuất | `ticket tidy`, `ticket export`, `impl tidy` |
+| Agent | `claim`, `pr` (`find`, `view`, `open`, `checks`, `merge`, `edit`; `pr lint` là một cổng ở trên), `auto` |
+| Tài khoản hub | `user` |
 | Đo lường | `usage` |
 
 CLI là bản hiện thực tham chiếu của mọi quy tắc trong tài liệu này. MCP server và
@@ -299,8 +303,9 @@ không thể vô tình publish nhầm hub.
 
 Publish chỉ sao chép **artefact** — tài liệu, chỉ mục, manifest, tài nguyên ảnh.
 File cấu hình và dotfile bị giữ lại và được nêu tên trong cảnh báo. Đây là một
-thuộc tính an toàn chứ không phải sự gọn gàng: trường `hub:` thường mang URL có
-kèm credential, sao chiếu nó lên hub là publish luôn cả token.
+thuộc tính an toàn chứ không phải sự gọn gàng: `.kb/config.yaml` chứa các trường
+`hub:` và `intake:`, và một token lỡ nằm trong file không bao giờ được sao chiếu
+lên hub.
 
 `kb ci-publish` là đường đi cho CI. Nó chạy bên trong chính GitHub Actions job của
 repo publish, xác thực với dịch vụ intake bằng OIDC của GitHub Actions, nhờ vậy
@@ -375,7 +380,7 @@ chủ đích.
 
 | Tài liệu | Nguồn gốc | Sinh lại | Cần review | Tag |
 |---|---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest`, tất định, không model | sinh lại khi cần từ working tree; CI publish ở mỗi lần merge | không | `code, generated` |
+| `<repo_id>-code` | `kb code-ingest`, tất định, không model | sinh lại khi cần từ working tree; CI publish ở mỗi tag `kb publish` | không | `code, generated` |
 | `<repo_id>-svc` | model soạn từ bằng chứng đó, người sửa lại | không bao giờ | có | `code, curated` |
 
 Chúng không thể dùng chung một tài liệu vì ba lý do độc lập: `-code` bị ghi đè
@@ -407,6 +412,15 @@ phục vụ một stack sẽ khiến phần lớn repository không trích đư�
 | `schema` | `db.<table>` | migration SQL, Prisma, Alembic, EF, và file SQLite được nêu tên tường minh |
 | `integrations` | `int.<name>` | **chỉ tên khoá** biến môi trường |
 | `api` | `api.<tag>` | hợp đồng OpenAPI và Swagger nằm trong repo |
+| `routes` | `route.<slug>` | route HTTP khai báo trong mã nguồn (cần extra `code`) |
+| `pages` | `page.<slug>` | route trang UI; router theo hệ thống file chạy được không cần extra `code` |
+| `jobs` | `job.<slug>` | job khai báo bởi scheduler của framework (cần extra `code`) |
+| `symbols` | `sym.<slug>` | tên được export, member của enum và object, CSS custom property (cần extra `code`) |
+
+`tree` còn ghi `struct.files.<dir>`, và mọi extractor báo vào một section
+`struct.coverage` cho biết từng khu vực được quét `complete`, `partial` hay
+`not scanned`; `jobs` không bao giờ là `complete`. Bốn extractor đọc mã nguồn dùng
+tree-sitter để phân tích cú pháp, từ extra tuỳ chọn `strata-kb[code]`.
 
 Đầu ra là một tài liệu bốn lớp bình thường, nên build, query, federation và Web UI
 đọc được mà không cần xử lý đặc biệt.
@@ -499,9 +513,10 @@ nhận push nhánh), nên plan đi theo cùng con đường dựa trên tag mà 
 
 Mục trong registry, không bao giờ là payload, quyết định repo id mà nó được ghi. (Ghim
 `workflow:` tuỳ chọn của nó được so với toàn bộ `job_workflow_ref`, trong đó có tag,
-nên để trống với publish kích hoạt bằng tag.) Không có gì publish khi merge: BA
-quyết định khi nào, và `/kb-publish` cho xem thay đổi trước khi hỏi. Repo chưa cấu
-hình `intake:` sẽ quay về đường snapshot.
+nên để trống với publish kích hoạt bằng tag.) Một lần merge vào `main` (như đã scaffold)
+có đụng tới `missions/` hoặc `tickets/` sẽ gắn tag cho commit đã merge rồi publish
+(`kb-publish-request.yml`); BA cũng có thể chạy `/kb-publish`, lệnh này cho xem thay
+đổi trước khi hỏi. Repo chưa cấu hình `intake:` sẽ quay về đường snapshot.
 
 ## 8.3 Drift: giữ mission và ticket luôn cập nhật
 
@@ -538,24 +553,24 @@ kèm `[note]` khi các section được trích không đổi, hoặc `[warn]` k�
 section đã đổi. Một fact được trích đã mất → FAIL với `re-run /sa-ticket-ground`.
 Lỗi về quyết định không bao giờ mang dòng đó.
 
-Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại
-trigger của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và
-thêm một dòng change log. Một lần amend ticket luôn chạy `kb ticket check`
-và gọi SA với trigger `architecture`, hoặc khi check fail với `re-run
-/sa-ticket-ground`; một lần amend mission chỉ gọi SA và check với `architecture`. Story đã giao không bao giờ bị viết lại: thay đổi đến dưới dạng story mới
-hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `> Parent mission:
-M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã đổi
-story đó.
+Một lần sửa đổi (`/ba-mission-plan --amend`, `/ba-ticket-author --amend`) ghi lại trigger
+của nó (`kb-context`, `architecture`, `scope`, `delivery`), tăng revision và thêm một dòng
+change log. Một lần amend ticket luôn chạy `kb ticket check` và gọi SA với trigger
+`architecture`, hoặc khi check fail với `re-run /sa-ticket-ground`; một lần amend mission
+chỉ gọi SA và check với `architecture`. Story đã giao không bao giờ bị viết lại: thay đổi
+đến dưới dạng story mới hoặc quyết định thay thế (`SUPERSEDED`), và một ticket ghim `>
+Parent mission: M-<slug> @ rev <N>` bị `kb mission next` báo `draft` khi mission của nó đã
+đổi story đó.
 
 ## 8.4 Trạng thái trên hub
 
-Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm
-trong một dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish,
-`not ready` khi chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở
-CLI; menu **Ticket** của Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu
-Ticket, không nằm ở Document, và trang tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi.
-Theo chiều ngược lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc
-ticket từ `-plan` của hub và khôi phục dạng nguồn của nó.
+Trạng thái story được suy ra, chỉ đọc, từ những gì hub đã có: `done` khi id nằm trong một
+dòng `hist.*` của `-svc` của repo dev, `ready` khi ticket đã publish, `not ready` khi
+chưa, `blocked` kèm lý do. `kb mission next --from-hub` tính nó ở CLI; menu **Ticket** của
+Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu Ticket, không nằm ở Document, và trang
+tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi. Theo chiều ngược
+lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc ticket từ `-plan` của
+hub và khôi phục dạng nguồn của nó.
 
 ## 8.5 Câu hỏi về ticket
 
@@ -591,42 +606,41 @@ có thể hỏng một cách ồn ào, và không mắt nào được phép bỏ
 | Văn xuôi bị ràng buộc, không tự do | Quy tắc tóm tắt cố định cộng kiểm tra chất lượng | Cảnh báo mặc định, thành lỗi với `--strict` |
 | Có người đồng ý trước khi ai đọc được | Pull request trên hub | Nội dung không truy cập được qua query, MCP và UI cho tới khi PR merge |
 
-Hãy để ý điều **không** được khẳng định. Model không được tin cậy, và thiết kế
-cũng không cần nó đáng tin: nó bị giới hạn trong văn xuôi, đầu ra của nó bị chặn
-bởi các phép kiểm tra tự động, và nó không publish được. Tương tự, registry trên
-hub là **hàng rào chống nhầm lẫn**, không phải cơ chế xác thực — URL remote của
-bên publish là do chính bên đó tự khai. Branch protection trên hub và intake OIDC
-mới là những biện pháp thực sự có hiệu lực. Điều này cũng đúng với plan của repo
-`ba`: thứ được gửi đi do Definition of Ready mà một con người tick chọn ra, trên một
-tag mà con người đó đẩy, và nó vẫn chỉ tới tay người đọc qua một pull request trên
-hub.
+Hãy để ý điều **không** được khẳng định. Model không được tin cậy, và thiết kế cũng không
+cần nó đáng tin: nó bị giới hạn trong văn xuôi, đầu ra của nó bị chặn bởi các phép kiểm
+tra tự động, và nó không publish được. Tương tự, registry trên hub là **hàng rào chống
+nhầm lẫn**, không phải cơ chế xác thực — URL remote của bên publish là do chính bên đó tự
+khai. Branch protection trên hub và intake OIDC mới là những biện pháp thực sự có hiệu
+lực. Điều này cũng đúng với plan của repo `ba`: thứ được gửi đi do Definition of Ready mà
+một con người tick chọn ra, trên một tag từ `kb publish` của BA hoặc từ workflow chạy khi
+merge, và nó vẫn chỉ tới tay người đọc qua một pull request trên hub.
 
 ## 9.1 An toàn của dịch vụ
 
-- Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính
-  sách referrer và permissions; HSTS trên https.
-- Cookie phiên của UI là giá trị đã ký, có hạn, dùng khoá `<hub>/.kb-auth/session.key`
-  — không bao giờ là bearer token, thứ mà mọi repo con đều giữ. Cookie mang tên
-  người dùng chứ không mang vai trò; vai trò được đọc từ CSDL tài khoản ở mỗi
-  request. Tài khoản nằm trong `.kb-auth/`, không bao giờ được commit.
-- Trang Registry (`/ui/registry`) chỉ dành cho admin, nên bearer token xem được UI
-  nhưng không bao giờ sửa được registry. Mỗi lần sửa là một commit trên nhánh mặc
-  định của hub, đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc
-  `auto_merge` của repo khiến intake merge cả PR publish ngay sau khi mở; merge
-  thất bại thì PR vẫn mở và publish vẫn `done` với `merged: false`.
-- Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi
-  ba MCP tool `kb_question_*`, và chỉ trên chính hub (không phải bản clone cache). Mọi bên gọi mà hub
-  xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì và không
-  xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
-- Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form
-  đăng nhập, nên không thể né khoá bằng cách chuyển sang header.
-- Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc
-  định là bỏ qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc
-  định khi đứng sau proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và
-  một người gọi có thể làm cạn giới hạn của tất cả.
-- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục
-  bộ cho UI — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng
-  cho Internet công cộng.
+- Mọi phản hồi đều mang content security policy, chặn nhúng frame, nosniff, chính sách
+  referrer và permissions; HSTS trên https.
+- Cookie phiên của UI là giá trị đã ký, có hạn, dùng khoá `<hub>/.kb-auth/session.key` —
+  không bao giờ là bearer token, thứ mà mọi repo con đều giữ. Cookie mang tên người dùng
+  chứ không mang vai trò; vai trò được đọc từ CSDL tài khoản ở mỗi request. Tài khoản nằm
+  trong `.kb-auth/`, không bao giờ được commit.
+- Trang Registry (`/ui/registry`) chỉ dành cho admin, nên bearer token xem được UI nhưng
+  không bao giờ sửa được registry. Mỗi lần sửa là một commit trên nhánh mặc định của hub,
+  đẩy bằng GitHub App của intake, không bao giờ force-push. Công tắc `auto_merge` của repo
+  khiến intake merge cả PR publish ngay sau khi mở; merge thất bại thì PR vẫn mở và
+  publish vẫn `done` với `merged: false`.
+- Kho hỏi đáp ticket (`<hub>/.kb-qa/qa.db`, không bao giờ được commit) chỉ được ghi bởi ba
+  MCP tool `kb_question_*`, và chỉ trên chính hub (không phải bản clone cache). Mọi bên
+  gọi mà hub xác thực đều được ghi; tên họ khai là tự khai, nên chỉ để theo dõi ai nói gì
+  và không xác thực ai. Mỗi ticket có tối đa 50 câu hỏi mở cùng lúc.
+- Một lần thử bearer token thất bại dùng chung bucket giới hạn tần suất với form đăng
+  nhập, nên không thể né khoá bằng cách chuyển sang header.
+- Khi đứng sau reverse proxy, **bắt buộc** phải cấu hình số proxy tin cậy. Mặc định là bỏ
+  qua header chuyển tiếp và khoá theo địa chỉ socket; để nguyên mặc định khi đứng sau
+  proxy sẽ khiến mọi người gọi dùng chung địa chỉ của proxy, và một người gọi có thể làm
+  cạn giới hạn của tất cả.
+- Xác thực HTTP là bearer token cho `/api`, `/mcp` và CI cùng tài khoản hub cục bộ cho UI
+  — không OAuth, không SSO. Mức đó đủ cho mạng nội bộ và chưa sẵn sàng cho Internet công
+  cộng.
 
 ---
 

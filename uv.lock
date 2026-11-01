@@ -4132,7 +4132,7 @@ wheels = [
 
 [[package]]
 name = "strata-kb"
-version = "1.34.0"
+version = "1.34.1"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
@@ -4234,7 +4234,7 @@ requires-dist = [
     { name = "twine", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
-    { name = "xhtml2pdf", marker = "extra == 'docs'", specifier = ">=0.2" },
+    { name = "xhtml2pdf", marker = "extra == 'docs'", specifier = ">=0.2.20" },
 ]
 provides-extras = ["ingest", "dev", "code", "embed", "server", "s3", "docs"]
 

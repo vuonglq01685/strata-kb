@@ -661,18 +661,23 @@ def test_docs_name_the_next_command():
     from pathlib import Path as _P
 
     root = _P(__file__).resolve().parents[1]
+    # The README keeps one command-table line per group; the BA guide carries
+    # the states and the lookup order (flags are in `kb mission next --help`).
     readme = (root / "README.md").read_text(encoding="utf-8")
-    assert (
-        "| `kb mission next` | Which story next: done / ready / draft / to-draft / blocked across `missions/`, done derived from the hub's `<repo>-svc` history, ready and draft from the ticket's Definition of Ready checklist |"
-        in readme
+    row = next(
+        (line for line in readme.splitlines() if line.startswith("| `kb mission` |")),
+        "",
     )
-    assert (
-        "`kb mission next [--missions-dir <dir>] [--tickets-dir <dir>] [--repo-id <id>] [--kb-dir <dir>] [--hub <url>] [--json]`"
-        in readme
+    assert row, "README has no '| `kb mission` |' command-table row"
+    assert "`next`" in row
+    assert "`kb ticket tidy`" in readme
+    guide = " ".join(
+        (root / "docs" / "src" / "guide-ba.en.md").read_text(encoding="utf-8").split()
     )
+    assert "| `done` | Its id is in a `hist.*` row of the hub's `<repo>-svc`" in guide
+    assert "`to-draft`" in guide and "`blocked`" in guide
     assert (
-        "| `kb ticket tidy [--tickets-dir <dir>] [--into <folder> <file>...]` |"
-        in readme
+        "`kb ticket tidy` moves a flat `tickets/` into the per-mission layout" in guide
     )
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert changelog.index("## 1.6.0") < changelog.index("## 1.5.0")
@@ -680,7 +685,7 @@ def test_docs_name_the_next_command():
     assert "**Breaking** for scripts reading the JSON `status`" in changelog
     assert (
         "`--kb-dir` is read first when it holds the `-svc` document (a dev machine), the hub second"
-        in readme
+        in guide
     )
     assert "derived from the grounded `-code` document" in changelog
 

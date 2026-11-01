@@ -81,9 +81,16 @@ def test_plan_waves_no_tasks_is_an_error(tmp_path):
 def test_docs_name_the_plan_waves_command():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "| `kb plan waves` |" in readme
+    guide = " ".join(
+        (root / "docs" / "src" / "guide-dev.en.md").read_text(encoding="utf-8").split()
+    )
     assert (
-        "| `kb plan waves` | Dependency waves of a dev plan: which tasks can run in parallel lanes; errors on a shared file without a dependency, a cycle, a missing `Depends on:` line, or an empty `Serial resource:` line; tasks with a `Serial resource:` line print after `serial:` and run one at a time |"
-        in readme
+        "`kb plan waves` fails on a shared file without a dependency, a cycle, a task "
+        "that lists no paths under **Files**, a missing `Depends on:` line or one that "
+        "names a task that does not exist, or an empty `Serial resource:` line; a task with a "
+        "`Serial resource:` line prints after `serial:` and runs alone, never in a "
+        "parallel lane" in guide
     )
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert changelog.index("## 1.4.0") < changelog.index("## 1.3.0")

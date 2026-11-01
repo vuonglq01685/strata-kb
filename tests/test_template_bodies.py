@@ -1715,7 +1715,6 @@ def test_fix_bug_refreshes_the_claim_between_intake_and_handover():
 @pytest.mark.parametrize(
     "path",
     [
-        "README.md",
         "src/strata_kb/templates/init/QUICKSTART-dev.md",
         "docs/src/guide-dev.en.md",
         "docs/src/guide-dev.vi.md",

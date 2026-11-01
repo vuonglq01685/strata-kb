@@ -6,8 +6,8 @@ in a pull request and AI agents query for exactly the passage they need.
 This document describes **how the system is built**: its data model, its
 components, the guarantees each one provides, and the topologies it is deployed
 in. It is written for architects, platform engineers and technical leads
-evaluating or operating Strata. Day-to-day instructions live in the three role
-guides that accompany it.
+evaluating or operating Strata. Day-to-day instructions live in the four role
+guides (hub, child, ba, dev) that accompany it.
 
 Strata is domain-agnostic. Nothing in the design encodes an industry, a document
 family or a language. The unit of work is "a long document whose details matter";
@@ -167,13 +167,17 @@ One executable, grouped by lifecycle stage.
 
 | Group | Commands |
 |---|---|
-| Scaffolding | `init`, `docker-setup` |
-| Authoring | `ingest`, `summarize`, `status`, `build`, `approve` |
+| Scaffolding | `init`, `docker-setup`, `mcp-setup` |
+| Authoring | `ingest`, `l3`, `summarize`, `status`, `build`, `approve`, `authored` |
 | Retrieval | `query`, `get`, `stats`, `tags` |
-| Federation | `publish`, `ci-publish`, `reindex`, `doctor`, `assets` |
+| Federation | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync` |
 | Citations | `context new`, `resolve`, `diff` |
 | Code knowledge | `code-ingest`, `svc note` |
-| Gates | `ticket lint`, `mission lint`, `pr lint` |
+| Plan knowledge | `plan-ingest`, `mission next`, `ticket fetch` |
+| Gates | `ticket lint`, `ticket check`, `ticket stale`, `mission lint`, `pr lint`, `plan waves` |
+| Tidying and export | `ticket tidy`, `ticket export`, `impl tidy` |
+| Agents | `claim`, `pr` (`find`, `view`, `open`, `checks`, `merge`, `edit`; `pr lint` is a gate above), `auto` |
+| Hub accounts | `user` |
 | Measurement | `usage` |
 
 The CLI is the reference implementation of every rule in this document. The MCP
@@ -300,8 +304,9 @@ repository cannot accidentally publish into the wrong hub.
 
 Publishing copies **artefacts only** — documents, indexes, manifests, assets.
 Configuration files and dotfiles are withheld and named in a warning. This is a
-security property, not tidiness: the `hub:` setting routinely carries a
-credentialed URL, and mirroring it would publish a token.
+security property, not tidiness: `.kb/config.yaml` holds the `hub:` and
+`intake:` settings, and a token that slipped into the file must never be
+mirrored to the hub.
 
 `kb ci-publish` is the CI route. It runs inside the publishing repository's own
 GitHub Actions job, authenticates to an intake service with GitHub Actions OIDC,
@@ -376,13 +381,13 @@ separate.
 
 | Document | Origin | Regenerated | Needs review | Tagged |
 |---|---|---|---|---|
-| `<repo_id>-code` | `kb code-ingest`, deterministic, no model | on demand from the working tree; CI publishes on every merge | no | `code, generated` |
+| `<repo_id>-code` | `kb code-ingest`, deterministic, no model | on demand from the working tree; CI publishes on each `kb publish` tag | no | `code, generated` |
 | `<repo_id>-svc` | drafted by a model from that evidence, corrected by a human | never | yes | `code, curated` |
 
-They cannot share one document for three independent reasons: `-code` is
-overwritten wholesale while `-svc` accumulates; `-svc` carries `pending` sections
-during a seed while `-code` must always build clean; and `-code` may be
-merged without a human by the repo's auto-merge switch while `-svc` needs human review (done locally, before publish).
+They cannot share one document for three independent reasons: `-code` is overwritten
+wholesale while `-svc` accumulates; `-svc` carries `pending` sections during a seed while
+`-code` must always build clean; and `-code` may be merged without a human by the repo's
+auto-merge switch while `-svc` needs human review (done locally, before publish).
 
 `-code` is never committed: its revision lives in its manifest, not in
 `index.yaml`, so a dev repo's committed index does not change when code does.
@@ -407,6 +412,16 @@ single-stack extractor set would leave most repositories with nothing.
 | `schema` | `db.<table>` | SQL migrations, Prisma, Alembic, EF, and explicitly named SQLite files |
 | `integrations` | `int.<name>` | environment-variable **keys** only |
 | `api` | `api.<tag>` | in-repo OpenAPI and Swagger contracts |
+| `routes` | `route.<slug>` | HTTP routes declared in source code (needs the `code` extra) |
+| `pages` | `page.<slug>` | UI page routes; file-system routers work without the `code` extra |
+| `jobs` | `job.<slug>` | jobs declared by framework schedulers (needs the `code` extra) |
+| `symbols` | `sym.<slug>` | exported names, enum and object members, CSS custom properties (needs the `code` extra) |
+
+`tree` also writes `struct.files.<dir>`, and every extractor reports into one
+`struct.coverage` section that says, per area, whether the scan is `complete`,
+`partial` or `not scanned`; `jobs` is never `complete`. The four source-reading
+extractors parse syntax with tree-sitter, from the optional `strata-kb[code]`
+extra.
 
 Output is an ordinary four-layer document, so build, query, federation and the Web
 UI read it with no special-casing.
@@ -501,9 +516,11 @@ repo uses:
 
 The registry entry, never the payload, decides the repo id it may write. (Its
 optional `workflow:` pin is compared with the full `job_workflow_ref`, which
-includes the tag, so it stays unset for tag-triggered publishing.) Nothing publishes on merge: the analyst
-decides when, and `/kb-publish` shows what changed before asking. A repo with no
-`intake:` configured falls back to the snapshot route.
+includes the tag, so it stays unset for tag-triggered publishing.) A merge to `main`
+(as scaffolded) that touches `missions/` or `tickets/` tags the merged commit and
+publishes (`kb-publish-request.yml`); the analyst can also run `/kb-publish`, which
+shows what changed before asking. A repo with no `intake:` configured falls back to
+the snapshot route.
 
 ## 8.3 Drift: keeping missions and tickets current
 
@@ -595,14 +612,14 @@ loudly and none of which can be skipped.
 | Prose is constrained, not free-form | Fixed summarization rules plus quality checks | Warnings by default, errors under `--strict` |
 | A human agrees before anyone can read it | The pull request on the hub | Content is unreachable through query, MCP and the UI until it merges |
 
-Note what is *not* claimed. The model is not trusted, and the design does not
-require it to be: it is confined to prose, its output is bounded by automated
-checks, and it cannot publish. Equally, the hub registry is a **mistake guard**,
-not an authentication mechanism — a publisher's remote URL is self-asserted.
-Branch protection on the hub and the OIDC intake are the controls that actually
-hold. The same holds for a `ba` repository's plan: what ships is chosen by a
-human's ticked Definition of Ready, on a tag the human pushes, and it still
-reaches readers only through a hub pull request.
+Note what is *not* claimed. The model is not trusted, and the design does not require it
+to be: it is confined to prose, its output is bounded by automated checks, and it cannot
+publish. Equally, the hub registry is a **mistake guard**, not an authentication mechanism
+— a publisher's remote URL is self-asserted. Branch protection on the hub and the OIDC
+intake are the controls that actually hold. The same holds for a `ba` repository's plan:
+what ships is chosen by a human's ticked Definition of Ready, on a tag from the analyst's
+`kb publish` or from the merge workflow, and it still reaches readers only through a hub
+pull request.
 
 ## 9.1 Service security
 

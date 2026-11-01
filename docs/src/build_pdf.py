@@ -1,38 +1,48 @@
 #!/usr/bin/env python3
 """Render the Markdown sources in this directory to PDFs in docs/.
 
-Usage:  python docs/src/build_pdf.py [name ...]
+Rebuild by hand on Windows, Linux or macOS:
 
-Fonts come from macOS's Supplemental directory because they carry the full
-Vietnamese diacritic set; ReportLab's built-in Helvetica does not.
+    uv run --extra docs python docs/src/build_pdf.py [name ...]
+
+uv uses the xhtml2pdf/reportlab/markdown versions pinned in uv.lock, so
+pagination is the same on every machine. Without uv,
+`pip install -e ".[docs]"` works but takes the newest versions, whose
+line breaking may differ.
+
+Fonts are vendored in docs/src/fonts: Liberation Sans/Mono 2.1.5 (SIL OFL
+1.1), metric-compatible with Arial/Courier New and carrying the full
+Vietnamese diacritic set that ReportLab's built-in Helvetica lacks. A glyph
+none of them can draw, or any other xhtml2pdf warning (a font it could
+not read, a fallback to Helvetica), fails the build and leaves the old PDF
+in place.
 """
 
 from __future__ import annotations
 
-import shutil
+import io
+import logging
+import re
 import sys
-import tempfile
+from datetime import date
 from pathlib import Path
 
 import markdown
 from xhtml2pdf import pisa
+from xhtml2pdf.config.resources import ResourceAccessPolicy
 
 SRC = Path(__file__).resolve().parent
 OUT = SRC.parent
 REPO_ROOT = OUT.parent
-FONT_DIR = Path("/System/Library/Fonts/Supplemental")
+FONT_DIR = SRC / "fonts"
 
 TITLES = {
     "architecture.en": ("Strata — Architecture", "Knowledge Base as Code"),
     "architecture.vi": ("Strata — Kiến trúc hệ thống", "Knowledge Base as Code"),
-    "guide-hub-child.en": (
-        "Strata — Hub & Child Guide",
-        "For knowledge owners and authors",
-    ),
-    "guide-hub-child.vi": (
-        "Strata — Hướng dẫn Hub & Child",
-        "Dành cho người quản trị và biên soạn tri thức",
-    ),
+    "guide-hub.en": ("Strata — Hub Guide", "For hub operators"),
+    "guide-hub.vi": ("Strata — Hướng dẫn Hub", "Dành cho người vận hành hub"),
+    "guide-child.en": ("Strata — Child Guide", "For document authors"),
+    "guide-child.vi": ("Strata — Hướng dẫn Child", "Dành cho người biên soạn tài liệu"),
     "guide-ba.en": ("Strata — BA Guide", "For business analysts"),
     "guide-ba.vi": ("Strata — Hướng dẫn BA", "Dành cho Business Analyst"),
     "guide-dev.en": ("Strata — Developer Guide", "For engineers implementing tickets"),
@@ -49,12 +59,12 @@ CSS = """
   @frame footer { -pdf-frame-content: footer; bottom: 9mm; left: 18mm; right: 18mm; height: 8mm; }
 }
 
-@font-face { font-family: Body; src: url("FONTS/body-regular.ttf"); }
-@font-face { font-family: Body; src: url("FONTS/body-bold.ttf"); font-weight: bold; }
-@font-face { font-family: Body; src: url("FONTS/body-italic.ttf"); font-style: italic; }
-@font-face { font-family: Body; src: url("FONTS/body-bolditalic.ttf"); font-weight: bold; font-style: italic; }
-@font-face { font-family: Mono; src: url("FONTS/mono-regular.ttf"); }
-@font-face { font-family: Mono; src: url("FONTS/mono-bold.ttf"); font-weight: bold; }
+@font-face { font-family: Body; src: url("FONT_BODY_REGULAR"); }
+@font-face { font-family: Body; src: url("FONT_BODY_BOLD"); font-weight: bold; }
+@font-face { font-family: Body; src: url("FONT_BODY_ITALIC"); font-style: italic; }
+@font-face { font-family: Body; src: url("FONT_BODY_BOLDITALIC"); font-weight: bold; font-style: italic; }
+@font-face { font-family: Mono; src: url("FONT_MONO_REGULAR"); }
+@font-face { font-family: Mono; src: url("FONT_MONO_BOLD"); font-weight: bold; }
 
 body { font-family: Body; font-size: 9.5pt; line-height: 1.45; color: #1c1c1e; }
 
@@ -117,31 +127,45 @@ PAGE = """<!DOCTYPE html>
 """
 
 
-STAGED = {
-    "body-regular.ttf": "Arial.ttf",
-    "body-bold.ttf": "Arial Bold.ttf",
-    "body-italic.ttf": "Arial Italic.ttf",
-    "body-bolditalic.ttf": "Arial Bold Italic.ttf",
-    "mono-regular.ttf": "Courier New.ttf",
-    "mono-bold.ttf": "Courier New Bold.ttf",
+FONT_FILES = {
+    "FONT_BODY_REGULAR": "LiberationSans-Regular.ttf",
+    "FONT_BODY_BOLD": "LiberationSans-Bold.ttf",
+    "FONT_BODY_ITALIC": "LiberationSans-Italic.ttf",
+    "FONT_BODY_BOLDITALIC": "LiberationSans-BoldItalic.ttf",
+    "FONT_MONO_REGULAR": "LiberationMono-Regular.ttf",
+    "FONT_MONO_BOLD": "LiberationMono-Bold.ttf",
 }
 
 
-def stage_fonts(target: Path) -> Path:
-    """Copy the Vietnamese-capable system fonts under space-free names.
+def font_css(font_dir: Path) -> str:
+    """Return CSS with each @font-face url pointing at a font in `font_dir`.
 
-    xhtml2pdf refuses to read anything outside the document's own directory
-    tree, so the fonts are copied under space-free names into a temporary
-    directory inside the repository. Nothing is committed: the directory is
-    removed when the build finishes.
+    Forward slashes (as_posix) keep the url valid on Windows too.
     """
-    target.mkdir(parents=True, exist_ok=True)
-    for alias, filename in STAGED.items():
-        source = FONT_DIR / filename
-        if not source.is_file():
-            raise SystemExit(f"missing font: {source}")
-        shutil.copyfile(source, target / alias)
-    return target
+    css = CSS
+    for placeholder, filename in FONT_FILES.items():
+        path = font_dir / filename
+        if not path.is_file():
+            raise SystemExit(f"missing font: {path}")
+        # Quoted, so FONT_BODY_BOLD cannot match inside FONT_BODY_BOLDITALIC.
+        css = css.replace(f'"{placeholder}"', f'"{path.as_posix()}"')
+    return css
+
+
+class _WarningGuard(logging.Handler):
+    """Collect every xhtml2pdf warning during one render.
+
+    A clean build has none; anything here (missing glyph, unreadable font,
+    Helvetica fallback) would otherwise ship as a silently wrong PDF.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.warnings: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        self.warnings.append((message.splitlines() or [message])[0])
 
 
 def project_version() -> str:
@@ -152,9 +176,30 @@ def project_version() -> str:
     return "0.0.0"
 
 
+# The guides and the architecture document sit side by side in docs/ as PDFs, so a
+# relative `.md` link between them becomes a link to the sibling PDF (a PDF has no
+# heading anchors, so the `#fragment` is dropped). The `file:` scheme is needed:
+# xhtml2pdf draws only links that have a scheme (or start with `#`), and reportlab
+# refuses a URI without one; viewers resolve `file:name.pdf` against the open PDF's
+# folder. `../deploy-remote-mcp.md` has no PDF, so it points at the file on GitHub.
+_SIBLING_LINK = re.compile(
+    r"\]\(((?:guide-[a-z]+|architecture)\.(?:en|vi))\.md(?:#[^)\s]*)?\)"
+)
+_DEPLOY_LINK = re.compile(r"\]\(\.\./deploy-remote-mcp\.md((?:#[^)\s]*)?)\)")
+DEPLOY_URL = (
+    "https://github.com/vuonglq01685/strata-kb/blob/main/docs/deploy-remote-mcp.md"
+)
+
+
+def rewrite_links(md: str) -> str:
+    """Make links between the sources work inside the PDFs."""
+    md = _SIBLING_LINK.sub(lambda m: f"](file:strata-{m.group(1)}.pdf)", md)
+    return _DEPLOY_LINK.sub(lambda m: f"]({DEPLOY_URL}{m.group(1)})", md)
+
+
 def render(name: str, version: str, stamp: str, css: str) -> Path:
     title, subtitle = TITLES[name]
-    md = (SRC / f"{name}.md").read_text(encoding="utf-8")
+    md = rewrite_links((SRC / f"{name}.md").read_text(encoding="utf-8"))
     body = markdown.markdown(
         md, extensions=["tables", "fenced_code", "sane_lists", "attr_list"]
     )
@@ -167,22 +212,38 @@ def render(name: str, version: str, stamp: str, css: str) -> Path:
         stamp=stamp,
     )
     dest = OUT / f"strata-{name.replace('.', '.')}.pdf"
-    with dest.open("wb") as fh:
-        result = pisa.CreatePDF(html, dest=fh, encoding="utf-8")
+    guard = _WarningGuard()
+    logger = logging.getLogger("xhtml2pdf")
+    logger.addHandler(guard)
+    buffer = io.BytesIO()
+    try:
+        # An explicit read root: xhtml2pdf's default derives it from the
+        # document path via urlsplit, which reads "C:\\..." as a URL scheme on
+        # Windows and falls back to the cwd.
+        result = pisa.CreatePDF(
+            html,
+            dest=buffer,
+            encoding="utf-8",
+            resource_policy=ResourceAccessPolicy(base_dir=FONT_DIR),
+        )
+    finally:
+        logger.removeHandler(guard)
+    if guard.warnings:
+        raise SystemExit(f"{name}: " + "; ".join(guard.warnings))
     if result.err:
         raise SystemExit(f"{name}: {result.err} rendering error(s)")
+    dest.write_bytes(buffer.getvalue())
     return dest
 
 
 def main() -> None:
     names = sys.argv[1:] or sorted(TITLES)
     version = project_version()
-    stamp = "2026-09-19"
-    with tempfile.TemporaryDirectory(prefix=".strata-fonts-", dir=REPO_ROOT) as tmp:
-        css = CSS.replace("FONTS", str(stage_fonts(Path(tmp))))
-        for name in names:
-            dest = render(name, version, stamp, css)
-            print(f"{dest.relative_to(REPO_ROOT)}  ({dest.stat().st_size // 1024} KB)")
+    stamp = date.today().isoformat()
+    css = font_css(FONT_DIR)
+    for name in names:
+        dest = render(name, version, stamp, css)
+        print(f"{dest.relative_to(REPO_ROOT)}  ({dest.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

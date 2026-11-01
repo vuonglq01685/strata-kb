@@ -1,691 +1,317 @@
 # 1. Who this guide is for
 
-You write requirements. Tickets, user stories, acceptance criteria — and for
-large features, mission plans that break them down.
+You write requirements: tickets, user stories, acceptance criteria and, for large
+features, mission plans that break them down. A ticket you finish is **Dev-ready**:
+every claim that touches a standard comes from a real document, at a known revision,
+and stays checkable months later when someone asks where it came from.
 
-Your problem is not writing. It is **grounding**: making sure that when a ticket
-says "the field is 4 characters, alphanumeric", that claim comes from a real
-document, at a known revision, and stays verifiable months later when someone
-asks where it came from.
+Your problem is not writing. It is **grounding**: Strata gives you search over published
+knowledge, **citations that pin a version** and a **Definition-of-Ready gate**
+(`kb ticket lint`, `kb mission lint`), so a ticket cannot reach a developer with a broken
+or missing citation. You **publish your plan** to the hub when it is ready, and **amend** a
+mission or ticket in place when the knowledge, architecture, scope or delivery moves.
 
-Strata gives you three things for that:
-
-1. **Search over published knowledge**, so you can find the passage instead of
-   remembering it.
-2. **Citations that pin a version**, so a ticket records exactly what the source
-   said the day you wrote it.
-3. **A Definition-of-Ready gate**, so a ticket cannot reach a developer with a
-   broken or missing citation.
-
-And once your missions and tickets are ready, you can **publish the plan** to
-the hub, so developers and other teams find *what is planned* the same way they
-find what exists (§5), and **amend** a mission or ticket in place when the
-knowledge, the architecture, the scope or the delivery moves under it (§6).
-
-## 1.1 What a BA repo does and does not do
-
-| Does | Does not |
+| A BA repo does | A BA repo does not |
 |---|---|
-| Read the hub's published knowledge | Ingest documents |
-| Cite it, pinned to a hub commit | Summarize anything |
-| Version tickets and missions in Git | Publish knowledge content |
-| Gate them in CI | Push to your issue tracker |
-| Publish its own plan (`<repo_id>-plan`) on demand | Publish drafts, or anything you did not mark ready |
+| Read the hub's published knowledge | Ingest documents or summarize anything |
+| Cite it, pinned to a hub commit | Publish knowledge content |
+| Version tickets and missions in Git, and gate them in CI | Push to your issue tracker: the assistant never opens a ticket for you |
+| Publish its own plan, `<repo_id>-plan`, when you publish or merge | Publish drafts, or anything you did not mark ready |
+| Run full-auto mode when you switch it on (section 4) | Merge or ship anything by itself otherwise |
 
-Your repository is strictly **read-only** against the *knowledge* base. You cite,
-you never contribute. That is deliberate: it keeps requirements traceable to a
-knowledge version without giving the requirements process a way to change the
-knowledge itself. The one thing you do send to the hub is your own plan: the
-missions and tickets you have reviewed, as one generated document. It sits next
-to the knowledge; it never edits it.
+Your repository is strictly **read-only** against the *knowledge* base. You cite, you
+never contribute. That is deliberate: it keeps requirements traceable to a knowledge
+version without giving the requirements process a way to change the knowledge itself.
+The one thing you send to the hub is your own plan: the missions and tickets you have
+reviewed, as one generated document. It sits next to the knowledge and never edits it.
 
-The assistant also never opens a ticket for you. It produces Markdown; you read
-it, commit it, and paste it into your tracker yourself.
+Shared concepts, such as the L0 to L3 layers and `kb-context` citations, are explained in
+the [architecture document](architecture.en.md).
+
+**Slash commands.** Every slash command in this guide exists for Claude Code, GitHub
+Copilot and Cursor, with these exceptions:
+
+- `/kb-publish` is a skill in Claude Code (`.claude/skills/kb-publish/`), not a file in
+  `.claude/commands/`. You still type `/kb-publish`.
+- A BA repo has no `/kb-ingest`, `/kb-summarize`, `/kb-init` or `/kb-l3-fix`: it never
+  ingests or summarizes.
+
+The Dev side of the hand-off (fetching your ticket, asking you questions, the Dev's own
+auto mode) is in the [Developer Guide](guide-dev.en.md#31-implement-a-ticket).
 
 ---
 
-# 2. Setup, once
+# 2. First-time setup
+
+## 2.1 Install and scaffold
 
 ```bash
 pip install strata-kb
 kb init --kind ba
 ```
 
-## 2.1 Point at the hub
+`kb init --kind ba` writes the config, the MCP wiring, the slash commands and skills for
+all three assistants, `.claude/settings.json` (merged into yours), `tickets/` and
+`missions/`, the templates under `docs/`, your `*.local.md` quality overrides (created once,
+never refreshed) and four workflows: `kb-ticket-lint.yml`, `kb-doctor.yml`,
+`kb-publish.yml` and `kb-publish-request.yml`. Re-running it is safe (6.2).
+
+## 2.2 Point at the hub and register the repo
 
 ```yaml
 # .kb/config.yaml
 kind: ba
 hub: https://github.com/acme/kb-hub.git
 repo_id: acme-requirements
-intake: ""   # set this to publish your plan, see 2.5
+intake: https://kb-intake.acme.com
 ```
 
-`hub:` is what `kb ticket lint` and `kb query` resolve references against.
-`repo_id` is no longer just a label: it names your published document,
-`<repo_id>-plan`, and must match your repo's entry in the hub registry (2.5).
+- **`hub`** is what `kb ticket lint`, `kb query` and `kb resolve` read references from.
+- **`repo_id`** names your published document, `<repo_id>-plan`, and must equal this
+  repo's id in the hub's `federation/registry.yaml`. Ask the hub operator to add your
+  `owner/repo` under `repos:` mapped to that id, and to leave `workflow:` unset: the
+  intake compares it to the full `job_workflow_ref`, which includes the publish tag, so a
+  pin never matches. Publishing is refused until you are registered. Branch protection
+  on the hub plus the OIDC intake are the actual security boundary.
+- **`intake`** is the hub's intake service URL (the operator gives it to you). With it,
+  `kb publish` pushes a `kb-publish/<ts>` tag and CI runs `kb ci-publish`, which
+  authenticates to the intake with GitHub Actions OIDC inside your own job and needs no
+  secrets. Without it, `kb publish` takes the snapshot route (a direct mirror or a PR on
+  the hub, no CI, no intake).
 
-## 2.2 Connect your assistant to the hub
+**Never put a token in `hub:` or `intake:`.** The file is committed, so the token lands
+in history. `kb doctor` warns; rewrite the URL, pass the credentialed URL in the
+`STRATA_KB_HUB` environment variable (it overrides the file), and rotate the token. Any
+machine that uses a credentialed hub URL needs Git 2.31 or newer.
 
-`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) were scaffolded
-already wired to the hub's search and citation tools, but through two
-placeholders — `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}` — that
-nothing has set yet.
+`hub:` and `STRATA_KB_HUB_URL` are different values: `hub:` is the git URL or path of the
+hub repo; `STRATA_KB_HUB_URL` is the hub's HTTP base URL, used by MCP and the auto runner.
 
-Run `kb mcp-setup` (in your assistant: `/kb-mcp-setup`; `/kb-auto` is the matching wrapper for full-auto mode, §3.11). It asks for the hub's
-HTTP base URL and token — ask your hub maintainer for the token — writes both
-into `.env`, makes sure git ignores that file, and then verifies them against
-the hub, so a wrong URL and a rejected token come back as different errors:
+## 2.3 Connect your assistant
 
-| Variable | Example |
-|---|---|
-| `STRATA_KB_HUB_URL` | `http://kb-hub.example.com:8321` |
-| `STRATA_KB_HTTP_TOKEN` | the hub's bearer token |
+`.mcp.json` (Claude Code) and `.cursor/mcp.json` (Cursor) point at the hub through two
+placeholders, `${STRATA_KB_HUB_URL}` and `${STRATA_KB_HTTP_TOKEN}`. Run `kb mcp-setup`
+(in your assistant: `/kb-mcp-setup`). It asks for the hub's HTTP base URL and token
+(get the token from the hub maintainer), writes both into `.env`, makes sure git ignores
+that file, and verifies them against the hub, so a wrong URL and a rejected token come
+back as different errors. A bare re-run reads both back out of `.env` and verifies again.
 
-A bare re-run of `kb mcp-setup` reads both values back out of `.env` and
-verifies again, so checking your connection later never means retyping the
-token. Prefer the hidden prompt or the `STRATA_KB_HTTP_TOKEN` environment
-variable over the command's `--token` flag — that flag leaves the token
-sitting in your shell history.
+Prefer the hidden prompt or the `STRATA_KB_HTTP_TOKEN` variable over `--token`. That flag
+leaves the token in your shell history and in the process listing that other users on the
+machine can read. `kb mcp-setup` also warns when the URL is plain `http://` to a
+non-loopback host, because the token then crosses the network in clear.
 
-`.mcp.json` and `.cursor/mcp.json` read those two variables from your
-environment, not from `.env` directly, so load `.env` into your shell
-(`set -a; source .env; set +a`, or use direnv) and restart your assistant —
-MCP reads the environment only at startup.
+The MCP config reads those variables from your environment, not from `.env`, at the
+moment your assistant starts. Load the file (`set -a; source .env; set +a`, or use direnv)
+and restart the assistant.
 
-## 2.3 Open the repository in your assistant
+**One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
+hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
+installs the hub's version, sets the `strata-kb==<hub version>` pins in
+`.github/workflows/`, and refreshes the skills and commands. In CI it never installs,
+re-pins or refreshes skills; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN` set reports a version mismatch as an error instead (none of the
+scaffolded workflows runs it). With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the
+MCP path and the version check, and only reports that the version was not checked against
+the hub. The files under `.github/instructions/` and `.cursor/rules/` refresh only through
+`kb init`. An unpinned `pip install strata-kb` in a job that holds `id-token: write` would
+let every run pick up whatever PyPI serves, in a job able to write to the hub; that is why
+the workflows are pinned.
 
-`ba-ticket-author` and `ba-mission-plan` are scaffolded as skills, commands and
-prompts for **Claude Code, GitHub Copilot and Cursor**. Whichever you use, the
-pipeline is the same.
-
-## 2.4 Configure the CI gate
+## 2.4 Turn on the CI gate and the daily sweep
 
 | Setting | Where | What it is |
 |---|---|---|
-| `STRATA_KB_HUB` | Actions → **Variables** | The hub the gate resolves refs against |
-| `KB_HUB_TOKEN` | Actions → **Secrets** | A read token — only needed for a private hub |
-| `KB_FAIL_ON_STALE` | **Variables**, optional | Set to any value to make an upstream amendment fail the gate |
+| `STRATA_KB_HUB` | Actions, **Variables** | The hub the gate resolves references against |
+| `KB_HUB_TOKEN` | Actions, **Secrets** | A read token, only for a private hub |
+| `KB_FAIL_ON_STALE` | **Variables**, optional | Any value makes an upstream amendment fail the gate |
 
-Then, in branch protection, **require the `kb-ticket-lint` check** on the branch
-your tickets land on. Lint running in CI does not block a merge by itself;
-requiring the check is what does.
+Then, in branch protection, **require the `lint` check** (the job in the `kb-ticket-lint`
+workflow) on the branch your tickets land on. Lint running in CI does not block a merge by
+itself; requiring the check does. The workflow runs on every pull request, not only on
+changes under `tickets/` or `missions/`, on purpose: a path filter on a *required* check
+would leave an unrelated PR waiting for a check that never starts. The job inspects the
+diff and exits cleanly when there is nothing to lint.
 
-> A pull request opened **from a fork** cannot read repository secrets, so on a
-> private hub the gate fails there with a hub-unreachable message. That is the
-> gate refusing to go green without checking, not a network fault. Merge fork
-> contributions through a branch in this repository instead.
+> A pull request opened **from a fork** cannot read repository secrets, so on a private
+> hub the gate fails there with a hub-unreachable message. That is the gate refusing to
+> go green without checking, not a network fault. Merge fork contributions through a
+> branch in this repository.
 
-## 2.5 Turn on plan publishing (optional, once per repo)
-
-Publishing needs two things, one on each side:
-
-1. **The hub operator registers your repo** in the hub's
-   `federation/registry.yaml`: the key is your `owner/repo`, mapped to your
-   `repo_id`. They leave `workflow:` unset, because the intake compares it to the
-   full `job_workflow_ref`, which includes the publish tag, so a pin never
-   matches.
-2. **You set `intake:`** in `.kb/config.yaml` to the hub's intake service URL
-   (the operator gives it to you). A repo created before this feature has no
-   `intake:` key: add `intake: <url>` by hand, then re-run `kb init --kind ba`.
-   That writes the `kb-publish` workflow, the `kb-publish` skill (with its
-   Copilot and Cursor wrappers) and `.gitattributes`, and adds `.kb/*-plan/` and `.kb/index.yaml` to
-   `.gitignore`. It never touches your `config.yaml`.
-
-Until `intake:` is set, `kb publish` takes the snapshot route (a direct mirror or a PR on the hub, no CI or intake). Both
-`.kb/<repo_id>-plan/` and `.kb/index.yaml` are generated by `kb plan-ingest`,
-so they are gitignored: never commit them.
+`kb-doctor.yml` runs `kb ticket stale` over `tickets/` and `missions/` every day at
+03:17 UTC and on demand, with the same variable and secret. The publish workflows need
+neither: they authenticate with OIDC.
 
 ---
 
-# 3. Writing a ticket
+# 3. Daily work
 
-Invoke `/ba-ticket-author` and describe the business need. The agent runs a
-nine-step pipeline; your job is steps 1, 3 and 9.
+| Task | Run | Result |
+|---|---|---|
+| Plan a large feature | `/ba-mission-plan` | `missions/M-<slug>.md` |
+| Write a ticket | `/ba-ticket-author` | `tickets/<folder>/<ticket-id>.md` |
+| Report a defect | `/ba-bug-report` | `tickets/bugs/BUG-<n>.md` |
+| Answer a Dev's question | `/ba-answer-questions` | the ticket amended, the answer on the hub |
+| Change a mission or ticket | `/ba-mission-plan --amend M-<slug>`, `/ba-ticket-author --amend <ticket>` | one revision, one change-log row |
+| See which story is next | `kb mission next` | done / ready / draft / to-draft / blocked |
+| Publish the plan | `/kb-publish`, or merge to `main` (as scaffolded) | the plan on the hub |
+
+Everything the agent does, you can do at a terminal: `kb query "<text>" [--tags t]`,
+`kb get <doc> <section> [--level l2]`, `kb context new --refs "doc §4.2, doc §4.3"` (paste
+the block under `## KB context`), `kb ticket lint <file>`, `kb mission lint <file>`.
+
+## 3.1 Plan a large feature: the mission
+
+A feature spanning several user stories gets a **mission plan** first; small work goes
+straight to a ticket. Run `/ba-mission-plan` and describe the need. The pipeline is
+**Intake, Ground, Draft, Split, Ground services, Pin, Lint, Maturity review, Review**. It
+saves `missions/M-<slug>.md` with a C4 Level 1 diagram (System Context), a C4 Level 2
+diagram (Container), a scope split and a user-story backlog whose ids derive from the
+mission id.
+
+```bash
+kb mission lint missions/M-checkout-revamp.md
+```
+
+The gate needs the structure, both diagrams, a well-formed backlog and every citation
+resolving at its pinned version. A `0/N US drafted` warning is normal: the tickets do not
+exist yet. Whether the backlog is complete stays **your** judgement. If you drop a story,
+leave its number retired: renumbering would break the file names of tickets already drafted.
+
+**The SA grounds the service list** (step 5, run for you): `/sa-ticket-ground --mission`
+fills `## Services & order`, and the gate reports FAIL on each `[NEW: D<n>]` row until you
+flip it to `DECIDED` (3.3). In a skeleton repo the agent stops at step 5b, **Decide**, and
+shows you the table once.
+
+## 3.2 Write a ticket
+
+Run `/ba-ticket-author` and describe the business need. The agent runs a nine-step
+pipeline; your jobs are steps 1, 3 and 9.
 
 ```
   1 Intake            you describe the need
-  2 Parent mission    optional — name the mission this story belongs to
+  2 Parent mission    optional, name the mission this story belongs to
   3 Ground            kb_search; YOU pick which sections apply
   4 Draft             story, Given/When/Then ACs, use cases, business flow
   5 Pin               kb_context_new embeds the pinned block
   6 Lint              kb ticket lint until DoR: PASS
   7 Ground technical  the SA fills Technical grounding; kb ticket check
   8 Maturity review   two independent reviews, one round by default
-  9 Review → save     you read it, commit it, paste it into the tracker
+  9 Review, save      you read it, commit it, paste it into the tracker
 ```
 
-## 3.1 Intake
-
-Describe the need in business terms: the capability, who needs it, and the value.
-Resist writing the solution. The agent's later steps work better from a clear
-problem than from a pre-decided implementation.
-
-## 3.2 Grounding — the step that actually matters
-
-The agent calls `kb_search` and shows you **every candidate section**, not just
-its favourite. Read them. Pick the ones that genuinely apply.
-
-This is the only step where your domain judgement cannot be delegated. The
-agent can find candidate passages; it cannot know that §4.12 is superseded in
-practice by a local policy, or that two similar sections differ in a way that
-matters here. Everything downstream — the draft, the pin, the developer's
-implementation — rests on this choice.
-
-## 3.3 Drafting
-
-The agent fills the template's **core** sections: summary, user story,
-background, acceptance criteria, use cases, a business-flow diagram,
-dependencies, out of scope, open questions. Every acceptance criterion is one
-Given/When/Then — a starting state, one action, one observable outcome — and
-every claim that touches a standard carries a `[doc-id §section]` citation.
-
-The **extended** sections are opt-in and the agent keeps one only when the
-story needs it: a sequence diagram when the interaction spans more than one
-system (an integration, a callback), non-functional requirements when the story
-touches load or timing, a UI spec when there is a screen, test data when records
-or files are processed. Anything else is deleted. Lint warns when the story's
-own words call for a section that is missing; you answer with the section or
-`N/A — <reason>`. The code-level sequence — services, tables, messages — is
-the developer's to draw at design time, not the BA's to guess.
-
-## 3.4 Pinning
-
-Once you confirm the sections, the agent calls `kb_context_new` and embeds the
-returned `## KB context` block. That block records the hub's commit at this
-moment. From now on the ticket does not say "see the handbook" — it says "this is
-exactly what the handbook said on the day this was written, and here is how to
-check."
-
-## 3.5 Lint
-
-`kb ticket lint` runs, the agent fixes what it reports, and it repeats until
-`DoR: PASS`.
-
-## 3.6 Maturity review
-
-Once lint passes, the agent runs two independent reviews against
-`docs/review-rubric.md` — one scoring **Business coverage**, one scoring **Dev
-implementability**. It applies the fixes, re-lints, and records the round. For
-a ticket that is the whole review by default: what is still open is handed to
-you as owned questions, and a score below 4 is reported, not chased. Ask for
-more rounds when you want them; a ticket with more than six acceptance criteria
-gets them automatically, up to three rounds or until both axes reach 4.
-
-A gap it cannot close itself becomes an owned open question, written
-`OPEN(<owner>)`, rather than a guess. The outcome lands in the ticket's
-`## Review record` section.
-
-Read the open questions. They are the agent telling you where it knew it did not
-know.
-
-## 3.7 Your review
-
-The draft lands in `tickets/<folder>/<ticket-id>.md` (the folder is the parent
-mission, or an epic or feature slug you name). You read it, commit it, and paste
-it into the tracker. The assistant never does that for you. What you paste is
-`kb ticket export tickets/<folder>/<ticket-id>.md`: the same ticket without the template's
-guidance comments and without the two BA-internal sections, `## Definition of
-Ready` and `## Review record`. `## KB context`, `## Dependencies` and
-`## Technical grounding` stay — the developer reads them.
-
-## 3.8 SA grounds the technical half
-
-Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the
-draft and invokes `/sa-ticket-ground` on it as its own subagent. It fills the
-SA-owned `## Technical grounding` section — service, files, tables, routes,
-pages, jobs, symbols, externals, volumes, healthcheck commands and device
-reservations, test command — each a section id from the hub's `<repo>-code`
-document. It never
-edits your sections; a business statement that contradicts the code facts is
-quoted there, not corrected.
-
-Code that does not exist yet is not missing data, it is a design decision.
-The SA proposes a row in the parent mission's `## Technology decisions`
-(status `OPEN`, a human owner) and writes `[NEW: D<n>]` pointing at it. Only
-code that exists and the document cannot prove — internal flow, failure
-modes, request bodies — goes under `Open decisions` for the developer. The one
-exception is a route, page, job, symbol, file or a table's partition, index or
-primary key: there the SA first checks whether the scan was complete (see
-*Coverage* below).
-
-`kb ticket check tickets/<ticket-id>.md` gates it: PASS only when every id
-resolves, every `[NEW: D<n>]` names a `DECIDED` row, and `Open decisions` is
-empty. A ticket with no parent mission has no table to hold a row, so the SA
-writes free-text `[NEW: <reason>]` instead — the gate accepts it as a note; a
-mission would give the decision an owner. An `OPEN` row fails and names its
-owner — flipping it to `DECIDED` is
-your call, never the agent's. The handover carries a `## Needs input` block
-listing exactly those rows.
-
-The gate also compares the `Grounded on:` revision with the current `-code`.
-That revision moves with every dev commit, so a mismatch alone never fails:
-
-- every cited fact still holds and no cited section changed → PASS with
-  `[note] grounded @<old>, still valid at @<new> — cited sections unchanged`;
-- a cited section changed but every cited name in it still exists → PASS with a
-  `[warn]` and a unified diff of that section, for the developer to judge;
-- a cited fact is gone (an id, a column, a route, a command, a `Files:` path, a
-  compose fact) → FAIL, ending with `grounding drifted since @<old> (now @<new>)
-  and no longer holds — re-run /sa-ticket-ground`.
-
-Open decisions and undecided `[NEW: D<k>]` rows fail as before, without that
-line: they are your call, not a re-ground.
-
-### Coverage: when "not in the document" means "not built"
-
-The `<repo>-code` document carries `struct.coverage`, a table that says, per
-area and scope, how much of the code the generator read: `complete` (every
-recognised form in that scope was resolved), `partial` (something was seen but
-not resolved; the `file:line` is named) or `not scanned` (not looked at; the
-reason is given, for instance the Dev repo has no `strata-kb[code]`). The areas
-are `routes`, `pages`, `jobs`, `symbols`, `files` and `schema` (a table's
-partition, index or primary key). The Dev guide §7.5 has the detail.
-
-The rule for those six areas only:
-
-- **Absent from a `complete` scope = not built.** A new route, page or symbol
-  is written `<what> in <path> [NEW: D<n>]` on a `Routes:`, `Pages:` or
-  `Symbols:` line, naming the file it will live in; the scope is the longest
-  scope listed in a `struct.coverage` row other than `files` that prefixes
-  that path, and
-  it needs its own row for the area: a nested package with no `routes` row is
-  `not scanned`, whatever its parent says. The new item goes on its own
-  sub-bullet, never on a line that also cites an existing id. A new index,
-  partition or primary key is a `Tables:` sub-bullet, `index <name> (<cols>) |
-  partition RANGE (<col>) | primary key (<cols>) on db.<table> in <path> [NEW:
-  D<n>]`, where `<path>` is the migration or schema file (area `schema`); a
-  whole new table or column is not gated. A new file is not written that way:
-  it is its own `Files:` entry, `<path> [NEW: D<n>]` (the scope is its
-  top-level directory).
-- **Absent from a `partial` or `not scanned` scope = unknown.** The SA cannot
-  tell "not built" from "the scan missed it", so the item goes under `Open
-  decisions`, quoting the coverage status, and the Dev answers it. The gate
-  fails a `[NEW: D<n>]` on such a scope (`cannot claim new: coverage of … is
-  partial; move it to Open decisions`).
-- **Jobs are never `complete`** (`jobs outside framework schedulers are not
-  detectable`). A job that exists is listed under `Jobs:` as `job.<slug> —
-  <name>`; an absent one always goes to `Open decisions`, and `[NEW]` on a
-  `Jobs:` line is always a gate error.
-- **A `[NEW]` for something the document already lists fails** (`already exists
-  in <id>; cite it instead`), when it was listed at the revision the ticket was
-  grounded on.
-- Everything else (`svc.*`, `int.*`, volumes, devices, a whole new table) keeps
-  the rule above: not built is a design decision, `[NEW: D<n>]`.
-- A `-code` document from before 1.28.0 has no `struct.coverage`: those six
-  areas go to `Open decisions` until the Dev repo is re-published, and the gate
-  does not judge the coverage rules on it, so older tickets keep passing.
-
-The new `## Technical grounding` lines are `Pages: page.<slug> — <path>`,
-`Jobs: job.<slug> — <name>` and `Symbols: sym.<slug> — <Name>`; `Routes:` also
-accepts `route.<slug> — <METHOD> <path>` (path parameters `:id`, `{id}`,
-`<int:id>` and `[id]` count as the same), and `Files:` may cite any path in
-`struct.tree` or a `struct.files.*` section. `kb init --kind ba` writes the
-updated SA prompt and ticket template. `QUICKSTART-BA.md` lists the fields.
-
-Run `/sa-ticket-ground` by hand only when `kb ticket check` fails with
-`re-run /sa-ticket-ground`.
-
-## 3.9 Reporting a bug
-
-A defect in something already live is a **bug ticket**, not a story: no "As a … I
-want …", and its acceptance is "the steps no longer reproduce the wrong result".
-Run `/ba-bug-report` (installed by `kb init --kind ba`). It asks what broke, the
-environment, the exact steps, expected and actual result, severity and
-screenshots, then drafts `tickets/bugs/BUG-<n>.md` from `docs/tickets/BUG-TEMPLATE.md`
-and lints it until `DoR: PASS`. A bug skips the maturity review and the technical
-grounding.
-
-- **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next
-  release), `> Severity: S1..S4` (required), optional `> Related ticket: <id|none>`.
-  No `> Parent mission:`.
-- **Sections.** Summary, Environment, Pre-conditions, Steps to reproduce, Expected
-  result, Actual result, Attachments, Impact, Definition of Ready.
-- **Attachments.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced in
-  `## Attachments` as `![caption](BUG-<n>/<file>.png)`. No screenshot: write
-  `N/A — <reason>`.
-- **Your part.** Tick the Definition of Ready after reading the draft (the agent
-  never does), commit the bug with its `BUG-<n>/` folder and publish it. `kb
-  publish` copies the images to the plan and the hub's ticket page shows them; the
-  Dev then runs `/dev-fix-bug BUG-<n>`.
-
-`kb ticket lint tickets/bugs/BUG-<n>.md` (and the CI gate) checks a bug against
-this contract on its own; it also checks the image files exist.
-
-## 3.10 Answering a Dev's questions
-
-While designing or planning one of your tickets, a Dev may ask you a business
-question that decides what an acceptance criterion means. The questions live on the
-hub, not in your repo. Run `/ba-answer-questions` (installed by `kb init --kind ba`):
-it lists the open questions for this repo and walks them one ticket at a time, oldest
-first, each with its context, the ACs it blocks and who asked, beside the ticket. The
-answers are yours; the agent never writes one for you.
-
-- **It needs the shared hub server.** The skill uses `kb_question_list` and
-  `kb_question_answer`, which work only when MCP points at the hub's HTTP server (`kb
-  mcp-setup`). A hub URL read through a local cache clone, or any other target, answers
-  `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, and the skill stops without changing a ticket. There is no CLI
-  for them. Any authenticated caller may write; the names (`git config user.name`) are
-  self-declared, so they track who answered and prove nothing.
-- **Question and answer format.** A Dev's question has fixed English labels, with
-  the content in the ticket's language: `**Decision needed:**` (one sentence),
-  `**Background:**`, `**Options:**` (each with its consequence), `**Dev recommends:**`
-  and `**AC impact:**`. A question written in another form is restated in this form in
-  the chat only, to help you read it; the stored question is never edited. The skill
-  records your answer in this form: `**Decision:**` (your own words, not reworded),
-  `**Ticket changes (rev N):**`, `**Follow-ups:**` and, only if there are any,
-  `**Assumptions:**`. The hub's Q&A page shows both with their line breaks and lists.
-- **One amendment per ticket.** An answer that changes behaviour amends the ticket
-  under §6.2: `> Revision:` becomes N+1, one `## Change log` row with Trigger
-  `question`, What changed `Q<ids>: <one line>`, Affected the changed sections, one
-  maturity review round, and `kb ticket lint` must pass. All the questions of a ticket
-  go into the same amendment.
-- **Re-tick the Definition of Ready.** The amendment unticks the boxes whose evidence
-  changed, and `kb plan-ingest` drops a ticket whose Definition of Ready is not fully
-  ticked, which would take the ticket off the hub. The skill shows you the unticked
-  boxes; re-check and re-tick them. Until every box is ticked it records no answer for
-  that ticket.
-- **Waiting for publish.** The skill records each answer on the hub with the revision
-  it expects (N+1). It never commits, pushes or publishes, and it does not wait: you
-  commit and merge as usual (or `/kb-publish`). Until revision N+1 reaches the hub, the
-  question shows as *waiting for publish* and the Dev is told not to act on the answer.
-  An answer that changes nothing (the hub's revision already says it, or the question
-  is no longer needed) is recorded as answered at once.
-- **Where to look.** The hub's **Q&A** menu (`/ui/questions`) lists every ticket with
-  questions and their state: open, waiting for publish, answered.
-
-## 3.11 Full-auto mode (optional)
-
-A switch that lets this BA repo run on its own, beside a Dev repo in full-auto mode,
-until every ticket on the hub is done. Nothing waits for you: the agent decides each
-D-row and open question, answers the Dev's questions, ticks the Definition of Ready
-after its own review, merges and publishes. It writes down why in an
-`**Auto decision:**` line under the `## Change log`. Built for **one BA repo and one
-Dev repo per hub**. Full reference: README, "Full-auto mode".
-
-**Security. Read this first.** The permission deny list is defence in depth, not a
-boundary. The run merges with **admin rights** and publishes with no human review, and a
-ticket the agent gets wrong goes straight to `main` and the hub. The repo owner must
-enable GitHub branch protection on `main` (no force-push, no deletion, **include
-administrators**) and keep the ticket-lint CI check (`lint` in `kb-ticket-lint.yml`) required before you turn it on.
-Do **not** require approving reviews on `main`: the agent cannot approve its own PR, and
-`gh pr merge --admin` is refused when administrators are included. If you do require
-reviews, exclude administrators from that rule and accept that the agent can then bypass it.
-
-**Set up once.**
-
-1. Write the first mission yourself (`/ba-mission-plan`). The loop works the backlog
-   it is given.
-2. Make sure `intake:` is set in `.kb/config.yaml` and the hub's Registry page has
-   auto-merge **on** for this repo (and for the Dev repo). The hub must be 1.29.0 or
-   later.
-3. Re-run `kb init --kind ba` to get the permission allowlist in `.claude/settings.json`
-   (merged into your file, your entries stay) and the skills' Auto mode sections.
-4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values in `.mcp.json`)
-   and have the `claude` CLI logged in with your subscription.
-5. After `kb auto on`, commit and push `.kb/config.yaml` and `.claude/settings.json` to the default
-   branch. `kb auto run` refuses until you do: the Q&A worktree is checked out from the
-   default branch, and `kb publish` refuses a dirty `.kb/`.
-
-**Run.** `kb auto on` (prints the warnings and flips `auto.enabled` in
-`.kb/config.yaml`), commit and push the two files above, then `kb auto run` in a terminal — or `/kb-auto run` from your editor, which does the commit, the push and starts the loop detached (log in `.kb/auto/run.log`). `kb auto status` shows the switch,
-the current task, and why it stopped; `kb auto off` stops the loop after the current
-task.
-
-**What it does.** One fresh `claude -p` process per task, so no task inherits the
-last one's context. In order: a story held by an open D-row or blocking open question
-(`/ba-mission-plan --amend`), a `draft` ticket (`/ba-ticket-author --amend`), the next
-`to-draft` story (`/ba-ticket-author`), otherwise it waits `idle_interval` seconds. Each
-change goes through a branch, a PR, green CI and a merge; the merge publishes. A
-second process, in its own worktree `.kb/auto/worktrees/qa`, answers the Dev's open
-questions, one ticket at a time with `/ba-answer-questions <ticket-id>`, every `qa_interval` seconds.
-A ticket and its mission move together: when a ticket's own D-row or open question
-blocks it, `/ba-ticket-author` settles it and amends the mission in the same PR, and a
-mission amend re-authors the not-done tickets it lists in `Affected` in its PR.
-
-**When it stops.** After two failed attempts at one task (a red CI after two fix rounds stops it at once),
-`kb auto status` shows the reason. Fix it, then `kb auto run` resumes the same task.
-A ticket whose Definition of Ready cannot be re-ticked is parked, not a failure: its draft
-goes to branch `auto/qa-parked/<ticket>` and the Q&A process moves on. When only parked tickets
-have open questions and the BA has no task, it stops with `parked: <tickets>` (exit `2`);
-fix the ticket, then `kb auto run`. A task that ended `done` but is still picked after 5 checks
-(a draft whose Open decisions only the SA or Dev can close) is skipped, listed under `skipped` in
-`kb auto status`, and the loop moves on to the next draft or story; when every task left is skipped
-it stops with `every task left was skipped: <tasks>`, and `kb auto run` retries them. A usage-limit wait (15, 30, then 60 minutes) is not a failure. It finishes, exit `0`,
-when every story and unparented ticket and bug is `done` and no question is open.
-State and logs are in `.kb/auto/` (git-ignored).
-
----
-
-# 4. Mission plans — for large features
-
-A feature spanning several user stories gets a **mission plan** first. Small work
-goes straight to a ticket. A mission is never mandatory.
-
-```bash
-/ba-mission-plan
-```
-
-The pipeline is **Intake → Ground → Draft → Split → Ground services → Pin →
-Lint → Maturity review → Review**, and it saves `missions/M-<slug>.md`.
-
-A mission carries:
-
-- A **C4 Level 1** diagram (System Context) and a **C4 Level 2** diagram
-  (Container).
-- A **scope split** — what is in, what is explicitly out.
-- A **user-story backlog** whose ids derive from the mission id.
-
-```bash
-kb mission lint missions/M-checkout-revamp.md
-```
-
-The gate enforces: required structure, both diagrams present, a well-formed
-backlog whose ids derive from the mission id, and every citation resolving at the
-pinned hub version. A `0/N US drafted` coverage warning is normal — the tickets do
-not exist yet.
-
-What stays **your** judgement: whether the backlog is actually complete.
-
-## 4.1 Linking tickets to a mission
-
-When drafting a story from the backlog, name the parent mission. The agent then:
-
-- reads `missions/<mission-id>.md` and takes the story title from the backlog row,
-- writes `> Parent mission: <mission-id> @ rev <N>` on its own line directly
-  under the ticket title, where `<N>` is the mission's current `> Revision:`
-  (the `@ rev` part is optional; absent means rev 1),
-- saves the ticket as `tickets/<mission-id>/<mission-id>-US<n>.md`.
-
-That filename is what the back-link check looks for. With the parent line, every
-story the ticket's `- Blocked by:` names must also be in its `Depends on` cell in
-the mission's `## Sequencing`, or `kb ticket lint` fails: the Dev's auto runner
-reads only `Depends on`. Dropping the parent line is
-valid — the ticket just becomes untraceable to its mission. The pin matters once
-you amend the mission (§6.3): it is how `kb mission next` knows the ticket was
-written against an older revision. `kb ticket tidy` moves a flat `tickets/` into
-the per-mission layout by that line.
-
-## 4.2 Numbering
-
-Backlog numbering gaps are fine. If you drop a story, leave its number retired.
-Renumbering would break the filenames of tickets already drafted.
-
-## 4.3 SA grounds the service list
-
-Step 5 runs this for you. Once you confirm the backlog and `## Sequencing` is
-filled, the agent invokes `/sa-ticket-ground --mission` and it fills
-`## Services & order` — one row per `svc.<name>` from the hub's
-`<repo>-code` document, with `Depends on` copied from that record. A service
-the mission will create carries `[NEW: D<n>]`, pointing at a row the SA
-appends to `## Technology decisions` for you to decide. The gate then
-reports FAIL on exactly those rows until you flip them to `DECIDED` —
-that is the expected result, not a defect. Capability layer
-only: no file names, no tables, no routes — those belong to each ticket's own
-`## Technical grounding`, filled later at §3.8.
-
-In a skeleton repo every row the architecture document supports cites it
-in the Decision cell (`[<arch-doc> §<section>]`), and the agent stops at step
-5b — **Decide** — to show you the whole table once. Flip the cited rows you
-confirm to `DECIDED`; leave an uncited row `OPEN` with a named owner. You
-decide here, once, not ticket by ticket. The first story of such a mission is
-the **foundation slice**: what the architecture document says must exist
-before any feature story, with every other story depending on it in
-`## Sequencing`.
-
-## 4.4 Which ticket next
+- **Ground.** The agent shows **every candidate section**, not just its favourite. Pick
+  the ones that genuinely apply. Your domain judgement cannot be delegated here: the agent
+  cannot know that a section is superseded in practice by a local policy.
+- **Maturity review.** Two independent reviews against `docs/review-rubric.md` (Business
+  coverage, Dev implementability). A gap it cannot close becomes an owned open question,
+  `OPEN(<owner>)`, never a guess: read those, they are where the agent knew it did not
+  know. Round limits are in the skill. The review scores are agent-reported: `kb ticket lint`
+  checks only that `## Review record` has the right shape, not how a score was reached.
+- **Review and save.** The draft lands in `tickets/<folder>/<ticket-id>.md`. You read it,
+  commit it and paste `kb ticket export tickets/<folder>/<ticket-id>.md` into the tracker:
+  the ticket without guidance comments, `## Definition of Ready` and `## Review record`.
+
+**Linking to a mission.** Name the parent mission when you draft a story from its backlog.
+The agent writes `> Parent mission: <mission-id> @ rev <N>` under the title and saves
+`tickets/<mission-id>/<mission-id>-US<n>.md`. Every story the ticket's `- Blocked by:` names
+must also be in its `Depends on` cell in the mission's `## Sequencing`, or `kb ticket lint`
+fails: the Dev's auto runner reads only `Depends on`. `kb ticket tidy` moves a flat
+`tickets/` into the per-mission layout by the parent line.
+
+## 3.3 The SA grounds the technical half
+
+Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the draft and runs
+`/sa-ticket-ground` as its own subagent. It fills the SA-owned `## Technical grounding`
+(service, files, tables, routes, pages, jobs, symbols, test command), each a section id from
+the hub's `<repo>-code`, and never edits your sections. Code that does not exist yet is a
+design decision: the SA proposes a `## Technology decisions` row in the parent mission
+(status `OPEN`, a human owner) and writes `[NEW: D<n>]`. With no parent mission it writes a
+free-text `[NEW: <reason>]` note instead.
+
+`kb ticket check tickets/<folder>/<ticket-id>.md` gates it (exit `0` PASS, `1` FAIL):
+
+| Output | Meaning | What to do |
+|---|---|---|
+| PASS, `[note] ... still valid` | Nothing the ticket cites changed | Nothing |
+| PASS, `[warn]` with a diff | A cited section changed, every cited name still holds | The developer judges the diff |
+| FAIL, `re-run /sa-ticket-ground` | A cited id, column, route, command or file is gone | Run `/sa-ticket-ground` by hand |
+| FAIL, names an `OPEN` row and its owner | A `[NEW: D<n>]` points at an undecided decision | Flipping it to `DECIDED` is your call, never the agent's |
+| FAIL, `Open decisions` not empty | The document cannot prove something | Yours or the Dev's to decide; no re-ground |
+
+The handover lists open rows in a `## Needs input` block. How the SA tells "not built" from
+"not scanned" is in 6.4.
+
+## 3.4 Which story next
 
 ```bash
 kb mission next
 ```
 
-Every backlog story across `missions/` comes back as one of five states:
-
 | State | Means |
 |---|---|
-| `done` | Its id is in a `hist.*` row of the hub's `<repo>-svc`, which `kb svc note` writes at the developer's handover and CI publishes on merge |
-| `ready` | The ticket file exists and every `## Definition of Ready` box is ticked |
-| `draft` | The ticket file exists but a DoR box is unticked, or there is no DoR section, or the parent mission moved on (below) |
-| `to-draft` | No ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED`, no unticked open question names it in `blocks:` |
-| `blocked` | The reasons are named: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)`. A D-row or open-question reason also fails `kb ticket lint` on the story's ticket |
+| `done` | Its id is in a `hist.*` row of the hub's `<repo>-svc`, written at the Dev's handover and published by the Dev's `kb publish` after the merge |
+| `ready` | The ticket exists and every `## Definition of Ready` box is ticked |
+| `draft` | The ticket exists but a box is unticked, the section is missing, or the parent mission moved on |
+| `to-draft` | No ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED`, no open question names it in `blocks:` |
+| `blocked` | Named reasons: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)` |
 
-The report ends with `Next: <us-id> — <title>`; `/ba-ticket-author` with no
-argument runs it first and proposes that story. A dependency that is only `draft`
-or `ready` still blocks: done means merged. Cross-mission order is a
-`Depends on` cell naming another mission's story (`M-<other>-US<n>`).
+The report ends with `Next: <us-id> — <title>`; `/ba-ticket-author` with no argument runs
+it first and proposes that story. A dependency that is only `draft` or `ready` still
+blocks: done means published on the hub. A ticket is also `draft`, reason
+`parent mission rev <M> affects this story`, when its mission's `> Revision:` is above the
+ticket's `@ rev` pin **and** a later change-log row lists the story in `Affected`. The
+command is read-only and exits `0` except on a usage error. `--kb-dir` is read first when
+it holds the `-svc` document (a dev machine), the hub second; an unreachable hub or
+unpublished `-svc` becomes a `note:` line. With `--from-hub` (and `--repo <ba-repo-id>`)
+it reads the published plan instead: a published ticket is `ready`, and `draft` cannot be
+seen.
 
-A ticket is also reported `draft`, with the reason
-`parent mission rev <M> affects this story`, when two things hold: its mission's
-`> Revision:` is higher than the ticket's `@ rev` pin, **and** a change-log row
-after the pin lists the story in `Affected`. Amend the ticket (§6.2) and set its
-pin to the mission's revision, and it is `ready` again once you re-tick.
+## 3.5 Report a bug
 
-The command is read-only and exits 0 after its report. A hub that is not
-configured or reachable, a `-svc` not yet published, or no mission with a
-`Grounded on:` line becomes a `note:` line, never a failure — nothing is
-marked `done` until the hub can answer.
+A defect in something live is a **bug ticket**: no "As a ... I want ...", and its acceptance
+is "the steps no longer reproduce the wrong result". Run `/ba-bug-report`. It asks what
+broke, the environment, the exact steps, expected and actual result, severity and
+screenshots, drafts `tickets/bugs/BUG-<n>.md` from `docs/tickets/BUG-TEMPLATE.md` and lints
+it until `DoR: PASS`. A bug skips the maturity review and the technical grounding.
 
-`kb mission next --from-hub [--repo <ba-repo-id>]` computes the same report from
-the hub alone: no `missions/` or `tickets/` needed. A story whose ticket is
-published is `ready`; `to-draft` reads `not ready (no published ticket)`; the
-repo-only states (`draft`, the revision demotion) cannot be seen from the hub,
-because such tickets are not published. The hub's Ticket menu (§5.3) shows the
-same thing in a browser.
+- **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next release) and
+  `> Severity: S1..S4`, both required; optionally `> Related ticket: <id|none>`. No
+  `> Parent mission:`.
+- **Screenshots.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced as
+  `![caption](BUG-<n>/<file>.png)` under `## Attachments`; with none, `N/A — <reason>`.
+- **Your part.** Tick the Definition of Ready after reading the draft (the agent never
+  does), commit the bug with its folder and publish. The Dev then runs
+  `/dev-fix-bug BUG-<n>`.
 
----
+## 3.6 Answer a Dev's questions
 
-# 5. Publishing the plan
+While designing or planning a ticket, a Dev may ask a business question that decides what an
+acceptance criterion means ([the Dev side](guide-dev.en.md#33-questions-for-the-ba)). The
+questions live on the hub. Run `/ba-answer-questions [ticket]`: it lists this repo's open
+questions and walks them one ticket at a time, oldest first, each with its context, the ACs
+it blocks and who asked. The answers are yours; the agent never writes one for you. It needs
+MCP pointed at the hub's HTTP server (`kb mcp-setup`); there is no CLI for it.
 
-Once a mission or ticket is reviewed, you can put it on the hub. Developers, SAs
-and other teams then find what is planned, not only what exists. Publishing is
-on demand: nothing goes out when you merge. The setup is §2.5.
+- **Format.** Questions and answers use fixed English labels (`**Decision needed:**`,
+  `**Decision:**`, `**Ticket changes (rev N):**`, and so on); the skill writes them and
+  the content follows the ticket's language.
+- **One amendment per ticket.** An answer that changes behaviour amends the ticket as in 3.7:
+  `> Revision:` becomes N+1, one `## Change log` row with Trigger `question`, What changed
+  `Q<ids>: <one line>`, one maturity review round, and lint passes. All the questions of a
+  ticket go into the same amendment.
+- **Re-tick the Definition of Ready.** The amendment unticks the boxes whose evidence
+  changed, and `kb plan-ingest` drops a ticket whose boxes are not all ticked, which would
+  take it off the hub. Until every box is ticked the skill records no answer for it.
+- **Waiting for publish.** The skill never commits, pushes or publishes. Until revision N+1
+  reaches the hub the question shows as *waiting for publish* and the Dev is told not to act
+  on it; an answer that changes nothing is recorded as answered at once. The hub's **Q&A**
+  menu (`/ui/questions`) shows open, waiting and answered questions.
 
-## 5.1 What gets published
+## 3.7 Keep missions and tickets current
 
-`kb plan-ingest` decides. It is deterministic, needs no LLM and no hub, and runs
-offline. It publishes:
-
-| Item | Published when |
-|---|---|
-| Mission | `kb mission lint` finds no structural error. Its `## Definition of Ready` is **not** a publish gate: whatever is done ships, and every amend republishes it |
-| Ticket | `kb ticket lint` finds no structural error (that includes: no undecided D-row and no unticked open question of its mission blocks the story) **and** every DoR box is ticked **and** `kb mission next` would not demote it to `draft` (§4.4) |
-
-Whether a citation still resolves is **not** a publish gate: that needs the hub,
-and `kb-ticket-lint` already gates the pull request on it. Drafts are never
-published. Your `## Review record` and `## Definition of Ready` sections are not
-published either: a ticket on the hub had its DoR fully ticked.
-
-Everything else is left out, and each one prints a line:
-
-```text
-skipped: tickets/M-checkout/M-checkout-US3.md — Definition of Ready not fully ticked (6/8)
-```
-
-The reasons you can see:
-
-| Reason | What to do |
-|---|---|
-| `lint error: <first error>` (`(+N more)` when there are several) | Run `kb mission lint` or `kb ticket lint` on the file and fix it |
-| `Definition of Ready not fully ticked (<ticked>/<total>)` (tickets only) | Finish the review, then tick the boxes. The assistant ticks only the boxes a tool proves (§6.2); the judgement boxes are yours |
-| `parent mission rev <M> affects this story` | The mission changed after the ticket was written: amend the ticket (§6.2) |
-| `fenced line starting with '## ' would split the section — indent it inside the fence` | A code fence in the file holds a line that starts with `## `. Indent that line inside the fence |
-| `id contains whitespace` | The file name has a space in it. Rename the file |
-| `duplicate id <stem>; kept the first` | Two files share a name. Rename one |
-| `no '# ' title line` | The file has no `# Title` line. Add one |
-
-A skip never fails the command and never blocks a publish. When it runs in
-GitHub Actions the same lines go to the step summary. `kb plan-ingest` exits `1`
-only when it cannot run: an unreadable or non-UTF-8 input file, a missing
-`--missions-dir` or `--tickets-dir`, an invalid repo id, a destination it did not
-generate, a corrupt `index.yaml`, or a write failure. Lint errors are skip
-reasons, not failures.
-
-## 5.2 Publishing
-
-```bash
-/kb-publish          # or: kb publish
-```
-
-`kb publish` first runs `kb plan-ingest` and `kb build`, so what you review
-locally is what CI will send. Run `kb plan-ingest` yourself first to see which
-items ship and which are skipped. After one explicit go or no-go from you,
-`kb publish` tags the commit `kb-publish/<timestamp>` and pushes the tag. The tag
-triggers `.github/workflows/kb-publish.yml`, which runs `kb plan-ingest`,
-`kb build` and `kb ci-publish`; the hub's intake then opens a pull request on the
-hub. The content is live when that PR is merged.
-
-`kb publish` refuses a dirty `.kb/`. Because `.kb/<repo_id>-plan/` and
-`.kb/index.yaml` are gitignored in a BA repo, regenerating them never makes it
-dirty. Do not commit them.
-
-An item that stops qualifying (say, you un-ticked a DoR box while amending it)
-drops out of the plan at the next publish. That is intended: no placeholder is
-left, and the hub's git history keeps every earlier version.
-
-## 5.3 What it looks like on the hub
-
-The plan is one document, `<repo_id>-plan`, next to `-code` and `-svc`:
-
-- one **group per mission** (`M-<slug>`): the mission, then its published tickets;
-- a **`tickets` group** for tickets with no published parent mission;
-- each section is `## <id> <title>`, with `M-<slug>-US<n>` as the ticket id.
-
-The L3 text is your source with the title line dropped, the headings demoted one
-level, and the two BA-internal sections removed. `## Open questions` stays. The
-L2 text keeps every table byte for byte, plus the mission's summary and business
-goal or the ticket's story and acceptance criteria. Agents search it with
-`kb_search`; people read it in the web UI under **Ticket**, a menu beside
-Document:
-
-| Page | Shows |
-|---|---|
-| `/ui/tickets` | Every BA repo and its missions, with counts per status. `?repo=<id>` for one repo, including its "tickets without mission" |
-| `/ui/tickets/<mission>?repo=<id>` | The mission summary and backlog: each story's status, its reasons, a link to its ticket |
-| `/ui/tickets/<mission>/<story>?repo=<id>` | The ticket itself |
-
-Status is derived and read-only: **done** (the story is in the Dev repo's `-svc`
-history), **ready** (its ticket is published; a dependency not done yet shows as
-its reason), **not ready** (no published
-ticket, dependencies done) or **blocked** (with reasons). To change a status you
-change the source: finish and publish the ticket, or have the Dev hand it over.
-The tracker, not the hub, is the place for "in progress" and for assignees.
-
-A Dev given only a ticket id fetches it from here (`kb ticket fetch <id>`); see
-the Developer Guide.
-
----
-
-# 6. Keeping missions and tickets current
-
-A mission is written once, up front, and then reality moves: cited knowledge is
-amended, the architecture changes, the scope shifts, delivery teaches something.
-This section is how you change a mission or ticket without losing track of why.
-
-## 6.1 Revision and change log
-
-Every mission and ticket carries `> Revision: <N>` directly under its title,
-starting at 1, and an append-only `## Change log` placed before `## Review
-record`:
+Every mission and ticket carries `> Revision: <N>` under its title, starting at 1, and an
+append-only `## Change log` before `## Review record`:
 
 ```text
 | Rev | Date | Trigger | What changed | Affected | Review |
@@ -693,191 +319,102 @@ record`:
 | 2 | 2026-10-14 | kb-context, scope | Refund window cut to 14 days | M-checkout-US3, M-checkout-US5 | B4 D4 (agent) |
 ```
 
-| Column | Content |
-|---|---|
-| `Trigger` | One or more of `kb-context`, `architecture`, `scope`, `delivery`, comma-separated. `question` is added only by `/ba-answer-questions` (§3.10) |
-| `Affected` | In a mission, the **full** story ids (`M-<slug>-US<n>`). A bare `US3` is not matched, so a ticket would never be flagged. In a ticket, the section names. `-` when none |
-| `Review` | The amendment's maturity scores, e.g. `B4 D4 (agent)`. Amendment reviews go here, never in `## Review record` |
-
-Lint enforces it. A missing `Revision` reads as 1 and only warns, so old files
-still pass. With `Revision: N` above 1, the log must hold **exactly one row per
-revision `2..N`, in order**, and every `Trigger` must be one of the five
-values (`kb-context`, `architecture`, `scope`, `delivery`, `question`); otherwise lint fails.
-
-## 6.2 Amending
+`Trigger` is one or more of `kb-context`, `architecture`, `scope`, `delivery`; `question`
+is added only by `/ba-answer-questions`. In a mission, `Affected` lists the **full** story
+ids (`M-<slug>-US<n>`; a bare `US3` is not matched). Lint needs exactly one row per revision
+`2..N`, in order, with valid triggers.
 
 ```bash
 /ba-mission-plan --amend M-checkout
 /ba-ticket-author --amend M-checkout-US3
 ```
 
-Neither starts from Intake, creates a file, or renames anything. The agent:
+Neither starts from Intake or renames anything. The agent asks you for the trigger and what
+changed (drift findings pre-fill the answer, it never guesses), applies the change rules,
+bumps `Revision`, appends the row, lints, runs one maturity review of the changed sections
+and hands you the diff. It never commits or pushes. Amending a ticket **unticks** the
+Definition-of-Ready boxes whose evidence changed.
 
-1. reads the file and the `kb ticket stale --md` findings for it (and, for a
-   mission, `kb mission next`, to see which stories are done);
-2. asks you for the trigger(s) and what changed. Drift findings pre-fill the
-   answer, but it asks rather than guesses;
-3. for `kb-context`, re-pins `## KB context` with `kb_context_new` using the
-   **full** list of refs (kept, moved and new), replacing the block. You
-   re-confirm only the moved or new refs;
-4. for a **ticket**, runs `kb ticket check` on every amend. An `architecture`
-   trigger first hands off to `sa-ticket-ground`, which refreshes
-   `## Technical grounding` and the `Grounded on:` revision; any other trigger
-   calls the SA only when the check fails with `re-run /sa-ticket-ground`, and
-   reports any other FAIL to you. For a **mission**, `architecture` **only**
-   hands off to `sa-ticket-ground --mission` and runs the check: a mission's own
-   stories change the `svc.*` sections it cites while it is delivered. The BA
-   skills still never read `-code` themselves;
-5. applies the change rules (§6.3), bumps `Revision` and appends the change-log row;
-6. lints until PASS, and runs one maturity review of the **changed sections only**;
-7. hands you the diff.
+**Who ticks the Definition of Ready.** The agent ticks, naming the evidence, every box a tool
+proves after its last edit (`DoR: PASS`, a clean `kb_ticket_stale`, `kb_ticket_check` PASS,
+at most 10 ACs). The judgement boxes ("every AC is Given/When/Then and acceptance-testable",
+"backlog reviewed with the team") stay yours, and the agent never ticks an open question.
 
-Amending a ticket also **un-ticks** the Definition of Ready box(es) whose
-evidence changed, and updates the `@ rev` pin once the ticket reflects every
-change-log row since its old pin that lists it. The agent never commits or pushes.
+**Change rules.**
 
-**Who ticks the Definition of Ready.** The agent ticks, on its own, every DoR box
-a tool proves after its last edit, and names each one with its evidence in the
-handover: `DoR: PASS` from lint (run against the hub), a clean `kb_ticket_stale`,
-`kb_ticket_check` PASS with `Open decisions` empty, at most 10 ACs; for a mission,
-`kb mission next` showing no story blocked by a D-row, and every
-`impact: architecture` open question ticked. The judgement boxes stay yours:
-"every AC is Given/When/Then and acceptance-testable" on a ticket, and "backlog
-reviewed with the team" on a mission. The agent never ticks an open question; its
-owner closes it. You read the diff, tick what is left, commit, and `kb publish`
-to ship it.
-
-## 6.3 Change rules
-
-- **Done stories are frozen.** A story `kb mission next` reports `done` keeps its
-  backlog row unchanged. New or changed work becomes a **new row with the next
-  free number**. Numbers are never reused or renumbered: they are cited in
-  trackers, pull requests and the Dev repo's history.
+- **Done stories are frozen.** A `done` story keeps its backlog row. New or changed work is
+  a **new row with the next free number**; numbers are never reused or renumbered.
 - **Stories not yet done may be edited.** List each one in the row's `Affected`.
-- **Decisions are superseded, not edited.** A `DECIDED` row in `## Technology
-  decisions` is never rewritten. Add a new row `D<n>` with `Supersedes D<k>` in
-  its Decision cell, and set `D<k>`'s status to `SUPERSEDED`. Then
-  `kb ticket check` rejects any `[NEW: D<k>]` that still names `D<k>`, and
-  tells you the row that supersedes it; `kb mission next` judges a `SUPERSEDED`
-  blocker by the row that supersedes it, so a story is not blocked for ever. If
-  a mission or ticket still cites the old row, the amendment must carry the
-  `architecture` trigger, so the SA re-points it. The agent lists the files that
-  cite it.
-- **Tickets follow their mission.** A ticket's parent line is `> Parent mission:
-  M-<slug> @ rev <N>`. When the mission is amended, any ticket whose story is in
-  the new row's `Affected` becomes `draft` in `kb mission next` (§4.4) and drops
-  out of the published plan until you amend it.
+- **Decisions are superseded, not edited.** Never rewrite a `DECIDED` row. Add `D<n>` with
+  `Supersedes D<k>` in its Decision cell and set `D<k>` to `SUPERSEDED`; `kb ticket check`
+  then rejects any `[NEW: D<k>]`. A file that still cites the old row needs the
+  `architecture` trigger.
+- **Tickets follow their mission.** A ticket whose story a mission amendment lists in
+  `Affected` becomes `draft` and drops out of the published plan until you amend it.
 
-Publishing needs nothing extra: the amended item ships on your next
-`kb publish`, and `Revision` plus `## Change log` make the version readable
-inside the document.
+## 3.8 Publish the plan
 
----
-
-# 7. Using code knowledge
-
-Besides domain documents, the hub holds two documents per product repository,
-published by that repository's own workflow: `<repo>-code` (generated
-structure — `svc.*`, `db.*`, `api.*`, `int.*`, `cmd.*`, `route.*`, `page.*`,
-`job.*`, `sym.*`, `struct.tree`, `struct.files.*`, `struct.coverage`) and
-`<repo>-svc` (curated responsibility — what each service is actually for).
-
-The `ba-ticket-author` and `ba-mission-plan` skills do not read either
-document themselves. Where a ticket or mission needs a service, table, route
-or file name, they write `%%TODO: verify against codebase%%` with an owned
-open question instead of guessing, and `/sa-ticket-ground` (§3.8, §4.3)
-answers those from `<repo>-code` in the SA-owned section — `##
-Technical grounding` in a ticket, `## Services & order` in a mission. Every
-id it writes is checked against the document by `kb ticket check`; what the
-document cannot prove — internal flow, failure modes, request bodies — is
-parked under `Open decisions` for the developer, who has the code.
-
-The section reference itself, spelled the way a real citation is:
-
-```text
-<repo>-code §svc.<name>
-<repo>-svc §svc.<name>
-```
-
-> **One caution.** `<repo>-svc` grounds a diagram. It is never a substitute for a
-> domain citation in an acceptance criterion. A code, format, enum or threshold
-> that encodes a standard must still come from a pinned domain section, not from
-> a service's responsibility text.
-
----
-
-# 8. What the gate checks — and what it does not
-
-## 8.1 Errors (the gate fails)
-
-- **Required sections present**: Summary, User Story, Background, Acceptance
-  Criteria, Use cases, Business flow, KB context, Definition of Ready.
-- **No heading appears twice.** A second `## Technical grounding` — an SA
-  appending instead of replacing — fails the gate; the tool reads only the
-  first copy, so a duplicate would otherwise pass a stale section.
-- **At most 10 acceptance criteria.** More than ten `- [ ]` items under
-  `## Acceptance Criteria` fails the gate. Split the ticket — merging two
-  conditions into one AC to fit under the cap is the thing the rule exists to
-  stop.
-- **Exactly one user story.** More than one `As a … I want … so that …` shape
-  under `## User Story` fails the gate. One ticket per story.
-- **Every `## KB context` ref resolves** at its pinned hub commit. No broken or
-  malformed refs.
-- **Every inline `[doc-id §section]` citation is backed by a pinned ref.**
-- **The change log matches the revision.** With `> Revision: N` above 1,
-  `## Change log` must hold exactly one row per revision `2..N`, in order, and
-  every `Trigger` must be `kb-context`, `architecture`, `scope`, `delivery` or `question`.
-
-A citation written in the old bare form still counts, with a warning telling you
-to bracket it.
-
-## 8.2 Warnings (still your judgement)
-
-| Warning | Why it is not an error |
-|---|---|
-| An acceptance criterion touching a standard has no citation | The tool cannot reliably tell which criteria touch a standard |
-| The business quality of the story | Not machine-checkable |
-| `> Revision: <N>` line missing | It reads as 1, so a file written before revisions existed still passes |
-| `## Review record` missing, empty, or still a placeholder | Lint can see the section, not whether the review was meaningful |
-| A stale ref | The cited section was amended upstream. Still resolves, so not broken — but you should look. |
-| A pinned ref the body never cites | The pin may be background the ticket did not need to quote |
-| An acceptance criterion prescribes a shell command (`docker compose …`, `curl …`, `grep …`, or two commands chained with `&&`) | The tool flags the shape; whether the AC should instead state the observable outcome is your call — the command itself belongs in `## Test data & verification` or the plan |
-| Acceptance criteria that are not Given/When/Then (one line naming them) | The shape is the standard; the error-level floor is still a measurable value or an owned `OPEN(<owner>)`, so an older ticket passes with this one line |
-| The story mentions load, a screen, records, or an integration and the matching extended section is missing | A keyword hit; answer with the section or `N/A — <reason>` |
-| An extended section is present but empty, or `## Sequence diagram` is a placeholder | Delete it, fill it, or write `N/A — <reason>` |
-
-## 8.3 Making staleness fail
+Put a reviewed mission or ticket on the hub so developers, SAs and other teams find what
+is planned, not only what exists. You publish with `/kb-publish`, or by merging a change to
+`missions/` or `tickets/` into `main`.
 
 ```bash
-kb ticket lint tickets/ABC-123.md --fail-on-stale
-kb mission lint missions/M-checkout.md --fail-on-stale
-kb resolve tickets/ABC-123.md --status-only
+/kb-publish          # or: kb publish
 ```
 
-Or set the `KB_FAIL_ON_STALE` repository variable to make the CI gate do it for
-every ticket.
+`kb publish` first runs `kb plan-ingest` and `kb build`, so what you review locally is what
+CI sends. After one explicit go from you it tags the commit `kb-publish/<timestamp>` and
+pushes the tag. The tag triggers `kb-publish.yml` (`kb plan-ingest`, `kb build`,
+`kb ci-publish`) and the intake opens a pull request on the hub; the content is live when
+that PR merges (at once when the hub's Registry has auto-merge on for your repo, otherwise
+when the hub maintainer merges it). The intake accepts only `refs/tags/kb-publish/*`. On
+the intake route `kb publish` refuses when `.kb/`, `missions/` or `tickets/` has
+uncommitted changes, because CI publishes the tagged commit. `.kb/<repo_id>-plan/` and
+`.kb/index.yaml` are generated and git-ignored: never commit them.
 
-## 8.4 Why the workflow is not path-filtered
+**Merge is also publish.** A push to `main` that touches `missions/` or `tickets/` runs
+`kb-publish-request.yml`, which tags the merged commit and dispatches the publish workflow
+(run it by hand to republish without a change; for another default branch, change `main`
+in two places in that file). Like `kb publish`, this needs `intake:` set, because
+`kb-publish.yml` runs `kb ci-publish`.
 
-The scaffolded workflow is named `kb-ticket-lint` and triggers on every pull
-request, not only on changes under `tickets/` or `missions/`. That is deliberate.
+`kb plan-ingest` decides what ships, offline and without an LLM. Run it first to see:
 
-GitHub never synthesises a passing status for a job that never started. A
-`paths:` filter on a *required* check would leave any pull request touching
-neither directory waiting forever for a check that will never run. Instead the
-job always starts, inspects the diff, and dispatches by directory — exiting
-cleanly with a notice when there is nothing to lint.
+| Item | Published when |
+|---|---|
+| Mission | `kb mission lint` finds no structural error; its Definition of Ready is not a gate |
+| Ticket | `kb ticket lint` finds no structural error, **and** every DoR box is ticked, **and** `kb mission next` would not demote it to `draft` |
 
-The workflow name also predates the mission gate. It is kept for
-branch-protection compatibility; renaming it would leave already-protected
-repositories blocked on a check that no longer exists.
+Whether a citation still resolves is not a publish gate (the PR gate checks it), and drafts
+never ship. Each item left out prints a line and never fails the command:
 
----
+```text
+skipped: tickets/M-checkout/M-checkout-US3.md — Definition of Ready not fully ticked (6/8)
+```
 
-# 9. When a citation goes stale
+The main reasons: `lint error: <first error>` (run `kb mission lint` or `kb ticket lint` on
+the file); `Definition of Ready not fully ticked (<ticked>/<total>)` (finish the review and
+tick); `parent mission rev <M> affects this story` (amend the ticket, 3.7). For file-shape
+problems the message explains.
 
-Knowledge changes. A ticket written in March against a document amended in May
-must not silently start meaning something else.
+An item that stops qualifying drops out at the next publish; the hub's git history keeps
+earlier versions. `kb plan-ingest` exits `1` only when it cannot run, never for a skip.
+
+**On the hub.** The plan is one document, `<repo_id>-plan`, next to `-code` and `-svc`: one
+group per mission with its published tickets, plus a `tickets` group for tickets with no
+published mission. Agents search it with `kb_search`; people read it under the web UI's
+**Ticket** menu (`/ui/tickets`: every BA repo, its missions and status counts; drill down
+to a mission's backlog and to a single ticket).
+
+Status is derived and read-only: **done**, **ready**, **not ready** (no published ticket)
+or **blocked**. To change one, change the source. The tracker, not the hub, is the place
+for "in progress" and assignees. A Dev given only a ticket id fetches it from here
+([Developer Guide](guide-dev.en.md#31-implement-a-ticket)).
+
+## 3.9 Keep citations current
+
+A ticket written in March against a document amended in May must not silently start
+meaning something else.
 
 ```bash
 kb resolve tickets/ABC-123.md          # ok | stale | broken, per ref
@@ -887,128 +424,286 @@ kb diff hr-handbook --against <rev>    # what actually changed
 | Status | Meaning | What to do |
 |---|---|---|
 | `ok` | The pinned content still matches what is published | Nothing |
-| `stale` | The source was amended after you cited it | Run `kb diff`; decide whether the acceptance criteria need updating |
-| `broken` | The reference no longer resolves at all | Re-ground and re-pin with `kb context new` or `kb_context_new` |
+| `stale` | The source was amended after you cited it | `kb diff`; decide whether the ACs need updating |
+| `broken` | The reference no longer resolves | Re-ground and re-pin with `kb_context_new` or `kb context new` |
 
-`kb diff` tells you exactly what moved: section titles, one-line summaries, the
-summary text, the full original, sections added and removed, and whether the
-document's ordering changed.
-
-Most staleness is harmless — a typo fix upstream. Some of it is a requirement
-that no longer matches reality. The tool tells you which sections to look at; the
-judgement is yours.
-
-## 9.1 The daily check
-
-A ticket that merged weeks ago is never looked at again by the pull-request gate,
-though the hub keeps publishing. So `.github/workflows/kb-doctor.yml` runs
-`kb ticket stale` every day (and on demand) over `tickets/` and `missions/`. While
-anything is stale or broken it keeps **one** open issue labelled
-`kb-stale-citations`; when everything is current again it closes it. It needs the
-same `STRATA_KB_HUB` variable and `KB_HUB_TOKEN` secret as the lint gate.
-
-The issue is a table with a `Kind` column:
+Most staleness is harmless, such as a typo fix upstream; some is a requirement that no
+longer matches reality, and the judgement is yours. `kb ticket lint <file> --fail-on-stale`
+(or the `KB_FAIL_ON_STALE` variable for the CI gate) makes staleness fail; `kb ticket stale [paths]`
+sweeps everything. The PR gate never sees a merged ticket again, so `kb-doctor.yml`
+sweeps daily and, while anything is stale or broken, keeps **one** open issue labelled
+`kb-stale-citations` (closed when everything is current):
 
 | Kind | Meaning | What to do |
 |---|---|---|
-| `kb-context` | A section the file cites in `## KB context` changed (`stale`) or no longer resolves (`broken`) | Run `kb diff` to see what moved; then `/ba-ticket-author --amend` or `/ba-mission-plan --amend` with the `kb-context` trigger, which re-pins it |
-| `architecture` | A service, table, route, integration or command the file cites in `## Services & order` or `## Technical grounding` changed in the Dev repo's `-code` document since the revision it was grounded on (`stale`), or was removed (`broken`) | Amend with the `architecture` trigger, so `sa-ticket-ground` re-grounds it. Check the ACs that rest on the changed value |
-| `architecture`, reason `baseline not on hub` | The `Grounded on:` revision is not on the hub at all: the Dev PR that carried it was never merged or was superseded | Wait for the Dev repo's `-code` to be published, then amend with the `architecture` trigger so the pin moves to a revision the hub has |
+| `kb-context` | A section the file cites in `## KB context` changed or no longer resolves | `kb diff`, then amend with `kb-context`, which re-pins it |
+| `architecture` | A service, table, route, integration or command the file cites in `## Services & order` or `## Technical grounding` changed in the Dev repo's `-code` since it was grounded, or was removed | Amend with `architecture` so `sa-ticket-ground` re-grounds it; check the ACs that rest on it |
+| `architecture`, `baseline not on hub` | The `Grounded on:` revision is not on the hub: the Dev PR that carried it never merged or was superseded | Wait for the Dev repo's `-code` to publish, then amend with `architecture` |
 
-Only the sections a mission or ticket **cites** are compared. A Dev merge that
-touches nothing it used produces no row. Not every row needs an amendment: read
-the change, and if the requirement still holds, amend with the new pin and say so
-in the change-log row.
+Only the sections a file **cites** are compared, and not every row needs an amendment: if
+the requirement still holds, amend with the new pin and say so in the change-log row.
 
 ---
 
-# 10. Working without an assistant
+# 4. Automation modes
 
-Everything the agent does, you can do at a terminal.
+**Full-auto mode (optional).** A switch per `ba` and `dev` repo that lets the two repos run
+on their own, on your machine, until every ticket on the hub is done. No step waits for a
+person: the agent decides each D-row and open question, answers the Dev's questions,
+ticks the Definition of Ready after its own review, merges and publishes. It writes down
+why in an `**Auto decision:**` line under the `## Change log`. It is built for **one BA
+repo and one Dev repo per hub**; `kb auto on` warns when the registry lists more than one
+Dev repo. It publishes only the plan and never edits the knowledge base. Nothing changes
+while the switch is off. The Dev side is in the
+[Developer Guide](guide-dev.en.md#4-automation-modes).
 
-```bash
-kb query "refund eligibility window" --tags payments
-kb get payments-spec 4.2 --level l2
-kb context new --refs "payments-spec §4.2, payments-spec §4.3"
-kb ticket lint tickets/ABC-123.md
-kb mission lint missions/M-checkout.md
-```
+## 4.1 Security: read this first
 
-`kb context new` prints the block; paste it into the ticket under
-`## KB context`.
+The permission deny list that `kb init` writes (6.5) is defence in depth, not a boundary.
+An unattended run merges its own pull requests and publishes to the hub with no human
+review. A ticket the agent misreads goes straight to `main` and to the hub. `kb auto on`
+prints this itself: "Auto mode merges pull requests as admin, with no review. Turn it on
+only for a repo where that is acceptable."
+
+It merges with `kb pr merge` (GitHub REST), using the rights of your `gh` login;
+`--admin` is accepted for `gh` compatibility and changes nothing. If that login is a repo
+admin and branch protection does not include administrators, those merges bypass the
+protection. So, before you run it, the repo owner **must** enable GitHub branch
+protection on `main`:
+
+- block force pushes and deletions;
+- **include administrators**;
+- keep the CI check as a **required status check**: the `lint` job of `kb-ticket-lint.yml`.
+  Branch protection picks checks by job name. Without a required check, "green CI" is
+  only a convention the agent follows;
+- do **not** require approving reviews: the agent cannot approve its own PR, and the merge
+  is then refused. If you require reviews anyway, exclude administrators from that rule
+  and accept that the agent bypasses it on `main`.
+
+The deny list also cannot see the current branch: the agent's working tree must never sit
+on `main` with commits on it. The skills branch first; the runner does not guard it. The
+runner never uses `--dangerously-skip-permissions` or `bypassPermissions`. The skills
+currently assume `main` as the default branch.
+
+## 4.2 Set up once
+
+1. Write the first mission yourself (`/ba-mission-plan`). The loop works the backlog it is
+   given.
+2. `intake:` is set in `.kb/config.yaml`, and the hub's Registry page has **auto-merge
+   on** for this repo and for the Dev repo.
+3. Re-run `kb init --kind ba`. It merges the permission allowlist into
+   `.claude/settings.json` (your entries stay) and refreshes the skills.
+4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values behind `.mcp.json`), and
+   have the `claude` CLI on the `PATH`, **logged in with a Claude subscription**. The
+   runner never uses an API key and inherits whatever login `claude` has.
+
+## 4.3 Run and stop
+
+| Task | Command | Result |
+|---|---|---|
+| Turn the switch on | `kb auto on` | prints the warnings, flips `auto.enabled` |
+| Commit it | commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch | `kb auto run` refuses until you do: the Q&A worktree is checked out from the default branch |
+| Start the loop | `kb auto run` (`--once`, `--model`, `--effort`), or `/kb-auto run` | `/kb-auto run` does all three steps and starts the loop detached; log in `.kb/auto/run.log` |
+| See where it is | `kb auto status [--json]`, `/kb-auto status` | switch, task, attempts, questions waited on, stop reason |
+| Stop it | `kb auto off`, `/kb-auto off` | stops after the current task |
+| Wait for a result | `kb auto wait [--max 6600] [--interval 30]` | one line, used by the cloud watcher |
+
+`kb auto run` refuses, and prints every reason, when the switch is off, `.kb/config.yaml`
+or `.claude/settings.json` is untracked or dirty, `auto.enabled: true` is missing from the
+default branch's copy of the config, `intake:` is empty, or the hub registry cannot be
+read, does not list this repo, or lacks `auto_merge: true` for it. Exit codes: `0` done,
+`2` stopped, `1` refused or error, `130` interrupted.
+
+## 4.4 What it does and when it stops
+
+One fresh `claude -p` process per task. In order: a story held by an open D-row or
+blocking open question (`/ba-mission-plan --amend`), a `draft` ticket
+(`/ba-ticket-author --amend`), the next `to-draft` story (`/ba-ticket-author`), otherwise
+it waits `idle_interval` seconds. Each change goes through a branch, a PR, green CI and a
+merge, and the merge publishes (`kb-publish-request.yml`, 3.8). A second process, in its
+own worktree `.kb/auto/worktrees/qa`, answers the Dev's open questions with
+`/ba-answer-questions <ticket-id>` every `qa_interval` seconds. A ticket and its mission
+move together: a mission amend re-authors the not-done tickets it lists in `Affected`.
+
+It stops after two failed attempts at one task (a red CI after two fix rounds stops it at
+once); `kb auto status` shows the reason, and `kb auto run` resumes after you fix it. A
+ticket whose Definition of Ready cannot be re-ticked is parked, not failed (its draft goes
+to `auto/qa-parked/<ticket>`); with only parked tickets left it stops with
+`parked: <tickets>`. A task still picked after 5 checks is skipped, and when every task
+left is skipped it stops. A usage-limit wait (15, 30, then 60 minutes) is not a failure.
+It finishes, exit `0`, when every story, unparented ticket and bug is `done` and no
+question is open. State and logs are in `.kb/auto/` (git-ignored).
+
+A task process carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run`
+refuse (`status` still works), so a task can neither flip the switch nor start a second
+loop.
+
+The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT: done`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` or `AUTO-RESULT: failed <reason>`, and nothing
+after it. A missing or malformed line counts as a failed attempt (`no result line`,
+`bad result line`). A skill you write for the runner must end the same way.
+
+## 4.5 Claude Code cloud
+
+`/kb-auto run` also works in a Claude Code cloud session (detected from
+`CLAUDE_CODE_REMOTE`; `STRATA_KB_CLOUD=1|0` forces it). Set `STRATA_KB_HUB_URL` and
+`STRATA_KB_HTTP_TOKEN` in the cloud environment. The hub is read live through its API and
+nothing is cloned; other hub-reading `kb` commands refuse and point at the `strata-kb` MCP
+tools. `kb pr` talks to the GitHub REST API instead of `gh pr`, because GraphQL is
+blocked there. Because nobody can click "trust this folder", `kb auto run` there marks the
+repo root and the Q&A worktree trusted in `~/.claude.json`; its other keys are kept and an
+unparseable file is left alone.
+
+The session branch cannot push to the default branch. When the default branch's switch is
+off, `/kb-auto run` opens an `auto/switch` PR that flips only `auto.enabled`, waits for
+green checks and then **merges that PR itself, telling you first**, with
+`kb pr merge auto/switch --squash --admin --delete-branch`. The auto-mode settings must
+already be committed on the default branch. The same branch-protection advice as in 4.1
+applies: that merge has no review either. `/kb-auto run` is re-runnable: it removes a
+leftover local `auto/switch` worktree and branch itself. A switch PR left open by a failed run
+(red checks, merge error) and its remote `auto/switch` branch must be closed and deleted on
+GitHub by hand first; the skill stops and says so, and never force-pushes. **The session must stay
+open** for the whole run. Not yet verified on real cloud: a session lasting over three
+hours, pushing `auto/*` branches, a merge past a required review, and `gh run` over REST.
 
 ---
 
-# 11. Troubleshooting
+# 5. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Lint: "ref does not resolve" | The section id is wrong, or that content is not published | Re-run `kb query` and re-pin. Check the hub PR actually merged. |
+| Lint: "ref does not resolve" | The section id is wrong, or that content is not published | Re-run `kb query` and re-pin; check the hub PR actually merged |
+| Lint: "kb-context tag '<x>' is not published by any document on the hub federation" | A tag in the `## KB context` block names no published document. Tags are derived from the documents your refs pin; you do not set them | Delete the tag from the block, or fix the typo the message suggests; `kb tags` lists the real ones. Never re-run `kb context new` on a ticket that already has its block: it would rewrite the pinned version |
 | Lint: "citation not backed by a pinned ref" | The body cites something the KB context block does not pin | Add the ref via `kb_context_new`, or remove the citation |
-| Lint: "missing required heading" | A required section is absent — or present only inside a fenced code block | Move the real heading outside the fence |
-| Lint passes locally, fails in CI | `STRATA_KB_HUB` is unset in Actions variables, or the hub is private and `KB_HUB_TOKEN` is missing | Configure both; see §2.4 |
-| The gate fails on a fork PR | Forks cannot read repository secrets | Merge through a branch in this repository |
-| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`) — it diagnoses which one, and a bare re-run re-verifies without retyping the token |
-| `kb mcp-setup` fails with "token was rejected" after the hub maintainer gave you a fresh one | A bare re-run reads the *old* token straight back out of `.env` — the prompt only appears when nothing is on disk yet | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete the `STRATA_KB_HTTP_TOKEN` line from `.env` and re-run |
+| Lint: "missing required heading" | A required section is absent, or present only inside a fenced code block | Move the real heading outside the fence |
+| Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | One row per revision `2..N`, in order, with the five trigger values |
+| Lint passes locally, fails in CI | `STRATA_KB_HUB` is unset in Actions variables, or the hub is private and `KB_HUB_TOKEN` is missing | Configure both (2.4) |
+| `kb doctor` warns a tracked `.kb/config.yaml` carries a credential in `hub:` or `intake:` | A token was committed | Rewrite the URL without it, pass it in `STRATA_KB_HUB`, rotate the token (it is in git history) |
+| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset. It never installs in CI |
+| `kb doctor`: ".github/workflows/<file> pins strata-kb==X but the hub runs Y" | A CI pin differs from the hub's | The same local `kb doctor` rewrites the pins; commit them. In CI it only reports |
+| The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`); it says which one |
+| `kb mcp-setup`: "token was rejected" after you got a fresh token | A bare re-run reads the *old* token from `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete that line from `.env` and re-run |
+| `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP points at a local cache clone, a stdio server or any target other than the hub's HTTP server; the skill stops without changing a ticket | Run `kb mcp-setup` and restart the assistant |
 | `kb query` finds nothing | The document is not published yet, or the tags are too narrow | Drop `--tags`; check with the hub owner that the publish PR merged |
-| `kb publish` does not tag or start CI | `intake:` is empty in `.kb/config.yaml`, so it takes the snapshot route | Set `intake:` (2.5) |
-| The intake rejects your publish | The repo is not in the hub's `federation/registry.yaml`, or its entry sets a `workflow:` pin (the intake compares it to the full `job_workflow_ref`, which includes the tag, so it never matches) | Ask the hub operator to map your `owner/repo` to `repo_id` and to leave `workflow:` unset |
-| `kb publish` stops with ".kb/ has uncommitted changes" | Something under `.kb/` differs from `HEAD` — typically a tracked `.kb/index.yaml` or `.kb/<repo_id>-plan/` | Commit your own edits; `git rm --cached` the generated files and re-run `kb init --kind ba` so they are gitignored |
-| A mission or ticket is missing from the plan | It did not qualify | Run `kb plan-ingest` and read its `skipped:` line (5.1) |
-| Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | Add exactly one row per revision `2..N`, in order, using the five trigger values |
-| Everything resolves `broken` after an upgrade | The ticket carries a pin from an older block format | Re-pin with `kb context new` |
+| `kb publish` does not tag or start CI | `intake:` is empty, so it takes the snapshot route | Set `intake:` (2.2) |
+| `kb publish`: "`.kb/` has uncommitted changes" (or `missions/`, `tickets/`) | Something differs from `HEAD`, typically a tracked `.kb/index.yaml` or `.kb/<repo_id>-plan/` | Commit your edits; `git rm --cached` the generated files and re-run `kb init --kind ba` |
+| `kb publish` cannot push the tag (a cloud session, a branch-only remote), or a merge published nothing | Only branches may be pushed; or `kb-publish-request.yml` fires only for a push to `main` that touches `missions/` or `tickets/` | Merge to `main`, or dispatch the workflow by hand; for another default branch change `main` in two places (3.8) |
+| The intake rejects your publish, or HTTP 403 | The repo is not in the hub's `federation/registry.yaml`, `repo_id` differs from the registered id, the entry sets a `workflow:` pin, or the run was not on a `kb-publish/*` tag | Ask the hub operator to register `owner/repo` with your `repo_id` and no `workflow:`; fix `repo_id`; publish with `kb publish` |
+| A task ends `failed command-denied <command>` | The command is outside the allowlist | Add it to `permissions.allow` in `.claude/settings.json` by hand |
 
 ---
 
-# 12. Command summary
+# 6. Appendix
 
-| Command | Purpose | Exit |
+## 6.1 Config keys and environment variables
+
+| Key or variable | Meaning |
+|---|---|
+| `kind`, `hub`, `repo_id`, `intake` | see 2.2. Never put a token in `hub:` or `intake:` |
+| `auto.enabled`, `auto.qa_interval`, `auto.idle_interval`, `auto.hotfix_base` | auto mode; by default `qa_interval` is `300` and `idle_interval` `600` seconds; `hotfix_base` empty = default branch (the skills currently assume `main`). The scaffold only comments the block; `kb auto on` writes the live one |
+| `STRATA_KB_HUB` | overrides `hub:`; carries a credentialed URL in CI (an Actions variable) |
+| `STRATA_KB_HUB_URL`, `STRATA_KB_HTTP_TOKEN` | the hub's HTTP base URL and bearer token: MCP and the auto runner |
+| `KB_HUB_TOKEN`, `KB_FAIL_ON_STALE` | Actions secret (private hub only) and Actions variable of `kb-ticket-lint.yml` and `kb-doctor.yml` |
+| `STRATA_KB_AUTO_TASK` | set by the runner on task processes; `kb auto on`, `off` and `run` refuse under it |
+| `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | force or detect Claude Code cloud |
+
+Exit codes: `0` ok, `1` error, `2` stale citation (or a usage error); `kb auto` as in 4.3.
+The skills call the `strata-kb` MCP tools; the full list is in the
+[hub guide](guide-hub.en.md#63-the-mcp-tools).
+
+## 6.2 What `kb init` writes, and what is git-ignored
+
+| Path | Holds | Committed |
 |---|---|---|
-| `kb mcp-setup [--hub-url URL] [--no-verify]` | Write the hub's HTTP MCP credentials into `.env` and verify them | `0` ok, `1` no value/probe failed |
-| `kb query <text> [--tags t]` | Search published knowledge | `0` |
-| `kb get <doc> <section>` | Fetch one section | `0` |
-| `kb tags` | List the published tag vocabulary | `0` |
-| `kb context new --refs "…"` | Generate a pinned citation block | `0` ok, `1` unresolvable ref |
-| `kb resolve <file>` | Check a ticket's refs | `0` all ok, `1` broken, `2` stale |
-| `kb diff <doc> --against <rev>` | What an amendment changed | `0` |
-| `kb ticket lint <file>` | Ticket Definition-of-Ready gate | `0` PASS, `1` FAIL, `2` stale |
-| `kb mission lint <file>` | Mission Definition-of-Ready gate | `0` PASS, `1` FAIL, `2` stale |
-| `kb ticket check <file>` | SA grounding gate: every id in `## Technical grounding` exists in the hub's `-code`; a moved `Grounded on:` revision fails only when a cited fact is gone | `0` PASS, `1` FAIL |
-| `kb ticket export <file>` | The ticket for the tracker, without BA-internal sections | `0` |
-| `kb ticket stale [paths]` | Every ticket and mission whose citations the hub moved, `kb-context` and `architecture` (`--md`, `--json`) | `0` current, `2` stale only, `1` broken |
-| `kb ticket tidy` | Move flat `tickets/*.md` into `tickets/<mission-id>/` by their parent line | `0` |
-| `kb mission next [--from-hub [--repo id]]` | Which story is done, ready, draft, to-draft or blocked | `0` |
-| `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the missions and ready tickets; prints `skipped:` lines | `0`, `1` cannot run (unreadable input, missing dir, invalid repo id, foreign destination, corrupt index, write failure) |
-| `kb auto on\|off\|status\|run` | Full-auto mode: flip the `auto:` switch, show the runner's state, run the loop (`run [--once] [--model] [--effort]`) | `0` ok or done, `2` stopped, `1` refused or error |
-| `kb publish` | Regenerate the plan, tag, and let CI send it to the hub | `0`, `1` plan refresh or build failed, or the intake refused |
+| `tickets/`, `missions/` | your tickets and mission plans | yes |
+| `docs/ac-quality.local.md`, `docs/review-rubric.local.md` | your overrides; created once, never refreshed | yes |
+| `.kb/*-plan/`, `.kb/index.yaml` | generated by `kb plan-ingest` | no |
+| `.kb/auto/` | the auto runner's state (`kb init` adds it to `.gitignore`) | no |
+| `.env` | the MCP credentials (`kb mcp-setup` makes git ignore it; `kb init` does not) | no |
 
-**Slash commands:** `/ba-ticket-author` (also `--amend <ticket>`), `/ba-mission-plan` (also `--amend <M-id>`), `/ba-bug-report`, `/ba-answer-questions`, `/sa-ticket-ground`, `/kb-publish`.
+Re-running `kb init --kind ba` creates missing files, refreshes scaffold files that differ
+from the template and appends the `.kb/*-plan/`, `.kb/index.yaml` and `.kb/auto/` ignore
+lines to `.gitignore`, never removing one. `.kb/config.yaml`, `.kb/index.yaml` and
+`.claude/settings.json` are protected: a plain run leaves the first two alone and only
+merges into the third (your entries stay). **`--force` replaces all three outright**,
+including `kind`, `repo_id` and your whole `.claude/settings.json`. Nothing under
+`tickets/` or `missions/` is touched. Never commit `.kb-qa/`: it is the hub's Q&A store,
+git-ignored on the hub.
 
----
+## 6.3 What the gate checks
 
-# 13. Upgrading the repository
+**Errors (the gate fails):** a missing required section (Summary, User Story, Background /
+Business context, Acceptance Criteria, Use cases, Business flow, KB context, Definition of
+Ready); a heading twice; more than 10 acceptance criteria or more than one user story
+(split the ticket); a `## KB context` ref that does not resolve at its pinned commit; an
+inline `[doc-id §section]` citation not backed by a pinned ref; a change log that does not
+match the revision. **Warnings (your judgement):** a criterion touching a standard with no
+citation; a stale ref; a pinned ref the body never cites; a missing `> Revision:` line or
+`## Review record`; an AC that prescribes a shell command or is not Given/When/Then; a
+missing or empty extended section the story's words call for.
 
-```bash
-kb init --kind ba
-```
+## 6.4 Code knowledge in tickets
 
-This touches **scaffold files only** — the CI workflows (including
-`kb-publish.yml`), the skills, command and prompt wrappers, `.gitattributes`, and
-the templates under `docs/` — and overwrites one only when its content differs
-from the new template. It also appends `.kb/*-plan/`, `.kb/index.yaml` and
-`.kb/auto/` to `.gitignore` if they are missing, and never removes a line.
+Besides domain documents, the hub holds two documents per product repository, published
+by that repository's own workflow: `<repo>-code` (generated structure: `svc.*`, `db.*`,
+`api.*`, `int.*`, `cmd.*`, `route.*`, `page.*`, `job.*`, `sym.*`, `struct.tree`,
+`struct.files.*`, `struct.coverage`) and `<repo>-svc` (curated responsibility). The BA
+skills never read either themselves: where a ticket needs a service, table, route or file
+name they write `%%TODO: verify against codebase%%` with an owned open question, and
+`/sa-ticket-ground` answers it from `<repo>-code`. Everything it writes is checked by
+`kb ticket check`; what the document cannot prove goes under `Open decisions` for the
+developer. A section reference is spelled `<repo>-code §svc.<name>`.
 
-`.kb/config.yaml` and `.kb/index.yaml` are never touched by a plain `kb init`, and
-`.claude/settings.json` is only merged into: the usage hooks and the auto-mode
-permission lists are added, and every entry of yours stays. For `config.yaml` that
-includes its `intake:` key: a repo created before plan publishing has none, so add `intake: <url>` by hand (2.5).
+> **One caution.** `<repo>-svc` grounds a diagram. It is never a substitute for a domain
+> citation in an acceptance criterion. A code, format, enum or threshold that encodes a
+> standard must come from a pinned domain section.
 
-> **`--force` replaces all three outright**, unmerged: your hand-edited
-> `.kb/config.yaml` including `kind`, `repo_id` and `asset_store`;
-> `.kb/index.yaml`; and your entire `.claude/settings.json` including hooks,
-> permissions and model. Use it deliberately.
+`struct.coverage` tells the SA how far to trust an absence, per area: `complete`, `partial`
+or `not scanned` (for example the Dev repo lacks `strata-kb[code]`). Absent from a
+`complete` scope means not built: the SA writes `<thing> in <path> [NEW: D<n>]` (a file is
+its own `Files:` entry, `<path> [NEW: D<n>]`). Absent from a `partial` or `not scanned`
+scope means unknown, so it goes under `Open decisions` and the gate fails a `[NEW]` there.
+A job is never `complete` (`jobs outside framework schedulers are not detectable`). Detail:
+[Developer Guide](guide-dev.en.md#63-what-kb-code-ingest-extracts).
 
-Your own content under `tickets/` and `missions/` is not scaffolding. `kb init`
-never reads, writes or overwrites anything you author there — the only thing it
-places in those directories is an empty `.gitkeep`, so Git can track them before
-your first ticket exists.
+## 6.5 Auto-mode permissions
+
+`kb init --kind ba` merges its permissions into your `.claude/settings.json`. **Allowed:**
+everyday `git` (add, commit, status, diff, log, fetch, pull, switch to `auto/*`, `fix/*`,
+`hotfix/*`, branch, worktree, merge, `push -u origin HEAD`), `gh pr` and `gh run`,
+`Read`/`Edit`/`Write`, the `strata-kb` MCP tools and many `kb` subcommands. **Denied:**
+any `git push` that names `main` or `master`, force-push, `+` and `:` refspecs and
+`--delete`; `git checkout`, `switch` and `branch` forms that move onto, create, rename or
+delete `main` or `master` (a branch id that merely contains the word, like
+`auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`;
+`kb init`; `rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and
+`.git/**`. The `Stop` and `SubagentStop` hooks run
+`kb usage ingest-transcript --hook-stdin`; `kb usage report` turns that ledger into a cost
+report (`.kb/usage/report.html`).
+
+**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`). `kb
+usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with `--ticket
+<id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop` hook
+cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
+`.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows.
+Re-ingesting an ended transcript is safe, because a call already in the ledger is skipped:
+`kb usage ingest-transcript <path>` backfills one. Run it only on a session that has
+ended: a call still streaming would be stored with a partial output count, and a stored
+row never changes. `report.html` is regenerated from the ledger on every run, so the
+ledger is the record, not the report. **Model tiering** is a recommendation that nothing
+in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped, overridable per
+model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A model with no row
+is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate
+and flagged, so a total that contains them is a lower bound. Switch model at phase
+boundaries, never inside a phase: a switch discards the prompt cache and pays a fresh
+cache write, so a few cheap-model turns inside a strong-model session can cost **more**
+than not tiering. Check the result with `kb usage report`, which breaks spending down by
+model.
+
+## 6.6 Hub Q&A rules that touch you
+
+Questions and answers live in the hub's Q&A store, written only through `kb_question_ask`
+(Dev) and `kb_question_answer` (BA). `asked_by` and `answered_by` are names the caller
+types (the skills pass `git config user.name`): tracking, not authentication. Limits: 4000
+characters for a question or answer, 1000 for context, 100 for names, at most 50 changed
+sections per answer and 50 open questions per ticket.
