@@ -1814,7 +1814,9 @@ def test_execute_carries_gaps_and_writes_deviations_back(name):
     assert "never handed to the implementer" not in t, name
 
 
-@pytest.mark.parametrize("name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"])
+@pytest.mark.parametrize(
+    "name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
+)
 def test_handover_lists_open_carried_gaps_in_pr_notes(name):
     t = _normal(_raw(name))
     assert "open `## Carried gaps` row" in t and "`## Notes`" in t
@@ -1883,14 +1885,21 @@ def test_auto_answers_use_the_answer_format():
 
 @pytest.mark.parametrize(
     "name",
-    ["bodies/dev-design.md", "bodies/dev-plan.md", "claude-command-dev-design.md", "claude-command-dev-plan.md"],
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+    ],
 )
 def test_open_question_line_carries_only_the_decision_sentence(name):
     n = _normal(_raw(name))
     assert "`<question>` is the **Decision needed** sentence on one line" in n
 
 
-@pytest.mark.parametrize("name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"])
+@pytest.mark.parametrize(
+    "name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
+)
 def test_handover_auto_question_uses_the_question_format(name):
     t = _raw(name)
     for label in QA_Q_LABELS:
