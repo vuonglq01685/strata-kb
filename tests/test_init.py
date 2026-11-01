@@ -2392,7 +2392,7 @@ def test_guides_document_the_ingest_errors_log(kind):
     # discover why the ledger is not growing.
     guide = _guide_flat(kind)
     assert "`.kb/usage/ingest-errors.log`" in guide
-    assert "the only place a failure shows" in guide
+    assert "the only place a failure inside `kb` shows" in guide
 
 
 @pytest.mark.parametrize("kind", ["ba", "dev"])
