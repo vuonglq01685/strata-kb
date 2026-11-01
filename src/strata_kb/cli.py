@@ -4983,13 +4983,18 @@ def l3_report(
     total = 0
     for did in doc_ids:
         fix_lines = _l3_fix_lines(kb_dir, did)
-        pending = [s for s in _l3_pending(kb_dir, did) if s.id not in fix_lines]
+        flagged = {s.id: s for s in _l3_pending(kb_dir, did)}
+        pending = [s for s in flagged.values() if s.id not in fix_lines]
         if not pending and not fix_lines:
             continue
         total += len(pending) + len(fix_lines)
         typer.echo(did)
-        for line in fix_lines.values():
+        for sid, line in fix_lines.items():
             typer.echo(line)
+            # the recheck after `kb l3 fix apply` filed these on the AI's version
+            for finding in flagged[sid].findings if sid in flagged else []:
+                for fline in _l3_finding_lines(finding):
+                    typer.echo(fline)
         for sec in pending:
             typer.echo(f"§{sec.id}")
             for finding in sec.findings:
