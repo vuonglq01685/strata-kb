@@ -917,6 +917,7 @@ _DEV_GATES = {
         "a plan defect: stop, do not resolve",
         "stop that task, return to `dev-design`",
         "goes to the Dev",
+        "A BLOCKER from a delta review goes to the Dev",
         "let the Dev choose",
         "the Dev's explicit go-ahead",
     ],
@@ -1782,3 +1783,37 @@ def test_already_finished_continues_only_its_own_open_pr(template, rev_parse):
     # the fallback comes after the crashed-run path
     assert rule.index("only when a local") < rule.index("do not switch")
     assert _permitted(rev_parse, allow, deny)
+
+
+_EXECUTE_WRAPPERS = ["bodies/dev-execute.md", "claude-command-dev-execute.md"]
+
+
+@pytest.mark.parametrize("name", _EXECUTE_WRAPPERS)
+def test_execute_carries_gaps_and_writes_deviations_back(name):
+    t = _normal(_raw(name))
+    for needle in (
+        "the `## Carried gaps` rows that name this task",
+        "`closed task <n>`",
+        "in the same task commit",
+        "`## Execution deviations`",
+        "| Task | Doc + section | What changed | Why |",
+        "the plan/design text matches the code of this task",
+        "changes the meaning of an AC or a public contract or interface",
+        "one delta review",
+        "the doc diff of that commit only",
+        "applies them to `plan.md` and `design.md` at merge-back, before A3",
+    ):
+        assert needle in t, (name, needle)
+
+
+@pytest.mark.parametrize("name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"])
+def test_handover_lists_open_carried_gaps_in_pr_notes(name):
+    t = _normal(_raw(name))
+    assert "open `## Carried gaps` row" in t and "`## Notes`" in t
+
+
+def test_execute_auto_mode_fails_a_blocking_delta_review():
+    gates = _gates("bodies/dev-execute.md")
+    (gate,) = [g for g in gates if "delta review" in g.split(" → ")[0]]
+    for phrase in ("failed design-review", "failed plan-review", "open classes"):
+        assert phrase in gate, phrase

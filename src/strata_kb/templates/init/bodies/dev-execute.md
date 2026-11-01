@@ -102,8 +102,11 @@ hub.
     inside the lane; the implementer commits on its lane branch and
     writes `docs/impl/<ticket-id>/review/task-<n>-report.md` inside the
     lane. A lane implementer never edits `docs/impl/<ticket-id>/plan.md`
-    — the orchestrator ticks after A3, exactly as in the per-task flow —
-    so lanes never conflict on the plan file.
+    or `design.md` — the orchestrator ticks after A3, exactly as in the
+    per-task flow — so lanes never conflict on the plan file. It writes
+    its `## Execution deviations` rows and its doc edits into its task
+    report instead (see **Deviations** below); the orchestrator applies
+    them to `plan.md` and `design.md` at merge-back, before A3.
   - Merge back in task-number order: `git merge --no-ff
     <ticket-id>-task-<n>` into the ticket branch — a conflict is a plan
     defect: stop, do not resolve, return to `dev-plan` naming the two
@@ -130,11 +133,13 @@ hub.
     one starts.
   Without subagents: sequential in wave order, today's fallback.
 - **Per unticked task**, in its own subagent where the runtime supports
-  it (sequential passes otherwise). Hand that subagent exactly three
+  it (sequential passes otherwise). Hand that subagent exactly these
   things: its own task block from the plan, the **Interfaces** entry of
-  that task, and the `cmd.test` / `cmd.lint` commands (from
+  that task, the `cmd.test` / `cmd.lint` commands (from
   `-code §cmd.*`, or the commands recorded at the top of the plan
-  file) — not the rest of the plan, and not the ticket. If the task
+  file), and the `## Carried gaps` rows that name this task (each is a
+  gap this task must resolve) — not the rest of the plan, and not the
+  ticket. If the task
   block does not carry something the implementer needs, the plan is
   incomplete: stop and send it back to `dev-plan`. Never read wider to
   paper over a gap in the plan.
@@ -169,21 +174,49 @@ hub.
      implementer — never `HEAD~1`, which silently drops every commit of a
      multi-commit task but the last. Dispatch a `task-reviewer` subagent
      with a fresh context and exactly two paths — the report file and the
-     diff file — plus the task block it was given and its binding
+     diff file — plus the task block it was given, the `## Carried gaps`
+     rows that name the task, and its binding
      constraints, copied verbatim from the plan, and
      `docs/conventions/<lang>.md`, the five pack files it links, and its
      `.local.md` override. It
      returns **two verdicts, both required**: spec compliance (nothing
      missing, nothing extra, against the task block) and code quality
      (against the conventions doc). A report carrying one verdict is not a
-     review; send it back. Fix subagent for BLOCKER and SUGGESTED
+     review; send it back. Spec compliance also confirms two things: each
+     carried row of the task is resolved by its code or test, and the
+     plan/design text matches the code of this task, every difference
+     with a row in `## Execution deviations`. A miss is a SUGGESTED
+     finding, fixed in A3's own rounds. Fix subagent for BLOCKER and SUGGESTED
      findings, then re-review, at most 3 rounds.
   7. **Only once A3 is clean**, tick the task's checkboxes in the plan file
      and append `Review: ✅ r<n>` under the task. A ticked box means
      reviewed, so a later session — or a session after compaction — resumes
-     at the first unticked task and never re-runs finished work. NOTE and
-     NITS findings a reviewer should see go to the PR's `## Notes`
-     instead of a fix round.
+     at the first unticked task and never re-runs finished work. On the
+     tick, set `Status` to `closed task <n>` in each carried row the task
+     resolved. NOTE and NITS findings a reviewer should see go to the
+     PR's `## Notes` instead of a fix round.
+
+  **Deviations — plan and design follow the code.** When the code of a
+  task differs from its task block or from a design section, the
+  implementer edits that plan or design text in the same task commit and
+  adds a row to `## Execution deviations` in `plan.md` (the heading goes
+  at the end of the file, created with the first row):
+
+      | Task | Doc + section | What changed | Why |
+      |---|---|---|---|
+
+  A lane implementer does not touch the two files: its rows and doc
+  edits go into its task report (lanes bullet above). A deviation that
+  changes the meaning of an AC or a public contract or interface gets
+  one delta review, run by the orchestrator after the commit that holds
+  the doc edit (in a lane, after the merge-back) and before A3: a fresh
+  `design-reviewer` for design text or `plan-reviewer` for plan text,
+  given the doc diff of that commit only as a file path, against the
+  rubric's `## Pre-code axes`, one round, no loop. A BLOCKER from a delta
+  review goes to the Dev. A SUGGESTED finding becomes a row in
+  `## Carried gaps`. A changed AC meaning still takes the "AC not
+  implementable as written" route below; the delta review does not
+  replace it.
 
   A task block carrying an `Exempt:` line skips step 1 and runs the
   verification that line names instead, showing its output like any other.
@@ -318,6 +351,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 - **Isolate: "a dedicated branch", named from the ticket id** → the branch is `auto/<ticket-id>`, and `dev-implement-ticket` has already created it. Check with `git branch --show-current` and stay on it. When you were started alone and are on the default branch, create it with `git fetch origin main && git switch -c auto/<ticket-id> FETCH_HEAD`; never check out `main`. A worktree for a lane stays optional, and a lane's branch is cut from the ticket branch as written.
 - **Plan incomplete — "stop and send it back to `dev-plan`"; a task with no test and no `Exempt:` line — "stop and return the task to `dev-plan`"; a merge conflict between lanes is "a plan defect: stop, do not resolve"** → repair it yourself: run `dev-plan` on the plan, which fixes it and re-approves it under its own Auto mode, then resume at the first unticked task. A task goes back to `dev-plan` at most 2 times; after that, end `AUTO-RESULT: failed plan-defect task <n>`.
 - **An AC that is not implementable as written — "stop that task, return to `dev-design`"** → still do not decide the ambiguity yourself. Run `dev-design`, which asks the BA through hub Q&A, and report its blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`.
+- **Delta review: "A BLOCKER from a delta review goes to the Dev"** → no human gate: end `AUTO-RESULT: failed design-review` when the delta review of design text found it, `AUTO-RESULT: failed plan-review` when it was of plan text, and name the open classes in the reply. A SUGGESTED finding is a `## Carried gaps` row as written; log it in an Auto decision line.
 - **A test that fails unexpectedly** → no human gate, but a limit: diagnose the cause and fix it. A task that stays red after 3 distinct fix attempts, each logged, ends `AUTO-RESULT: failed tests-red task <n>`. Never edit a test to make it green.
 - **Review contract: "round 3 stops the flow and goes to the Dev"** → a BLOCKER or SUGGESTED finding of A3 or A4 still standing after round 3 ends `AUTO-RESULT: failed task-review <ticket-id>`, naming the task or `A4`. The 3-round cap stays as written here, on purpose: only the design and plan reviews are cut to 2.
 - **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
@@ -330,4 +364,4 @@ You run as a phase of `/dev-implement-ticket`, which ends the task: report your 
 
 - `AUTO-RESULT: done` — every task is ticked and A4 came back clean. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks an AC; the runner re-runs the task once the questions are answered.
-- `AUTO-RESULT: failed <reason>` — anything else: `tests-red task <n>`, `plan-defect task <n>`, or `task-review <ticket-id>`. The reason goes on the same line.
+- `AUTO-RESULT: failed <reason>` — anything else: `tests-red task <n>`, `plan-defect task <n>`, `task-review <ticket-id>`, `design-review` or `plan-review`. The reason goes on the same line.

@@ -93,7 +93,8 @@ two lines; Changes — one bullet per change a reviewer should know about;
 Testing — one line mapping each AC to its test, then a fenced block holding
 the `cmd.test` command line itself (e.g. `$ pytest -q`) and only its summary
 lines, never the full log, and `Blocking: No`, A5's verdict line, as the last
-line; Notes — only when there is something: out of scope, not handled, every
+line; Notes — only when there is something: out of scope, not handled, every open
+`## Carried gaps` row of the plan (gap, class, target task), every
 `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete feedback item
 on the owning repo; Usage — paste the output of
 `kb usage report --ticket <ticket-id> --summary` as is (add

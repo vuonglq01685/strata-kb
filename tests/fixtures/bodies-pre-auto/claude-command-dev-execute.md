@@ -92,9 +92,11 @@ worktree is acceptable only if its base contains the ticket branch's HEAD,
 checked with `git merge-base --is-ancestor`; at most **3 lanes at a
 time**, each implementer handed its lane path and the sentence "Never use
 `run_in_background`; run every test in the foreground and let the call
-block." A lane implementer never edits `docs/impl/<ticket-id>/plan.md` —
-the orchestrator ticks after A3 — so lanes never conflict on the plan
-file. Scoped tests inside the lane, lanes merged back in task-number order
+block." A lane implementer never edits `docs/impl/<ticket-id>/plan.md` or
+`design.md` — the orchestrator ticks after A3 — so lanes never conflict on
+the plan file; it writes its `## Execution deviations` rows and its doc
+edits into its task report instead, and the orchestrator applies them to
+`plan.md` and `design.md` at merge-back, before A3. Scoped tests inside the lane, lanes merged back in task-number order
 with `git merge --no-ff
 <ticket-id>-task-<n>` — a conflict is a plan defect, returned to
 `dev-plan` naming the two tasks — otherwise its report is copied out of
@@ -114,9 +116,10 @@ serial tasks run one at a time, in the order listed, in the ticket worktree
 with the per-task flow, ticked after its A3 before the next one starts. Then, per unticked task, in its
 own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
-entry, and the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
-commands recorded at the top of the plan file) — not the rest of the plan
-and not the ticket; when the task block does not carry something the
+entry, the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
+commands recorded at the top of the plan file), and the `## Carried gaps`
+rows that name this task (each is a gap this task must resolve) — not the
+rest of the plan and not the ticket; when the task block does not carry something the
 implementer needs, the plan is incomplete, so stop and send it back to
 `dev-plan` rather than reading wider: write the test, run it, and observe it
 fail — a test that was never seen red proves nothing; write the minimum code
@@ -139,14 +142,36 @@ lost claim stops you as on entry), then write `git diff <BASE>..HEAD` —
 `docs/impl/<ticket-id>/review/task-<n>.diff` (creating
 `docs/impl/<ticket-id>/review/` first if it does not exist yet) and dispatch
 a `task-reviewer` subagent with a fresh context and exactly two paths (report
-file, diff file) plus the task block it was given and its binding
+file, diff file) plus the task block it was given, the `## Carried gaps`
+rows that name the task, and its binding
 constraints copied verbatim from the plan, and `docs/conventions/<lang>.md`,
 the five pack files it links, plus its `.local.md` override; it returns
 **two verdicts**, spec compliance
 against the task block and code quality against the conventions doc, both
-required. Fix subagent, re-review, at most 3 rounds. Only once A3 is clean
+required. Spec compliance also confirms two things: each carried row of the
+task is resolved by its code or test, and the plan/design text matches the
+code of this task, every difference with a row in `## Execution deviations`;
+a miss is a SUGGESTED finding, fixed in A3's own rounds. Fix subagent,
+re-review, at most 3 rounds. Only once A3 is clean
 does the orchestrator tick the checkboxes and append `Review: ✅ r<n>` under
-the task — the plan file itself is never handed to the implementer. A task block carrying
+the task, and set `Status` to `closed task <n>` in each carried row the task
+resolved — the plan file itself is never handed to the implementer.
+**Deviations — plan and design follow the code.** When the code of a task
+differs from its task block or from a design section, the implementer edits
+that plan or design text in the same task commit and adds a row to
+`## Execution deviations` in `plan.md` (the heading goes at the end of the
+file, created with the first row), with the header
+`| Task | Doc + section | What changed | Why |`. A lane implementer does not
+touch the two files: its rows and doc edits go into its task report. A
+deviation that changes the meaning of an AC or a public contract or interface
+gets one delta review, run by the orchestrator after the commit that holds
+the doc edit (in a lane, after the merge-back) and before A3: a fresh
+`design-reviewer` for design text or `plan-reviewer` for plan text, given the
+doc diff of that commit only as a file path, against the rubric's
+`## Pre-code axes`, one round, no loop. A BLOCKER from a delta review goes to
+the Dev. A SUGGESTED finding becomes a row in `## Carried gaps`. A changed AC
+meaning still takes the "AC not implementable as written" route below; the
+delta review does not replace it. A task block carrying
 an `Exempt:` line skips step 1 and runs the verification that line names
 instead, showing its output like any other; a task block with no `Exempt:`
 line whose implementer believes no test is possible does not decide that
