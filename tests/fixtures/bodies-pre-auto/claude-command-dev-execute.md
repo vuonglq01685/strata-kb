@@ -118,8 +118,9 @@ own subagent where the runtime supports it (sequential passes otherwise),
 handed exactly its own task block from the plan, that task's **Interfaces**
 entry, the `cmd.test` / `cmd.lint` commands (from `-code §cmd.*`, or the
 commands recorded at the top of the plan file), and the `## Carried gaps`
-rows that name this task (each is a gap this task must resolve) — not the
-rest of the plan and not the ticket; when the task block does not carry something the
+rows that name this task (each is a gap this task must resolve), and the
+paths of `plan.md` and `design.md`, handed only to edit the text that
+deviates — not the rest of the plan and not the ticket; when the task block does not carry something the
 implementer needs, the plan is incomplete, so stop and send it back to
 `dev-plan` rather than reading wider: write the test, run it, and observe it
 fail — a test that was never seen red proves nothing; write the minimum code
@@ -134,7 +135,16 @@ dominant style, the repo wins locally — the conflict is recorded as a
 finding for the PR body), and nothing else broke; then **verify** by running
 `cmd.test` and `cmd.lint` (the commands it was handed) and show the output;
 then commit the task's changes and write the full report to
-`docs/impl/<ticket-id>/review/task-<n>-report.md`. The self-review **never
+`docs/impl/<ticket-id>/review/task-<n>-report.md`, returning only status,
+commits, a one-line test summary, the `## Execution deviations` rows it
+added, and concerns. **Deviations — plan and design follow the code.** When
+the code of a task differs from its task block or from a design section, the
+commit also edits that plan or design text, and the implementer adds a row
+to `## Execution deviations` in `plan.md` in the same task commit (the
+heading goes at the end of the file, created with the first row), with the
+header `| Task | Doc + section | What changed | Why |`. A lane implementer
+edits neither file: it puts its rows and its doc edits into its task report
+and lists the rows in its return. The self-review **never
 satisfies A3**: back in the orchestrator, first run `kb claim update
 <ticket-id>` (no `--phase`: it refreshes the claim after the task's commit, and a
 lost claim stops you as on entry), then write `git diff <BASE>..HEAD` —
@@ -155,16 +165,10 @@ a miss is a SUGGESTED finding, fixed in A3's own rounds. Fix subagent,
 re-review, at most 3 rounds. Only once A3 is clean
 does the orchestrator tick the checkboxes and append `Review: ✅ r<n>` under
 the task, and set `Status` to `closed task <n>` in each carried row the task
-resolved — the plan file itself is never handed to the implementer.
-**Deviations — plan and design follow the code.** When the code of a task
-differs from its task block or from a design section, the implementer edits
-that plan or design text in the same task commit and adds a row to
-`## Execution deviations` in `plan.md` (the heading goes at the end of the
-file, created with the first row), with the header
-`| Task | Doc + section | What changed | Why |`. A lane implementer does not
-touch the two files: its rows and doc edits go into its task report. A
-deviation that changes the meaning of an AC or a public contract or interface
-gets one delta review, run by the orchestrator after the commit that holds
+resolved — the plan file is handed to the implementer only to edit the text
+that deviates. **Delta review.** A deviation the implementer returned that
+changes the meaning of an AC or a public contract or interface gets one
+delta review, run by the orchestrator after the commit that holds
 the doc edit (in a lane, after the merge-back) and before A3: a fresh
 `design-reviewer` for design text or `plan-reviewer` for plan text, given the
 doc diff of that commit only as a file path, against the rubric's

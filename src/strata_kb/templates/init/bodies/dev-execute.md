@@ -96,7 +96,7 @@ hub.
   - Dispatch one implementer per lane, at most **3 lanes at a time** —
     a larger wave runs in batches of 3 (`ponytail:` fixed cap; raise it
     once a measured wave shows the machine and the suite can take
-    more). The implementer gets the same three things as below plus its
+    more). The implementer gets the same things as below plus its
     lane path and this sentence: "Never use `run_in_background`; run
     every test in the foreground and let the call block." Scoped tests
     inside the lane; the implementer commits on its lane branch and
@@ -137,9 +137,10 @@ hub.
   things: its own task block from the plan, the **Interfaces** entry of
   that task, the `cmd.test` / `cmd.lint` commands (from
   `-code §cmd.*`, or the commands recorded at the top of the plan
-  file), and the `## Carried gaps` rows that name this task (each is a
-  gap this task must resolve) — not the rest of the plan, and not the
-  ticket. If the task
+  file), the `## Carried gaps` rows that name this task (each is a
+  gap this task must resolve), and the paths of `plan.md` and
+  `design.md`, handed only to edit the text that deviates (see step 5)
+  — not the rest of the plan, and not the ticket. If the task
   block does not carry something the implementer needs, the plan is
   incomplete: stop and send it back to `dev-plan`. Never read wider to
   paper over a gap in the plan.
@@ -161,7 +162,22 @@ hub.
      handed) and **show the output**.
   5. **commit the task's changes**, then write the full report to
      `docs/impl/<ticket-id>/review/task-<n>-report.md` and return only
-     status, commits, a one-line test summary, and concerns.
+     status, commits, a one-line test summary, the `## Execution
+     deviations` rows it added, and concerns.
+
+  **Deviations — plan and design follow the code.** When the code of a
+  task differs from its task block or from a design section, the step 5
+  commit also edits that plan or design text, and the implementer adds
+  a row to `## Execution deviations` in `plan.md` in the same task
+  commit (the heading goes at the end of the file, created with the
+  first row):
+
+      | Task | Doc + section | What changed | Why |
+      |---|---|---|---|
+
+  A lane implementer edits neither file: it puts its rows and its doc
+  edits into its task report, and lists the rows in its return (lanes
+  bullet above).
 
   Then, back in the orchestrator — never inside the implementer — first run
   `kb claim update <ticket-id>` (no `--phase`: it refreshes the claim after the
@@ -196,20 +212,10 @@ hub.
      resolved. NOTE and NITS findings a reviewer should see go to the
      PR's `## Notes` instead of a fix round.
 
-  **Deviations — plan and design follow the code.** When the code of a
-  task differs from its task block or from a design section, the
-  implementer edits that plan or design text in the same task commit and
-  adds a row to `## Execution deviations` in `plan.md` (the heading goes
-  at the end of the file, created with the first row):
-
-      | Task | Doc + section | What changed | Why |
-      |---|---|---|---|
-
-  A lane implementer does not touch the two files: its rows and doc
-  edits go into its task report (lanes bullet above). A deviation that
-  changes the meaning of an AC or a public contract or interface gets
-  one delta review, run by the orchestrator after the commit that holds
-  the doc edit (in a lane, after the merge-back) and before A3: a fresh
+  **Delta review.** A deviation the implementer returned that changes the
+  meaning of an AC or a public contract or interface gets one delta
+  review, run by the orchestrator after the commit that holds the doc
+  edit (in a lane, after the merge-back) and before A3: a fresh
   `design-reviewer` for design text or `plan-reviewer` for plan text,
   given the doc diff of that commit only as a file path, against the
   rubric's `## Pre-code axes`, one round, no loop. A BLOCKER from a delta

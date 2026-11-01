@@ -1802,8 +1802,14 @@ def test_execute_carries_gaps_and_writes_deviations_back(name):
         "one delta review",
         "the doc diff of that commit only",
         "applies them to `plan.md` and `design.md` at merge-back, before A3",
+        "the paths of `plan.md` and `design.md`, handed only to edit the text that deviates",
+        "a one-line test summary, the `## Execution deviations` rows it added, and concerns",
+        "A lane implementer edits neither file",
+        "A deviation the implementer returned that changes the meaning",
     ):
         assert needle in t, (name, needle)
+    assert "three things" not in t, name
+    assert "never handed to the implementer" not in t, name
 
 
 @pytest.mark.parametrize("name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"])
