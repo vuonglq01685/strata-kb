@@ -48,8 +48,13 @@ DejaVu Sans Mono lacked Vietnamese precomposed letters — both rejected.
 - The cover date is the build date (today), not the hard-coded `2026-09-19`.
 - Rebuild all eight PDFs with the new script and commit them (they become
   v1.34.0).
-- How to rebuild is documented in one place, two lines:
-  `pip install -e ".[docs]"` then `python docs/src/build_pdf.py [name ...]`.
+- How to rebuild is documented in one place (the script's docstring):
+  `uv run --extra docs python docs/src/build_pdf.py [name ...]`, which uses
+  the versions pinned in `uv.lock` (xhtml2pdf 0.2.20, reportlab 5.0.1,
+  markdown 3.10.3) so pagination matches on every machine;
+  `pip install -e ".[docs]"` is the fallback, with newer versions whose line
+  breaking may differ. *(Changed during execution: the spike used
+  xhtml2pdf 0.2.28 and paginated differently from the locked 0.2.20.)*
 - Fonts are not shipped in the wheel or sdist (sdist is `only-include = ["src"]`
   already — verify nothing changes).
 

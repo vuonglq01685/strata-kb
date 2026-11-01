@@ -3,8 +3,12 @@
 
 Rebuild by hand on Windows, Linux or macOS:
 
-    pip install -e ".[docs]"
-    python docs/src/build_pdf.py [name ...]
+    uv run --extra docs python docs/src/build_pdf.py [name ...]
+
+uv uses the xhtml2pdf/reportlab/markdown versions pinned in uv.lock, so
+pagination is the same on every machine. Without uv,
+`pip install -e ".[docs]"` works but takes the newest versions, whose
+line breaking may differ.
 
 Fonts are vendored in docs/src/fonts: Liberation Sans/Mono 2.1.5 (SIL OFL
 1.1), metric-compatible with Arial/Courier New and carrying the full
