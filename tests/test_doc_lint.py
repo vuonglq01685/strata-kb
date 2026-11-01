@@ -23,13 +23,19 @@ REWRITE_PENDING = pytest.mark.xfail(strict=True, reason="cleared by the guides r
 # `kb <name>[ <sub>]` where the backtick opens the span, so prose like "`kb` itself" is skipped.
 KB_COMMAND = re.compile(r"`kb ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?")
 SLASH_COMMAND = re.compile(r"`/((?:kb|ba|dev|sa)-[a-z0-9-]+)")
-VERSION = re.compile(r"\b1\.\d{1,2}\.\d{1,2}\b")
+VERSION = re.compile(r"\bv?1\.\d{1,2}\.\d{1,2}\b")
 MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^(#{1,3}) ", re.MULTILINE)
 FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
-INLINE_CODE = re.compile(
-    r"`[^`\n]*`"
-)  # a link written inside a code span is a literal, not a link
+FENCE_BODY = re.compile(
+    r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)", re.MULTILINE | re.DOTALL
+)
+# Inside a fence there is no opening backtick, so `kb ...` must start a line or follow whitespace.
+FENCED_KB_COMMAND = re.compile(
+    r"(?:^|\s)kb ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?", re.MULTILINE
+)
+# A link written inside a code span is a literal, not a link.
+INLINE_CODE = re.compile(r"`[^`\n]*`")
 
 
 def _rel(path: Path) -> str:
@@ -63,7 +69,11 @@ def test_docs_name_only_real_kb_commands():
     names, groups = _real_commands()
     bad = []
     for doc in DOCS:
-        for name, sub in KB_COMMAND.findall(_text(doc)):
+        text = _text(doc)
+        refs = KB_COMMAND.findall(text)
+        for body in FENCE_BODY.findall(text):
+            refs += FENCED_KB_COMMAND.findall(body)
+        for name, sub in refs:
             if name not in names or (
                 name in groups and sub and sub not in groups[name]
             ):
@@ -98,6 +108,10 @@ def test_guides_and_quickstarts_carry_no_version_numbers():
     assert not bad, bad
 
 
+def _heading_levels(path: Path) -> list[int]:
+    return [len(h) for h in HEADING.findall(FENCE.sub("", _text(path)))]
+
+
 def test_vi_guides_mirror_en_headings():
     problems = []
     for en in sorted(DOCS_SRC.glob("*.en.md")):
@@ -105,10 +119,22 @@ def test_vi_guides_mirror_en_headings():
         if not vi.exists():
             problems.append((_rel(en), "missing vi"))
             continue
-        levels = lambda p: [len(h) for h in HEADING.findall(FENCE.sub("", _text(p)))]  # noqa: E731
-        if levels(en) != levels(vi):
+        en_levels, vi_levels = _heading_levels(en), _heading_levels(vi)
+        if en_levels != vi_levels:
+            first = next(
+                (
+                    i
+                    for i, (a, b) in enumerate(zip(en_levels, vi_levels, strict=False))
+                    if a != b
+                ),
+                min(len(en_levels), len(vi_levels)),
+            )
             problems.append(
-                (_rel(en), f"{len(levels(en))} EN vs {len(levels(vi))} VI headings")
+                (
+                    _rel(en),
+                    f"{len(en_levels)} EN vs {len(vi_levels)} VI headings, "
+                    f"first difference at index {first}",
+                )
             )
     assert not problems, problems
 
@@ -126,7 +152,7 @@ def test_pdf_titles_match_sources():
 
 
 def _slug(heading: str) -> str:
-    heading = re.sub(r"[`*_]", "", heading.strip().lower())
+    heading = re.sub(r"[`*]", "", heading.strip().lower())
     return re.sub(r"[^\w\- ]", "", heading).replace(" ", "-")
 
 
