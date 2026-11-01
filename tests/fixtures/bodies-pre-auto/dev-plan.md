@@ -189,17 +189,20 @@ that suffix (the line keeps `— answered rev N`). A line with
 ## A2 — independent plan review (before GATE 2)
 
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
-it gets the design file path, the ticket's acceptance criteria, the
-`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+it gets the design file path, the design's `## Carried gaps` table, the
+ticket's acceptance criteria, the `cmd.test` / `cmd.lint` commands, and this
+phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Depends on:`
 and `Serial resource:` lines, the `Exempt:` line format, the ordering rules,
 the author self-check below, and the Questions rule and preservation rule
 above (it lists what it could not decide under `## Questions raised`, tags
 each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
 the hub or asks the BA itself, and keeps `## Technical decisions` and
-`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle
-its `## Questions raised` before the reviewer is dispatched. Then review it
-with a different context.
+`## Open questions` verbatim) — and nothing else. The plan author reads the
+design's `## Carried gaps`, names a target task for each row and copies the
+row into the plan's `## Carried gaps`. After each author or fix round returns,
+handle its `## Questions raised` before the reviewer is dispatched. Then
+review it with a different context.
 
 **Author self-check.** Before any reviewer sees a draft, the author — and
 every fix round after it — runs this checklist and fixes what it finds: every
@@ -208,7 +211,8 @@ consumed Interface names the task that produces it, and that task's
 task cites
 is the task that holds what it cites; every standard value cites a section of
 `docs/impl/<ticket-id>/context.md`; every task that drives a shared running
-environment declares `Serial resource:`; `kb plan waves` exits 0; every block
+environment declares `Serial resource:`; `kb plan waves` exits 0; every row of
+`## Carried gaps` has a task number in `Target task`; every block
 a formatter re-wrapped is re-read. It returns the checklist result with the
 draft.
 
@@ -286,20 +290,34 @@ list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
 fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
-sweep list, and checks the diff for regressions; it still reports any other
-defect it sees, and still runs `kb plan waves`. A full review runs again
-only for not-checked cells or a slice the diff mostly rewrote.
+sweep list, and checks the diff for regressions, and it still runs
+`kb plan waves`. A new gap outside the diff is recorded as `round-1 coverage
+miss`. It does not block, unless it is a BLOCKER: a coverage miss that is not
+a BLOCKER goes to `## Carried gaps`, and a BLOCKER blocks. A full review runs
+again only for not-checked cells or a slice the diff mostly rewrote.
 
 **Stop.** Record each round in the plan file's `## Review record` table,
 same shape as the design file's: the verdict counts, coverage (checked cells
-over all cells) and the defect classes found. A gap a verification round
-finds outside the diff is recorded as `round-1 coverage miss`. The target is
-one review round plus one verification round. When a round's BLOCKER plus
-SUGGESTED count is not lower than the round before, stop at once and hand the
-Dev the trend and the open classes instead of spending the rounds left;
-otherwise the cap of 3 rounds holds. GATE 2 is offered
-only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
-left open; NOTE and NITS are recorded, not fixed.
+over all cells) and the defect classes found. A2 stops after round 1 plus
+one verification round; there is no third round. A BLOCKER still open after
+the verification round stops the flow and goes to the Dev, with the open
+classes. NOTE and NITS are recorded, not fixed.
+
+Leftover gaps go in a `## Carried gaps` table below `## Review record`, with
+the same header as the design's:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+    | <gap> | <class> | SUGGESTED | a2-r2 | 3 | open |
+
+Two kinds of row go in: every `execute-verifiable` gap from any round (the
+rubric's `### Execute-verifiable gaps`), and every round-2 SUGGESTED gap
+outside the diff. Every row names a task number in `Target task`.
+
+GATE 2 is offered only after A2 comes back clean — clean means no BLOCKER is
+open and every open SUGGESTED gap is in `## Carried gaps` with a target task.
+An `execute-verifiable` gap never counts toward the gate, whatever its
+severity.
 
 ## Review dispatch contract (every review in this flow)
 

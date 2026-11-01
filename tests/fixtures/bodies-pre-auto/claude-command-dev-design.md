@@ -215,8 +215,10 @@ gap list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
 fix against the design, written to `review/a1-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
-sweep list, and checks the diff for regressions; it still reports any other
-defect it sees. A full review runs again only for not-checked cells or a
+sweep list, and checks the diff for regressions. A new gap outside the diff
+is recorded as `round-1 coverage miss`. It does not block, unless it is a
+BLOCKER: a coverage miss that is not a BLOCKER goes to `## Carried gaps`, and
+a BLOCKER blocks. A full review runs again only for not-checked cells or a
 slice the diff mostly rewrote.
 
 **Stop.** Record every round in the design file's `## Review record` table,
@@ -226,15 +228,26 @@ creating it below the design body on round 1:
     |---|---|---|---|---|---|---|
     | <date> | 1 | BLOCKER x1 | design-reviewer | 38/40 | precondition not set up | AC3 not addressed |
 
-Coverage is checked cells over all cells. A gap a verification round finds
-outside the diff is recorded as `round-1 coverage miss`. The target is one
-review round plus one verification round. When a round's BLOCKER plus
-SUGGESTED count is not lower than the round before, stop at once and hand the
-Dev the trend and the open classes instead of spending the rounds left;
-otherwise the cap of 3 rounds holds.
+Coverage is checked cells over all cells. A1 stops after round 1 plus one
+verification round; there is no third round. A BLOCKER still open after the
+verification round stops the flow and goes to the Dev, with the open classes.
+NOTE and NITS are recorded, not fixed.
 
-GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
-no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
+Leftover gaps go in a `## Carried gaps` table below `## Review record`:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+    | <gap> | <class> | SUGGESTED | a1-r2 | plan | open |
+
+Two kinds of row go in: every `execute-verifiable` gap from any round (the
+rubric's `### Execute-verifiable gaps`), and every round-2 SUGGESTED gap
+outside the diff. In a design the target task reads `plan` until the plan
+names one.
+
+GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER is
+open and every open SUGGESTED gap is in `## Carried gaps` with a target task.
+An `execute-verifiable` gap never counts toward the gate, whatever its
+severity.
 
 ## Review dispatch contract (every review in this flow)
 
