@@ -52,8 +52,9 @@ vào nó.
 
 `kb init --kind hub` ghi `.kb/config.yaml` (`kind: hub`, `hub: "."` nên repo là hub của chính
 nó, `repo_id` lấy từ tên thư mục), `.kb/index.yaml`, `docker-compose.yml` và `.env.example`,
-workflow CI `.github/workflows/kb-publish.yml`, `.gitignore` và `.gitattributes` (giữ
-`.kb-work/`, `.kb-auth/`, `.kb-qa/` và PDF nguồn ngoài Git), `QUICKSTART.md` cùng tám skill
+workflow CI `.github/workflows/kb-publish.yml`, `.gitattributes` (kết thúc dòng LF) và
+`.gitignore` (giữ `.kb-work/`, `.kb-auth/`, `.kb-qa/` ngoài Git; `source/` và `sources/` có
+`.gitignore` riêng cho PDF nguồn), `QUICKSTART.md` cùng tám skill
 và command. `.mcp.json` và `.cursor/mcp.json` của nó chạy một MCP server **stdio** cho bạn
 (`python -m strata_kb.mcp --kb .kb/`), không phải server dùng chung. Chạy lại `kb init` là
 an toàn: nó tạo file còn thiếu và làm mới file dựng khung, nhưng bỏ qua `.kb/config.yaml` và
@@ -105,7 +106,7 @@ cách. Token phục vụ `/api`, `/mcp` và CI; con người đăng nhập `/ui`
 - **Thay token được sinh sẵn.** `kb docker-setup` sinh một token cho tiện. Hãy coi nó là giá
   trị tạm: đặt bí mật của riêng bạn vào `.env` và giữ trong một trình quản lý bí mật. Mọi
   repo kết nối qua MCP đều giữ token này. Sau mỗi thay đổi `.env`, tạo lại dịch vụ:
-  `docker compose up -d --force-recreate hub`.
+  `docker compose up -d --force-recreate` (mọi dịch vụ: `hub-sync` đọc cùng `.env`).
 - **Sau reverse proxy, hãy đặt `STRATA_KB_TRUSTED_PROXIES`** bằng số proxy tin cậy đứng
   trước server (số nguyên, mặc định `0`; giá trị khác làm server không khởi động). Để `0`
   sau proxy thì mọi người gọi đều trông như proxy: một người gọi có thể làm cạn bộ giới hạn
@@ -226,12 +227,12 @@ là hai giá trị khác nhau.
 **Một version cho mọi repo.** Mọi repo trong federation chạy cùng version strata-kb của hub.
 Nâng cấp hub trước (3.8), rồi báo từng chủ repo chạy `kb doctor` trong repo child, BA hoặc Dev
 của họ. Khi MCP của họ đã thiết lập (`kb mcp-setup`), `kb doctor` hỏi hub version của nó, cài
-version đó, đặt các pin `strata-kb==<version của hub>` trong `.github/workflows/`, và làm mới
+version đó, đặt các pin `strata-kb==<phiên bản của hub>` trong `.github/workflows/`, và làm mới
 skill cùng command của họ. Trong CI nó không cài gì và chỉ báo sự lệch. Cái pin quan trọng:
 một `pip install strata-kb` không ghim trong job có `id-token: write` sẽ để mỗi lần chạy lấy
 bất cứ thứ gì PyPI đang phục vụ, trong một job có quyền ghi vào hub.
 
-Để xoay token, đặt token mới vào `.env`, tạo lại dịch vụ (2.3), và báo các chủ repo chạy
+Để xoay token, đặt token mới vào `.env`, tạo lại các dịch vụ (2.3), và báo các chủ repo chạy
 `STRATA_KB_HTTP_TOKEN=<new> kb mcp-setup`.
 
 ## 2.7 Tùy chọn: lưu asset trên S3
@@ -457,7 +458,7 @@ với intake của hub này bằng GitHub Actions OIDC, và không cần secret.
 |---|---|
 | Child | chỉ `kb publish`. Merge vào nhánh mặc định không publish gì |
 | Dev | chỉ `kb publish` (`kb-code.yml` của nó chạy trên tag; merge không publish gì) |
-| BA | `kb publish`, **hoặc một merge vào `main` có chạm `missions/` hay `tickets/`**: `kb-publish-request.yml` của repo gắn tag cho commit đã merge và dispatch `kb-publish.yml` trên tag đó |
+| BA | `kb publish`, **hoặc một merge vào `main` có chạm `missions/` hay `tickets/`**: `kb-publish-request.yml` của repo gắn tag cho commit đã merge và dispatch `kb-publish.yml` trên tag đó (`main` theo bản dựng khung; nhánh mặc định khác thì phải sửa `main` ở cả hai chỗ trong workflow đó) |
 
 Với auto-merge của Registry bật cho một repo BA, một merge của BA vì vậy tới hub này mà không
 có review phía hub: hãy áp quy tắc review của bạn lên `main` của repo đó. Để trống
@@ -534,8 +535,9 @@ Không có credential, `hub-sync` vẫn quét và ghi log work order, ghi một 
 | Publisher qua git: bị từ chối push trực tiếp, hoặc repo-id không có trong danh sách | Hub có quản trị: đăng ký repo, và publish bằng PR |
 | Upload bị từ chối với `400`, đường dẫn quá dài | Đường dẫn bị giới hạn 110 đơn vị mã UTF-16 để `federation/<repo-id>/<path>` vừa với client Windows; rút ngắn tên tài liệu hoặc tên file |
 | Đã merge trên repo của publisher, chưa tìm kiếm được | Nó tìm được sau khi PR **hub** được merge và hub pull (tối đa `STRATA_KB_HUB_PULL_INTERVAL` giây). Xem log server có lần pull thất bại không: checkout bị sửa tay hoặc phân kỳ bị bỏ qua |
-| Nội dung đến mà không có review của hub | Auto-merge đang bật cho repo đó (4.3), có thể sau một merge của BA vào `main` (4.2) |
+| Nội dung đến mà không có review của hub | Auto-merge đang bật cho repo đó (4.3), có thể sau một merge của BA vào `main` (theo bản dựng khung, 4.2) |
 | `kb doctor` nêu tên file nằm trong một mục federation | Một lần publish cũ đã mirror nhiều hơn các artefact của `.kb/`. Publish lại để loại chúng, và **xoay mọi credential chúng chứa**: xoá file không xoá nó khỏi lịch sử Git |
+| `kb summarize`, `kb build` hoặc `kb publish` từ chối một tài liệu hub: `L3 review pending` | Một phát hiện L3 chưa được xác nhận: `kb l3 report <doc-id>`, kiểm tra từng section với PDF, rồi `kb l3 confirm <doc-id> --section <id>` (hoặc `--all`); xem [tài liệu Child](guide-child.vi.md#32-kiểm-tra-l3-với-pdf) |
 | Mọi lệnh hub lỗi xác thực | `git --version`: dưới 2.31 với URL hub có credential thì không gì chạy. Nâng cấp Git |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP của client là stdio server của repo Dev hoặc một bản clone cache của URL hub; trỏ nó vào `/mcp` của server này (6.5) |
 | `hub-sync` ghi log rằng issue chưa được cập nhật | Không có credential App hay `STRATA_KB_GH_TOKEN`, hoặc thiếu quyền (4.4) |
@@ -617,6 +619,8 @@ gọi `kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`, `kb_ticket_
 - `GET /intake/status` công khai có chủ đích (CLI không cần secret thăm dò nó) và, khi không
   có token, chỉ trả `state` và `pr_url`, khoá theo repo-id và commit: cùng giả định mạng nội
   bộ như MCP. `detail` của lỗi chỉ đến người gọi xuất trình OIDC token của repo đó.
+- Branch protection trên hub cộng intake OIDC là ranh giới bảo mật thật sự (2.5): registry
+  không xác thực được publisher qua git.
 - Publish chỉ sao chép **artefact của `.kb/`**: tài liệu, index, manifest và `assets/`. File
   cấu hình và dotfile bị giữ lại kèm một dòng `[warn] … (allowlist)`, nên một `config.yaml`
   mà ai đó để credential vào không bao giờ tới hub. `kb doctor` cảnh báo khi một `config.yaml`

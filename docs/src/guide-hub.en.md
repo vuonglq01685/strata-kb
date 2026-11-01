@@ -52,8 +52,9 @@ publishers open their PRs against it.
 
 `kb init --kind hub` writes `.kb/config.yaml` (`kind: hub`, `hub: "."` so the repo is its
 own hub, `repo_id` from the folder name), `.kb/index.yaml`, `docker-compose.yml` and
-`.env.example`, the CI workflow `.github/workflows/kb-publish.yml`, `.gitignore` and
-`.gitattributes` (they keep `.kb-work/`, `.kb-auth/`, `.kb-qa/` and source PDFs out of Git),
+`.env.example`, the CI workflow `.github/workflows/kb-publish.yml`, `.gitattributes` (LF
+line endings), and `.gitignore` (it keeps `.kb-work/`, `.kb-auth/`, `.kb-qa/` out of Git;
+`source/` and `sources/` have their own, for the PDFs),
 `QUICKSTART.md` and the eight skills and commands. Its `.mcp.json` and `.cursor/mcp.json`
 run a **stdio** MCP server for you (`python -m strata_kb.mcp --kb .kb/`), not the shared
 one. Re-running `kb init` is safe: it creates missing files and refreshes scaffold files,
@@ -107,7 +108,8 @@ to `/ui` with an account instead.
 - **Replace the generated token.** `kb docker-setup` generates one for convenience. Treat
   it as a placeholder: put your own secret in `.env` and keep it in a secret manager. Every
   repo that connects over MCP holds this token. After any change to `.env`, recreate the
-  service: `docker compose up -d --force-recreate hub`.
+  service: `docker compose up -d --force-recreate` (all services:
+  `hub-sync` reads the same `.env`).
 - **Behind a reverse proxy, set `STRATA_KB_TRUSTED_PROXIES`** to the number of trusted
   proxies in front of the server (an integer, default `0`; anything else stops startup).
   Left at `0` behind a proxy, every caller looks like the proxy: one caller can exhaust the
@@ -236,7 +238,7 @@ and reports the mismatch. The pin matters: an unpinned `pip install strata-kb` i
 that holds `id-token: write` would let every run pick up whatever PyPI serves, in a job
 able to write to the hub.
 
-To rotate the token, set the new one in `.env`, recreate the service (2.3), and tell the
+To rotate the token, set the new one in `.env`, recreate the services (2.3), and tell the
 owners to run `STRATA_KB_HTTP_TOKEN=<new> kb mcp-setup`.
 
 ## 2.7 Optional: asset storage in S3
@@ -467,7 +469,7 @@ authenticates to this hub's intake with GitHub Actions OIDC, and needs no secret
 |---|---|
 | Child | `kb publish` only. Merging to the default branch publishes nothing |
 | Dev | `kb publish` only (its `kb-code.yml` runs on the tag; merging publishes nothing) |
-| BA | `kb publish`, **or a merge to `main` that touches `missions/` or `tickets/`**: the repo's `kb-publish-request.yml` tags the merged commit and dispatches `kb-publish.yml` on that tag |
+| BA | `kb publish`, **or a merge to `main` that touches `missions/` or `tickets/`**: the repo's `kb-publish-request.yml` tags the merged commit and dispatches `kb-publish.yml` on that tag (`main` as scaffolded; another default branch means editing `main` in both places of that workflow) |
 
 With Registry auto-merge on for a BA repo, a BA merge therefore reaches this hub with no
 review on the hub side: apply your review rules on that repo's `main`. Leave `workflow:`
@@ -545,8 +547,9 @@ issue was not updated and why, and keeps running.
 | Publisher over git: direct push refused, or repo-id not listed | The hub is governed: register the repo, and publish by PR |
 | Upload refused with `400`, path too long | Paths are capped at 110 UTF-16 code units so that `federation/<repo-id>/<path>` fits a Windows client; shorten the document or file name |
 | Merged on the publisher's repo, not searchable | It is searchable once the **hub** PR merges and the hub pulls (up to `STRATA_KB_HUB_PULL_INTERVAL` seconds). Check the server log for a failed pull: a hand-edited or diverged checkout is left alone |
-| Content arrived with no hub review | Auto-merge is on for that repo (4.3), possibly after a BA merge to `main` (4.2) |
+| Content arrived with no hub review | Auto-merge is on for that repo (4.3), possibly after a BA merge to `main` (as scaffolded, 4.2) |
 | `kb doctor` names files inside a federation entry | An older publish mirrored more than `.kb/` artefacts. Publish again to strip them, and **rotate any credential they contained**: removing a file does not remove it from Git history |
+| `kb summarize`, `kb build` or `kb publish` refuses a hub document: `L3 review pending` | An L3 finding is unconfirmed: `kb l3 report <doc-id>`, check each section against the PDF, then `kb l3 confirm <doc-id> --section <id>` (or `--all`); see the [child guide](guide-child.en.md#32-check-l3-against-the-pdf) |
 | Every hub command fails with an authentication error | `git --version`: below 2.31 with a credentialed hub URL, nothing works. Upgrade Git |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | The client's MCP is a Dev repo's stdio server or a cache clone of the hub URL; point it at this server's `/mcp` (6.5) |
 | `hub-sync` logs that the issue was not updated | No App credentials or `STRATA_KB_GH_TOKEN`, or missing permissions (4.4) |
@@ -632,6 +635,8 @@ Dev skills call `kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`,
   token, returns only `state` and `pr_url`, keyed by repo-id and commit: the same
   internal-network assumption as the MCP. The failure `detail` goes only to a caller that
   presents that repo's OIDC token.
+- Branch protection on the hub plus the OIDC intake are the actual security boundary (2.5):
+  the registry cannot authenticate a git publisher.
 - Publish copies `.kb/` **artefacts only**: documents, indexes, manifests and `assets/`.
   Configuration files and dotfiles are withheld with a `[warn] … (allowlist)` line, so a
   `config.yaml` someone put a credential in never reaches the hub. `kb doctor` warns when a
