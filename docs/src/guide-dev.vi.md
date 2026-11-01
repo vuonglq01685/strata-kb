@@ -483,7 +483,8 @@ gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần th�
 không clone gì; các lệnh `kb` khác đọc hub từ chối và chỉ sang các công cụ MCP
 `strata-kb`. `kb pr` nói chuyện với GitHub REST API thay vì `gh pr`, vì GraphQL bị chặn ở
 đó. Vì không ai bấm được "trust this folder", `kb auto run` ở đó đánh dấu thư mục gốc repo
-là tin cậy trong `~/.claude.json`.
+là tin cậy trong `~/.claude.json`; các khóa khác được giữ nguyên và file không phân tích
+được thì bị bỏ qua.
 
 Nhánh của phiên không push được lên nhánh mặc định. Khi công tắc của nhánh mặc định tắt,
 `/kb-auto run` mở một PR `auto/switch` chỉ đổi `auto.enabled`, chờ check xanh, rồi **tự

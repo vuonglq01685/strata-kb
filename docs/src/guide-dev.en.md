@@ -495,7 +495,8 @@ after it. A missing or malformed line counts as a failed attempt (`no result lin
 nothing is cloned; other hub-reading `kb` commands refuse and point at the `strata-kb`
 MCP tools. `kb pr` talks to the GitHub REST API instead of `gh pr`, because GraphQL is
 blocked there. Because nobody can click "trust this folder", `kb auto run` there marks
-the repo root trusted in `~/.claude.json`.
+the repo root trusted in `~/.claude.json`; its other keys are kept and an unparseable file
+is left alone.
 
 The session branch cannot push to the default branch. When the default branch's switch is
 off, `/kb-auto run` opens an `auto/switch` PR that flips only `auto.enabled`, waits for green

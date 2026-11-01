@@ -100,7 +100,8 @@ The hub is mandatory: the server takes it from `--hub`, then `STRATA_KB_HUB`, th
 
 **The token.** The HTTP server refuses to start without `STRATA_KB_HTTP_TOKEN`, and
 refuses the `change-me` placeholder, a token shorter than 32 characters, or one that is
-not printable ASCII without spaces. The token serves `/api`, `/mcp` and CI; people sign in
+not printable ASCII without spaces (the documents are copyrighted: never run HTTP without
+authentication). The token serves `/api`, `/mcp` and CI; people sign in
 to `/ui` with an account instead.
 
 ## 2.3 Before you expose it

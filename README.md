@@ -83,7 +83,8 @@ byte for byte.
 
 Every section has a stable id (`5.129`, `ch2`), which is also the citation key.
 A section is `pending` until a model writes its summary, `summarized` after that,
-and `reviewed` once a human approves it. A ticket or spec cites sections in a
+and `reviewed` once a human approves it; approval is a human act and is never
+automatic. A ticket or spec cites sections in a
 `kb-context` block pinned to the hub's commit, so `kb resolve` can tell you
 later whether what it cited still says the same thing.
 

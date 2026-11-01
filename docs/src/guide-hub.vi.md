@@ -99,7 +99,7 @@ chối khởi động nếu không có.
 
 **Token.** Server HTTP từ chối khởi động nếu thiếu `STRATA_KB_HTTP_TOKEN`, và từ chối giá trị
 mẫu `change-me`, token ngắn hơn 32 ký tự, hoặc token không phải ASCII in được, không có dấu
-cách. Token phục vụ `/api`, `/mcp` và CI; con người đăng nhập `/ui` bằng tài khoản.
+cách (tài liệu có bản quyền: không bao giờ chạy HTTP mà không xác thực). Token phục vụ `/api`, `/mcp` và CI; con người đăng nhập `/ui` bằng tài khoản.
 
 ## 2.3 Trước khi mở ra ngoài
 
