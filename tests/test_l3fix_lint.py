@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import sys
+
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
+from strata_kb.ingest import pdftext
 from strata_kb.l3check import lint, spans
 from strata_kb.l3check.spans import SpansFile, UnitSpan
 
 runner = CliRunner()
+_real_load_pdf_context = lint.load_pdf_context
 
 
 def _ctx(sid, *, fallback=False, furniture=(), pdf_pages=None, page=1, end=1):
@@ -177,3 +181,16 @@ def test_cli_lint_rejects_missing_pdf(tmp_path):
         app, ["l3", "lint", "d", "--pdf", str(tmp_path / "nope.pdf")]
     )
     assert result.exit_code == 2
+
+
+def test_cli_lint_without_docling_no_traceback(tmp_path, monkeypatch):
+    args = _setup(tmp_path, monkeypatch, "## 1 A\n\ntext.\n")
+    monkeypatch.setattr(lint, "load_pdf_context", _real_load_pdf_context)
+    monkeypatch.setattr(pdftext, "page_texts", lambda pdf: {})
+    monkeypatch.setitem(sys.modules, "docling_core.types.doc", None)
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1
+    assert "Docling is not installed" in result.output
+    assert isinstance(result.exception, SystemExit)

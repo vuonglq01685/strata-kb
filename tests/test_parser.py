@@ -1,7 +1,9 @@
+import sys
 from dataclasses import dataclass, field
 
 import pytest
 
+from strata_kb.errors import KbError
 from strata_kb.ingest import parser
 
 PIL = pytest.importorskip("PIL")
@@ -965,3 +967,10 @@ def test_furniture_by_page_sees_furniture_layer_of_a_real_docling_document():
     )
     doc.add_text(label=DocItemLabel.TEXT, text="Body.", prov=prov)
     assert parser.furniture_by_page(doc) == {2: ["ICAO Doc 8168"]}
+
+
+def test_load_or_parse_without_docling_raises_kb_error(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "docling_core.types.doc", None)
+
+    with pytest.raises(KbError, match=r'pip install "strata-kb\[ingest\]"'):
+        parser.load_or_parse(tmp_path / "x.pdf", tmp_path)

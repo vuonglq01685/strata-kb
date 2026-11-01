@@ -4968,6 +4968,8 @@ def l3_report(
     kb_dir: Path = _KB_DIR_OPT,
 ) -> None:
     """List the L3 sections awaiting review, with evidence and agent verdicts (exit 1 if any)."""
+    from strata_kb.l3check import report
+
     if doc_id:
         doc_ids = [doc_id]
     else:
@@ -4983,13 +4985,22 @@ def l3_report(
     total = 0
     for did in doc_ids:
         fix_lines = _l3_fix_lines(kb_dir, did)
-        pending = [s for s in _l3_pending(kb_dir, did) if s.id not in fix_lines]
+        flagged = {s.id: s for s in _l3_pending(kb_dir, did)}
+        pending = [s for s in flagged.values() if s.id not in fix_lines]
         if not pending and not fix_lines:
             continue
         total += len(pending) + len(fix_lines)
         typer.echo(did)
-        for line in fix_lines.values():
+        digests = report.current_digests(kb_dir, did) if fix_lines else {}
+        for sid, line in fix_lines.items():
             typer.echo(line)
+            # the recheck after `kb l3 fix apply` filed these on the AI's version;
+            # a hand edit or removal since then leaves them stale, so skip them
+            sec = flagged.get(sid)
+            fresh = sec is not None and sec.l3_sha256 == digests.get(sid)
+            for finding in sec.findings if sec is not None and fresh else []:
+                for fline in _l3_finding_lines(finding):
+                    typer.echo(fline)
         for sec in pending:
             typer.echo(f"§{sec.id}")
             for finding in sec.findings:

@@ -3,6 +3,17 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.33.1 — 2026-11-01
+
+Finishes what 1.33.0 left open in the L3 AI fix. Nothing changes for a KB that does not run `kb l3 fix on`.
+
+- **Report.** `kb l3 report` prints the findings the check left on an AI-fixed section right under its `[ai-fix]` line. Before, it showed only the `git diff` hint and the findings stayed hidden.
+- **Missing docling.** `kb l3 lint`, `kb l3 fix apply` and `kb ingest` without docling print `Docling is not installed. Run: pip install "strata-kb[ingest]"` and exit 1, instead of a traceback.
+- **Repeated blocks with images.** A draft may now delete a repeated block that holds an image or link, as long as one copy stays and the order holds. Before, the link check rejected any drop. The word check no longer reads image syntax, because an image's alt is OCR that the PDF text layer lacks. Instead the link check compares each image's alt exactly: a changed alt is rejected as `links: <target> alt "<alt>"`. The `kb-l3-fix` skill states the rule; run `kb init` to get it.
+- **Code.** The draft checks moved from `l3check/fix.py` (704 lines) to `l3check/fixchecks.py`. Behavior is unchanged.
+- **Docs.** The README says what `kb l3 report` shows for an AI fix. The guide PDFs under `docs/` are still not rebuilt: `docs/src/build_pdf.py` needs the macOS fonts; the Markdown sources are current.
+- **Upgrade.** Upgrade the CLI. No CI pin change is needed: the gate is the same as in 1.33.0.
+
 ## 1.33.0 — 2026-10-31
 
 The hub reader shows L2 and L3 Markdown the way it was written, and an AI assistant can repair the structure of L3 under a machine check and a human review.

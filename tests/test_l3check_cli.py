@@ -235,14 +235,43 @@ def test_report_lists_ai_fix_first_with_diff_hint(tmp_path):
     assert result.exit_code == 1
     lines = result.output.splitlines()
     assert lines[0] == "doc"
-    assert lines[1:4] == [
+    assert lines[1:5] == [
         "§1 [ai-fix, from page image — check against the PDF] "
         f"by claude-code · changes: text · {diff}",
+        "  [content] p.1",  # the finding the recheck left on the AI's version
         f"§2 [edited outside kb l3 fix apply] {diff}",
         "§x1 [removed outside kb l3 fix apply]",
     ]
-    assert "  [content] p.1" not in lines  # §1 already printed as an ai-fix
+    assert lines.count("  [content] p.1") == 1  # not repeated as a plain §1
     assert "3 section(s) awaiting review." in result.output
+
+
+def test_report_ai_fix_without_findings_prints_line_only(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _fix(kb, baseline={"2": digests["2"]}, entries=[_fix_entry("1", digests["1"])])
+
+    result = _invoke(kb, "report")
+
+    lines = result.output.splitlines()
+    assert lines[1].startswith("§1 [ai-fix] by cursor")
+    assert not lines[2].startswith("  [")
+    assert "1 section(s) awaiting review." in result.output
+
+
+def test_report_hides_stale_findings_of_a_hand_edited_ai_fix(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _flag(kb, "1")
+    _fix(kb, baseline={"2": digests["2"]}, entries=[_fix_entry("1", digests["1"])])
+    raw = kb / "doc" / "a.raw.md"
+    raw.write_text(raw.read_text(encoding="utf-8").replace("alpha", "ALPHA"), "utf-8")
+
+    result = _invoke(kb, "report")
+
+    lines = result.output.splitlines()
+    assert lines[1].startswith("§1 [edited outside kb l3 fix apply]")
+    assert "  [content] p.1" not in lines  # filed on the AI's version, now gone
 
 
 def test_report_verified_ai_fix_line(tmp_path):
