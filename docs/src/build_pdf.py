@@ -167,7 +167,8 @@ class _WarningGuard(logging.Handler):
         self.warnings: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.warnings.append(record.getMessage().splitlines()[0])
+        message = record.getMessage()
+        self.warnings.append((message.splitlines() or [message])[0])
 
 
 def project_version() -> str:
