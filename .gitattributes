@@ -5,3 +5,6 @@
 *.tar binary
 # vendored mermaid 11.17.2 (MIT, see mermaid.LICENSE.txt next to it)
 src/strata_kb/templates/web/static/mermaid.min.js -diff linguist-vendored
+*.ttf binary
+# vendored Liberation 2.1.5 fonts (SIL OFL 1.1, see LICENSE next to them)
+docs/src/fonts/* linguist-vendored

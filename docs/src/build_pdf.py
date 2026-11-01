@@ -13,11 +13,14 @@ line breaking may differ.
 Fonts are vendored in docs/src/fonts: Liberation Sans/Mono 2.1.5 (SIL OFL
 1.1), metric-compatible with Arial/Courier New and carrying the full
 Vietnamese diacritic set that ReportLab's built-in Helvetica lacks. A glyph
-none of them can draw fails the build instead of leaving a blank box.
+none of them can draw, or any other xhtml2pdf warning (a font it could
+not read, a fallback to Helvetica), fails the build and leaves the old PDF
+in place.
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import sys
 from datetime import date
@@ -25,6 +28,7 @@ from pathlib import Path
 
 import markdown
 from xhtml2pdf import pisa
+from xhtml2pdf.config.resources import ResourceAccessPolicy
 
 SRC = Path(__file__).resolve().parent
 OUT = SRC.parent
@@ -135,8 +139,6 @@ FONT_FILES = {
     "FONT_MONO_BOLD": "LiberationMono-Bold.ttf",
 }
 
-MISSING_GLYPH = "No font this document has can draw"
-
 
 def font_css(font_dir: Path) -> str:
     """Return CSS with each @font-face url pointing at a font in `font_dir`.
@@ -148,21 +150,24 @@ def font_css(font_dir: Path) -> str:
         path = font_dir / filename
         if not path.is_file():
             raise SystemExit(f"missing font: {path}")
-        css = css.replace(placeholder, path.as_posix())
+        # Quoted, so FONT_BODY_BOLD cannot match inside FONT_BODY_BOLDITALIC.
+        css = css.replace(f'"{placeholder}"', f'"{path.as_posix()}"')
     return css
 
 
-class _GlyphGuard(logging.Handler):
-    """Collect xhtml2pdf's missing-glyph warnings during one render."""
+class _WarningGuard(logging.Handler):
+    """Collect every xhtml2pdf warning during one render.
+
+    A clean build has none; anything here (missing glyph, unreadable font,
+    Helvetica fallback) would otherwise ship as a silently wrong PDF.
+    """
 
     def __init__(self) -> None:
         super().__init__(logging.WARNING)
-        self.missing: list[str] = []
+        self.warnings: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        if MISSING_GLYPH in message:
-            self.missing.append(message.split(";")[0])
+        self.warnings.append(record.getMessage().splitlines()[0])
 
 
 def project_version() -> str:
@@ -188,27 +193,27 @@ def render(name: str, version: str, stamp: str, css: str) -> Path:
         stamp=stamp,
     )
     dest = OUT / f"strata-{name.replace('.', '.')}.pdf"
-    guard = _GlyphGuard()
+    guard = _WarningGuard()
     logger = logging.getLogger("xhtml2pdf")
     logger.addHandler(guard)
+    buffer = io.BytesIO()
     try:
-        with dest.open("wb") as fh:
-            # xhtml2pdf only reads files under the document's directory (cwd
-            # by default); anchoring it at docs/src lets it read fonts/ from
-            # any working directory.
-            result = pisa.CreatePDF(
-                html,
-                dest=fh,
-                encoding="utf-8",
-                path=str(FONT_DIR.parent / f"{name}.html"),
-            )
+        # An explicit read root: xhtml2pdf's default derives it from the
+        # document path via urlsplit, which reads "C:\\..." as a URL scheme on
+        # Windows and falls back to the cwd.
+        result = pisa.CreatePDF(
+            html,
+            dest=buffer,
+            encoding="utf-8",
+            resource_policy=ResourceAccessPolicy(base_dir=FONT_DIR),
+        )
     finally:
         logger.removeHandler(guard)
-    if guard.missing:
-        dest.unlink(missing_ok=True)
-        raise SystemExit(f"{name}: " + "; ".join(guard.missing))
+    if guard.warnings:
+        raise SystemExit(f"{name}: " + "; ".join(guard.warnings))
     if result.err:
         raise SystemExit(f"{name}: {result.err} rendering error(s)")
+    dest.write_bytes(buffer.getvalue())
     return dest
 
 

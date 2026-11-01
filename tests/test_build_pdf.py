@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -47,16 +48,56 @@ def test_vendored_fonts_present():
     assert "SIL OPEN FONT LICENSE Version 1.1" in licence
 
 
-def test_font_dir_is_inside_repo():
-    assert load_build_pdf().FONT_DIR == FONTS
+def test_every_font_url_is_an_existing_vendored_file():
+    bp = load_build_pdf()
+    urls = re.findall(r'url\("([^"]+)"\)', bp.font_css(bp.FONT_DIR))
+    assert len(urls) == len(FONT_FILES)
+    assert sorted(Path(u).name for u in urls) == sorted(FONT_FILES)
+    assert all(Path(u).is_file() for u in urls), urls
 
 
-def test_render_vietnamese_sample_has_no_missing_glyphs(tmp_path, monkeypatch):
-    text = "# Tiếng Việt\n\nể ả ầ ề ố ế ổ → `mã ể ả`\n\n```\nkb get ể ả →\n```\n"
+def test_render_embeds_every_liberation_face(tmp_path, monkeypatch):
+    pypdf = pytest.importorskip("pypdf")
+    text = (
+        "# Tiếng Việt\n\nể ả ầ ề ố ế ổ → *nghiêng ể* ***đậm nghiêng ể***"
+        " `mã ể ả` **`mã đậm`**\n\n```\nkb get ể ả →\n```\n"
+    )
     pdf = render_sample(tmp_path, monkeypatch, text)
-    assert pdf.read_bytes().startswith(b"%PDF")
+    fonts = set()
+    for page in pypdf.PdfReader(pdf).pages:
+        for font in page["/Resources"]["/Font"].values():
+            fonts.add(str(font.get_object()["/BaseFont"]))
+    for face in (
+        "LiberationSans",
+        "LiberationSans-Bold",
+        "LiberationSans-Italic",
+        "LiberationSans-BoldItalic",
+        "LiberationMono",
+    ):
+        assert any(f.split("+")[-1] == face for f in fonts), (face, fonts)
 
 
-def test_render_fails_on_missing_glyph(tmp_path, monkeypatch):
+def test_render_fails_on_missing_glyph_and_keeps_old_pdf(tmp_path, monkeypatch):
+    old = tmp_path / "strata-sample.vi.pdf"
+    old.write_bytes(b"%PDF old")
     with pytest.raises(SystemExit, match=r"U\+1F642"):
         render_sample(tmp_path, monkeypatch, "Chào 🙂\n")
+    assert old.read_bytes() == b"%PDF old"
+
+
+def test_render_confines_reads_to_font_dir_not_document_path(tmp_path, monkeypatch):
+    # xhtml2pdf derives its default read root from the document path through
+    # urlsplit, which reads "C:\\..." as scheme "c" on Windows and falls back
+    # to the cwd. An explicit policy rooted at FONT_DIR avoids that.
+    bp = load_build_pdf()
+    seen = {}
+    real = bp.pisa.CreatePDF
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(bp.pisa, "CreatePDF", spy)
+    render_sample(tmp_path, monkeypatch, "ể →\n")
+    assert Path(seen["resource_policy"].base_dir) == bp.FONT_DIR
+    assert "path" not in seen
