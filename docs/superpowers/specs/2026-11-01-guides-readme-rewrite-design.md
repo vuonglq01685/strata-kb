@@ -46,13 +46,14 @@ method, how to use the framework, and where each role's guide is.
 
 ## Non-goals
 
-- No changes to product code, skills or scaffold templates. If writing a
+- No changes to product code or skills; scaffold templates change only for
+  the quickstarts (see "My calls"). If writing a
   guide exposes a code bug or a skill that contradicts the code, record it
   for a follow-up; do not fix it here.
 - No new doc tooling (no generated command tables).
-- `QUICKSTART-dev.md` (scaffolded into dev repos) and
-  `docs/deploy-remote-mcp.md` are not rewritten; guides link to them where
-  useful, and any contradiction found is listed as a follow-up.
+- `docs/deploy-remote-mcp.md` is not rewritten; the hub guide links to it,
+  and any contradiction found is listed as a follow-up. (Quickstarts are in
+  scope — see "My calls".)
 - No version bump.
 
 ## Anti-goals
@@ -148,6 +149,25 @@ method, how to use the framework, and where each role's guide is.
   `test_docs_describe_full_auto_mode` (admin-rights merge, include
   administrators, `STRATA_KB_HUB_URL` / `STRATA_KB_HTTP_TOKEN`, …) move to
   the BA and Dev guides and the test follows them.
+- **Versions — decided with the user:** guides assume every repo in a
+  federation runs the hub's strata-kb version; no minimum-version
+  statements. Each guide's setup says it once, backed by code: upgrade the
+  hub first, then run `kb doctor` in each child/ba/dev repo with the hub's
+  MCP configured — it installs the hub's version, sets the `strata-kb==X`
+  CI pins and refreshes skills/commands (`cli.py` `_match_hub_version`;
+  skipped in CI, where `kb doctor` reports the mismatch instead —
+  `doctor/remote.py` `version_issues`).
+- **Quickstarts are in scope** (user request): the four scaffold templates
+  `QUICKSTART-{hub,child,ba,dev}.md` (written into repos as `QUICKSTART.md`,
+  `QUICKSTART-BA.md`, `QUICKSTART-DEV.md`) are rewritten as a one-page card
+  in the user's repo, about 60–120 lines: setup checklist, daily commands,
+  auto on/off, and a link to the full guide. The guide is the single full
+  source; the quickstart never carries detail the guide lacks. Tests that
+  pin quickstart text (`tests/test_init.py`, `tests/test_templates.py`,
+  `tests/test_template_bodies.py`, `tests/test_devcodeseed.py`,
+  `tests/test_readme.py`) follow the same keep-the-fact rule. *(My
+  proposal; the user did not object.)* This replaces the narrower
+  "pointer-fix only" call above, and the non-goal on QUICKSTART-dev.md.
 - **Authoring flow lives in the child guide.** The hub guide covers operator
   work (service, Docker, accounts, Registry, merging publish PRs, CI publish
   via OIDC, multi-tier, S3 assets, code-sync) and links to the child guide
