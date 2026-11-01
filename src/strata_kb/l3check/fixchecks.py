@@ -104,28 +104,31 @@ def _check_tables(t: _Target, draft: str) -> None:
             raise _Reject(f"tables: table {n} changed at {_clip(bad)}")
 
 
-# `![alt](T)` / `[text](T)` (T keeps any title), `[ref]: T` definitions, <autolinks>
+# `![alt](T)` (T keeps any title); read before links so a linked image keeps its alt
+_IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+# `[text](T)`, `[ref]: T` definitions, <autolinks>; run on text with images blanked
 _LINK_TARGET = re.compile(
-    r"(!?)\[([^\]]*)\]\(([^)]*)\)"
+    r"\[[^\]]*\]\(([^)]*)\)"
     r"|^[ ]{0,3}\[[^\]]+\]:[ \t]*(\S+)"
     r"|<((?:https?|mailto):[^>\s]+)>",
     re.MULTILINE,
 )
-_IMAGE_MD = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _NONE = ("(none)", "")
 
 
 def _link_targets(text: str) -> list[tuple[str, str]]:
-    """(target, alt) per link in order; alt only for images, "" for links."""
-    return [
-        (
-            (
-                (m.group(1) or "") + (m.group(3) or m.group(4) or m.group(5) or "")
-            ).strip(),
-            m.group(2).strip() if m.group(1) else "",
-        )
-        for m in _LINK_TARGET.finditer(text)
+    """(target, alt) per image and link in text order; alt is "" for links.
+    Images are `!<target>`, so `[![a](img)](url)` yields `url`, then the image."""
+    found = [
+        (m.start(), (("!" + m.group(2)).strip(), m.group(1).strip()))
+        for m in _IMAGE_MD.finditer(text)
     ]
+    blanked = _IMAGE_MD.sub(lambda m: " " * len(m[0]), text)
+    found += [
+        (m.start(), ((m.group(1) or m.group(2) or m.group(3) or "").strip(), ""))
+        for m in _LINK_TARGET.finditer(blanked)
+    ]
+    return [pair for _, pair in sorted(found)]
 
 
 def _without_images(md: str) -> str:

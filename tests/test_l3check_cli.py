@@ -259,6 +259,21 @@ def test_report_ai_fix_without_findings_prints_line_only(tmp_path):
     assert "1 section(s) awaiting review." in result.output
 
 
+def test_report_hides_stale_findings_of_a_hand_edited_ai_fix(tmp_path):
+    kb = _git_kb(tmp_path)
+    digests = report.current_digests(kb, "doc")
+    _flag(kb, "1")
+    _fix(kb, baseline={"2": digests["2"]}, entries=[_fix_entry("1", digests["1"])])
+    raw = kb / "doc" / "a.raw.md"
+    raw.write_text(raw.read_text(encoding="utf-8").replace("alpha", "ALPHA"), "utf-8")
+
+    result = _invoke(kb, "report")
+
+    lines = result.output.splitlines()
+    assert lines[1].startswith("§1 [edited outside kb l3 fix apply]")
+    assert "  [content] p.1" not in lines  # filed on the AI's version, now gone
+
+
 def test_report_verified_ai_fix_line(tmp_path):
     kb = _git_kb(tmp_path)
     digests = report.current_digests(kb, "doc")
