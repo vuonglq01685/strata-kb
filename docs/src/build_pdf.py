@@ -46,6 +46,8 @@ TITLES = {
         "Strata — Hướng dẫn Hub & Child",
         "Dành cho người quản trị và biên soạn tri thức",
     ),
+    "guide-child.en": ("Strata — Child Guide", "For document authors"),
+    "guide-child.vi": ("Strata — Hướng dẫn Child", "Dành cho người biên soạn tài liệu"),
     "guide-ba.en": ("Strata — BA Guide", "For business analysts"),
     "guide-ba.vi": ("Strata — Hướng dẫn BA", "Dành cho Business Analyst"),
     "guide-dev.en": ("Strata — Developer Guide", "For engineers implementing tickets"),
