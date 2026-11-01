@@ -365,12 +365,12 @@ ngữ cảnh riêng — không bao giờ là chính agent đã làm ra nó:
 | A5 | `dev-handover`, trước GATE 3 | merge vào nhánh chính có an toàn không |
 
 Tiêu chí nằm ở `docs/pr-review-rubric.md`, ghi đè bằng
-`docs/pr-review-rubric.local.md`. Mỗi vòng tối đa 3 lượt fix/review. Một vòng
+`docs/pr-review-rubric.local.md`. A3, A4 và A5 cho tối đa 3 lượt fix/review. Chúng
 chỉ tính là sạch khi không còn BLOCKER và không còn SUGGESTED nào bỏ ngỏ —
 NOTE và NITS chỉ được ghi lại, không bị bắt sửa — và một BLOCKER hoặc SUGGESTED
-còn đứng sau lượt 3 sẽ dừng luồng và chuyển cho bạn.
+còn đứng sau lượt 3 sẽ dừng luồng và chuyển cho bạn. A1 và A2 theo quy tắc ngắn hơn bên dưới.
 
-A1 và A2 được thiết kế để xong trong một lượt review cộng một lượt xác minh.
+A1 và A2 dừng sau lượt 1 cộng một lượt xác minh; không có lượt thứ ba.
 Tác giả tự kiểm tra trước khi reviewer nào đọc bản nháp. Lượt 1 phải vét hết:
 reviewer trả về ma trận độ phủ (mỗi task với mỗi câu hỏi, hoặc mỗi AC và mục tiêu chí với các phần của thiết kế) và gắn mỗi gap
 một lớp lỗi. Lượt fix quét toàn bộ tài liệu để sửa mọi chỗ cùng lớp lỗi, không
@@ -378,8 +378,44 @@ chỉ chỗ được nêu. Các lượt sau xác minh bản fix dựa trên diff
 8 AC hoặc 600 dòng, hay kế hoạch quá 12 task hoặc 600 dòng, được review theo
 từng phần song song, và một lead reviewer kiểm lại mọi phát hiện của các phần,
 xem các chỗ giáp ranh giữa các phần, và kiểm tra độ lệch so với ticket và thiết
-kế. Khi một lượt không tìm ra ít BLOCKER cộng SUGGESTED hơn lượt trước, vòng
-lặp dừng sớm và đưa bạn xu hướng đó.
+kế.
+
+Gap mới mà lượt xác minh tìm thấy ngoài diff của bản fix được ghi là
+`round-1 coverage miss`. Nó không chặn, trừ khi là BLOCKER. Gap nào còn chặn sau lượt
+xác minh sẽ dừng luồng và chuyển cho bạn, kèm các lớp lỗi còn mở. Đó là BLOCKER không
+thể kiểm tra lúc thực thi, hoặc SUGGESTED không có dòng nào trong `## Carried gaps`.
+
+**Carried gaps.** Thiết kế hoặc kế hoạch liệt kê các gap còn lại trong bảng
+`## Carried gaps` bên dưới `## Review record`:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+
+Có hai loại dòng. Một là mọi gap `execute-verifiable` từ bất kỳ lượt nào (gap chỉ chạy
+code hoặc test mới giải quyết được; rubric liệt kê chúng ở `### Execute-verifiable
+gaps`). Hai là mọi gap SUGGESTED của lượt 2 nằm ngoài diff của bản fix. Trong thiết
+kế, task đích ghi `plan` cho tới khi kế hoạch gọi tên một task. GATE 1 và GATE 2 chỉ
+được đưa ra khi không còn BLOCKER nào mở và mọi gap SUGGESTED còn mở đều có task đích
+trong bảng. Gap `execute-verifiable` không bao giờ tính vào cổng, dù mức độ nào, và không bao giờ
+được gửi cho fix subagent: nó được mang theo chưa sửa, không sửa trên giấy.
+
+Trong `dev-execute`, implementer của một task nhận các dòng carried gọi tên task đó
+và phải giải quyết chúng. Spec review kiểm tra điều đó; orchestrator đặt `Status` thành
+`closed task <n>` khi task được tick.
+
+**Deviations.** Khi code của một task khác với khối task của nó hoặc với một phần của
+thiết kế, implementer sửa đoạn kế hoạch hoặc thiết kế đó trong cùng commit của task và
+thêm một dòng vào `## Execution deviations` ở cuối `plan.md`:
+
+    | Task | Doc + section | What changed | Why |
+    |---|---|---|---|
+
+Nhờ vậy tài liệu luôn theo sát code. Với lane song song, implementer không sửa file nào
+trong hai file đó: nó trả các dòng và chỗ sửa tài liệu trong báo cáo, và orchestrator áp
+dụng khi merge lại, trước A3. Spec review kiểm tra văn bản khớp với code. Một deviation
+làm đổi nghĩa của AC hoặc của một contract công khai sẽ có một **delta review** chỉ cho
+chỗ sửa tài liệu đó, do `design-reviewer` hoặc `plan-reviewer` mới thực hiện, một vòng,
+trước A3. BLOCKER từ đó chuyển cho bạn; phát hiện SUGGESTED trở thành một dòng carried.
 
 Ở nơi runtime của trợ lý không dispatch được subagent — mặc định với wrapper
 Copilot và Cursor — vòng review vẫn chạy, nhưng chỉ là một lượt đọc đúng những
@@ -423,8 +459,16 @@ raised` trong bản nháp, gắn nhãn `business` hoặc `technical`, kèm các 
   dòng để bạn ghi lại. Khi nó xét thấy đáp án sẽ đổi nghĩa của một AC, nó trả về `business
   question:` và câu hỏi chuyển sang BA.
 - **Nghiệp vụ** đi tới BA qua MCP `kb_question_ask`, và xuất hiện trong `## Open
-  questions` của bản nháp dưới dạng `- Q<id> — <câu hỏi> — blocks: <AC id|none>`. BA trả
+  questions` của bản nháp dưới dạng `- Q<id> — <câu hỏi> — blocks: <AC id|none>`, trong đó
+  `<câu hỏi>` là câu **Decision needed** trên một dòng. BA trả
   lời bằng `/ba-answer-questions`.
+- **Định dạng câu hỏi.** Câu hỏi được lưu là markdown với các nhãn tiếng Anh cố định;
+  nội dung viết bằng ngôn ngữ của ticket: `**Decision needed:**` (một câu),
+  `**Background:**` (2-4 gạch đầu dòng), `**Options:**` (đánh số, mỗi phương án kèm hệ
+  quả), `**Dev recommends:**` và `**AC impact:**`. Mỗi câu hỏi chỉ một quyết định, không
+  nêu mã nội bộ (DD12, SA-1, R1-13) trừ khi văn bản giải thích nó là gì, và `context` trỏ
+  tới nơi BA mở được, như `design.md §9.3`, không bao giờ là mã vòng review. Hub hiển thị
+  câu hỏi với đúng xuống dòng và danh sách; trang Q&A render markdown này với HTML thô tắt.
 - **Câu hỏi chặn sẽ dừng cổng.** Thiết kế hoặc kế hoạch còn câu hỏi mở chặn một AC thì
   không qua được GATE 1 hay GATE 2; skill dừng và đưa bạn đường dẫn Q&A của hub để dán vào
   chat. Câu hỏi không chặn AC nào thì không dừng, và reviewer A1, A2 coi nó là mục còn mở

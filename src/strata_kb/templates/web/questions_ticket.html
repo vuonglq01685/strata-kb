@@ -17,14 +17,14 @@
     </div>
     <div class="queue-row" style="flex-direction:column;align-items:flex-start">
       <p class="kicker">Question</p>
-      <div style="white-space:pre-wrap">{{ q.question }}</div>
-      {% if q.context %}<p class="kicker">Context</p><div style="white-space:pre-wrap">{{ q.context }}</div>{% endif %}
-      {% if q.blocks %}<p class="kicker">Blocks</p><div style="white-space:pre-wrap">{{ q.blocks }}</div>{% endif %}
+      <div class="md-body">{{ md(q.question) | safe }}</div>
+      {% if q.context %}<p class="kicker">Context</p><div class="md-body">{{ md(q.context) | safe }}</div>{% endif %}
+      {% if q.blocks %}<p class="kicker">Blocks</p><div>{{ q.blocks }}</div>{% endif %}
     </div>
     {% if q.answer is not none %}
     <div class="queue-row" style="flex-direction:column;align-items:flex-start">
       <p class="kicker">Answer</p>
-      <div style="white-space:pre-wrap">{{ q.answer }}</div>
+      <div class="md-body">{{ md(q.answer) | safe }}</div>
       {% if q.answer_rev is not none %}
       <p class="meta-line">ticket rev {{ q.answer_rev }}{% if state == 'waiting' %} <span class="note">(not on the hub yet)</span>{% endif %}
         {% for s in q.ticket_sections %}<span class="chip">{{ s }}</span>{% endfor %}</p>

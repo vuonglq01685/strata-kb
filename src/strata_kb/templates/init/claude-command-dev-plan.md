@@ -134,8 +134,10 @@ authors), write its decision into the draft's `## Technical decisions` as
 `- SA-<n>: <decision> — why — evidence`, then re-dispatch the author with those decisions. **business** → call
 `kb_question_ask(ticket, question, asked_by, context, blocks)` (`asked_by` =
 `git config user.name`; when that is empty, ask the Dev for a name once and
-reuse it) and move the item to the draft's `## Open questions` as
-`- Q<id> — <question> — blocks: <AC ids|none>`; a `business question:`
+reuse it), with `question` and `context` as **Question format** below
+says, and move the item to the draft's `## Open questions` as
+`- Q<id> — <question> — blocks: <AC ids|none>`, where `<question>` is the
+**Decision needed** sentence on one line; a `business question:`
 returned by `dev-sa` is handled the same way. **Preservation rule.** Remove
 each handled item from `## Questions raised`. Every author and fix round keeps
 `## Technical decisions` and `## Open questions` verbatim and never
@@ -160,20 +162,44 @@ answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
 that suffix (the line keeps `— answered rev N`). A line with
 `— answered rev N` and no `— re-draft` is already handled.
 
+**Question format.** The `question` is markdown and keeps its line breaks.
+Write it as below. The labels are fixed English words; the content is in
+the ticket's language.
+
+    **Decision needed:** <one sentence>
+
+    **Background:**
+    - <2-4 bullets in plain words>
+
+    **Options:**
+    1. <option> — <consequence>
+    2. <option> — <consequence>
+
+    **Dev recommends:** <option>, because <reason>
+    **AC impact:** <which ACs change, which do not>
+
+Ask one decision per question: two decisions are two questions. Name no
+internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is.
+The `context` names a place a reader can open, such as
+`design.md §9.3 — test T4`, never a review-round code.
+
 ## A2 — independent plan review (before GATE 2)
 
 Dispatch a `plan-author` subagent to turn the approved design into the plan —
-it gets the design file path, the ticket's acceptance criteria, the
-`cmd.test` / `cmd.lint` commands, and this phase's own authoring rules above
+it gets the design file path, the design's `## Carried gaps` table, the
+ticket's acceptance criteria, the `cmd.test` / `cmd.lint` commands, and this
+phase's own authoring rules above
 — the one-task-per-AC shape, the three per-task headings, the `Depends on:`
 and `Serial resource:` lines, the `Exempt:` line format, the ordering rules,
 the author self-check below, and the Questions rule and preservation rule
 above (it lists what it could not decide under `## Questions raised`, tags
 each item `business` or `technical` with `blocks: <AC ids|none>`, never calls
 the hub or asks the BA itself, and keeps `## Technical decisions` and
-`## Open questions` verbatim) — and nothing else. After each author or fix round returns, handle
-its `## Questions raised` before the reviewer is dispatched. Then review it
-with a different context.
+`## Open questions` verbatim) — and nothing else. The plan author reads the
+design's `## Carried gaps`, names a target task for each row and copies the
+row into the plan's `## Carried gaps`. After each author or fix round returns,
+handle its `## Questions raised` before the reviewer is dispatched. Then
+review it with a different context.
 
 **Author self-check.** Before any reviewer sees a draft, the author — and
 every fix round after it — runs this checklist and fixes what it finds: every
@@ -182,7 +208,8 @@ consumed Interface names the task that produces it, and that task's
 task cites
 is the task that holds what it cites; every standard value cites a section of
 `docs/impl/<ticket-id>/context.md`; every task that drives a shared running
-environment declares `Serial resource:`; `kb plan waves` exits 0; every block
+environment declares `Serial resource:`; `kb plan waves` exits 0; every row of
+`## Carried gaps` has a task number in `Target task`; every block
 a formatter re-wrapped is re-read. It returns the checklist result with the
 draft.
 
@@ -246,7 +273,8 @@ this size.
 
 **Class-wide fix.** Copy the plan to
 `docs/impl/<ticket-id>/review/plan-r<n>.md`, then dispatch the fix subagent
-with the report's BLOCKER and SUGGESTED gaps. For every gap it fixes the cited
+with the report's BLOCKER and SUGGESTED gaps, except `execute-verifiable` gaps: they go to
+`## Carried gaps` unfixed, never fixed on paper. For every gap it fixes the cited
 instance, sweeps the
 whole plan for the same defect class, and writes each further instance it
 fixed to `review/a2-r<n>-sweep.md`; then it re-runs the author self-check. An
@@ -254,26 +282,42 @@ instance whose fix would change what the approved design mandates goes to the
 Dev, unfixed. The fix subagent gets the same
 Questions rule and preservation rule as the author.
 
-**Verification rounds.** Round 2 and later are not a fresh full review. A
+**Verification rounds.** Round 2 is not a fresh full review. A
 `plan-reviewer` with a fresh context gets the round-1 inputs, the previous gap
 list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
 fix against the plan, written to `review/a2-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
-sweep list, and checks the diff for regressions; it still reports any other
-defect it sees, and still runs `kb plan waves`. A full review runs again
-only for not-checked cells or a slice the diff mostly rewrote.
+sweep list, and checks the diff for regressions, and it still runs
+`kb plan waves`. A new gap outside the diff is recorded as `round-1 coverage
+miss`. It does not block, unless it is a BLOCKER: a SUGGESTED coverage
+miss goes to `## Carried gaps` (NOTE and NITS are recorded only), and a BLOCKER that is not
+`execute-verifiable` blocks. A full review runs again only for not-checked
+cells or a slice the diff mostly rewrote.
 
 **Stop.** Record each round in the plan file's `## Review record` table,
 same shape as the design file's: the verdict counts, coverage (checked cells
-over all cells) and the defect classes found. A gap a verification round
-finds outside the diff is recorded as `round-1 coverage miss`. The target is
-one review round plus one verification round. When a round's BLOCKER plus
-SUGGESTED count is not lower than the round before, stop at once and hand the
-Dev the trend and the open classes instead of spending the rounds left;
-otherwise the cap of 3 rounds holds. GATE 2 is offered
-only after A2 comes back clean — clean means no BLOCKER and no SUGGESTED gap
-left open; NOTE and NITS are recorded, not fixed.
+over all cells) and the defect classes found. A2 stops after round 1 plus
+one verification round; there is no third round. A gap that still blocks after
+the verification round — a BLOCKER that is not `execute-verifiable`, or a
+SUGGESTED gap with no `## Carried gaps` row — stops the flow and goes to the
+Dev, with the open classes. NOTE and NITS are recorded, not fixed.
+
+Leftover gaps go in a `## Carried gaps` table below `## Review record`, with
+the same header as the design's:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+    | <gap> | <class> | SUGGESTED | a2-r2 | 3 | open |
+
+Two kinds of row go in: every `execute-verifiable` gap from any round (the
+rubric's `### Execute-verifiable gaps`), and every round-2 SUGGESTED gap
+outside the diff. Every row names a task number in `Target task`.
+
+GATE 2 is offered only after A2 comes back clean — clean means no BLOCKER is
+open and every open SUGGESTED gap is in `## Carried gaps` with a target task.
+An `execute-verifiable` gap never counts toward the gate, whatever its
+severity.
 
 ## Review dispatch contract (every review in this flow)
 
@@ -291,6 +335,7 @@ left open; NOTE and NITS are recorded, not fixed.
   the session default silently.
 - Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
   standing after round 3 stops the flow and goes to the Dev.
+- A1 and A2 stop after round 1 plus one verification round; see their **Stop.** rule.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
 - Criteria come from the source that matches the review: the rubric's
@@ -362,13 +407,12 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-- **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER and no SUGGESTED gap open), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps through the fix subagent and re-review, at most 2 fix rounds (not 3). A plan that is still not clean after that stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
+- **GATE 2 — the Dev approves the plan before any code is written** → the A2 review, run by a `plan-reviewer` subagent in a fresh context, is the approval, and you flip the header yourself. When A2 comes back clean (no BLOCKER is open and every open SUGGESTED gap is in `## Carried gaps` with a target task; an `execute-verifiable` gap never counts), set `status: approved` at once, log an Auto decision line (the rounds, the verdict counts, what the reviewer read), and carry on to `dev-execute`. Otherwise send the gaps that are not `execute-verifiable` through the fix subagent (an `execute-verifiable` gap goes to `## Carried gaps` unfixed) and re-review once: A2 runs at most 2 rounds, round 1 plus one verification round (not 3). A plan that is still not clean after round 2 stays `draft`: end `AUTO-RESULT: failed plan-review`, and name the open classes in the reply. A design that is not `status: approved` ends `AUTO-RESULT: failed design-review`.
 - **No `-code` document yet — "ask the Dev once for the build/test/lint commands"** → never ask; read them from the repo, in this order: the `run:` lines of `.github/workflows/*.yml` (skip the scaffolded `kb-pr-lint.yml`, `kb-doctor.yml` and `kb-code.yml`; `kb-test.yml` counts), `docs/conventions/<lang>.md` and its `testing.md`, then the package manifests and task files (`package.json` scripts, `pyproject.toml`, `Makefile`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `composer.json`, `pubspec.yaml`, `Package.swift`). `cmd.lint` and `cmd.build` come only from commands that `docs/conventions/<lang>.md` and its pack files name for the repo's languages, in the families the allowlist permits per language (test runner, install, lint, type check and build: for example `ruff`, `npm run lint`, `go vet`, `cargo clippy`, `dotnet build`); a command outside those families is denied in a headless run, so choose another one the conventions name. Record the commands in the `cmd.test:` / `cmd.lint:` header lines and log where each came from. A repo with no test command at all gets `AUTO-RESULT: failed no-test-command`.
 - **Questions: "ask the Dev for a name once"** → `asked_by` is `kb-auto`. Never ask.
 - **Gate: a blocking open BA question — "stop and tell the Dev", and give the Dev the hub Q&A link** → stop without flipping the status. Report the blocking `Q<id>` lines to `dev-implement-ticket`, which ends `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. When Q&A is unavailable and the item blocks an AC, report `failed qa-unavailable`. A business question with `blocks: none` still falls back to `OPEN(BA)` and a PR note, and the work continues.
 - **Class-wide fix: an instance whose fix would change the design "goes to the Dev, unfixed"** → decide: when the finding is right, fix the design file, re-run `dev-design`'s A1 review, flip the design to `status: approved` again, then fix the plan. When the finding is wrong, leave the plan and record why. Either way, log an Auto decision line.
-- **Stop rule: "hand the Dev the trend"** → a round whose BLOCKER plus SUGGESTED count is not lower than the round before is treated as not clean: stop spending rounds and end `AUTO-RESULT: failed plan-review`, with the trend and the open classes in the reply.
-- **Review contract: "round 3 stops the flow and goes to the Dev"** → the cap is 2 fix rounds here, and what is left ends `AUTO-RESULT: failed plan-review`.
+- **Review contract: "round 3 stops the flow and goes to the Dev"** → A2 stops after round 2, as its **Stop.** rule says: a gap that still blocks after round 2 (a BLOCKER that is not `execute-verifiable`, or a SUGGESTED gap with no `## Carried gaps` row) ends `AUTO-RESULT: failed plan-review`, with the open classes in the reply.
 - **Review contract: a finding that contradicts the approved design or plan — "let the Dev choose"** → choose the reading closer to the ticket's ACs and the cited standards, fix on that reading, and log both texts and the choice in an Auto decision line.
 - **Review contract: "STOP and hand the result to the Dev" on a fallback pass, advanced only by "the Dev's explicit go-ahead"** → where the runtime cannot dispatch subagents, the separate pass stands in. Record the tick as `Review: ✅ r<n> (fallback, auto)` and go on.
 - **Claim: "no claim held ... run `kb claim take <ticket-id>` first"** → in Auto mode the runner holds the claim before this skill starts and drops its local token when it sees the claim lost, so `no claim held` here means the claim was lost: STOP and report it to the orchestrator, which ends `AUTO-RESULT: failed claim-lost <ticket-id>` (on a direct run, end it yourself). Never run `kb claim take` in Auto mode.

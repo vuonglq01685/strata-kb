@@ -67,12 +67,19 @@ def _comment_block(state: StateBlock, start: int, end: int, silent: bool) -> boo
     return True
 
 
-_MD = MarkdownIt(
-    "commonmark", {"html": False, "linkify": False, "highlight": _highlight}
-).enable(["table", "strikethrough"])
-_MD.block.ruler.before(
-    "html_block", "comment", _comment_block, {"alt": ["paragraph", "blockquote"]}
-)
+def _engine(*, breaks: bool) -> MarkdownIt:
+    md = MarkdownIt(
+        "commonmark",
+        {"html": False, "linkify": False, "highlight": _highlight, "breaks": breaks},
+    ).enable(["table", "strikethrough"])
+    md.block.ruler.before(
+        "html_block", "comment", _comment_block, {"alt": ["paragraph", "blockquote"]}
+    )
+    return md
+
+
+_MD = _engine(breaks=False)
+_MD_BREAKS = _engine(breaks=True)  # hub Q&A: a single newline is a <br>
 
 
 def _line_breaks(children: list[Token]) -> list[Token]:
@@ -100,13 +107,14 @@ def _asset_srcs(children: list[Token]) -> None:
             c.attrSet("src", f"/assets/{m.group(1)}")
 
 
-def render(md: str) -> str:
-    tokens = _MD.parse(md)
+def render(md: str, *, breaks: bool = False) -> str:
+    engine = _MD_BREAKS if breaks else _MD
+    tokens = engine.parse(md)
     for t in tokens:
         if t.children:
             t.children = _line_breaks(t.children)
             _asset_srcs(t.children)
-    out = _MD.renderer.render(tokens, _MD.options, {})
+    out = engine.renderer.render(tokens, engine.options, {})
     return _TASK_RE.sub(_task, out)
 
 

@@ -364,20 +364,60 @@ work back in a context of its own — never the same agent that produced it:
 | A5 | `dev-handover`, before GATE 3 | whether merging into the default branch is safe |
 
 Criteria live in `docs/pr-review-rubric.md`, overridden by
-`docs/pr-review-rubric.local.md`. Each round allows at most 3 fix/review
-passes. A round only counts as clean once no BLOCKER and no SUGGESTED finding
+`docs/pr-review-rubric.local.md`. A3, A4 and A5 allow at most 3 fix/review
+passes. They only count as clean once no BLOCKER and no SUGGESTED finding
 is left open — NOTE and NITS get recorded, not fixed — and a BLOCKER or
 SUGGESTED still standing after round 3 stops the flow and hands it to you.
+A1 and A2 follow the shorter rule below.
 
-A1 and A2 are built to finish in one review round plus one verification round.
+A1 and A2 stop after round 1 plus one verification round; there is no third
+round.
 The author runs a self-check before any reviewer sees the draft. Round 1 must
 be exhaustive: the reviewer returns a coverage matrix (every task against every question, or every AC and axis item against the design sections) and tags each gap with a defect class. The fix sweeps the whole
 artefact for every instance of each class, not only the one cited. Later rounds verify the fix against the diff instead of re-reviewing everything. A design over 8 ACs or 600 lines, or a
 plan over 12 tasks or 600 lines, is reviewed in parallel slices, and a lead
 reviewer re-checks every slice finding, looks across slice borders, and checks
-for drift from the ticket and the design. When a round finds no fewer BLOCKER
-plus SUGGESTED gaps than the round before, the loop stops early and hands you
-the trend.
+for drift from the ticket and the design.
+
+A new gap that the verification round finds outside the fix diff is recorded as
+`round-1 coverage miss`. It does not block, unless it is a BLOCKER. A gap that
+still blocks after the verification round stops the flow and goes to you, with
+the open classes. That means a BLOCKER that cannot be checked at execution, or a
+SUGGESTED gap with no row in `## Carried gaps`.
+
+**Carried gaps.** A design or plan lists leftover gaps in a `## Carried gaps`
+table below `## Review record`:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+
+Two kinds of row go in. One is every `execute-verifiable` gap from any round
+(a gap that running the code or its tests settles; the rubric lists them under
+`### Execute-verifiable gaps`). The other is every round-2 SUGGESTED gap outside
+the fix diff. In a design the target task reads `plan` until the plan names one.
+GATE 1 and GATE 2 are offered once no BLOCKER is open and every open SUGGESTED
+gap has a target task in the table. An `execute-verifiable` gap never counts
+toward the gate, whatever its severity, and it never goes to the fix subagent:
+it is carried unfixed, not fixed on paper.
+
+During `dev-execute`, the implementer of a task receives the carried rows that
+name it and must resolve them. Spec review checks that it did; the orchestrator sets
+`Status` to `closed task <n>` when the task is ticked.
+
+**Deviations.** When the code of a task differs from its task block or from a
+design section, the implementer changes that plan or design text in the same
+task commit and adds a row to `## Execution deviations` at the end of `plan.md`:
+
+    | Task | Doc + section | What changed | Why |
+    |---|---|---|---|
+
+The documents therefore follow the code. In a parallel lane the implementer
+edits neither file: it returns its rows and doc edits in its report, and the
+orchestrator applies them at merge-back, before A3. Spec review checks that the
+text matches the code. A deviation that changes the meaning of an AC or a public
+contract gets one **delta review** of that doc edit alone, by a fresh
+`design-reviewer` or `plan-reviewer`, one round, before A3. A BLOCKER from it
+goes to you; a SUGGESTED finding becomes a carried row.
 
 Where your assistant's runtime cannot dispatch subagents — the default for
 the Copilot and Cursor wrappers — the review still runs, but as a single pass
@@ -421,8 +461,17 @@ skill sorts them:
   When it decides the answer would change what an AC means, it returns `business
   question:` and the question goes to the BA instead.
 - **Business** goes to the BA through MCP `kb_question_ask`, and appears in the draft's
-  `## Open questions` as `- Q<id> — <question> — blocks: <AC ids|none>`. The BA answers
+  `## Open questions` as `- Q<id> — <question> — blocks: <AC ids|none>`, where
+  `<question>` is the **Decision needed** sentence on one line. The BA answers
   with `/ba-answer-questions`.
+- **Question format.** The stored question is markdown with fixed English labels; the
+  content is in the ticket's language: `**Decision needed:**` (one sentence),
+  `**Background:**` (2-4 bullets), `**Options:**` (numbered, each with its consequence),
+  `**Dev recommends:**` and `**AC impact:**`. Ask one decision per question, name no
+  internal id (DD12, SA-1, R1-13) unless the text says what it is, and give a `context`
+  that points at a place the BA can open, such as `design.md §9.3`, never a review-round
+  code. The hub shows the question with its line breaks and lists. The Q&A page renders
+  this markdown with raw HTML off.
 - **A blocking question stops the gate.** A design or plan with an open question that
   blocks an AC cannot pass GATE 1 or GATE 2; the skill stops and gives you the hub's Q&A
   link to paste in chat. A question that blocks no AC does not stop it, and the A1 and

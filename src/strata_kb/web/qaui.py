@@ -12,6 +12,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from urllib.parse import quote
 
 from starlette.requests import Request
@@ -24,6 +25,7 @@ from strata_kb.hub import HubHandle
 from strata_kb.serving.config import ServerConfig
 from strata_kb.ticketqa import QaStore, Question
 from strata_kb.web import api
+from strata_kb.web.gfmrender import render as md_render
 from strata_kb.web.ui import _render_page, render_error_page
 
 logger = logging.getLogger("strata_kb.web.qaui")
@@ -192,6 +194,7 @@ def qa_routes(config: ServerConfig) -> list[Route]:
             href=_ticket_href(_groups(hub), repo, ticket),
             hub_rev=hub_rev,
             rows=rows,
+            md=partial(md_render, breaks=True),
         )
 
     return [

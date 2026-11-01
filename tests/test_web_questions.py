@@ -280,3 +280,84 @@ def test_plan_ticket_page_survives_corrupt_db(
     resp = web_client_logged_in.get(f"/ui/tickets/{MISSION_ID}/{US1}?repo={REPO}")
     assert resp.status_code == 200
     assert "unresolved question" not in resp.text
+
+
+def test_old_plain_text_question_keeps_its_lines(web_client_logged_in, hub_with_ticket):
+    hub = hub_with_ticket(rev=1)
+    q = ask_question(
+        hub,
+        _store(hub),
+        US1,
+        "line one `S3_ENDPOINT`\nline two",
+        "kb-auto",
+        context="design.md §9.3 — test T4",
+    )
+    answer_question(
+        hub, _store(hub), q.id, "**Decision:** A\n- Scope: x", "ba1", None, []
+    )
+    main = _main(
+        web_client_logged_in.get(f"/ui/questions/ticket?repo={REPO}&ticket={US1}").text
+    )
+    assert "line one <code>S3_ENDPOINT</code><br" in main
+    assert "<strong>Decision:</strong>" in main and "<li>Scope: x</li>" in main
+    assert "pre-wrap" not in main
+
+
+def test_formatted_question_renders_its_labels_and_options(
+    web_client_logged_in, hub_with_ticket
+):
+    hub = hub_with_ticket(rev=1)
+    ask_question(
+        hub,
+        _store(hub),
+        US1,
+        "**Decision needed:** pick one\n\n**Options:**\n1. A — fast\n2. B — safe",
+        "dev1",
+    )
+    main = _main(
+        web_client_logged_in.get(f"/ui/questions/ticket?repo={REPO}&ticket={US1}").text
+    )
+    assert "<strong>Decision needed:</strong>" in main
+    assert "<ol>" in main and "<li>A — fast</li>" in main
+
+
+def test_render_default_output_is_unchanged_by_the_breaks_option():
+    from strata_kb.web.gfmrender import render
+
+    assert render("a\nb") == "<p>a\nb</p>\n"
+    assert "<br" in render("a\nb", breaks=True)
+
+
+def test_full_answer_and_question_labels_are_their_own_paragraphs(
+    web_client_logged_in, hub_with_ticket
+):
+    hub = hub_with_ticket(rev=1)
+    q = ask_question(
+        hub,
+        _store(hub),
+        US1,
+        "**Decision needed:** pick one\n\n**Background:**\n- fact\n\n"
+        "**Options:**\n1. A — fast\n2. B — safe\n\n"
+        "**Dev recommends:** A, because fast\n**AC impact:** none",
+        "dev1",
+    )
+    answer_question(
+        hub,
+        _store(hub),
+        q.id,
+        "**Decision:** A\n**Ticket changes (rev 2):**\n- Scope: adds export\n\n"
+        "**Follow-ups:** none\n**Assumptions:** none",
+        "ba1",
+        2,
+        ["Scope"],
+    )
+    main = _main(
+        web_client_logged_in.get(f"/ui/questions/ticket?repo={REPO}&ticket={US1}").text
+    )
+    for label in ("Follow-ups", "Assumptions", "Dev recommends", "AC impact"):
+        assert f"<strong>{label}:</strong>" in main, label
+    assert not re.search(
+        r"<li>(?:(?!</li>).)*<strong>(Follow-ups|Assumptions|Dev recommends|AC impact):",
+        main,
+        re.S,
+    )

@@ -113,9 +113,10 @@ does not:
 - **business** → call `kb_question_ask(ticket, question, asked_by, context,
   blocks)` (`asked_by` = `git config user.name`, and when that is empty ask
   the Dev for a name once and reuse it; `context` = where in the
-  design it came up; `blocks` = the AC ids, or empty) and move the item to
-  the draft's `## Open questions` as
-  `- Q<id> — <question> — blocks: <AC ids|none>`. When `dev-sa` returns
+  design it came up, as **Question format** below says; `blocks` = the AC
+  ids, or empty) and move the item to the draft's `## Open questions` as
+  `- Q<id> — <question> — blocks: <AC ids|none>`, where `<question>` is the
+  **Decision needed** sentence on one line. When `dev-sa` returns
   `business question:`, treat the item as business and handle it the same
   way.
 
@@ -150,6 +151,27 @@ answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying
 `— re-draft`, re-dispatch the `design-author` with the re-fetched ticket, then strip
 that suffix (the line keeps `— answered rev N`). A line with
 `— answered rev N` and no `— re-draft` is already handled.
+
+**Question format.** The `question` is markdown and keeps its line breaks.
+Write it as below. The labels are fixed English words; the content is in
+the ticket's language.
+
+    **Decision needed:** <one sentence>
+
+    **Background:**
+    - <2-4 bullets in plain words>
+
+    **Options:**
+    1. <option> — <consequence>
+    2. <option> — <consequence>
+
+    **Dev recommends:** <option>, because <reason>
+    **AC impact:** <which ACs change, which do not>
+
+Ask one decision per question: two decisions are two questions. Name no
+internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is.
+The `context` names a place a reader can open, such as
+`design.md §9.3 — test T4`, never a review-round code.
 
 ## A1 — independent design review (before GATE 1)
 
@@ -221,22 +243,25 @@ this size.
 
 **Class-wide fix.** Copy the design to
 `docs/impl/<ticket-id>/review/design-r<n>.md`, then apply BLOCKER and
-SUGGESTED gaps through a fix subagent. For every gap it fixes the cited
+SUGGESTED gaps through a fix subagent, except `execute-verifiable` gaps: they go
+to `## Carried gaps` unfixed, never fixed on paper. For every gap it fixes the cited
 instance, sweeps the whole design for the same defect class, and writes each
 further instance it fixed to `review/a1-r<n>-sweep.md`; then it re-runs the
 author self-check. The fix
 subagent gets the same Questions rule and preservation rule as the
 author.
 
-**Verification rounds.** Round 2 and later are not a fresh full review. A
+**Verification rounds.** Round 2 is not a fresh full review. A
 `design-reviewer` with a fresh context gets the round-1 inputs, the previous
 gap list with its
 classes, the fix subagent's sweep list, and `diff -u` of the copy taken before the
 fix against the design, written to `review/a1-r<n>.diff`. It checks that every
 previous gap is closed, spot-checks instances of each class outside the
-sweep list, and checks the diff for regressions; it still reports any other
-defect it sees. A full review runs again only for not-checked cells or a
-slice the diff mostly rewrote.
+sweep list, and checks the diff for regressions. A new gap outside the diff
+is recorded as `round-1 coverage miss`. It does not block, unless it is a
+BLOCKER: a SUGGESTED coverage miss goes to `## Carried gaps` (NOTE and NITS are recorded only), and
+a BLOCKER that is not `execute-verifiable` blocks. A full review runs again
+only for not-checked cells or a slice the diff mostly rewrote.
 
 **Stop.** Record every round in the design file's `## Review record` table,
 creating it below the design body on round 1:
@@ -245,15 +270,27 @@ creating it below the design body on round 1:
     |---|---|---|---|---|---|---|
     | <date> | 1 | BLOCKER x1 | design-reviewer | 38/40 | precondition not set up | AC3 not addressed |
 
-Coverage is checked cells over all cells. A gap a verification round finds
-outside the diff is recorded as `round-1 coverage miss`. The target is one
-review round plus one verification round. When a round's BLOCKER plus
-SUGGESTED count is not lower than the round before, stop at once and hand the
-Dev the trend and the open classes instead of spending the rounds left;
-otherwise the cap of 3 rounds holds.
+Coverage is checked cells over all cells. A1 stops after round 1 plus one
+verification round; there is no third round. A gap that still blocks after the
+verification round — a BLOCKER that is not `execute-verifiable`, or a
+SUGGESTED gap with no `## Carried gaps` row — stops the flow and goes to the
+Dev, with the open classes. NOTE and NITS are recorded, not fixed.
 
-GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER and
-no SUGGESTED gap left open; NOTE and NITS are recorded, not fixed.
+Leftover gaps go in a `## Carried gaps` table below `## Review record`:
+
+    | Gap | Class | Severity | Raised in | Target task | Status |
+    |---|---|---|---|---|---|
+    | <gap> | <class> | SUGGESTED | a1-r2 | plan | open |
+
+Two kinds of row go in: every `execute-verifiable` gap from any round (the
+rubric's `### Execute-verifiable gaps`), and every round-2 SUGGESTED gap
+outside the diff. In a design the target task reads `plan` until the plan
+names one.
+
+GATE 1 is offered only after A1 comes back clean — clean means no BLOCKER is
+open and every open SUGGESTED gap is in `## Carried gaps` with a target task.
+An `execute-verifiable` gap never counts toward the gate, whatever its
+severity.
 
 ## GATE 1 — Dev approval before any plan is written
 
@@ -281,6 +318,7 @@ so `design ✅` reads correctly if the ticket is re-opened.
   the session default silently.
 - Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
   standing after round 3 stops the flow and goes to the Dev.
+- A1 and A2 stop after round 1 plus one verification round; see their **Stop.** rule.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
 - Criteria come from the source that matches the review: the rubric's

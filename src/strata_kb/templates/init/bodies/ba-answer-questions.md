@@ -38,6 +38,13 @@ a denial to report. Stop only when the MCP tool fails too.
    question with its context, the AC ids it blocks and who asked, beside the
    relevant part of the local ticket file (`tickets/<folder>/<ticket-id>.md`).
    A ticket that is not in this repo's working tree: say so and skip it.
+   A question not in the Dev's format is restated in that format in chat
+   only, so the BA can read it. The format has these labels, in this order:
+   **Decision needed:** (one sentence), **Background:** (2-4 bullets),
+   **Options:** (numbered, each with its consequence), **Dev recommends:**
+   and **AC impact:**. Fill them from the stored question and its context
+   alone; where the question does not say, write `not stated`, and add no
+   fact. The stored question is never edited.
 3. **Answer** — the BA gives each answer in their own words; do not write
    one for them. If an answer does not change the ticket (the HUB revision
    already carries it — `kb_question_list` prints `hub rev` per question —
@@ -76,9 +83,22 @@ a denial to report. Stop only when the MCP tool fails too.
      `> Parent mission:` line pass `ticket_id` and `mission_markdown`. Until
      `kb ticket lint` passes, record nothing for that ticket.
 4. **Record** — call `kb_question_answer` once per question, with `id` (an
-   integer: the number without the `Q`), `answer` (the BA's words) and
-   `answered_by` = `git config user.name`. `ticket_sections` is a list of
-   section names.
+   integer: the number without the `Q`), `answer` (the BA's words) set out
+   as below and `answered_by` = `git config user.name`. `ticket_sections`
+   is a list of section names.
+   - The `answer` is markdown and keeps its line breaks. The labels are
+     fixed English words; the content is in the ticket's language:
+
+         **Decision:** <what the BA chose>
+         **Ticket changes (rev N):**
+         - <section>: <what changed>
+
+         **Follow-ups:** <new question or story, and its owner>
+         **Assumptions:** <only if any>
+
+     The rule is that the BA's own words go in **Decision**: the skill
+     structures them and does not reword them. Leave **Assumptions** out
+     when there are none. A label with nothing to list reads `none`.
    - ticket amended, or the answer exists only in a local revision R higher
      than the hub revision: `answer_rev` = R (N+1 for an amendment made
      now) and `ticket_sections` = the Affected of that change-log row (the
@@ -153,7 +173,7 @@ The runner starts this skill as `/ba-answer-questions <ticket-id>` for one ticke
 
 **Already finished.** The runner re-runs a task after a crash, so check first: `kb pr find --head auto/qa --state open --json`. An open PR means a crashed run. The worktree may be a fresh `auto/qa` reset to the default branch, so run `git fetch origin && git pull origin auto/qa` first, then fix what is red and `git push -u origin HEAD`, and continue at the CI step of the branch rule. With no open question and no open PR, the work is already finished: end `AUTO-RESULT: done`.
 
-- **Step 3, "the BA gives each answer in their own words; do not write one for them" and the Hard rule "never answer a question yourself"** → answer from the mission, the ticket and the KB (`kb_search`, `kb_get_section`), never from `<repo>-code` or `<repo>-svc`. Use the BA's earlier answers on the same ticket when they apply. Write the question, the sources you read, the options the sources allow, the answer and the reason in an Auto decision line. When the sources do not settle it, answer with the reading they support best and state that assumption in the answer text, so the Dev can see it and ask again. A question that only the BA could settle (a business decision not found anywhere) is still answered the same way; never leave it open and never invent a fact the sources do not hold. Before you record, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the question, the sources and your answer; on an objection, answer again once.
+- **Step 3, "the BA gives each answer in their own words; do not write one for them" and the Hard rule "never answer a question yourself"** → answer from the mission, the ticket and the KB (`kb_search`, `kb_get_section`), never from `<repo>-code` or `<repo>-svc`. Use the BA's earlier answers on the same ticket when they apply. Write the question, the sources you read, the options the sources allow, the answer and the reason in an Auto decision line. When the sources do not settle it, answer with the reading they support best and state that assumption under **Assumptions:** in the answer (step 4's format), so the Dev can see it and ask again. A question that only the BA could settle (a business decision not found anywhere) is still answered the same way; never leave it open and never invent a fact the sources do not hold. Before you record, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the question, the sources and your answer; on an objection, answer again once.
 - **Step 3, an answer that changes the mission's scope** → amend the mission as well, under `ba-mission-plan`'s Amend mode and its Auto mode, in the same branch and the same PR.
 - **Step 3, Definition of Ready: "ask them to re-check and re-tick them"** → you re-check and re-tick. Tick a box a tool proves again, as amend mode says; the AC box "Every AC is Given/When/Then …" follows the rule in ba-ticket-author's Auto mode (review, tick or rewrite). If a box stays unticked, STOP for that ticket as the step says and record no answer for it. The same holds for every ticket-level stop: `kb ticket check` still failing after the re-ground (an open decision, an undecided `[NEW: D<k>]`, a cited `SUPERSEDED` row), or `kb_ticket_lint` never passing. This run covers the named ticket only; the other tickets' answers still go through the PR and the merge in their own runs. End `AUTO-RESULT: failed dor-unticked <ticket-id>`. The runner saves your draft to `auto/qa-parked/<ticket-id>` and parks the ticket; step 3 resumes from that branch.
 - **Step 5, "Remind the BA to commit and merge the ticket change"; "This skill never commits, pushes or publishes"** → the branch rule in ba-ticket-author's Auto mode, on `auto/qa`, which is already checked out. Record the answers (step 4) before you open the PR, as the order above has it; the merge then publishes the ticket and the hub stops showing the answers as waiting. A merge conflict with the main BA task is resolved by whichever side merges second: run `git fetch origin main && git merge FETCH_HEAD`, then run `kb_ticket_lint` again, and push.

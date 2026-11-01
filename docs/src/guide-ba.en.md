@@ -367,6 +367,14 @@ answers are yours; the agent never writes one for you.
   `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)`, and the skill stops without changing a ticket. There is no CLI
   for them. Any authenticated caller may write; the names (`git config user.name`) are
   self-declared, so they track who answered and prove nothing.
+- **Question and answer format.** A Dev's question has fixed English labels, with
+  the content in the ticket's language: `**Decision needed:**` (one sentence),
+  `**Background:**`, `**Options:**` (each with its consequence), `**Dev recommends:**`
+  and `**AC impact:**`. A question written in another form is restated in this form in
+  the chat only, to help you read it; the stored question is never edited. The skill
+  records your answer in this form: `**Decision:**` (your own words, not reworded),
+  `**Ticket changes (rev N):**`, `**Follow-ups:**` and, only if there are any,
+  `**Assumptions:**`. The hub's Q&A page shows both with their line breaks and lists.
 - **One amendment per ticket.** An answer that changes behaviour amends the ticket
   under §6.2: `> Revision:` becomes N+1, one `## Change log` row with Trigger
   `question`, What changed `Q<ids>: <one line>`, Affected the changed sections, one

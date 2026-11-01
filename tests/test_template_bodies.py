@@ -652,6 +652,21 @@ def test_pr_review_rubric_pre_code_axis_accepts_a_hub_question_as_open_ba():
     assert "carried as `OPEN(BA)`, never" not in text
 
 
+def test_pr_review_rubric_names_execute_verifiable_classes():
+    text = " ".join(read_template("pr-review-rubric.md").split())
+    pre = text[text.index("## Pre-code axes") : text.index("## Merge-risk axes")]
+    assert "`execute-verifiable`" in pre
+    for cls in (
+        "verification command that fails as written",
+        "expected red mis-stated",
+        "line-number pin",
+        "e2e timeout or margin not measured",
+        "fixture assumption a run checks",
+    ):
+        assert cls in pre, cls
+    assert "never blocks a gate" in pre and "never fixed on paper" in pre
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -881,7 +896,6 @@ _DEV_GATES = {
         "GATE 1 — Dev approval before any plan is written",
         "ask the Dev for a name once",
         "stop and tell the Dev",
-        "hand the Dev the trend",
         "goes to the Dev",
         "let the Dev choose",
         "the Dev's explicit go-ahead",
@@ -891,7 +905,6 @@ _DEV_GATES = {
         "ask the Dev once for the build/test/lint commands",
         "ask the Dev for a name once",
         "stop and tell the Dev",
-        "hand the Dev the trend",
         "goes to the Dev, unfixed",
         "stops the flow and goes to the Dev",
         "let the Dev choose",
@@ -904,6 +917,7 @@ _DEV_GATES = {
         "a plan defect: stop, do not resolve",
         "stop that task, return to `dev-design`",
         "goes to the Dev",
+        "A BLOCKER from a delta review goes to the Dev",
         "let the Dev choose",
         "the Dev's explicit go-ahead",
     ],
@@ -1769,3 +1783,127 @@ def test_already_finished_continues_only_its_own_open_pr(template, rev_parse):
     # the fallback comes after the crashed-run path
     assert rule.index("only when a local") < rule.index("do not switch")
     assert _permitted(rev_parse, allow, deny)
+
+
+_EXECUTE_WRAPPERS = ["bodies/dev-execute.md", "claude-command-dev-execute.md"]
+
+
+@pytest.mark.parametrize("name", _EXECUTE_WRAPPERS)
+def test_execute_carries_gaps_and_writes_deviations_back(name):
+    t = _normal(_raw(name))
+    for needle in (
+        "the `## Carried gaps` rows that name this task",
+        "`closed task <n>`",
+        "in the same task commit",
+        "`## Execution deviations`",
+        "| Task | Doc + section | What changed | Why |",
+        "the plan/design text matches the code of this task",
+        "changes the meaning of an AC or a public contract or interface",
+        "one delta review",
+        "the doc diff of that commit only",
+        "applies them to `plan.md` and `design.md` at merge-back, before A3",
+        "the paths of `plan.md` and `design.md`, handed only to edit the text that deviates",
+        "a one-line test summary, the `## Execution deviations` rows it added, and concerns",
+        "A lane implementer edits neither file",
+        "becomes a row in `plan.md`'s `## Carried gaps`, with the deviating task as `Target task`",
+        "plus the diff of the orchestrator's doc-apply commit",
+        "A deviation the implementer returned that changes the meaning",
+    ):
+        assert needle in t, (name, needle)
+    assert "three things" not in t, name
+    assert "never handed to the implementer" not in t, name
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
+)
+def test_handover_lists_open_carried_gaps_in_pr_notes(name):
+    t = _normal(_raw(name))
+    assert "open `## Carried gaps` row" in t and "`## Notes`" in t
+
+
+def test_execute_auto_mode_fails_a_blocking_delta_review():
+    gates = _gates("bodies/dev-execute.md")
+    (gate,) = [g for g in gates if "delta review" in g.split(" → ")[0]]
+    for phrase in ("failed design-review", "failed plan-review", "open classes"):
+        assert phrase in gate, phrase
+
+
+# --- Q&A question and answer format in the skills (review convergence, Task 6) ---
+
+QA_Q_LABELS = (
+    "**Decision needed:**",
+    "**Background:**",
+    "**Options:**",
+    "**Dev recommends:**",
+    "**AC impact:**",
+)
+QA_A_LABELS = (
+    "**Decision:**",
+    "**Ticket changes (rev N):**",
+    "**Follow-ups:**",
+    "**Assumptions:**",
+)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "bodies/dev-implement-ticket.md",
+        "bodies/dev-fix-bug.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_asker_skills_state_the_question_format(name):
+    t = _raw(name)
+    for label in QA_Q_LABELS:
+        assert label in t, (name, label)
+    n = _normal(t)
+    assert "one decision per question" in n
+    assert "a place a reader can open" in n
+
+
+def test_ba_answer_questions_formats_answers_and_restates_old_questions():
+    t = _raw("bodies/ba-answer-questions.md")
+    for label in QA_A_LABELS:
+        assert label in t, label
+    n = _normal(t)
+    assert "in chat only" in n and "never edited" in n
+    assert "the BA's own words go in **Decision**" in n
+
+
+def test_auto_answers_use_the_answer_format():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    assert "state that assumption under **Assumptions:** in the answer" in n
+    assert "state that assumption in the answer text" not in n
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+    ],
+)
+def test_open_question_line_carries_only_the_decision_sentence(name):
+    n = _normal(_raw(name))
+    assert "`<question>` is the **Decision needed** sentence on one line" in n
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
+)
+def test_handover_auto_question_uses_the_question_format(name):
+    t = _raw(name)
+    for label in QA_Q_LABELS:
+        assert label in t, (name, label)
+    n = _normal(t)
+    assert "one decision per question" in n
+    assert "a place a reader can open" in n

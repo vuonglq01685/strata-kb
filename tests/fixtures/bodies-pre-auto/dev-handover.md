@@ -98,6 +98,7 @@ hub.
   itself (e.g. `$ pytest -q`) and only its summary lines, never the full
   log, and `Blocking: No`, A5's verdict line, as the last line;
   **Notes** — only when there is something: out of scope, not handled,
+  every open `## Carried gaps` row of the plan (gap, class, target task),
   every `OPEN(...)`, KB gap, ambiguity or contradiction as a concrete
   feedback item on the owning repo; **Usage** — paste the output of
   `kb usage report --ticket <ticket-id> --summary` as is (add
@@ -191,6 +192,7 @@ becomes the fix, not the PR.
   the session default silently.
 - Findings → fix subagent → re-review, at most 3 rounds. A BLOCKER or SUGGESTED still
   standing after round 3 stops the flow and goes to the Dev.
+- A1 and A2 stop after round 1 plus one verification round; see their **Stop.** rule.
 - A finding that contradicts the approved design or plan is never auto-fixed:
   show the finding beside the text that mandates it and let the Dev choose.
 - Criteria come from the source that matches the review: the rubric's
