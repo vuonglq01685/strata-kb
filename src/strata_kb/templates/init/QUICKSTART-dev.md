@@ -176,7 +176,8 @@ orchestrating skill then sorts them:
   for you to record.
 - **Business** (anything that changes what an AC means) → asked of the BA with
   MCP `kb_question_ask`, which stores it on the hub. The draft's `## Open
-  questions` gets `- Q<id> — <question> — blocks: <AC ids|none>`. A technical
+  questions` gets `- Q<id> — <question> — blocks: <AC ids|none>`, where
+  `<question>` is the **Decision needed** sentence on one line. A technical
   question that `dev-sa` returns as `business question:` goes the same way.
   The BA answers it with `/ba-answer-questions`.
 - **A blocking question stops the gate.** A design or plan with an open
@@ -345,18 +346,26 @@ produced it:
 | A5 | `dev-handover`, before GATE 3 | whether merging into the default branch is safe |
 
 Criteria live in `docs/pr-review-rubric.md`, overridden by
-`docs/pr-review-rubric.local.md`. Each round allows at most 3 fix/review
-passes; a round only counts as clean once no BLOCKER and no SUGGESTED
-finding is left open — NOTE and NITS get recorded, not fixed.
+`docs/pr-review-rubric.local.md`. A3, A4 and A5 allow at most 3 fix/review
+passes; they only count as clean once no BLOCKER and no SUGGESTED finding is
+left open — NOTE and NITS get recorded, not fixed.
 
-A1 and A2 aim for one review round plus one verification round. The author
+A1 and A2 stop after round 1 plus one verification round; there is no third
+round. The author
 self-checks before review; round 1 returns a coverage matrix and tags each
 gap with a defect class; the fix sweeps the whole artefact for each class;
 later rounds verify the fix against the diff. A design over 8 ACs or 600
 lines, or a plan over 12 tasks or 600 lines, is reviewed in parallel slices
 plus a lead reviewer that re-checks the slice findings and checks drift from
-the ticket and the design. A round that finds no fewer BLOCKER plus
-SUGGESTED gaps than the one before stops the loop and hands you the trend.
+the ticket and the design. A gap that still blocks after the verification
+round (a BLOCKER that cannot be checked at execution, or a SUGGESTED gap with no
+row in `## Carried gaps`) stops the flow and goes to you. Leftover gaps go in a
+`## Carried gaps` table below `## Review record`: every `execute-verifiable`
+gap, and every round-2 SUGGESTED gap outside the fix diff, each with a target
+task. The gate is offered once no BLOCKER is open and every open SUGGESTED gap
+has a target task. `dev-execute` hands each task its carried rows, and when
+code differs from the plan or design it edits that text in the same commit and
+adds a row to `## Execution deviations` in `plan.md`.
 
 Where your assistant's runtime cannot dispatch subagents — the default
 for the Copilot and Cursor wrappers — the review still runs, but as a

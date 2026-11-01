@@ -360,6 +360,14 @@ không bao giờ tự viết thay.
   đổi ticket nào. Không có CLI cho chúng. Mọi bên gọi đã xác thực đều được ghi; tên
   (`git config user.name`) là tự khai, nên chỉ để theo dõi ai đã trả lời và không chứng
   minh gì.
+- **Định dạng câu hỏi và câu trả lời.** Câu hỏi của Dev có các nhãn tiếng Anh cố định,
+  nội dung viết bằng ngôn ngữ của ticket: `**Decision needed:**` (một câu),
+  `**Background:**`, `**Options:**` (mỗi phương án kèm hệ quả), `**Dev recommends:**` và
+  `**AC impact:**`. Câu hỏi viết theo dạng khác được trình bày lại theo định dạng này chỉ
+  trong chat, để bạn dễ đọc; câu hỏi đã lưu không bao giờ bị sửa. Skill ghi câu trả lời
+  của bạn theo định dạng sau: `**Decision:**` (lời của chính bạn, không diễn đạt lại),
+  `**Ticket changes (rev N):**`, `**Follow-ups:**` và, chỉ khi có, `**Assumptions:**`.
+  Trang Q&A của hub hiển thị cả hai với đúng xuống dòng và danh sách.
 - **Mỗi ticket một lần sửa.** Câu trả lời làm đổi hành vi thì sửa ticket theo §6.2:
   `> Revision:` thành N+1, một dòng `## Change log` với Trigger `question`, What changed
   `Q<ids>: <một dòng>`, Affected là các section đã đổi, một vòng maturity review, và
