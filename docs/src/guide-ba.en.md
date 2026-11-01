@@ -559,6 +559,7 @@ hours, pushing `auto/*` branches, a merge past a required review, and `gh run` o
 | Symptom | Cause | Fix |
 |---|---|---|
 | Lint: "ref does not resolve" | The section id is wrong, or that content is not published | Re-run `kb query` and re-pin; check the hub PR actually merged |
+| Lint: "kb-context tag '<x>' is not published by any document on the hub federation" | A tag in the `## KB context` block names no published document. Tags are derived from the documents your refs pin; you do not set them | Delete the tag from the block, or fix the typo the message suggests; `kb tags` lists the real ones. Never re-run `kb context new` on a ticket that already has its block: it would rewrite the pinned version |
 | Lint: "citation not backed by a pinned ref" | The body cites something the KB context block does not pin | Add the ref via `kb_context_new`, or remove the citation |
 | Lint: "missing required heading" | A required section is absent, or present only inside a fenced code block | Move the real heading outside the fence |
 | Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | One row per revision `2..N`, in order, with the five trigger values |
@@ -661,6 +662,19 @@ or delete `main` or `master` (a branch id that merely contains the word, like
 `kb init`; `rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and
 `.git/**`. The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin`; `kb usage report` turns that ledger into a cost report
 (`.kb/usage/report.html`).
+
+**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
+`kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
+`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop`
+hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
+`.kb/usage/ingest-errors.log`: it is the only place a failure shows. Re-ingesting a transcript is
+always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
+backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
+come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
+carries an `effective_date`. Switch model at phase boundaries, never inside a phase: a switch
+discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
+strong-model session can cost **more** than not tiering. Check the result with
+`kb usage report`, which breaks spending down by model.
 
 ## 6.6 Hub Q&A rules that touch you
 

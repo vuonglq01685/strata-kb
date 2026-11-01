@@ -45,7 +45,7 @@ Optional: asset storage in S3, chained hubs. The guide covers both.
 | Task | Command |
 |---|---|
 | Review and merge a publish PR | on your Git host; merging is the gate |
-| Add or change an account | `kb user add\|passwd\|role\|remove\|list` |
+| Add or change an account | `docker compose exec hub kb user add <name> --role ba` (also `passwd`, `role`, `remove`, `list`); outside Docker add `--kb <hub>/.kb` |
 | Add a repo, switch auto-merge | Registry page (`/ui/registry`, admin only), or a PR on `federation/registry.yaml` |
 | Read ticket questions | Q&A menu (`/ui/questions`); the store is `.kb-qa/qa.db`, **never commit `.kb-qa/`** |
 | Search | `kb query "your question"`, `kb get <doc> <section>`, `kb tags`, the Web UI |

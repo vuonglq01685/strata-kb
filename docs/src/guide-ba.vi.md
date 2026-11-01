@@ -557,6 +557,7 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | Triệu chứng | Nguyên nhân | Cách sửa |
 |---|---|---|
 | Lint: "ref does not resolve" | Id section sai, hoặc nội dung đó chưa được publish | Chạy lại `kb query` và ghim lại; kiểm tra PR trên hub đã thực sự merge |
+| Lint: "kb-context tag '<x>' is not published by any document on the hub federation" | Một tag trong block `## KB context` không trỏ tới document nào đã publish. Tag được suy ra từ các document mà ref của bạn ghim; bạn không tự đặt | Xóa tag khỏi block, hoặc sửa lỗi chính tả mà thông báo gợi ý; `kb tags` liệt kê các tag thật. Đừng chạy lại `kb context new` trên ticket đã có block: nó sẽ ghi đè phiên bản đã ghim |
 | Lint: "citation not backed by a pinned ref" | Thân ticket trích dẫn thứ mà block KB context không ghim | Thêm ref qua `kb_context_new`, hoặc bỏ trích dẫn |
 | Lint: "missing required heading" | Thiếu một section bắt buộc, hoặc nó chỉ nằm trong khối code có rào | Đưa heading thật ra ngoài khối code |
 | Lint: lỗi "change log" sau một lần amend | `Revision` được tăng mà không có dòng tương ứng, hoặc `Trigger` viết sai | Mỗi revision `2..N` một dòng, theo thứ tự, với năm giá trị trigger |
@@ -659,6 +660,18 @@ giờ `complete` (`jobs outside framework schedulers are not detectable`). Chi t
 `.claude/settings.json`, `.claude/settings.local.json` và `.git/**`. Các hook `Stop` và
 `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin`; `kb usage report` biến sổ cái
 đó thành báo cáo chi phí (`.kb/usage/report.html`).
+
+**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`). `kb usage report`
+ghi `.kb/usage/report.html`, theo ticket, phase và model; với `--ticket <id> --md` nó in một bảng
+Markdown. Hook lỗi thì im lặng theo thiết kế (hook `Stop` không thể chặn một lượt kết thúc), nên
+nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi
+hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
+`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
+không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
+từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Đổi model ở ranh giới phase, không bao
+giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
+model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
+`kb usage report`, vốn chia chi tiêu theo model.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 

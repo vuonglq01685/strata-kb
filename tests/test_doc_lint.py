@@ -175,3 +175,27 @@ def test_doc_links_resolve():
             ):
                 bad.append((_rel(doc), link, "missing anchor"))
     assert not bad, bad
+
+
+CARD_URL = re.compile(
+    r"https://github\.com/vuonglq01685/strata-kb/blob/main/docs/src/"
+    r"(guide-[a-z]+\.(?:en|vi)\.md)(?:#([\w-]+))?"
+)
+
+
+def test_quickstart_card_links_resolve_to_guide_headings():
+    # Bare URLs escape MD_LINK, so check them here: the file exists and a
+    # fragment slugs to a real heading of that guide.
+    bad = []
+    for card in sorted((SRC / "templates/init").glob("QUICKSTART-*.md")):
+        for name, anchor in CARD_URL.findall(_text(card)):
+            guide = DOCS_SRC / name
+            if not guide.is_file():
+                bad.append((_rel(card), name, "missing file"))
+            elif anchor and anchor not in _anchors(guide):
+                bad.append((_rel(card), f"{name}#{anchor}", "missing anchor"))
+    assert not bad, bad
+    assert any(
+        CARD_URL.search(_text(c))
+        for c in (SRC / "templates/init").glob("QUICKSTART-*.md")
+    )

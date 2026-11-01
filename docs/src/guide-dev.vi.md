@@ -186,6 +186,10 @@ thoải mái: thiếu một flow vẫn tốt hơn đoán một flow. Dùng `kb p
 publish đầu tiên này: chưa có merge nào xảy ra, nên không có tag nào để `kb-code.yml`
 phản ứng, và `kb publish` thường sẽ chờ tới mười phút cho một lượt CI không bao giờ chạy.
 
+Để sửa một service, hãy sửa tay section của nó. `kb summarize <repo_id>-svc --redo
+--include-reviewed` xóa nội dung và chữ ký duyệt của một section đã reviewed rồi tóm tắt lại
+ngay trong cùng lệnh; đoạn văn bạn đã sửa chỉ lấy lại được từ git.
+
 ---
 
 # 3. Công việc hằng ngày
@@ -569,6 +573,11 @@ file build, deploy và hợp đồng; bốn cái cuối đọc mã nguồn bằn
 | `jobs` | `job.<slug>` | job theo lịch của các scheduler framework (cần `[code]`) |
 | `symbols` | `sym.<slug>` | tên được export, thành viên enum và object, CSS custom property (cần `[code]`) |
 
+Với mỗi service compose, section `svc.<name>` của `-code` còn liệt kê các volume có tên (bind
+mount không phải volume có tên nên bị bỏ), lệnh healthcheck trên một dòng (`disabled` khi
+service tắt nó, `none` khi không có) và các device được đặt trước (`<driver>:<caps>`, lấy từ
+`deploy.resources.reservations.devices`).
+
 `tree` còn ghi `struct.files.<dir>` (mọi file được theo dõi dưới một thư mục cấp cao nhất),
 và mọi extractor báo cáo vào `struct.coverage`. `kb code-ingest` thoát với mã `1` khi
 không extractor nào trong `services`, `deps`, `commands`, `schema`, `integrations` và
@@ -626,7 +635,8 @@ vào một lệnh shell.
 
 Mọi thứ khác (test-first, bằng chứng xác minh, GATE 1 và GATE 2, A1 đến A4) là kỷ luật qua
 prompt mà không gì trong `kb` đo được; người kiểm tra là bạn, tại cổng. Chỉ A5 có răng,
-qua dòng `Blocking:`.
+qua dòng `Blocking:`. Test-first có một ngoại lệ có giới hạn: các lớp thay đổi không có hành vi
+quan sát được, được nêu trong `docs/tdd-exemptions.md` và khai báo trong plan khi plan được viết.
 
 ## 6.5 Quyền của chế độ auto
 
@@ -641,6 +651,18 @@ lệnh test, install, lint, build của `langs` bạn.
 `rm -rf /*`; việc sửa `.claude/settings.json`, `.claude/settings.local.json` và `.git/**`.
 Các hook `Stop` và `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin` cho báo cáo
 chi phí.
+
+**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`). `kb usage report`
+ghi `.kb/usage/report.html`, theo ticket, phase và model; với `--ticket <id> --md` nó in một bảng
+Markdown. Hook lỗi thì im lặng theo thiết kế (hook `Stop` không thể chặn một lượt kết thúc), nên
+nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi
+hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
+`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
+không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
+từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Đổi model ở ranh giới phase, không bao
+giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
+model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
+`kb usage report`, vốn chia chi tiêu theo model.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 

@@ -2179,7 +2179,7 @@ def test_quickstart_dev_content(tmp_path: Path):
     # "not available yet" claim must stay gone from the card and the guide.
     for flat in (" ".join(text.split()), _guide_flat("dev")):
         assert "`<repo_id>-svc`) is not available yet" not in flat
-    assert "responsibility knowledge" in text
+    assert "curated responsibility knowledge" in " ".join(text.split())
 
 
 def test_quickstart_dev_documents_the_auto_merge_policy(tmp_path: Path):
@@ -2261,11 +2261,11 @@ def test_quickstart_dev_documents_the_seed_and_service_history(tmp_path: Path):
     assert "kb svc note" in _guide_flat("dev")
 
 
-def test_quickstart_ba_points_at_code_knowledge(tmp_path: Path):
+def test_ba_card_links_the_guide_that_carries_code_knowledge(tmp_path: Path):
     init_repo(tmp_path, "ba")
     text = (tmp_path / "QUICKSTART-BA.md").read_text(encoding="utf-8")
-    assert "Full guide:" in text
-    # The code-knowledge section moved to the BA guide (6.4).
+    assert "docs/src/guide-ba.en.md" in text
+    # The code-knowledge section lives in the BA guide (6.4).
     guide = _guide_flat("ba")
     assert "## 6.4 Code knowledge in tickets" in (GUIDES / "guide-ba.en.md").read_text(
         encoding="utf-8"
@@ -2278,34 +2278,33 @@ def test_quickstart_ba_points_at_code_knowledge(tmp_path: Path):
     assert "The BA skills never read either themselves" in guide
 
 
-def test_quickstart_dev_documents_the_redo_consequence(tmp_path: Path):
-    # `kb summarize --redo` resets a whole document: a service's human-corrected
-    # prose is gone, recoverable only from git, and `--redo` re-summarizes in the
-    # same command. The warning is carried by the dev-code-seed skill that acts on
-    # it (test_templates pins "resets the **whole** document"); the card and the
-    # guide must not bring back the disproven wording.
+def test_dev_guide_documents_the_redo_consequence(tmp_path: Path):
+    # `kb summarize --redo --include-reviewed` removes a reviewed section's text
+    # and sign-off and re-summarizes in the same command (cli.py
+    # `_confirm_and_apply_redo`: "recoverable with git checkout"). The guide says
+    # so; the dev-code-seed skill keeps its own, stronger sentence (see the
+    # Follow-ups in the fact map: the skill says "reviewed sections included",
+    # which the code only does with --include-reviewed).
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
-    skill = (tmp_path / ".claude" / "commands" / "dev-code-seed.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Never run `kb summarize --redo` to fix one service" in skill
-    for flat in (" ".join(text.split()), _guide_flat("dev")):
+    guide = _guide_flat("dev")
+    assert "`kb summarize <repo_id>-svc --redo --include-reviewed`" in guide
+    assert "re-summarizes in the same command" in guide
+    assert "comes back only from git" in guide
+    for flat in (" ".join(text.split()), guide):
         assert "goes back to `pending`" not in flat
         assert "never stuck at `pending`" not in flat
 
 
-def test_quickstart_dev_documents_the_first_run_stale_risk_warning(tmp_path: Path):
-    # The one-off "first run after this release flags every reviewed section"
-    # note was release-history wording and is gone with the rewrite. What stays
-    # true and daily-relevant is that drift is reported, not repaired.
+def test_dev_guide_documents_that_stale_risk_is_reported_not_repaired():
     guide = _guide_flat("dev")
     assert "prints `stale-risk: svc.<name>` and leaves the summary alone" in guide
 
 
-def test_quickstart_dev_states_the_stale_risk_comparison_precisely(tmp_path: Path):
-    # `core.py` compares `.strip()`-ed L3 bodies, not literal bytes: neither the
-    # card nor the guide may call it "byte-for-byte".
+def test_dev_card_and_guide_do_not_overstate_the_stale_risk_comparison(
+    tmp_path: Path,
+):
+    # `core.py` compares `.strip()`-ed L3 bodies, not literal bytes.
     init_repo(tmp_path, "dev")
     text = (tmp_path / "QUICKSTART-DEV.md").read_text(encoding="utf-8")
     for flat in (" ".join(text.split()), _guide_flat("dev")):
@@ -2370,19 +2369,67 @@ def test_settings_json_is_merged_not_overwritten_by_a_second_init(tmp_path: Path
     assert "Bash(kb ticket *)" in settings["permissions"]["allow"]
 
 
-def test_quickstart_ba_documents_the_usage_hook(tmp_path: Path):
-    # The cost-report hook is documented in the BA guide (6.5).
+def test_ba_guide_documents_the_usage_hook():
     guide = _guide_flat("ba")
     assert "kb usage report" in guide
     assert "kb usage ingest-transcript" in guide
     assert ".kb/usage/report.html" in guide
+    assert "adds about 0.6 s per turn" in guide
 
 
-def test_quickstart_dev_documents_the_usage_hook(tmp_path: Path):
-    # The cost-report hook is documented in the Dev guide (6.5).
+def test_dev_guide_documents_the_usage_hook():
     guide = _guide_flat("dev")
     assert "kb usage ingest-transcript --hook-stdin" in guide
     assert "`Stop` and `SubagentStop` hooks" in guide
+    assert "kb usage report" in guide
+    assert "adds about 0.6 s per turn" in guide
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_the_ingest_errors_log(kind):
+    # `_usage_log_error` calls this file the ONLY diagnostic channel a silent
+    # Stop hook has; a guide that never names it leaves a user with no way to
+    # discover why the ledger is not growing.
+    guide = _guide_flat(kind)
+    assert "`.kb/usage/ingest-errors.log`" in guide
+    assert "the only place a failure shows" in guide
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_that_reingesting_is_safe(kind):
+    # A call already in the ledger is skipped (uuid de-duplication), so
+    # re-ingesting a transcript is always safe.
+    guide = _guide_flat(kind)
+    assert "Re-ingesting a transcript is always safe" in guide
+    assert "a call already in the ledger is skipped" in guide
+    assert "kb usage ingest-transcript <path>" in guide
+
+
+def _tiering_paragraph(guide: str) -> str:
+    start = guide.index("**Model tiering**")
+    return guide[start : start + 900]
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_guides_document_model_tiering(kind):
+    paragraph = _tiering_paragraph(_guide_flat(kind))
+    assert "usage-prices.yaml" in paragraph
+    assert "`effective_date`" in paragraph
+    # The caveat is the load-bearing sentence: without it the advice raises the
+    # bill while everyone believes it lowers it.
+    assert "discards the prompt cache" in paragraph
+    assert "can cost **more** than not tiering" in paragraph
+    # And it says how to check rather than asking for trust.
+    assert "kb usage report" in paragraph
+
+
+def test_ba_guide_names_the_unknown_tag_fix_and_where_tags_come_from():
+    guide = _guide_flat("ba")
+    assert "is not published by any document on the hub federation" in guide
+    assert "Delete the tag from the block" in guide
+    assert "Never re-run `kb context new`" in guide
+    assert "`kb tags` lists the real ones" in guide
+    assert "Tags are derived from the documents your refs pin" in guide
 
 
 def test_quickstarts_force_clause_names_all_three_protected_files():

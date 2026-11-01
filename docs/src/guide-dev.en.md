@@ -193,6 +193,10 @@ freely: a missing flow beats a guessed one. Use `kb publish --pr` for this first
 publish: no merge has happened yet, so there is no tag for `kb-code.yml` to react to,
 and plain `kb publish` would wait up to ten minutes for a CI run that never starts.
 
+To correct one service, edit its section by hand. `kb summarize <repo_id>-svc --redo
+--include-reviewed` removes a reviewed section's text and sign-off and re-summarizes in the
+same command; the prose you corrected comes back only from git.
+
 ---
 
 # 3. Daily work
@@ -584,6 +588,11 @@ build, deploy and contract files; the last four read source with tree-sitter.
 | `jobs` | `job.<slug>` | scheduled jobs of framework schedulers (needs `[code]`) |
 | `symbols` | `sym.<slug>` | exported names, enum and object members, CSS custom properties (needs `[code]`) |
 
+For each compose service, the `svc.<name>` section of `-code` also lists its named volumes (bind
+mounts are not named volumes and are left out), its healthcheck command as one line (`disabled`
+when the service turns it off, `none` when it has none) and its device reservations
+(`<driver>:<caps>`, from `deploy.resources.reservations.devices`).
+
 `tree` also writes `struct.files.<dir>` (every tracked file under one top-level
 directory), and every extractor reports into `struct.coverage`. `kb code-ingest` exits `1`
 when none of `services`, `deps`, `commands`, `schema`, `integrations` and `api` found
@@ -640,7 +649,8 @@ a shell command.
 
 Everything else (test-first, shown verification, GATE 1 and GATE 2, A1 to A4) is prompt
 discipline that nothing in `kb` measures; the check is you, at the gate. Only A5 has
-teeth, through the `Blocking:` line.
+teeth, through the `Blocking:` line. Test-first has one bounded exception: change classes with no
+observable behaviour, named in `docs/tdd-exemptions.md` and declared in the plan when it is written.
 
 ## 6.5 Auto-mode permissions
 
@@ -654,6 +664,19 @@ install, lint and build commands of your `langs`.
 delete `main` or `master`; `git reset --hard`; `gh repo delete`, `gh run delete`; `kb init`;
 `rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and `.git/**`.
 The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin` for cost reports.
+
+**Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
+`kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
+`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop`
+hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
+`.kb/usage/ingest-errors.log`: it is the only place a failure shows. Re-ingesting a transcript is
+always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
+backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
+come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
+carries an `effective_date`. Switch model at phase boundaries, never inside a phase: a switch
+discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
+strong-model session can cost **more** than not tiering. Check the result with
+`kb usage report`, which breaks spending down by model.
 
 ## 6.6 Hub Q&A rules that touch you
 

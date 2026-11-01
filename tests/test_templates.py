@@ -1978,6 +1978,7 @@ def test_quickstart_dev_names_the_pr_gate_and_the_required_check():
     guide = _guide_text("dev")
     assert "kb pr lint" in guide
     assert "required check" in guide
+    assert "docs/tdd-exemptions.md" in guide
 
 
 SUMMARIZE_WRAPPERS = [
@@ -3046,6 +3047,14 @@ def test_dev_execute_runs_plan_waves_and_lanes():
         assert "must be gitignored" in body, name
 
 
+def test_dev_guide_names_the_compose_facts():
+    text = _normalised(_guide_text("dev"))
+    assert "also lists its named volumes" in text
+    assert "its healthcheck command as one line" in text
+    assert "its device reservations" in text
+    assert "`deploy.resources.reservations.devices`" in text
+
+
 def test_quickstart_dev_documents_plan_waves_and_lanes():
     text = _normalised(_guide_text("dev"))
     assert "`kb plan waves docs/impl/<id>/plan.md`" in text
@@ -3217,8 +3226,12 @@ def test_dev_handover_says_svc_note_is_what_marks_the_story_done():
         assert "stays `draft` or `ready` forever" in body, name
 
 
-def test_quickstart_ba_documents_which_ticket_next_and_the_bulk_decide():
+def test_ba_guide_documents_which_story_next_and_the_decide_stop():
     text = _normalised(_guide_text("ba"))
+    assert (
+        "In a skeleton repo the agent stops at step 5b, **Decide**, and shows you "
+        "the table once."
+    ) in text
     assert "## 3.4 Which story next" in text
     assert "`kb mission next`" in text
     for word in (
