@@ -105,8 +105,8 @@ and restart the assistant.
 **One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
 hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
 installs the hub's version, sets the `strata-kb==<hub version>` pins in
-`.github/workflows/`, and refreshes the skills and commands. In CI it never installs or
-rewrites anything; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
+`.github/workflows/`, and refreshes the skills and commands. In CI it never installs,
+re-pins or refreshes skills; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
 `STRATA_KB_HTTP_TOKEN` set reports a version mismatch as an error instead (none of the
 scaffolded workflows runs it). With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the
 MCP path and the version check, and only reports that the version was not checked against
@@ -253,15 +253,16 @@ kb mission next
 | `to-draft` | No ticket yet, every `Depends on` story is `done`, every D-row that `Blocks` it is `DECIDED`, no open question names it in `blocks:` |
 | `blocked` | Named reasons: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)` |
 
-The report ends with `Next: <us-id> — <title>`; `/ba-ticket-author` with no argument runs it
-first and proposes that story. A dependency that is only `draft` or `ready` still blocks:
-done means published on the hub. A ticket is also `draft`, reason
-`parent mission rev <M> affects this story`, when its mission's `> Revision:` is above the ticket's `@ rev` pin **and** a later
-change-log row lists the story in `Affected`. The command is read-only and exits `0`
-except on a usage error. `--kb-dir` is read first when it holds the `-svc` document (a dev
-machine), the hub second; an unreachable hub or unpublished `-svc` becomes a `note:` line.
-With `--from-hub` (and `--repo <ba-repo-id>`) it reads the published plan instead: a
-published ticket is `ready`, and `draft` cannot be seen.
+The report ends with `Next: <us-id> — <title>`; `/ba-ticket-author` with no argument runs
+it first and proposes that story. A dependency that is only `draft` or `ready` still
+blocks: done means published on the hub. A ticket is also `draft`, reason
+`parent mission rev <M> affects this story`, when its mission's `> Revision:` is above the
+ticket's `@ rev` pin **and** a later change-log row lists the story in `Affected`. The
+command is read-only and exits `0` except on a usage error. `--kb-dir` is read first when
+it holds the `-svc` document (a dev machine), the hub second; an unreachable hub or
+unpublished `-svc` becomes a `note:` line. With `--from-hub` (and `--repo <ba-repo-id>`)
+it reads the published plan instead: a published ticket is `ready`, and `draft` cannot be
+seen.
 
 ## 3.5 Report a bug
 
@@ -574,7 +575,8 @@ hours, pushing `auto/*` branches, a merge past a required review, and `gh run` o
 | Lint: "change log" error after an amendment | `Revision` was bumped without a matching row, or a `Trigger` is misspelled | One row per revision `2..N`, in order, with the five trigger values |
 | Lint passes locally, fails in CI | `STRATA_KB_HUB` is unset in Actions variables, or the hub is private and `KB_HUB_TOKEN` is missing | Configure both (2.4) |
 | `kb doctor` warns a tracked `.kb/config.yaml` carries a credential in `hub:` or `intake:` | A token was committed | Rewrite the URL without it, pass it in `STRATA_KB_HUB`, rotate the token (it is in git history) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb, or a CI pin, differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset. It never installs in CI |
+| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset. It never installs in CI |
+| `kb doctor`: ".github/workflows/<file> pins strata-kb==X but the hub runs Y" | A CI pin differs from the hub's | The same local `kb doctor` rewrites the pins; commit them. In CI it only reports |
 | The assistant cannot reach the hub | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`); it says which one |
 | `kb mcp-setup`: "token was rejected" after you got a fresh token | A bare re-run reads the *old* token from `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, or delete that line from `.env` and re-run |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP points at a local cache clone, a stdio server or any target other than the hub's HTTP server; the skill stops without changing a ticket | Run `kb mcp-setup` and restart the assistant |
@@ -602,7 +604,8 @@ hours, pushing `auto/*` branches, a merge past a required review, and `gh run` o
 | `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | force or detect Claude Code cloud |
 
 Exit codes: `0` ok, `1` error, `2` stale citation (or a usage error); `kb auto` as in 4.3.
-The skills call the `strata-kb` MCP tools; the full list is in the hub guide.
+The skills call the `strata-kb` MCP tools; the full list is in the
+[hub guide](guide-hub.en.md#63-the-mcp-tools).
 
 ## 6.2 What `kb init` writes, and what is git-ignored
 
@@ -615,12 +618,13 @@ The skills call the `strata-kb` MCP tools; the full list is in the hub guide.
 | `.env` | the MCP credentials (`kb mcp-setup` makes git ignore it; `kb init` does not) | no |
 
 Re-running `kb init --kind ba` creates missing files, refreshes scaffold files that differ
-from the template and appends the `.kb/*-plan/`, `.kb/index.yaml` and `.kb/auto/` ignore lines to `.gitignore`, never removing one.
-`.kb/config.yaml`, `.kb/index.yaml` and `.claude/settings.json` are protected: a plain run
-leaves the first two alone and only merges into the third (your entries stay).
-**`--force` replaces all three outright**, including `kind`, `repo_id` and your whole
-`.claude/settings.json`. Nothing under `tickets/` or `missions/` is touched. Never commit
-`.kb-qa/`: it is the hub's Q&A store, git-ignored on the hub.
+from the template and appends the `.kb/*-plan/`, `.kb/index.yaml` and `.kb/auto/` ignore
+lines to `.gitignore`, never removing one. `.kb/config.yaml`, `.kb/index.yaml` and
+`.claude/settings.json` are protected: a plain run leaves the first two alone and only
+merges into the third (your entries stay). **`--force` replaces all three outright**,
+including `kind`, `repo_id` and your whole `.claude/settings.json`. Nothing under
+`tickets/` or `missions/` is touched. Never commit `.kb-qa/`: it is the hub's Q&A store,
+git-ignored on the hub.
 
 ## 6.3 What the gate checks
 
@@ -660,30 +664,34 @@ A job is never `complete` (`jobs outside framework schedulers are not detectable
 
 ## 6.5 Auto-mode permissions
 
-`kb init --kind ba` merges its permissions into your `.claude/settings.json`.
-**Allowed:** everyday `git` (add, commit, status, diff, log, fetch, pull, switch to
-`auto/*`, `fix/*`, `hotfix/*`, branch, worktree, merge, `push -u origin HEAD`), `gh pr` and
-`gh run`, `Read`/`Edit`/`Write`, the `strata-kb` MCP tools and many `kb` subcommands.
-**Denied:** any `git push` that names `main` or `master`, force-push, `+` and `:` refspecs
-and `--delete`; `git checkout`, `switch` and `branch` forms that move onto, create, rename
-or delete `main` or `master` (a branch id that merely contains the word, like
+`kb init --kind ba` merges its permissions into your `.claude/settings.json`. **Allowed:**
+everyday `git` (add, commit, status, diff, log, fetch, pull, switch to `auto/*`, `fix/*`,
+`hotfix/*`, branch, worktree, merge, `push -u origin HEAD`), `gh pr` and `gh run`,
+`Read`/`Edit`/`Write`, the `strata-kb` MCP tools and many `kb` subcommands. **Denied:**
+any `git push` that names `main` or `master`, force-push, `+` and `:` refspecs and
+`--delete`; `git checkout`, `switch` and `branch` forms that move onto, create, rename or
+delete `main` or `master` (a branch id that merely contains the word, like
 `auto/M-domain-US1`, is fine); `git reset --hard`; `gh repo delete`, `gh run delete`;
 `kb init`; `rm -rf /*`; editing `.claude/settings.json`, `.claude/settings.local.json` and
-`.git/**`. The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin`; `kb usage report` turns that ledger into a cost report
-(`.kb/usage/report.html`).
+`.git/**`. The `Stop` and `SubagentStop` hooks run
+`kb usage ingest-transcript --hook-stdin`; `kb usage report` turns that ledger into a cost
+report (`.kb/usage/report.html`).
 
 **Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
 `kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
-`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop`
-hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
-`.kb/usage/ingest-errors.log`: it is the only place a failure shows. Re-ingesting a transcript is
-always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
-backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
-come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
-carries an `effective_date`. A model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate and flagged, so a total that contains them is a lower bound. Switch model at phase boundaries, never inside a phase: a switch
-discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
-strong-model session can cost **more** than not tiering. Check the result with
-`kb usage report`, which breaks spending down by model.
+`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a
+`Stop` hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
+read `.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows. Re-ingesting a
+transcript is always safe, because a call already in the ledger is skipped:
+`kb usage ingest-transcript <path>` backfills one. **Model tiering** is a recommendation
+that nothing in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped,
+overridable per model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A
+model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at
+the standard rate and flagged, so a total that contains them is a lower bound. Switch
+model at phase boundaries, never inside a phase: a switch discards the prompt cache and
+pays a fresh cache write, so a few cheap-model turns inside a strong-model session can
+cost **more** than not tiering. Check the result with `kb usage report`, which breaks
+spending down by model.
 
 ## 6.6 Hub Q&A rules that touch you
 

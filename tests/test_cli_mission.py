@@ -665,8 +665,10 @@ def test_docs_name_the_next_command():
     # the states and the lookup order (flags are in `kb mission next --help`).
     readme = (root / "README.md").read_text(encoding="utf-8")
     row = next(
-        line for line in readme.splitlines() if line.startswith("| `kb mission` |")
+        (line for line in readme.splitlines() if line.startswith("| `kb mission` |")),
+        "",
     )
+    assert row, "README has no '| `kb mission` |' command-table row"
     assert "`next`" in row
     assert "`kb ticket tidy`" in readme
     guide = " ".join(

@@ -172,13 +172,14 @@ Một file thực thi duy nhất, nhóm theo giai đoạn vòng đời.
 | Dựng khung | `init`, `docker-setup`, `mcp-setup` |
 | Biên soạn | `ingest`, `l3`, `summarize`, `status`, `build`, `approve`, `authored` |
 | Truy hồi | `query`, `get`, `stats`, `tags` |
-| Liên kết | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync`, `user` |
+| Liên kết | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync` |
 | Trích dẫn | `context new`, `resolve`, `diff` |
 | Tri thức code | `code-ingest`, `svc note` |
 | Tri thức plan | `plan-ingest`, `mission next`, `ticket fetch` |
 | Cổng kiểm tra | `ticket lint`, `ticket check`, `ticket stale`, `mission lint`, `pr lint`, `plan waves` |
 | Dọn dẹp và xuất | `ticket tidy`, `ticket export`, `impl tidy` |
-| Agent | `claim`, `pr`, `auto` |
+| Agent | `claim`, `pr` (`find`, `view`, `open`, `checks`, `merge`, `edit`; `pr lint` là một cổng ở trên), `auto` |
+| Tài khoản hub | `user` |
 | Đo lường | `usage` |
 
 CLI là bản hiện thực tham chiếu của mọi quy tắc trong tài liệu này. MCP server và

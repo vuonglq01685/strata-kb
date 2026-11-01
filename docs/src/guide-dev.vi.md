@@ -116,8 +116,8 @@ lý khởi động. Hãy nạp file (`set -a; source .env; set +a`, hoặc dùng
 **Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy nâng
 cấp hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo
 này: nó cài phiên bản của hub, đặt các pin `strata-kb==<phiên bản của hub>` trong
-`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài hay
-sửa gì; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được
+`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài, đặt lại
+pin hay làm mới skill; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được
 đặt sẽ báo sai lệch phiên bản như một lỗi (không workflow dựng sẵn nào chạy nó). Khi
 `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra phiên
 bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file trong
@@ -187,8 +187,9 @@ publish đầu tiên này: chưa có merge nào xảy ra, nên không có tag n�
 phản ứng, và `kb publish` thường sẽ chờ tới mười phút cho một lượt CI không bao giờ chạy.
 
 Để sửa một service, hãy sửa tay section của nó. `kb summarize <repo_id>-svc --redo
---include-reviewed` xóa nội dung và chữ ký duyệt của một section đã reviewed rồi tóm tắt lại
-ngay trong cùng lệnh; đoạn văn bạn đã sửa chỉ lấy lại được từ git.
+--include-reviewed` xóa nội dung và chữ ký duyệt của mọi section đã reviewed trong tài liệu
+`-svc` (thêm `--section <id>` để chỉ reset một section) rồi tóm tắt lại ngay trong cùng
+lệnh; đoạn văn bạn đã sửa chỉ lấy lại được từ git.
 
 ---
 
@@ -272,7 +273,8 @@ wrapper Copilot và Cursor), lượt review chạy như một lượt đơn và 
 phải cổng**: phase dừng và giao kết quả cho bạn. `dev-execute` sắp thứ tự task bằng
 `kb plan waves docs/impl/<id>/plan.md` và chạy các task độc lập song song trong các lane
 git worktree. `kb plan waves` báo lỗi khi có file dùng chung mà không có phụ thuộc, khi có chu
-trình, khi thiếu dòng `Depends on:` hoặc dòng `Serial resource:` rỗng; task có dòng
+trình, khi một task không liệt kê đường dẫn nào dưới **Files**, khi thiếu dòng `Depends on:`
+hoặc dòng đó nêu một task không tồn tại, hoặc dòng `Serial resource:` rỗng; task có dòng
 `Serial resource:` được in sau `serial:` và chạy một mình, không bao giờ trong lane song song.
 
 ## 3.3 Câu hỏi cho BA
@@ -367,10 +369,11 @@ comment trích dẫn ngay cạnh.
 
 Không tài liệu nào đòi hỏi kỷ luật mới theo từng ticket từ bạn.
 
-- **`-code` không cần làm gì.** Nó không bao giờ được commit (`.gitignore` có `.kb/*-code/`).
-  `kb svc note`, `kb build`, `kb doctor` và `kb publish` sinh lại nó trước khi chạy khi nó
-  thiếu, cũ hơn `HEAD`, hoặc các file đang được theo dõi có thay đổi (`--no-refresh` bỏ qua việc đó). CI không bao giờ truyền `--scaffold-svc`, vì CI
-  không được tạo nội dung `pending`.
+- **`-code` không cần làm gì.** Nó không bao giờ được commit (`.gitignore` có
+  `.kb/*-code/`). `kb svc note`, `kb build`, `kb doctor` và `kb publish` sinh lại nó trước
+  khi chạy khi nó thiếu, cũ hơn `HEAD`, hoặc các file đang được theo dõi có thay đổi
+  (`--no-refresh` bỏ qua việc đó). CI không bao giờ truyền `--scaffold-svc`, vì CI không
+  được tạo nội dung `pending`.
 - **`-svc` tích lũy ở handover.** `dev-handover` chạy
   `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` cho mỗi service
   mà ticket đã chạm tới. Lệnh thêm một dòng `hist.<service>`, idempotent; đừng bao giờ sửa
@@ -461,10 +464,11 @@ cùng ticket đó chạy tiếp trong một tiến trình mới. Nó dừng sau 
 ticket (CI đỏ sau hai vòng sửa thì dừng ngay); hãy sửa nguyên nhân rồi chạy lại
 `kb auto run`. Một lệnh nằm ngoài allowlist kết thúc task bằng
 `failed command-denied <command>`: hãy thêm nó vào `permissions.allow` trong
-`.claude/settings.json` bằng tay. Chờ vì chạm giới hạn sử dụng (15, 30, 60 phút) không phải
-thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không có mission và bug đều
-`done`. Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off`
-và `run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa khởi động vòng lặp thứ hai.
+`.claude/settings.json` bằng tay. Chờ vì chạm giới hạn sử dụng (15, 30, 60 phút) không
+phải thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket không có mission và bug
+đều `done`. Một tiến trình task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`,
+`off` và `run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa
+khởi động vòng lặp thứ hai.
 
 Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
 `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có
@@ -502,7 +506,8 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | `kb code-ingest` thoát 1: destination refused | Một tài liệu soạn tay nằm ở doc id đó | Chuyển nó đi, hoặc dùng `--doc-id` |
 | `kb doctor`: "strata-kb[code] is not installed" | Thiếu extra `code` | `pip install "strata-kb[code]"` |
 | `kb doctor` cảnh báo `.kb/config.yaml` được theo dõi mang credential trong `hub:` hoặc `intake:` | Một token đã bị commit | Viết lại URL không có nó, truyền qua `STRATA_KB_HUB`, đổi token (nó đã nằm trong lịch sử git) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài, hoặc một pin CI, khác phiên bản của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy bạn khi `STRATA_KB_HUB` chưa đặt (biến đó bỏ qua bước đồng bộ). Nó không bao giờ cài trong CI |
+| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài khác phiên bản của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy bạn khi `STRATA_KB_HUB` chưa đặt (biến đó bỏ qua bước đồng bộ). Nó không bao giờ cài trong CI |
+| `kb doctor`: ".github/workflows/<file> pins strata-kb==X but the hub runs Y" | Một pin CI khác phiên bản của hub | Chính `kb doctor` chạy ở máy sẽ ghi lại các pin; hãy commit chúng. Trong CI nó chỉ báo |
 | `kb doctor`: "hub `<repo>`-code lags origin/main" | Lần publish `-code` gần nhất chưa merge trên hub, hoặc lượt `kb-code.yml` gần nhất lỗi | Mở PR hub nêu trong tóm tắt job và merge, hoặc sửa lượt chạy; `kb publish` publish lại. Phép kiểm tra chạy một `code-ingest` đầy đủ (chậm); trên Windows, chênh lệch hoa/thường trong glob có thể hiện `lags` nhưng biến mất trên Linux CI |
 | `kb doctor`: "kb-code.yml passes --db" | Cấu hình ingest nằm trong workflow | Chuyển các đường dẫn sang `code_ingest.db` trong `.kb/config.yaml`, rồi `kb init --kind dev` |
 | `kb doctor`: "`.kb/<repo>-code` is tracked by git" | `-code` đã bị commit | `git rm -r --cached .kb/<repo>-code` rồi commit |
@@ -663,17 +668,21 @@ lệnh test, install, lint, build của `langs` bạn.
 Các hook `Stop` và `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin` cho báo cáo
 chi phí.
 
-**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`). `kb usage report`
-ghi `.kb/usage/report.html`, theo ticket, phase và model; với `--ticket <id> --md` nó in một bảng
-Markdown. Hook lỗi thì im lặng theo thiết kế (hook `Stop` không thể chặn một lượt kết thúc), nên
-nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi
-hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
-`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
-không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
-từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh giới phase, không bao
-giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
-model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
-`kb usage report`, vốn chia chi tiêu theo model.
+**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`).
+`kb usage report` ghi `.kb/usage/report.html`, theo ticket, phase và model; với
+`--ticket <id> --md` nó in một bảng Markdown. Hook lỗi thì im lặng theo thiết kế (hook
+`Stop` không thể chặn một lượt kết thúc), nên nếu `.kb/usage/*.jsonl` không tăng, hãy đọc
+`.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi bên trong `kb` hiện ra. Ingest lại một transcript
+luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
+`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là
+khuyến nghị, không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm
+gói, ghi đè theo từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không
+có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được
+tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh
+giới phase, không bao giờ giữa một phase: đổi model làm mất prompt cache và phải trả một
+lần ghi cache mới, nên vài lượt model rẻ giữa một phiên model mạnh có thể tốn **nhiều
+hơn** không phân tầng. Kiểm tra kết quả bằng `kb usage report`, vốn chia chi tiêu theo
+model.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 

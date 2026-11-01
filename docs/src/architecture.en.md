@@ -170,13 +170,14 @@ One executable, grouped by lifecycle stage.
 | Scaffolding | `init`, `docker-setup`, `mcp-setup` |
 | Authoring | `ingest`, `l3`, `summarize`, `status`, `build`, `approve`, `authored` |
 | Retrieval | `query`, `get`, `stats`, `tags` |
-| Federation | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync`, `user` |
+| Federation | `publish`, `ci-publish`, `reindex`, `doctor`, `assets`, `code-sync` |
 | Citations | `context new`, `resolve`, `diff` |
 | Code knowledge | `code-ingest`, `svc note` |
 | Plan knowledge | `plan-ingest`, `mission next`, `ticket fetch` |
 | Gates | `ticket lint`, `ticket check`, `ticket stale`, `mission lint`, `pr lint`, `plan waves` |
 | Tidying and export | `ticket tidy`, `ticket export`, `impl tidy` |
-| Agents | `claim`, `pr`, `auto` |
+| Agents | `claim`, `pr` (`find`, `view`, `open`, `checks`, `merge`, `edit`; `pr lint` is a gate above), `auto` |
+| Hub accounts | `user` |
 | Measurement | `usage` |
 
 The CLI is the reference implementation of every rule in this document. The MCP

@@ -184,7 +184,7 @@ repos:
   chạy và kind của chính repo được ghi lại. Trên hub có sẵn, `kb init --kind hub` đề xuất một
   kind cho mỗi mục chưa có kind, hiện diff rồi hỏi (`--yes` ghi không hỏi). Nó không bao giờ
   commit: bạn tự mở PR, và chỉ sau khi các publisher tự đọc registry (`kb publish` trực
-  tiếp, hub con) đã chạy version của hub.
+  tiếp, hub con) đã chạy phiên bản của hub.
 - **Để trống `workflow:`.** Intake so nó với `job_workflow_ref` đầy đủ, vốn kết thúc bằng
   `@refs/tags/kb-publish/<timestamp>`, nên một pin không bao giờ khớp và mọi publish bị từ
   chối. Một mục chỉ nhận `repo_id`, `kind`, `workflow` và `auto_merge`; khoá nào khác làm
@@ -394,7 +394,7 @@ Thanh trái của Web UI là **Overview, Document, Ticket, Code, Q&A**: Document
 ## 3.7 Kiểm tra sức khoẻ
 
 ```bash
-kb doctor      # exit 1 on an error, 2 when the hub cache is stale
+kb doctor      # exit 1 on an error, 2 when the hub cache or a --context citation is stale
 kb reindex     # rebuild federation/index.yaml when it has drifted; --force also rebuilds search
 ```
 
@@ -537,7 +537,7 @@ Không có credential, `hub-sync` vẫn quét và ghi log work order, ghi một 
 | Đã merge trên repo của publisher, chưa tìm kiếm được | Nó tìm được sau khi PR **hub** được merge và hub pull (tối đa `STRATA_KB_HUB_PULL_INTERVAL` giây). Xem log server có lần pull thất bại không: checkout bị sửa tay hoặc phân kỳ bị bỏ qua |
 | Nội dung đến mà không có review của hub | Auto-merge đang bật cho repo đó (4.3), có thể sau một merge của BA vào `main` (theo bản dựng khung, 4.2) |
 | `kb doctor` nêu tên file nằm trong một mục federation | Một lần publish cũ đã mirror nhiều hơn các artefact của `.kb/`. Publish lại để loại chúng, và **xoay mọi credential chúng chứa**: xoá file không xoá nó khỏi lịch sử Git |
-| `kb summarize`, `kb build` hoặc `kb publish` từ chối một tài liệu hub: `L3 review pending` | Một phát hiện L3 chưa được xác nhận: `kb l3 report <doc-id>`, kiểm tra từng section với PDF, rồi `kb l3 confirm <doc-id> --section <id>` (hoặc `--all`); xem [tài liệu Child](guide-child.vi.md#32-kiểm-tra-l3-với-pdf) |
+| Với một tài liệu hub, `kb summarize` bỏ qua nó (`[skip] <doc>: L3 review pending`) còn `kb build` hoặc `kb publish` từ chối: `L3 review pending` | Một phát hiện L3 chưa được xác nhận: `kb l3 report <doc-id>`, kiểm tra từng section với PDF, rồi `kb l3 confirm <doc-id> --section <id>` (hoặc `--all`); xem [tài liệu Child](guide-child.vi.md#32-kiểm-tra-l3-với-pdf) |
 | Mọi lệnh hub lỗi xác thực | `git --version`: dưới 2.31 với URL hub có credential thì không gì chạy. Nâng cấp Git |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP của client là stdio server của repo Dev hoặc một bản clone cache của URL hub; trỏ nó vào `/mcp` của server này (6.5) |
 | `hub-sync` ghi log rằng issue chưa được cập nhật | Không có credential App hay `STRATA_KB_GH_TOKEN`, hoặc thiếu quyền (4.4) |
@@ -652,11 +652,16 @@ section thay đổi cho mỗi câu trả lời, và tối đa 50 câu hỏi mở
 
 Runner tự động của repo `ba` hoặc `dev` thăm dò `GET /api/questions` bằng cùng bearer token.
 Nó chỉ đọc và trả `{"questions": [...]}`. Tham số: `repo`, `ticket`, và `status` (mặc định
-`open`, hoặc `waiting`, `answered`, `all`; giá trị khác là `400`). Hub chưa có kho Q&A trả về
-danh sách rỗng; hub không phục vụ chính checkout của nó trả `503`.
+`open`, hoặc `waiting`, `answered`, `all`; giá trị khác là `400 bad_status`). Hub chưa có kho
+Q&A trả về danh sách rỗng. Lỗi: `400 bad_request` khi tham chiếu `ticket` sai dạng,
+`503 qa_needs_hub_server` khi hub không phục vụ chính checkout của nó, `503 hub_unreachable`
+khi không mở được hub, `500 qa_store_error` khi kho lỗi (chi tiết nằm trong log của hub).
 
 ## 6.6 Mã thoát
 
 `0` ổn, `1` lỗi hoặc cấu hình sai, `2` một trích dẫn cũ (với `kb doctor` là cache hub cũ)
 hoặc lỗi cách dùng CLI. `kb code-sync scan` và `run`: `0` không có gì cần làm, `2` có phát
-hiện, `1` lỗi; `kb code-sync issue`: `0` có issue dùng được, `2` không có, `1` lỗi. Mã `2` cho trích dẫn cũ đến từ `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale` và `kb mission lint --fail-on-stale`; `kb doctor` cũng thoát `2`, dù có hay không có `--context`, khi chính cache hub đã cũ.
+hiện, `1` lỗi; `kb code-sync issue`: `0` có issue dùng được, `2` không có, `1` lỗi. Mã `2`
+cho trích dẫn cũ đến từ `kb resolve`, `kb doctor --context`,
+`kb ticket lint --fail-on-stale` và `kb mission lint --fail-on-stale`; `kb doctor` cũng
+thoát `2`, dù có hay không có `--context`, khi chính cache hub đã cũ.

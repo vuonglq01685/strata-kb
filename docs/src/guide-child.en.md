@@ -123,8 +123,8 @@ restart the assistant.
 **One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
 hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
 installs the hub's version, sets the `strata-kb==<hub version>` pins in
-`.github/workflows/`, and refreshes the skills and commands. In CI it never installs or
-rewrites anything. With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the MCP path and
+`.github/workflows/`, and refreshes the skills and commands. In CI it never installs,
+re-pins or refreshes skills. With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips the MCP path and
 the version check, and only reports that the version was not checked against the hub. The
 files under `.github/instructions/` and `.cursor/rules/` (the Copilot and Cursor
 `kb-summarize` files) refresh only through `kb init`. The pin matters: an unpinned
@@ -364,10 +364,11 @@ first prints `kind: kb → hub menu: Document`, then:
 | `intake:` set | Needs a clean, committed `.kb/`. Tags the commit `kb-publish/<ts>`, pushes the tag, and your CI publishes (section 4.2). The command waits up to 600 seconds and prints the PR link. |
 | `hub:` only | Mirrors `.kb/` into `federation/<repo-id>/` on the hub and opens a PR there. It needs `gh` able to open a PR on the hub's host. |
 
-`--pr` and `--direct` force a mode: `--direct` commits straight to the hub and is refused on
-a governed hub that has a git remote; with neither flag `kb publish` picks direct only for a hub with no git remote, and otherwise a PR or a clear refusal.
-`kb publish` has no `--intake` flag: it reads `intake:` from the config. `--hub` or the
-`STRATA_KB_HUB` variable overrides `hub:`.
+`--pr` and `--direct` force a mode: `--direct` commits straight to the hub and is refused
+on a governed hub that has a git remote; with neither flag `kb publish` picks direct only
+for a hub with no git remote, and otherwise a PR or a clear refusal. `kb publish` has no
+`--intake` flag: it reads `intake:` from the config. `--hub` or the `STRATA_KB_HUB`
+variable overrides `hub:`.
 
 Publishing copies **`.kb/` artefacts only**: documents, indexes, manifests and `assets/`.
 Configuration files, dotfiles, `_l3check.yaml` and `_l3fix.yaml` stay behind; a withheld
@@ -387,12 +388,13 @@ kb get hr-handbook 4.12 --level l2     # or --level l3
 kb tags                                # every tag published on the hub
 ```
 
-Every result starts with `--- [<repo-id>:<doc-id> §<section> (<revision>)] match=<mode> ~<n>tk`
-(`keyword`, `semantic` or `hybrid`) and cites that same form. Query in the document's
-own language: the store never translates. `--budget` is a token ceiling and is advisory:
-the first result is always returned whatever its size, because a section is never cut.
-`--tags` also accepts a document id; `--kind kb|ba|dev` filters by hub menu. The same search is available to your assistant over
-MCP (section 2.4).
+Every result starts with
+`--- [<repo-id>:<doc-id> §<section> (<revision>)] match=<mode> ~<n>tk` (`keyword`,
+`semantic` or `hybrid`) and cites that same form. Query in the document's own language:
+the store never translates. `--budget` is a token ceiling and is advisory: the first
+result is always returned whatever its size, because a section is never cut. `--tags` also
+accepts a document id; `--kind kb|ba|dev` filters by hub menu. The same search is
+available to your assistant over MCP (section 2.4).
 
 ---
 

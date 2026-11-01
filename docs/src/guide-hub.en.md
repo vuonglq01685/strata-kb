@@ -403,7 +403,7 @@ The top search box searches all kinds in one list.
 ## 3.7 Check health
 
 ```bash
-kb doctor      # exit 1 on an error, 2 when the hub cache is stale
+kb doctor      # exit 1 on an error, 2 when the hub cache or a --context citation is stale
 kb reindex     # rebuild federation/index.yaml when it has drifted; --force also rebuilds search
 ```
 
@@ -549,7 +549,7 @@ issue was not updated and why, and keeps running.
 | Merged on the publisher's repo, not searchable | It is searchable once the **hub** PR merges and the hub pulls (up to `STRATA_KB_HUB_PULL_INTERVAL` seconds). Check the server log for a failed pull: a hand-edited or diverged checkout is left alone |
 | Content arrived with no hub review | Auto-merge is on for that repo (4.3), possibly after a BA merge to `main` (as scaffolded, 4.2) |
 | `kb doctor` names files inside a federation entry | An older publish mirrored more than `.kb/` artefacts. Publish again to strip them, and **rotate any credential they contained**: removing a file does not remove it from Git history |
-| `kb summarize`, `kb build` or `kb publish` refuses a hub document: `L3 review pending` | An L3 finding is unconfirmed: `kb l3 report <doc-id>`, check each section against the PDF, then `kb l3 confirm <doc-id> --section <id>` (or `--all`); see the [child guide](guide-child.en.md#32-check-l3-against-the-pdf) |
+| On a hub document, `kb summarize` skips it (`[skip] <doc>: L3 review pending`) and `kb build` or `kb publish` refuses: `L3 review pending` | An L3 finding is unconfirmed: `kb l3 report <doc-id>`, check each section against the PDF, then `kb l3 confirm <doc-id> --section <id>` (or `--all`); see the [child guide](guide-child.en.md#32-check-l3-against-the-pdf) |
 | Every hub command fails with an authentication error | `git --version`: below 2.31 with a credentialed hub URL, nothing works. Upgrade Git |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | The client's MCP is a Dev repo's stdio server or a cache clone of the hub URL; point it at this server's `/mcp` (6.5) |
 | `hub-sync` logs that the issue was not updated | No App credentials or `STRATA_KB_GH_TOKEN`, or missing permissions (4.4) |
@@ -668,11 +668,17 @@ publish") until the BA's new ticket revision is on the hub, then it is *answered
 
 The auto runner of a `ba` or `dev` repo polls `GET /api/questions` with the same bearer token.
 It is read-only and returns `{"questions": [...]}`. Parameters: `repo`, `ticket`, and `status`
-(`open` by default, `waiting`, `answered` or `all`; anything else is a `400`). A hub without a
-Q&A store answers an empty list; a hub that does not serve its own checkout answers `503`.
+(`open` by default, `waiting`, `answered` or `all`; anything else is `400 bad_status`). A hub
+without a Q&A store answers an empty list. Errors: `400 bad_request` for a malformed
+`ticket` reference, `503 qa_needs_hub_server` when the hub does not serve its own checkout,
+`503 hub_unreachable` when the hub cannot be opened, `500 qa_store_error` when the store
+fails (the detail is in the hub log).
 
 ## 6.6 Exit codes
 
 `0` ok, `1` error or misconfiguration, `2` a stale citation (for `kb doctor`, a stale hub
-cache) or a CLI usage error. `kb code-sync scan` and `run`: `0` nothing to do, `2` findings,
-`1` error; `kb code-sync issue`: `0` a usable issue, `2` none, `1` error. Exit `2` for a stale citation comes from `kb resolve`, `kb doctor --context`, `kb ticket lint --fail-on-stale` and `kb mission lint --fail-on-stale`; `kb doctor` also exits `2`, with or without `--context`, when the hub cache itself is stale.
+cache) or a CLI usage error. `kb code-sync scan` and `run`: `0` nothing to do, `2`
+findings, `1` error; `kb code-sync issue`: `0` a usable issue, `2` none, `1` error. Exit
+`2` for a stale citation comes from `kb resolve`, `kb doctor --context`,
+`kb ticket lint --fail-on-stale` and `kb mission lint --fail-on-stale`; `kb doctor` also
+exits `2`, with or without `--context`, when the hub cache itself is stale.

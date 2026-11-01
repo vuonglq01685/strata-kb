@@ -123,8 +123,8 @@ or use direnv) and restart the assistant.
 **One version for every repo.** Every repo runs the hub's strata-kb version. Upgrade the
 hub first. Then, once `kb mcp-setup` has run (above), run `kb doctor` in this repo: it
 installs the hub's version, sets the `strata-kb==<hub version>` pins in
-`.github/workflows/`, and refreshes the skills and commands. In CI it never installs
-or rewrites anything; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
+`.github/workflows/`, and refreshes the skills and commands. In CI it never installs,
+re-pins or refreshes skills; a CI job that runs `kb doctor` with `STRATA_KB_HUB_URL` and
 `STRATA_KB_HTTP_TOKEN` set reports a version mismatch as an error instead (none of the
 scaffolded workflows runs it). With `STRATA_KB_HUB` or `--hub` set, `kb doctor` skips
 the MCP path and the version check, and only reports that the version was not checked
@@ -194,8 +194,9 @@ publish: no merge has happened yet, so there is no tag for `kb-code.yml` to reac
 and plain `kb publish` would wait up to ten minutes for a CI run that never starts.
 
 To correct one service, edit its section by hand. `kb summarize <repo_id>-svc --redo
---include-reviewed` removes a reviewed section's text and sign-off and re-summarizes in the
-same command; the prose you corrected comes back only from git.
+--include-reviewed` removes the text and sign-off of every reviewed section of the `-svc`
+document (add `--section <id>` to reset one) and re-summarizes in the same command; the
+prose you corrected comes back only from git.
 
 ---
 
@@ -281,8 +282,9 @@ assistant cannot dispatch subagents (the default for the Copilot and Cursor
 wrappers) the review runs as a single pass and is a **report, not a gate**: the
 phase stops and hands you the result. `dev-execute` orders tasks with
 `kb plan waves docs/impl/<id>/plan.md` and runs independent ones in parallel git
-worktree lanes. `kb plan waves` fails on a shared file without a dependency, a cycle, a missing
-`Depends on:` line or an empty `Serial resource:` line; a task with a `Serial resource:` line
+worktree lanes. `kb plan waves` fails on a shared file without a dependency, a cycle, a task that lists
+no paths under **Files**, a missing `Depends on:` line or one that names a task that does
+not exist, or an empty `Serial resource:` line; a task with a `Serial resource:` line
 prints after `serial:` and runs alone, never in a parallel lane.
 
 ## 3.3 Questions for the BA
@@ -382,8 +384,8 @@ Neither document needs new per-ticket discipline from you.
 
 - **`-code` needs nothing.** It is never committed (`.gitignore` carries `.kb/*-code/`).
   `kb svc note`, `kb build`, `kb doctor` and `kb publish` regenerate it first when it is
-  missing, older than `HEAD`, or your tracked files changed (`--no-refresh` skips that). CI never passes `--scaffold-svc`, because it must
-  never create `pending` content.
+  missing, older than `HEAD`, or your tracked files changed (`--no-refresh` skips that).
+  CI never passes `--scaffold-svc`, because it must never create `pending` content.
 - **`-svc` accrues at handover.** `dev-handover` runs
   `kb svc note payments-api --ticket ABC-123 --title "Add refund endpoint"` for every service
   a ticket touched. It appends one `hist.<service>` row, idempotently; never edit `hist.*`.
@@ -474,11 +476,11 @@ When a business question blocks a ticket, the Dev asks the BA through hub Q&A an
 once answered, the same ticket resumes in a fresh process. It stops after two failed
 attempts at one ticket (a red CI after two fix rounds stops it at once); fix the cause and
 run `kb auto run` again. A command outside the allowlist ends the task
-`failed command-denied <command>`: add it to `permissions.allow` in `.claude/settings.json`
-by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure. It finishes, exit `0`,
-when every story, unparented ticket and bug is `done`. A task process carries
-`STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse (`status` still works), so a task can
-neither flip the switch nor start a second loop.
+`failed command-denied <command>`: add it to `permissions.allow` in
+`.claude/settings.json` by hand. A usage-limit wait (15, 30, 60 minutes) is not a failure.
+It finishes, exit `0`, when every story, unparented ticket and bug is `done`. A task
+process carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse
+(`status` still works), so a task can neither flip the switch nor start a second loop.
 
 The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT: done`,
 `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` or `AUTO-RESULT: failed <reason>`, and nothing
@@ -517,7 +519,8 @@ pushing `auto/*` branches, a merge past a required review, and `gh run` over RES
 | `kb code-ingest` exits 1: destination refused | A hand-curated document sits at that doc id | Move it, or use `--doc-id` |
 | `kb doctor`: "strata-kb[code] is not installed" | The `code` extra is missing | `pip install "strata-kb[code]"` |
 | `kb doctor` warns a tracked `.kb/config.yaml` carries a credential in `hub:` or `intake:` | A token was committed | Rewrite the URL without it, pass it in `STRATA_KB_HUB`, rotate the token (it is in git history) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb, or a CI pin, differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset (that variable skips the sync). It never installs in CI |
+| `kb doctor`: "every repo on a hub uses the hub's version" | The installed strata-kb differs from the hub's | Upgrade the hub, then run `kb doctor` locally with `STRATA_KB_HUB` unset (that variable skips the sync). It never installs in CI |
+| `kb doctor`: ".github/workflows/<file> pins strata-kb==X but the hub runs Y" | A CI pin differs from the hub's | The same local `kb doctor` rewrites the pins; commit them. In CI it only reports |
 | `kb doctor`: "hub `<repo>`-code lags origin/main" | The last `-code` publish has not merged on the hub, or the last `kb-code.yml` run failed | Open the hub PR named in the job summary and merge it, or fix the run; `kb publish` re-publishes. The check runs a full `code-ingest` (slow); on Windows a glob-casing difference can show `lags` that vanishes on Linux CI |
 | `kb doctor`: "kb-code.yml passes --db" | Ingest configuration lives in the workflow | Move the paths to `code_ingest.db` in `.kb/config.yaml`, then `kb init --kind dev` |
 | `kb doctor`: "`.kb/<repo>-code` is tracked by git" | `-code` was committed | `git rm -r --cached .kb/<repo>-code` and commit |
@@ -678,16 +681,19 @@ The `Stop` and `SubagentStop` hooks run `kb usage ingest-transcript --hook-stdin
 
 **Cost reports.** The hook adds about 0.6 s per turn (the cost of starting `kb`).
 `kb usage report` writes `.kb/usage/report.html`, per ticket, phase and model; with
-`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a `Stop`
-hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing, read
-`.kb/usage/ingest-errors.log`: it is the only place a failure shows. Re-ingesting a transcript is
-always safe, because a call already in the ledger is skipped: `kb usage ingest-transcript <path>`
-backfills one. **Model tiering** is a recommendation that nothing in `kb` enforces. Model prices
-come from `usage-prices.yaml` (shipped, overridable per model at `.kb/usage-prices.yaml`), which
-carries an `effective_date`. A model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at the standard rate and flagged, so a total that contains them is a lower bound. Switch model at phase boundaries, never inside a phase: a switch
-discards the prompt cache and pays a fresh cache write, so a few cheap-model turns inside a
-strong-model session can cost **more** than not tiering. Check the result with
-`kb usage report`, which breaks spending down by model.
+`--ticket <id> --md` it prints a Markdown table. A failing hook is silent by design (a
+`Stop` hook cannot block a turn from ending), so if `.kb/usage/*.jsonl` is not growing,
+read `.kb/usage/ingest-errors.log`: it is the only place a failure inside `kb` shows. Re-ingesting a
+transcript is always safe, because a call already in the ledger is skipped:
+`kb usage ingest-transcript <path>` backfills one. **Model tiering** is a recommendation
+that nothing in `kb` enforces. Model prices come from `usage-prices.yaml` (shipped,
+overridable per model at `.kb/usage-prices.yaml`), which carries an `effective_date`. A
+model with no row is reported `unpriced`, never guessed, and fast-mode calls are priced at
+the standard rate and flagged, so a total that contains them is a lower bound. Switch
+model at phase boundaries, never inside a phase: a switch discards the prompt cache and
+pays a fresh cache write, so a few cheap-model turns inside a strong-model session can
+cost **more** than not tiering. Check the result with `kb usage report`, which breaks
+spending down by model.
 
 ## 6.6 Hub Q&A rules that touch you
 

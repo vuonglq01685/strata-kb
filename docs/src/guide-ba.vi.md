@@ -106,8 +106,8 @@ trợ lý.
 **Một phiên bản cho mọi repo.** Mọi repo chạy cùng phiên bản strata-kb với hub. Hãy nâng cấp
 hub trước. Sau đó, khi `kb mcp-setup` đã chạy (ở trên), chạy `kb doctor` trong repo này: nó
 cài phiên bản của hub, đặt các pin `strata-kb==<phiên bản của hub>` trong
-`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài hay sửa
-gì; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được đặt sẽ
+`.github/workflows/`, và làm mới skill cùng command. Trong CI nó không bao giờ cài, đặt lại
+pin hay làm mới skill; một job CI chạy `kb doctor` với `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` được đặt sẽ
 báo sai lệch phiên bản như một lỗi (không workflow dựng sẵn nào chạy nó). Khi
 `STRATA_KB_HUB` hoặc `--hub` được đặt, `kb doctor` bỏ qua đường MCP và việc kiểm tra phiên
 bản, và chỉ báo rằng phiên bản chưa được kiểm tra với hub. Các file trong
@@ -201,10 +201,11 @@ của bạn là bước 1, 3 và 9.
   chọn những cái thực sự áp dụng. Phán đoán miền nghiệp vụ của bạn không thể giao đi ở đây:
   agent không thể biết một section đã bị một chính sách nội bộ thay thế trên thực tế.
 - **Maturity review.** Hai lượt review độc lập theo `docs/review-rubric.md` (Business
-  coverage, Dev implementability). Khoảng trống mà nó không tự lấp được trở thành một câu hỏi
-  mở có chủ, `OPEN(<owner>)`, không bao giờ là phỏng đoán: hãy đọc chúng, đó là chỗ agent biết
-  mình không biết. Giới hạn số vòng nằm trong skill. Điểm review do agent tự báo: `kb ticket lint` chỉ kiểm
-  `## Review record` có đúng dạng, không kiểm điểm đạt được bằng cách nào.
+  coverage, Dev implementability). Khoảng trống mà nó không tự lấp được trở thành một câu
+  hỏi mở có chủ, `OPEN(<owner>)`, không bao giờ là phỏng đoán: hãy đọc chúng, đó là chỗ
+  agent biết mình không biết. Giới hạn số vòng nằm trong skill. Điểm review do agent tự
+  báo: `kb ticket lint` chỉ kiểm `## Review record` có đúng dạng, không kiểm điểm đạt được
+  bằng cách nào.
 - **Review và lưu.** Bản nháp nằm ở `tickets/<folder>/<ticket-id>.md`. Bạn đọc, commit và dán
   `kb ticket export tickets/<folder>/<ticket-id>.md` vào công cụ quản lý issue: ticket không có
   comment hướng dẫn, `## Definition of Ready` và `## Review record`.
@@ -253,14 +254,15 @@ kb mission next
 | `to-draft` | Chưa có ticket, mọi story trong `Depends on` đều `done`, mọi dòng D `Blocks` nó đều `DECIDED`, không câu hỏi mở nào nêu nó trong `blocks:` |
 | `blocked` | Lý do được nêu tên: `US <id> not done`, `D<n> OPEN (owner: <x>)`, `Q<n> open (owner: <x>)` |
 
-Báo cáo kết thúc bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không đối số sẽ chạy nó
-trước và đề xuất story đó. Một phụ thuộc mới chỉ `draft` hoặc `ready` vẫn chặn: done nghĩa
-là đã publish lên hub. Một ticket cũng là `draft`, lý do
-`parent mission rev <M> affects this story`, khi `> Revision:` của mission cao hơn pin `@ rev` của ticket **và** một dòng change log sau
-đó liệt kê story trong `Affected`. Lệnh chỉ đọc và thoát `0` trừ khi dùng sai lệnh. `--kb-dir` được đọc trước khi nó chứa tài liệu `-svc` (máy dev), hub
-đọc sau; hub không tới được hay `-svc` chưa publish chỉ thành một dòng `note:`. Với `--from-hub` (và
-`--repo <ba-repo-id>`) nó đọc kế hoạch đã publish thay vào đó: ticket đã publish là `ready`,
-và không thấy được `draft`.
+Báo cáo kết thúc bằng `Next: <us-id> — <title>`; `/ba-ticket-author` không đối số sẽ chạy
+nó trước và đề xuất story đó. Một phụ thuộc mới chỉ `draft` hoặc `ready` vẫn chặn: done
+nghĩa là đã publish lên hub. Một ticket cũng là `draft`, lý do
+`parent mission rev <M> affects this story`, khi `> Revision:` của mission cao hơn pin
+`@ rev` của ticket **và** một dòng change log sau đó liệt kê story trong `Affected`. Lệnh
+chỉ đọc và thoát `0` trừ khi dùng sai lệnh. `--kb-dir` được đọc trước khi nó chứa tài liệu
+`-svc` (máy dev), hub đọc sau; hub không tới được hay `-svc` chưa publish chỉ thành một
+dòng `note:`. Với `--from-hub` (và `--repo <ba-repo-id>`) nó đọc kế hoạch đã publish thay
+vào đó: ticket đã publish là `ready`, và không thấy được `draft`.
 
 ## 3.5 Báo một lỗi
 
@@ -444,14 +446,15 @@ amend: nếu yêu cầu vẫn đúng, hãy amend với pin mới và nói rõ đ
 
 # 4. Các chế độ tự động hóa
 
-**Chế độ full-auto (tùy chọn).** Một công tắc cho mỗi repo `ba` và `dev`, cho phép hai repo
-tự chạy, trên máy của bạn, cho tới khi mọi ticket trên hub xong. Không bước nào chờ con
-người: agent tự quyết từng dòng D và câu hỏi mở, trả lời câu hỏi của Dev, tick Definition of
-Ready sau lần review của chính nó, merge rồi publish. Nó ghi lý do vào một dòng
-`**Auto decision:**` dưới `## Change log`. Nó được xây cho **một repo BA và một repo Dev trên
-mỗi hub**; `kb auto on` cảnh báo khi registry liệt kê nhiều hơn một repo Dev. Nó chỉ publish
-kế hoạch và không bao giờ sửa cơ sở tri thức. Khi công tắc tắt thì không có gì thay đổi. Phía Dev nằm trong
-[Hướng dẫn cho Developer](guide-dev.vi.md#4-các-chế-độ-tự-động-hóa).
+**Chế độ full-auto (tùy chọn).** Một công tắc cho mỗi repo `ba` và `dev`, cho phép hai
+repo tự chạy, trên máy của bạn, cho tới khi mọi ticket trên hub xong. Không bước nào chờ
+con người: agent tự quyết từng dòng D và câu hỏi mở, trả lời câu hỏi của Dev, tick
+Definition of Ready sau lần review của chính nó, merge rồi publish. Nó ghi lý do vào một
+dòng `**Auto decision:**` dưới `## Change log`. Nó được xây cho **một repo BA và một repo
+Dev trên mỗi hub**; `kb auto on` cảnh báo khi registry liệt kê nhiều hơn một repo Dev. Nó
+chỉ publish kế hoạch và không bao giờ sửa cơ sở tri thức. Khi công tắc tắt thì không có gì
+thay đổi. Phía Dev nằm trong [Hướng dẫn cho
+Developer](guide-dev.vi.md#4-các-chế-độ-tự-động-hóa).
 
 ## 4.1 Bảo mật: đọc phần này trước
 
@@ -571,7 +574,8 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | Lint: lỗi "change log" sau một lần amend | `Revision` được tăng mà không có dòng tương ứng, hoặc `Trigger` viết sai | Mỗi revision `2..N` một dòng, theo thứ tự, với năm giá trị trigger |
 | Lint đạt ở máy, thất bại trong CI | `STRATA_KB_HUB` chưa đặt trong Actions variables, hoặc hub riêng tư mà thiếu `KB_HUB_TOKEN` | Cấu hình cả hai (2.4) |
 | `kb doctor` cảnh báo `.kb/config.yaml` được theo dõi chứa credential trong `hub:` hay `intake:` | Một token đã bị commit | Viết lại URL không có nó, truyền qua `STRATA_KB_HUB`, đổi token (nó nằm trong lịch sử git) |
-| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài, hoặc một pin CI, khác với của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy khi `STRATA_KB_HUB` chưa đặt. Nó không bao giờ cài trong CI |
+| `kb doctor`: "every repo on a hub uses the hub's version" | strata-kb đã cài khác với của hub | Nâng cấp hub, rồi chạy `kb doctor` ở máy khi `STRATA_KB_HUB` chưa đặt. Nó không bao giờ cài trong CI |
+| `kb doctor`: ".github/workflows/<file> pins strata-kb==X but the hub runs Y" | Một pin CI khác với của hub | Chính `kb doctor` chạy ở máy sẽ ghi lại các pin; hãy commit chúng. Trong CI nó chỉ báo |
 | Trợ lý không tới được hub | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`); nó cho biết cái nào |
 | `kb mcp-setup`: "token was rejected" sau khi bạn nhận token mới | Chạy lại không đối số đọc token *cũ* từ `.env` | `STRATA_KB_HTTP_TOKEN=<new-token> kb mcp-setup`, hoặc xóa dòng đó khỏi `.env` rồi chạy lại |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP trỏ tới một bản clone cache cục bộ, một server stdio hoặc bất kỳ đích nào khác ngoài server HTTP của hub; skill dừng mà không đổi ticket nào | Chạy `kb mcp-setup` và khởi động lại trợ lý |
@@ -599,7 +603,8 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | `STRATA_KB_CLOUD`, `CLAUDE_CODE_REMOTE` | ép bật hoặc nhận diện Claude Code cloud |
 
 Mã thoát: `0` ok, `1` lỗi, `2` trích dẫn cũ (hoặc lỗi dùng lệnh); `kb auto` như ở 4.3. Các
-skill gọi các công cụ MCP `strata-kb`; danh sách đầy đủ nằm trong hướng dẫn hub.
+skill gọi các công cụ MCP `strata-kb`; danh sách đầy đủ nằm trong
+[hướng dẫn hub](guide-hub.vi.md#63-các-công-cụ-mcp).
 
 ## 6.2 `kb init` ghi gì, và gì bị git bỏ qua
 
@@ -612,12 +617,13 @@ skill gọi các công cụ MCP `strata-kb`; danh sách đầy đủ nằm trong
 | `.env` | credential MCP (`kb mcp-setup` làm git bỏ qua nó; `kb init` thì không) | không |
 
 Chạy lại `kb init --kind ba` tạo các file còn thiếu, làm mới các file dựng khung khác với
-template và thêm các dòng ignore `.kb/*-plan/`, `.kb/index.yaml` và `.kb/auto/` vào `.gitignore`, không bao giờ xóa dòng nào.
-`.kb/config.yaml`, `.kb/index.yaml` và `.claude/settings.json` được bảo vệ: lần chạy thường
-để nguyên hai file đầu và chỉ gộp vào file thứ ba (mục của bạn được giữ). **`--force` thay
-thế cả ba hoàn toàn**, gồm `kind`, `repo_id` và toàn bộ `.claude/settings.json` của bạn.
-Không có gì dưới `tickets/` hay `missions/` bị chạm tới. Không bao giờ commit `.kb-qa/`: đó
-là kho Q&A của hub, được git bỏ qua trên hub.
+template và thêm các dòng ignore `.kb/*-plan/`, `.kb/index.yaml` và `.kb/auto/` vào
+`.gitignore`, không bao giờ xóa dòng nào. `.kb/config.yaml`, `.kb/index.yaml` và
+`.claude/settings.json` được bảo vệ: lần chạy thường để nguyên hai file đầu và chỉ gộp vào
+file thứ ba (mục của bạn được giữ). **`--force` thay thế cả ba hoàn toàn**, gồm `kind`,
+`repo_id` và toàn bộ `.claude/settings.json` của bạn. Không có gì dưới `tickets/` hay
+`missions/` bị chạm tới. Không bao giờ commit `.kb-qa/`: đó là kho Q&A của hub, được git
+bỏ qua trên hub.
 
 ## 6.3 Cổng kiểm tra những gì
 
@@ -669,17 +675,21 @@ giờ `complete` (`jobs outside framework schedulers are not detectable`). Chi t
 `SubagentStop` chạy `kb usage ingest-transcript --hook-stdin`; `kb usage report` biến sổ cái
 đó thành báo cáo chi phí (`.kb/usage/report.html`).
 
-**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`). `kb usage report`
-ghi `.kb/usage/report.html`, theo ticket, phase và model; với `--ticket <id> --md` nó in một bảng
-Markdown. Hook lỗi thì im lặng theo thiết kế (hook `Stop` không thể chặn một lượt kết thúc), nên
-nếu `.kb/usage/*.jsonl` không tăng, hãy đọc `.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi
-hiện ra. Ingest lại một transcript luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
-`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là khuyến nghị,
-không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm gói, ghi đè theo
-từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh giới phase, không bao
-giờ giữa một phase: đổi model làm mất prompt cache và phải trả một lần ghi cache mới, nên vài lượt
-model rẻ giữa một phiên model mạnh có thể tốn **nhiều hơn** không phân tầng. Kiểm tra kết quả bằng
-`kb usage report`, vốn chia chi tiêu theo model.
+**Báo cáo chi phí.** Hook thêm khoảng 0,6 giây mỗi lượt (chi phí khởi động `kb`).
+`kb usage report` ghi `.kb/usage/report.html`, theo ticket, phase và model; với
+`--ticket <id> --md` nó in một bảng Markdown. Hook lỗi thì im lặng theo thiết kế (hook
+`Stop` không thể chặn một lượt kết thúc), nên nếu `.kb/usage/*.jsonl` không tăng, hãy đọc
+`.kb/usage/ingest-errors.log`: đó là nơi duy nhất lỗi bên trong `kb` hiện ra. Ingest lại một transcript
+luôn an toàn, vì lệnh gọi đã có trong sổ cái thì bị bỏ qua:
+`kb usage ingest-transcript <path>` nạp bù một transcript. **Phân tầng model** chỉ là
+khuyến nghị, không có gì trong `kb` bắt buộc. Giá model lấy từ `usage-prices.yaml` (đi kèm
+gói, ghi đè theo từng model ở `.kb/usage-prices.yaml`), có `effective_date`. Model không
+có dòng giá được báo là `unpriced`, không bao giờ đoán, và các lệnh gọi fast-mode được
+tính theo giá chuẩn và đánh dấu, nên tổng có chứa chúng chỉ là cận dưới. Đổi model ở ranh
+giới phase, không bao giờ giữa một phase: đổi model làm mất prompt cache và phải trả một
+lần ghi cache mới, nên vài lượt model rẻ giữa một phiên model mạnh có thể tốn **nhiều
+hơn** không phân tầng. Kiểm tra kết quả bằng `kb usage report`, vốn chia chi tiêu theo
+model.
 
 ## 6.6 Quy tắc Q&A của hub liên quan tới bạn
 
