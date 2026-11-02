@@ -30,6 +30,8 @@ _ID_SHAPE = re.compile(
     r"^[^\W_]+(?:[-.][^\W_]+)*$"
 )  # an id has no punctuation but - and .
 _ID_MARK = re.compile("\ue000(.*?)\ue001")
+_FENCE = re.compile(r"^[ \t]*```")
+_HEADING_LINE = re.compile(r"^[ \t]*#{1,6}[ \t]")
 _NO_PDF = "no PDF text to verify against"
 GARBLE_MIN_RATIO = 0.6  # a corrected spelling must still look like the text it replaces
 DUP_MIN_TOKENS = 5  # a repeated block is at least this long; shorter runs are words
@@ -159,16 +161,12 @@ def _unmatched_inserts(draft: _Side, edit: list) -> list[int]:
     ]
 
 
-def _lost(
-    pdf: list[str], orig: _Side, draft: _Side, edit: list, lines: list[list[str]]
-) -> WordIssue | None:
-    """Rule 1: PDF text the original covered is gone, unless the run is furniture
-    the PDF text layer still holds (a watermark docling filed as body there)."""
+def _lost(pdf: list[str], orig: _Side, draft: _Side, edit: list) -> WordIssue | None:
+    """Rule 1: PDF text the original covered is gone."""
     lost = sorted(set(orig.hit) - set(draft.hit))
-    runs = [r for r in _runs(lost) if not _is_furniture([pdf[i] for i in r], lines)]
-    if not runs:
+    if not lost:
         return None
-    run = runs[0]
+    run = _runs(lost)[0]
     original = " ".join(pdf[i] for i in run[:_SHOWN])
     inserts = _unmatched_inserts(draft, edit)
     if inserts:
@@ -313,6 +311,26 @@ def _unaccounted_removal(
     return None
 
 
+def drop_furniture_lines(md: str, lines: list[list[str]]) -> str:
+    """`md` without its body lines that are a whole furniture line (lint R5), so a
+    draft may drop one even where the PDF text layer still holds it (a watermark
+    docling filed as body). Headings and fenced lines always stay."""
+    out: list[str] = []
+    fenced = False
+    for line in md.split("\n"):
+        if _FENCE.match(line):
+            fenced = not fenced
+        elif (
+            not fenced
+            and not _HEADING_LINE.match(line)
+            and (words := _tokens(strip_markdown(line)))
+            and words in lines
+        ):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def check_words(
     original_md: str,
     draft_md: str,
@@ -321,6 +339,9 @@ def check_words(
     furniture: Sequence[str] = (),
 ) -> WordIssue | None:
     """First change the PDF does not justify, or None."""
+    lines = [w for f in furniture if (w := _tokens(f))]
+    original_md = drop_furniture_lines(original_md, lines)
+    draft_md = drop_furniture_lines(draft_md, lines)
     orig, draft = _side(original_md, pdf), _side(draft_md, pdf)
     if not pdf:
         if orig.tokens == draft.tokens:
@@ -330,9 +351,8 @@ def check_words(
     edit = SequenceMatcher(
         None, orig.tokens, draft.tokens, autojunk=False
     ).get_opcodes()
-    lines = [_tokens(f) for f in furniture]
     return (
-        _lost(pdf, orig, draft, edit, lines)
+        _lost(pdf, orig, draft, edit)
         or _foreign_insert(draft, edit)
         or _partial_restore(pdf, orig, draft, neigh_cov)
         or _neighbour_copy(orig, draft, neigh_cov)

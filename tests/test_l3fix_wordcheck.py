@@ -102,6 +102,23 @@ def test_watermark_removed_with_a_real_word_rejected():
     assert issue is not None and issue.op == "delete"
 
 
+def test_body_words_spelling_a_furniture_line_deleted_rejected():
+    pdf = pdf_of("4 NGHỈ PHÉP Nhân viên nghỉ phép năm")
+    orig = "## 4 NGHỈ PHÉP\n\nNhân viên nghỉ phép năm"
+    draft = "## 4 NGHỈ PHÉP\n\nNhân viên năm"
+    issue = wordcheck.check_words(orig, draft, pdf, furniture=["nghỉ phép"])
+    assert issue is not None and issue.op == "delete"
+
+
+def test_heading_spelling_a_furniture_line_deleted_rejected():
+    pdf = pdf_of("NGHỈ PHÉP Nhân viên được nghỉ")
+    orig = "## NGHỈ PHÉP\n\nNhân viên được nghỉ"
+    issue = wordcheck.check_words(
+        orig, "Nhân viên được nghỉ", pdf, furniture=["NGHỈ PHÉP"]
+    )
+    assert issue is not None
+
+
 def test_trailing_paragraph_dropped_rejected():
     pdf = pdf_of(PDF_TEXT + " Đoạn cuối có thật")
     assert wordcheck.check_words(ORIG + "\n\nĐoạn cuối có thật", ORIG, pdf) is not None

@@ -142,11 +142,12 @@ the reviewer sees it must be checked against the PDF.
 
 **Headings with a broken font.** When the text layer is usable except for
 heading lines (a heading id or title the word check rejects because the
-PDF text shows garbage there, or a heading the ingest left as a short body
-line), read the heading from the page image and apply with `--from-image`
+PDF text shows garbage there, or a heading the ingest left as a short,
+garbled body line), read the heading from the page image and apply with `--from-image`
 too. Apply then checks every non-heading line against the PDF as usual;
-only `##`–`####` heading lines, and a short body line the draft turns into
-a heading in place, come from the image. It refuses with
+only `##`–`####` heading lines, and a short body line the PDF text does
+not match that the draft turns into a new heading in place, come from the
+image. A body line the PDF text matches must keep its words. It refuses with
 `only headings may come from the image` when the body changed in a way the
 PDF does not justify: fix the body, never the check.
 

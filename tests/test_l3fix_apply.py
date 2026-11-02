@@ -385,20 +385,62 @@ def test_from_image_on_usable_text_layer_still_checks_the_body(kb):
     assert "6" in r.reason
 
 
-def test_bodies_drop_headings_and_a_line_promoted_to_heading():
+BODY_PDF = ["thân", "một", "thân", "hai"]
+
+
+def test_bodies_drop_headings_and_a_garbled_line_promoted_to_heading():
     orig = "## x1 Đầu\n\nthân một\n\n16.1 Tieu de hong\n\nthân hai"
     draft = "## 16 Đầu\n\nthân một\n\n### 16.1 Tiêu đề\n\nthân hai"
 
-    a, b = fixchecks._bodies(orig, draft)
+    a, b = fixchecks._bodies(orig, draft, BODY_PDF)
 
     assert a.split() == b.split() == ["thân", "một", "thân", "hai"]
 
 
+def test_bodies_keep_a_line_the_pdf_matches():
+    orig = "## x1 Đầu\n\nthân một\n\nthân hai"
+
+    a, _ = fixchecks._bodies(
+        orig, "## 16 Đầu\n\n### 16.1 mười sáu\n\nthân hai", BODY_PDF
+    )
+
+    assert "thân một" in a
+
+
+def test_bodies_heading_edit_does_not_absorb_a_body_line():
+    a, _ = fixchecks._bodies(
+        "## x1 Đầu\n\nTieu de hong\n\nthân hai", "## 16 Đầu\n\nthân hai", BODY_PDF
+    )
+
+    assert "Tieu de hong" in a
+
+
 def test_bodies_keep_a_long_line_replaced_by_a_heading():
     long_line = " ".join(["chữ"] * (fixchecks.HEADING_MAX_TOKENS + 1))
-    a, _ = fixchecks._bodies(f"## x1 Đầu\n\n{long_line}", "## 16 Đầu\n\n### 16.1 T")
+    a, _ = fixchecks._bodies(
+        f"## x1 Đầu\n\n{long_line}", "## 16 Đầu\n\n### 16.1 T", BODY_PDF
+    )
 
     assert long_line in a
+
+
+def test_bodies_keep_hash_lines_inside_a_code_fence():
+    orig = "## x1 Đầu\n\n```\n## step one rm -rf a\n```"
+    draft = "## 16 Đầu\n\n```\n## step one rm -rf /\n```"
+
+    a, b = fixchecks._bodies(orig, draft, BODY_PDF)
+
+    assert "rm -rf a" in a and "rm -rf /" in b
+
+
+def test_from_image_mixed_scanned_and_usable_units_plain_refusal(kb):
+    pages = {**BROKEN_HEADING_PAGES, 11: ""}
+    _draft(kb, "merge", MERGED.replace("### 4.2 NGHỈ", "### 4.2 NGHỈ PHÉP NĂM X"))
+
+    [r] = _apply(kb, pdf_pages=pages, from_image={"4.1"})
+
+    assert r.status == "rejected"
+    assert r.reason == "words: --from-image not allowed for x1 (text layer is usable)"
 
 
 def test_from_image_multi_unit_needs_every_unit_scanned(kb):

@@ -197,34 +197,47 @@ def image_allowed(
     return wordcheck.uncovered_share(unit_md, pdf_words) > FROM_IMAGE_SHARE
 
 
-def _is_heading(line: str) -> bool:
-    return bool(_HEADING_LINE.match(line))
+def _heading_lines(lines: list[str]) -> set[int]:
+    """Indices of the `##`-`####` heading lines outside a ``` fence."""
+    out: set[int] = set()
+    fenced = False
+    for i, line in enumerate(lines):
+        if lint._BACKTICK_FENCE.match(line):
+            fenced = not fenced
+        elif not fenced and _HEADING_LINE.match(line):
+            out.add(i)
+    return out
 
 
-def _bodies(orig: str, draft: str) -> tuple[str, str]:
-    """Both sides without their heading lines. An original body line the draft
-    replaces in place with a heading (one the ingest missed) goes too, when it
-    is short enough to be that heading."""
+def _garbled(line: str, pdf: list[str]) -> bool:
+    """A short line the PDF text layer does not match: a heading with a broken font."""
+    words = wordcheck.prose_tokens(line)
+    return 0 < len(words) <= HEADING_MAX_TOKENS and (
+        wordcheck.uncovered_share(line, pdf) > FROM_IMAGE_SHARE
+    )
+
+
+def _bodies(orig: str, draft: str, pdf: list[str]) -> tuple[str, str]:
+    """Both sides without their heading lines. A garbled original body line the
+    draft replaces in place with a new heading (one the ingest missed) goes too;
+    each new heading takes at most one such line."""
     a, b = orig.split("\n"), draft.split("\n")
-    drop = {i for i, line in enumerate(a) if _is_heading(line)}
+    heads_a, heads_b = _heading_lines(a), _heading_lines(b)
+    drop = set(heads_a)
     for tag, i1, i2, j1, j2 in SequenceMatcher(
         None, a, b, autojunk=False
     ).get_opcodes():
-        new = [x for x in b[j1:j2] if x.strip()]
-        old = [i for i in range(i1, i2) if a[i].strip() and i not in drop]
-        if (
-            tag == "replace"
-            and new
-            and all(_is_heading(x) for x in new)
-            and len(old) <= len(new)
-            and all(
-                len(wordcheck.prose_tokens(a[i])) <= HEADING_MAX_TOKENS for i in old
-            )
-        ):
+        if tag != "replace":
+            continue
+        if any(b[j].strip() and j not in heads_b for j in range(j1, j2)):
+            continue  # the draft side is not headings only
+        slots = len(heads_b & set(range(j1, j2))) - len(heads_a & set(range(i1, i2)))
+        old = [i for i in range(i1, i2) if a[i].strip() and i not in heads_a]
+        if old and len(old) <= slots and all(_garbled(a[i], pdf) for i in old):
             drop.update(old)
     return (
         "\n".join(x for i, x in enumerate(a) if i not in drop),
-        "\n".join(x for x in b if not _is_heading(x)),
+        "\n".join(x for j, x in enumerate(b) if j not in heads_b),
     )
 
 
@@ -260,9 +273,9 @@ def _check_image(
     refused = f"words: --from-image not allowed for {usable[0]} (text layer is usable"
     pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
     orig, new = _without_images(t.run), _without_images(draft)
-    if _word_issue(t, orig, new, pdf) is None:
-        raise _Reject(refused + ")")
-    issue = _word_issue(t, *_bodies(orig, new), pdf)
+    if usable != t.ids or _word_issue(t, orig, new, pdf) is None:
+        raise _Reject(refused + ")")  # mixed scanned/usable units, or no image needed
+    issue = _word_issue(t, *_bodies(orig, new, pdf), pdf)
     if issue is not None:
         raise _Reject(
             f"{refused}; only headings may come from the image): {_describe(issue)}"
