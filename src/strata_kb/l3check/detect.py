@@ -350,7 +350,9 @@ def fallback_findings(
     sections: list[SectionInput], notes: SectioningNotes
 ) -> dict[str, list[Finding]]:
     """A slug-id heading is a real heading the sectioner could not parse; flag it
-    on the unit that holds it, except in front matter and part-root units."""
+    on the unit that holds it, except in front matter and part-root units, and
+    when the heading has no number up front: then the PDF gives no id to use
+    and the slug id is the right one."""
     owner = enclosing_unit(sections)
     chapter = {sec.id: sec.chapter for sec in sections}
     out: dict[str, list[Finding]] = {}
@@ -358,6 +360,8 @@ def fallback_findings(
         unit = owner.get(fb.id)
         if unit is None or chapter[unit] == "front-matter" or chapter[unit] == unit:
             continue  # front matter, or a part's root unit (its title heading)
+        if not any(ch.isdigit() for ch in "".join(fb.heading.split()[:2])):
+            continue
         finding = Finding(
             kind="fallback", page=fb.page, evidence={"heading": fb.heading}
         )

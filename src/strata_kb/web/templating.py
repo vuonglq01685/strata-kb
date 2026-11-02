@@ -11,6 +11,7 @@ from __future__ import annotations
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 import strata_kb
+from strata_kb.web.uidata import section_label
 
 
 def make_env() -> Environment:
@@ -20,6 +21,7 @@ def make_env() -> Environment:
     )
     # /ui/static/* is cached for a day: versioned URLs make an upgrade fetch fresh files.
     env.globals["asset_v"] = strata_kb.__version__
+    env.globals["section_label"] = section_label
     return env
 
 

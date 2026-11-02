@@ -1,3 +1,5 @@
+import pytest
+
 from strata_kb import quality
 from strata_kb.ingest.sectioner import Fallback, Inversion, SectioningNotes
 from strata_kb.l3check.detect import (
@@ -270,11 +272,26 @@ def test_order_repaired_inversion_not_flagged():
 
 
 def test_folded_fallback_reported_on_parent_unit():
-    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "2.3 Notes", 3)])
     out = fallback_findings(_units(), notes)
     assert out == {
-        "2": [Finding(kind="fallback", page=3, evidence={"heading": "Notes"})]
+        "2": [Finding(kind="fallback", page=3, evidence={"heading": "2.3 Notes"})]
     }
+
+
+@pytest.mark.parametrize(
+    "heading", ["Notes", "Nợ kỹ thuật mang theo", "Phụ thuộc: thay đổi bắt buộc"]
+)
+def test_unnumbered_fallback_not_flagged(heading):
+    # nothing to repair: the PDF gives the heading no number to use as its id
+    notes = SectioningNotes(fallbacks=[Fallback("x1", heading, 3)])
+    assert fallback_findings(_units(), notes) == {}
+
+
+@pytest.mark.parametrize("heading", ["Điều 5 Quyền lợi", "4 .2 NGHỈ PHÉP", "A.2 Scope"])
+def test_fallback_with_a_number_up_front_flagged(heading):
+    notes = SectioningNotes(fallbacks=[Fallback("x1", heading, 3)])
+    assert list(fallback_findings(_units(), notes)) == ["2"]
 
 
 def test_front_matter_fallback_not_flagged():
@@ -290,8 +307,8 @@ def test_part_root_fallback_not_flagged():
 
 
 def test_fallback_inside_normal_appendix_unit_is_flagged():
-    secs = [SectionInput("appendix-a.2", "appendix-a", 3, 4, "### x1 Notes")]
-    notes = SectioningNotes(fallbacks=[Fallback("x1", "Notes", 3)])
+    secs = [SectionInput("appendix-a.2", "appendix-a", 3, 4, "### x1 2.3 Notes")]
+    notes = SectioningNotes(fallbacks=[Fallback("x1", "2.3 Notes", 3)])
     out = fallback_findings(secs, notes)
     assert list(out) == ["appendix-a.2"]
 

@@ -17,7 +17,7 @@ import shutil
 from pathlib import Path
 
 from strata_kb.errors import KbError
-from strata_kb.ingest import images, pdftext, tableimages
+from strata_kb.ingest import headingsplit, images, pdftext, tableimages
 from strata_kb.ingest.sectioner import (
     DocItem,
     HeadingConfig,
@@ -132,6 +132,28 @@ def _code_item(item, doc, pdf_path: Path | None, page, bbox) -> DocItem | None:
     if not body.strip():
         return None
     return DocItem("code", f"```\n{body}\n```", page=page, bbox=bbox)
+
+
+def _heading_items(
+    item, doc, pdf_path: Path | None, furniture: set[str], level: int, page, bbox
+) -> list[DocItem]:
+    """The heading, split into heading and body lines when docling boxed
+    several PDF lines (a page-header block) as one heading."""
+    text = item.text
+    raw_page, raw_box = _bottomleft_box(item, doc)
+    flow = pdftext.region_text(pdf_path, raw_page, raw_box, mono=False)
+    split = None
+    if flow and "\n" in flow:  # cheap gate: char scan only for multi-line boxes
+        lines = pdftext.region_lines(pdf_path, raw_page, raw_box) or []
+        split = headingsplit.split_heading(text, lines, furniture)
+    if split is None:
+        return [DocItem("heading", text, level, page=page, bbox=bbox)]
+    head, body = split
+    logger.info("heading split on page %s: %r + %d body line(s)", page, head, len(body))
+    return [
+        DocItem("heading", head, level, page=page, bbox=bbox),
+        *(DocItem("text", line, page=page, bbox=bbox) for line in body),
+    ]
 
 
 def _list_item(item, page, bbox) -> DocItem | None:
@@ -261,6 +283,9 @@ def doc_to_items(
     placements, consumed, placed_boxes = _place_glyphs(entries, tables, doc, assets_dir)
     _recover_missed_glyphs(tables, placements, placed_boxes, doc, assets_dir, pdf_path)
 
+    furniture = (
+        headingsplit.furniture_set(furniture_by_page(doc)) if pdf_path else set()
+    )
     items: list[DocItem] = []
     for item, label in entries:
         page, box = _prov_box(item, doc)
@@ -273,8 +298,8 @@ def doc_to_items(
             heading_level = (
                 getattr(item, "level", 1) if label == "section_header" else 1
             )
-            items.append(
-                DocItem("heading", item.text, heading_level, page=page, bbox=bbox)
+            items += _heading_items(
+                item, doc, pdf_path, furniture, heading_level, page, bbox
             )
         elif label == "table":
             md = item.export_to_markdown(doc=doc)

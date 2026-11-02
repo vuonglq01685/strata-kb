@@ -1,0 +1,68 @@
+"""Split a heading that swallowed several PDF lines.
+
+docling can box a whole page-header block (title, version, status, owner,
+source link, watermark) as one `title` item and join its lines with spaces,
+so the KB got a one-paragraph heading. The PDF text layer still has the
+lines and their font sizes: the heading keeps the title-size lines, the
+smaller lines and any line with a link become body text, and lines that are
+page furniture (a watermark) go, as page furniture does everywhere else.
+Nothing is split unless the lines hold exactly docling's characters.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections import Counter
+
+TITLE_SIZE_RATIO = 0.9  # a line this close to the largest size is title text
+_URL = re.compile(r"https?://|www\.", re.IGNORECASE)
+
+
+def _norm(text: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def _chars(text: str) -> Counter[str]:
+    return Counter(_norm(text).replace(" ", ""))
+
+
+def furniture_set(by_page: dict[int, list[str]]) -> set[str]:
+    """Normalised running header/footer/watermark strings of the document."""
+    return {n for texts in by_page.values() for t in texts if (n := _norm(t))}
+
+
+def _is_furniture(line: str, furniture: set[str]) -> bool:
+    """True when the line is nothing but furniture strings (one watermark or
+    the same watermark twice side by side)."""
+    rest = _norm(line)
+    for f in sorted(furniture, key=len, reverse=True):
+        rest = rest.replace(f, " ")
+    return not rest.strip()
+
+
+def split_heading(
+    text: str, lines: list[tuple[str, float]], furniture: set[str]
+) -> tuple[str, list[str]] | None:
+    """(heading, body lines), or None when the heading stays as it is.
+
+    `lines` are the PDF lines inside the heading's box with their font size.
+    """
+    if len(lines) < 2:
+        return None
+    kept = [(t, s) for t, s in lines if not _is_furniture(t, furniture)]
+    have = _chars(text)
+    if have not in (
+        _chars(" ".join(t for t, _ in lines)),
+        _chars(" ".join(t for t, _ in kept)),
+    ):
+        return None  # the box holds other text, or docling read it differently
+    sizes = [s for t, s in kept if not _URL.search(t)]
+    if not sizes:
+        return None
+    floor = max(sizes) * TITLE_SIZE_RATIO
+    is_head = [s >= floor and not _URL.search(t) for t, s in kept]
+    body = [t for (t, _), h in zip(kept, is_head, strict=True) if not h]
+    if not body and len(kept) == len(lines):
+        return None  # a title wrapped over lines: nothing to move
+    return " ".join(t for (t, _), h in zip(kept, is_head, strict=True) if h), body

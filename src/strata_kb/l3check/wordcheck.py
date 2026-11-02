@@ -34,6 +34,7 @@ _FENCE = re.compile(r"^[ \t]*```")
 _HEADING_LINE = re.compile(r"^[ \t]*#{1,6}[ \t]")
 _NO_PDF = "no PDF text to verify against"
 GARBLE_MIN_RATIO = 0.6  # a corrected spelling must still look like the text it replaces
+HEADING_FURNITURE_MIN = 2  # shorter furniture (a page number) may be heading text
 DUP_MIN_TOKENS = 5  # a repeated block is at least this long; shorter runs are words
 
 
@@ -312,23 +313,37 @@ def _unaccounted_removal(
 
 
 def drop_furniture_lines(md: str, lines: list[list[str]]) -> str:
-    """`md` without its body lines that are a whole furniture line (lint R5), so a
+    """`md` without its body lines that are whole furniture lines (lint R5), so a
     draft may drop one even where the PDF text layer still holds it (a watermark
-    docling filed as body). Headings and fenced lines always stay."""
+    docling filed as body), and without furniture trailing a heading (lint R9).
+    Other heading words and fenced lines always stay."""
     out: list[str] = []
     fenced = False
     for line in md.split("\n"):
         if _FENCE.match(line):
             fenced = not fenced
+        elif not fenced and _HEADING_LINE.match(line):
+            line = _drop_heading_tail(line, lines)
         elif (
             not fenced
-            and not _HEADING_LINE.match(line)
             and (words := _tokens(strip_markdown(line)))
-            and words in lines
+            and _is_furniture(words, lines)
         ):
             continue
         out.append(line)
     return "\n".join(out)
+
+
+def _drop_heading_tail(line: str, lines: list[list[str]]) -> str:
+    """The heading without the furniture (two tokens or more per line) that
+    ends it; at least two chunks (id and title, or a title) always stay."""
+    long = [f for f in lines if len(f) >= HEADING_FURNITURE_MIN]
+    marks, _, text = line.lstrip().partition(" ")
+    chunks = text.split()
+    for keep in range(2, len(chunks)):
+        if _is_furniture(_tokens(" ".join(chunks[keep:])), long):
+            return f"{marks} {' '.join(chunks[:keep])}"
+    return line
 
 
 def check_words(

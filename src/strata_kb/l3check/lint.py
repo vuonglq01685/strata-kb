@@ -1,4 +1,4 @@
-"""Layout contract of an L3 unit (rules R1-R8): what the AI structure fix must
+"""Layout contract of an L3 unit (rules R1-R9): what the AI structure fix must
 leave behind. Pure checks over the unit's markdown plus the PDF context; the
 only I/O is reading the chapter files in `lint_doc` and the PDF in
 `load_pdf_context`."""
@@ -18,11 +18,15 @@ EVIDENCE_MAX = 80
 TAB_WIDTH = 4
 DEEP_LIST = 4  # indent beyond the list's first item that makes a code block
 MAX_HEADING_LEVEL = 4
+MIN_FURNITURE_WORDS = (
+    2  # shorter furniture (a page number) is too common inside headings
+)
 
 _HEADING = re.compile(r"^(#+)(?:[ \t]+(.*?))?[ \t]*$")
 _BACKTICK_FENCE = re.compile(r"^[ \t]*```")
 _TILDE_FENCE = re.compile(r"^[ \t]*~~~")
 _QUOTE = re.compile(r"^[ \t]*[<>]")
+_URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _LIST_ITEM = re.compile(r"^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
 
 
@@ -134,6 +138,38 @@ def _r6(lines: list[str], body: list[tuple[int, str]]) -> list[tuple[int, str]]:
     return sorted(set(bad))
 
 
+def _only_furniture(words: list[str], furniture: set[tuple[str, ...]]) -> bool:
+    """True when `words` is one or more furniture lines back to back."""
+    reach = {0}
+    for pos in range(len(words)):
+        if pos in reach:
+            reach |= {
+                pos + len(f) for f in furniture if tuple(words[pos : pos + len(f)]) == f
+            }
+    return bool(words) and len(words) in reach
+
+
+def _r9(
+    body: list[tuple[int, str]], furniture: set[tuple[str, ...]]
+) -> list[tuple[int, str]]:
+    """Headings holding text that is not heading text: a link, or a watermark
+    or running header (furniture of two words or more) docling boxed with it."""
+    long = [f for f in furniture if len(f) >= MIN_FURNITURE_WORDS]
+    bad: list[tuple[int, str]] = []
+    for n, line in body:
+        m = _HEADING.match(line)
+        if m is None or not m.group(2):
+            continue
+        words = detect.normalize_words(m.group(2))
+        if _URL.search(m.group(2)) or any(
+            tuple(words[i : i + len(f)]) == f
+            for f in long
+            for i in range(len(words) - len(f) + 1)
+        ):
+            bad.append((n, line))
+    return bad
+
+
 def _r8(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     lines = unit_md.splitlines()
     out: list[LintIssue] = []
@@ -164,8 +200,11 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     found += [("R4", n, t) for n, t in _r4(body)]
     furniture = {w for f in ctx.furniture if (w := tuple(detect.normalize_words(f)))}
     found += [
-        ("R5", n, t) for n, t in body if tuple(detect.normalize_words(t)) in furniture
+        ("R5", n, t)
+        for n, t in body
+        if _only_furniture(detect.normalize_words(t), furniture)
     ]
+    found += [("R9", n, t) for n, t in _r9(body, furniture)]
     found += [("R6", n, t) for n, t in _r6(lines, body)]
     fences = [n for n, t in enumerate(lines, 1) if _BACKTICK_FENCE.match(t)]
     if len(fences) % 2:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -714,3 +715,38 @@ def test_render_pages_writes_png(tmp_path):
 
     assert png == tmp_path / "doc" / "pages" / "p1.png"
     assert png.is_file() and png.read_bytes()[:4] == b"\x89PNG"
+
+
+def test_first_title_word_as_id_refused(tmp_path, monkeypatch):
+    # PDF heading without a number: dropping the slug id would make its first word the id
+    title = "Nợ kỹ thuật mang theo"
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_units",
+        lambda: [
+            SectionUnit("4.1", "PHẠM VI ÁP DỤNG", "4", BODY_41, []),
+            SectionUnit("x1", title, "4", NOTE, []),
+        ],
+    )
+    kb = _build(tmp_path)
+    _draft(kb, "x1", f"## {title}\n\n{NOTE}\n")
+
+    [r] = _apply(kb, pdf_pages={**PDF_PAGES, 12: f"{title} {NOTE}"})
+
+    assert r.status == "rejected", r
+    assert r.reason.startswith("ids: 'Nợ' is not a section number"), r.reason
+    assert [s.id for s in _manifest(kb).sections] == ["4.1", "x1"]
+
+
+@pytest.mark.parametrize(
+    ("sid", "title", "ok"),
+    [
+        ("4.2", "NGHỈ PHÉP NĂM", True),
+        ("appendix-a", "Phụ lục A", False),
+        ("Nợ", "kỹ thuật mang theo", False),
+        ("nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),
+        ("6.8-nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),
+    ],
+)
+def test_numbered_or_slug(sid, title, ok):
+    assert fixchecks._numbered_or_slug(sid, title) is ok

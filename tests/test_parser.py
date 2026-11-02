@@ -1,5 +1,6 @@
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -974,3 +975,44 @@ def test_load_or_parse_without_docling_raises_kb_error(tmp_path, monkeypatch):
 
     with pytest.raises(KbError, match=r'pip install "strata-kb\[ingest\]"'):
         parser.load_or_parse(tmp_path / "x.pdf", tmp_path)
+
+
+# header-block.pdf: fake data built with reportlab and Liberation Sans. Page 1
+# has a Confluence-style header (16 pt title, 9 pt version/status/owner/link
+# lines) and a 9 pt "TÀI LIỆU MẬT" watermark at the top and bottom of every page.
+HEADER_PDF = Path(__file__).parent / "fixtures" / "header-block.pdf"
+HEADER_TITLE = "L2 - ACME - Phân hệ Mẫu tích hợp Bản đồ · v2.1 · 28/10/2026"
+HEADER_META = [
+    "Phiên bản v2.1 - 28/10/2026",
+    "Trạng thái Bản Nháp",
+    "Owner NguyenVA - Nguyễn Văn An (PB-KTHT)",
+    "Bản gốc https://example.atlassian.net/wiki/spaces/ABC/pages/123456/L2+-+ACME",
+]
+
+
+def test_heading_that_swallowed_the_header_block_is_split():
+    pytest.importorskip("pypdfium2")
+    wm = "TÀI LIỆU MẬT"
+    swallowed = " ".join([wm, HEADER_TITLE, *HEADER_META])
+    doc = _StubDoc(
+        items=[
+            _StubItem(_StubLabel("page_header"), text=wm, prov=[_StubProv(2)]),
+            _StubItem(
+                _StubLabel("title"),
+                text=swallowed,
+                prov=[_StubProv(1, _StubBBox(l=40, t=820, r=560, b=690))],
+            ),
+            _StubItem(
+                _StubLabel("section_header"),
+                text="1 Giới thiệu",
+                prov=[_StubProv(1, _StubBBox(l=40, t=520, r=300, b=500))],
+            ),
+        ],
+        pages={1: _StubPage(_StubSize(842.0))},
+    )
+    items = parser.doc_to_items(doc, pdf_path=HEADER_PDF)
+    assert [(i.kind, i.text) for i in items] == [
+        ("heading", HEADER_TITLE),
+        *(("text", m) for m in HEADER_META),
+        ("heading", "1 Giới thiệu"),
+    ]

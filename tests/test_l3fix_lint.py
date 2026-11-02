@@ -194,3 +194,29 @@ def test_cli_lint_without_docling_no_traceback(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "Docling is not installed" in result.output
     assert isinstance(result.exception, SystemExit)
+
+
+WM = "TÀI LIỆU MẬT"
+
+
+def test_r9_heading_with_a_link():
+    md = "## 1 Quy chế Bản gốc https://example.net/wiki/1\n\nx\n"
+    assert _rules(md, _ctx("1")) == [("R9", 1)]
+
+
+def test_r9_heading_with_a_watermark_in_front_matter():
+    span = UnitSpan(
+        id="front-matter-l2", file="fm", chapter="front-matter", page=1, end_page=1
+    )
+    ctx = lint.UnitContext(span, False, [WM, "Trang 1/40"], {})
+    md = f"## front-matter-l2 L2 - ACME · v2.1 Trạng thái Bản Nháp {WM} {WM}\n\nx\n"
+    assert [(i.rule, i.line) for i in lint.lint_unit(md, ctx)] == [("R9", 1)]
+
+
+def test_r9_subheading_flagged_and_short_furniture_ignored():
+    md = f"## 4.12 Tiêu đề\n\n### Ghi chú {WM}\n\nx\n"
+    assert _rules(md, _ctx("4.12", furniture=[WM, "12"])) == [("R9", 3)]
+
+
+def test_r5_watermark_twice_on_one_line():
+    assert _rules(f"## 1 A\n\n{WM} {WM}\n", _ctx("1", furniture=[WM])) == [("R5", 3)]

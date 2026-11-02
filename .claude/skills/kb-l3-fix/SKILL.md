@@ -40,7 +40,7 @@ every `kb` command below with `docker compose run --rm hub`.
    is refused by the CLI.
 2. **Find what to fix.** Run both:
    - `kb l3 lint <doc-id> --pdf <pdf>` — layout problems, one per line as
-     `§<section> <rule> line <n>: <evidence>` (rules R1–R8; exit 1 when
+     `§<section> <rule> line <n>: <evidence>` (rules R1–R9; exit 1 when
      there are issues).
    - `kb l3 report <doc-id>` — flagged sections with evidence.
    `kb l3 report` exits 1 whenever any section awaits review; that is normal,
@@ -98,6 +98,11 @@ Allowed:
 - Removing a block that is an exact repeat of one that stays, and page
   header, footer or watermark lines (furniture, lint rule R5) left in the
   text.
+- Splitting a heading that holds text that is not heading text (lint rule
+  R9: a link, a watermark, or the version, status and owner lines of a page
+  header boxed into the title). Keep the title as the heading, put the other
+  lines under it as body lines in the PDF's order, and drop a watermark at
+  the end of the heading.
 - List markup (`-`, `*`, `1.`, two levels), fenced code, and the inline
   marks `**`, `*`, `_` and `` ` ``.
 - Replacing a garbled word with the word the PDF has at that place.
@@ -116,9 +121,13 @@ PDF shows. Take ids only from the PDF's own numbering (`4.2`, `4.2.1`,
 `Điều 5`). Never invent an id.
 
 A synthetic fallback id such as `x1` or a slug (`## x1 4.2 NGHỈ PHÉP NĂM`)
-may only be deleted, leaving the PDF heading text (`## 4.2 NGHỈ PHÉP NĂM`).
-A heading the PDF does not number keeps its text as written and gets no
-number.
+may only be deleted when the PDF numbers that heading, leaving the PDF
+heading text (`## 4.2 NGHỈ PHÉP NĂM`). A heading the PDF does not number
+keeps its slug id and its text as written
+(`## nợ-kỹ-thuật-mang-theo Nợ kỹ thuật mang theo`). Never delete that id:
+the title's first word would become the id, and apply refuses it with
+`ids: '<word>' is not a section number`. Lint does not flag such a heading,
+and the hub reader shows it without the slug.
 
 ## Sections whose text layer is unusable
 

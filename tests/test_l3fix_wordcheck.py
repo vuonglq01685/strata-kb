@@ -585,3 +585,37 @@ def test_duplicate_excuse_pdf_repeats_sentence_deduped_rejected():
 def test_duplicate_excuse_pdf_repeats_sentence_moved_passes():
     draft = f"Điều 1. Đi muộn nhiều lần. {S}\n\nĐiều 2. Hút thuốc trong kho. {S}"
     assert wordcheck.check_words(DUP_ORIG, draft, pdf_of(DUP_PDF)) is None
+
+
+HEADER_PDF = pdf_of(
+    f"{WATERMARK} L2 ACME Phân hệ Mẫu Phiên bản v2.1 Trạng thái Bản Nháp "
+    f"Bản gốc https://example.net/wiki/1 {WATERMARK} Nội dung trang"
+)
+HEADER_ORIG = (
+    "## front-matter-l2 L2 ACME Phân hệ Mẫu Phiên bản v2.1 Trạng thái Bản Nháp "
+    f"Bản gốc https://example.net/wiki/1 {WATERMARK} {WATERMARK}\n\nNội dung trang"
+)
+HEADER_FIXED = (
+    "## front-matter-l2 L2 ACME Phân hệ Mẫu\n\nPhiên bản v2.1\n\nTrạng thái Bản Nháp"
+    "\n\nBản gốc https://example.net/wiki/1\n\nNội dung trang"
+)
+
+
+def test_heading_split_and_trailing_watermark_dropped_passes():
+    issue = wordcheck.check_words(
+        HEADER_ORIG, HEADER_FIXED, HEADER_PDF, furniture=[WATERMARK]
+    )
+    assert issue is None
+
+
+def test_trailing_heading_watermark_dropped_without_furniture_rejected():
+    assert wordcheck.check_words(HEADER_ORIG, HEADER_FIXED, HEADER_PDF) is not None
+
+
+def test_heading_that_is_only_furniture_keeps_its_words():
+    pdf = pdf_of("1 Quy chế nhân sự Nội dung")
+    orig = "## 1 Quy chế nhân sự\n\nNội dung"
+    issue = wordcheck.check_words(
+        orig, "## 1\n\nNội dung", pdf, furniture=["Quy chế nhân sự"]
+    )
+    assert issue is not None
