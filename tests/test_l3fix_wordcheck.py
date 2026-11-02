@@ -74,6 +74,34 @@ def test_furniture_line_removed_without_furniture_rejected():
     assert wordcheck.check_words(WITH_FOOTER, ORIG, FOOTER_PDF) is not None
 
 
+WATERMARK = "TÀI LIỆU MẬT"
+# docling filed the watermark as body on this page: the PDF tokens still hold it
+WATERMARK_PDF = pdf_of(PDF_TEXT.replace("theo hợp", f"theo {WATERMARK} hợp"))
+WITH_WATERMARK = ORIG.replace("theo\n\nhợp", f"theo\n\n{WATERMARK}\n\nhợp")
+
+
+def test_watermark_left_in_pdf_text_removed_passes():
+    assert (
+        wordcheck.check_words(
+            WITH_WATERMARK, ORIG, WATERMARK_PDF, furniture=[WATERMARK]
+        )
+        is None
+    )
+
+
+def test_watermark_left_in_pdf_text_without_furniture_rejected():
+    issue = wordcheck.check_words(WITH_WATERMARK, ORIG, WATERMARK_PDF)
+    assert issue is not None and issue.op == "delete"
+
+
+def test_watermark_removed_with_a_real_word_rejected():
+    draft = ORIG.replace("theo\n\nhợp", "\n\nhợp")
+    issue = wordcheck.check_words(
+        WITH_WATERMARK, draft, WATERMARK_PDF, furniture=[WATERMARK]
+    )
+    assert issue is not None and issue.op == "delete"
+
+
 def test_trailing_paragraph_dropped_rejected():
     pdf = pdf_of(PDF_TEXT + " Đoạn cuối có thật")
     assert wordcheck.check_words(ORIG + "\n\nĐoạn cuối có thật", ORIG, pdf) is not None

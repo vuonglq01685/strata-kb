@@ -263,7 +263,9 @@ kb summarize
   byte for byte, every word against the PDF's text layer) are described in the skill.
 - For a scanned section or a broken font, `kb l3 fix pages <id> --pdf <pdf> --page N`
   renders PNG pages to `.kb-work/<id>/pages/` for the assistant, and `apply --from-image
-  <name>` skips the word check. That fix is marked unverified and listed first by
+  <name>` skips the word check. On a section whose text layer is usable it is
+  allowed only for heading lines (a heading with a broken font); the rest of the draft is
+  still checked word by word. That fix is marked unverified and listed first by
   `kb l3 report`: read it against the PDF.
 - While the switch is on, ingest does not summarize. While an AI fix awaits review, or L3
   was edited outside `apply`, the same gate as 3.2 holds. Commit `_l3fix.yaml`; it is never

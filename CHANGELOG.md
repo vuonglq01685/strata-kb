@@ -3,6 +3,16 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.34.2 — 2026-11-02
+
+The L3 AI fix can now remove a watermark and repair a heading with a broken font. Nothing changes for a KB that does not run `kb l3 fix on`.
+
+- **Watermarks.** A draft that deletes a watermark line (`TÀI LIỆU MẬT`) that lint flags as R5 now passes the word check. Before, lint asked for the deletion and the word check refused it whenever docling had filed the watermark as body on that page, because the text was still in the PDF text layer. A deleted run passes only when it is exactly furniture of the section's pages; a run that also takes a real word is still refused.
+- **Headings with a broken font.** `kb l3 fix apply --from-image` is allowed on a section whose text layer is usable when only heading lines need the page image: the draft must fail the word check, and the draft without its `##`–`####` heading lines must pass it. A short body line (at most 15 tokens) the draft turns into a heading in place counts as a heading. Otherwise apply refuses with `words: --from-image not allowed for <id> (text layer is usable; only headings may come from the image): <detail>`. The fix is marked unverified, as every `--from-image` fix is.
+- **Skill.** The `kb-l3-fix` skill describes both. Run `kb init` to get it.
+- **Docs.** The child guide (EN, VI) says when `--from-image` is allowed. All guide PDFs are rebuilt.
+- **Upgrade.** Upgrade the CLI and run `kb init`. No CI pin change is needed: the gate is the same.
+
 ## 1.34.1 — 2026-11-01
 
 Docs release: the role guides, quickstarts and README are rewritten for daily work, and the guide PDFs build on any OS.

@@ -261,8 +261,10 @@ kb summarize
   trong skill.
 - Với section bị quét ảnh hoặc font hỏng, `kb l3 fix pages <id> --pdf <pdf> --page N` xuất
   các trang PNG vào `.kb-work/<id>/pages/` cho trợ lý, và `apply --from-image <name>` bỏ
-  qua bước kiểm tra từ. Bản sửa đó bị đánh dấu chưa được kiểm chứng và `kb l3 report` xếp
-  nó lên đầu: hãy đọc nó đối chiếu với PDF.
+  qua bước kiểm tra từ. Với section có lớp văn bản dùng được, nó chỉ được dùng cho các dòng
+  heading (heading bị lỗi font); phần còn lại của draft vẫn được kiểm tra từng từ. Bản sửa
+  đó bị đánh dấu chưa được kiểm chứng và `kb l3 report` xếp nó lên đầu: hãy đọc nó đối
+  chiếu với PDF.
 - Khi công tắc bật, ingest không tóm tắt. Khi một bản sửa của AI đang chờ review, hoặc L3
   bị sửa ngoài `apply`, cùng cổng chặn như ở 3.2 vẫn giữ. Hãy commit `_l3fix.yaml`; file
   này không bao giờ được gửi lên hub. `kb l3 fix off` tắt công tắc.

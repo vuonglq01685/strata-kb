@@ -159,12 +159,16 @@ def _unmatched_inserts(draft: _Side, edit: list) -> list[int]:
     ]
 
 
-def _lost(pdf: list[str], orig: _Side, draft: _Side, edit: list) -> WordIssue | None:
-    """Rule 1: PDF text the original covered is gone."""
+def _lost(
+    pdf: list[str], orig: _Side, draft: _Side, edit: list, lines: list[list[str]]
+) -> WordIssue | None:
+    """Rule 1: PDF text the original covered is gone, unless the run is furniture
+    the PDF text layer still holds (a watermark docling filed as body there)."""
     lost = sorted(set(orig.hit) - set(draft.hit))
-    if not lost:
+    runs = [r for r in _runs(lost) if not _is_furniture([pdf[i] for i in r], lines)]
+    if not runs:
         return None
-    run = _runs(lost)[0]
+    run = runs[0]
     original = " ".join(pdf[i] for i in run[:_SHOWN])
     inserts = _unmatched_inserts(draft, edit)
     if inserts:
@@ -326,8 +330,9 @@ def check_words(
     edit = SequenceMatcher(
         None, orig.tokens, draft.tokens, autojunk=False
     ).get_opcodes()
+    lines = [_tokens(f) for f in furniture]
     return (
-        _lost(pdf, orig, draft, edit)
+        _lost(pdf, orig, draft, edit, lines)
         or _foreign_insert(draft, edit)
         or _partial_restore(pdf, orig, draft, neigh_cov)
         or _neighbour_copy(orig, draft, neigh_cov)

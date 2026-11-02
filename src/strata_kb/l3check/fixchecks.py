@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from itertools import zip_longest
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from strata_kb.l3check.spans import SpansFile, UnitSpan
 from strata_kb.mdutils import section_map
 
 FROM_IMAGE_SHARE = 0.30  # --from-image only where this much of the unit is unmatched
+HEADING_MAX_TOKENS = 15  # a body line a draft turns into a heading is at most this long
+_HEADING_LINE = re.compile(r"^[ \t]*#{2,4}[ \t]")
 EVIDENCE_MAX = 80
 _UNSAFE_ID = re.compile(r"[/\\]")
 
@@ -194,20 +197,76 @@ def image_allowed(
     return wordcheck.uncovered_share(unit_md, pdf_words) > FROM_IMAGE_SHARE
 
 
+def _is_heading(line: str) -> bool:
+    return bool(_HEADING_LINE.match(line))
+
+
+def _bodies(orig: str, draft: str) -> tuple[str, str]:
+    """Both sides without their heading lines. An original body line the draft
+    replaces in place with a heading (one the ingest missed) goes too, when it
+    is short enough to be that heading."""
+    a, b = orig.split("\n"), draft.split("\n")
+    drop = {i for i, line in enumerate(a) if _is_heading(line)}
+    for tag, i1, i2, j1, j2 in SequenceMatcher(
+        None, a, b, autojunk=False
+    ).get_opcodes():
+        new = [x for x in b[j1:j2] if x.strip()]
+        old = [i for i in range(i1, i2) if a[i].strip() and i not in drop]
+        if (
+            tag == "replace"
+            and new
+            and all(_is_heading(x) for x in new)
+            and len(old) <= len(new)
+            and all(
+                len(wordcheck.prose_tokens(a[i])) <= HEADING_MAX_TOKENS for i in old
+            )
+        ):
+            drop.update(old)
+    return (
+        "\n".join(x for i, x in enumerate(a) if i not in drop),
+        "\n".join(x for x in b if not _is_heading(x)),
+    )
+
+
+def _word_issue(
+    t: _Target, orig: str, draft: str, pdf: list[str]
+) -> wordcheck.WordIssue | None:
+    return wordcheck.check_words(
+        orig, draft, pdf, _without_images(t.neighbours), t.furniture
+    )
+
+
+def _describe(issue: wordcheck.WordIssue) -> str:
+    return f'{issue.op}: draft "{issue.draft}" vs original "{issue.original}"'
+
+
 def _check_image(
-    t: _Target, pdf_pages: dict[int, str], furniture: dict[int, list[str]]
+    t: _Target, draft: str, pdf_pages: dict[int, str], furniture: dict[int, list[str]]
 ) -> None:
     """The word check is skipped for the whole draft, so every replaced unit
-    must be one the text layer cannot verify, each judged on its own."""
+    must be one the text layer cannot verify, each judged on its own. On a
+    usable text layer only headings may come from the image (a broken font on
+    a heading line): the draft must fail the word check and its body pass it."""
     by_id = {u.id: u for u in t.data.units}
     pieces = section_map(t.raw)
+    usable = []
     for sid in t.ids:
         span = by_id[sid]
         pdf = wordcheck.pdf_tokens(pdf_pages, furniture, span.page, span.end_page)
         if not image_allowed(t.kb_dir, t.doc_id, span, pieces[sid][0], pdf):
-            raise _Reject(
-                f"words: --from-image not allowed for {sid} (text layer is usable)"
-            )
+            usable.append(sid)
+    if not usable:
+        return
+    refused = f"words: --from-image not allowed for {usable[0]} (text layer is usable"
+    pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
+    orig, new = _without_images(t.run), _without_images(draft)
+    if _word_issue(t, orig, new, pdf) is None:
+        raise _Reject(refused + ")")
+    issue = _word_issue(t, *_bodies(orig, new), pdf)
+    if issue is not None:
+        raise _Reject(
+            f"{refused}; only headings may come from the image): {_describe(issue)}"
+        )
 
 
 def _check_words(
@@ -219,20 +278,12 @@ def _check_words(
 ) -> bool:
     """Run the word check; True when `--from-image` skipped it."""
     if t.ids[0] in from_image:
-        _check_image(t, pdf_pages, furniture)
+        _check_image(t, draft, pdf_pages, furniture)
         return True
     pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
-    issue = wordcheck.check_words(
-        _without_images(t.run),
-        _without_images(draft),
-        pdf,
-        _without_images(t.neighbours),
-        t.furniture,
-    )
+    issue = _word_issue(t, _without_images(t.run), _without_images(draft), pdf)
     if issue is not None:
-        raise _Reject(
-            f'words: {issue.op}: draft "{issue.draft}" vs original "{issue.original}"'
-        )
+        raise _Reject(f"words: {_describe(issue)}")
     return False
 
 
