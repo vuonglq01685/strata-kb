@@ -67,11 +67,23 @@ def split_heading(
     """
     if len(lines) < 2:
         return None
-    sizes = [s for t, s in lines if not _URL.search(t)]
+    furn = [_is_furniture(t, furniture) for t, _ in lines]
+    sizes = [
+        s for (t, s), f in zip(lines, furn, strict=True) if not f and not _URL.search(t)
+    ]
     if not sizes:
         return None
     floor = max(sizes) * TITLE_SIZE_RATIO
-    kept = [(t, s) for t, s in lines if s >= floor or not _is_furniture(t, furniture)]
+    big = [
+        i
+        for i, ((_, s), f) in enumerate(zip(lines, furn, strict=True))
+        if f and s >= floor
+    ]
+    if big:
+        if big != [0]:
+            return None  # title-size furniture after the title: lint R9 flags it
+        floor = max(floor, lines[0][1] * TITLE_SIZE_RATIO)  # the title is the header
+    kept = [line for i, line in enumerate(lines) if i in big or not furn[i]]
     have = _chars(text)
     if have not in (
         _chars(" ".join(t for t, _ in lines)),

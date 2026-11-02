@@ -65,3 +65,8 @@ def test_title_equal_to_running_header_is_kept():
 
 def test_page_numbers_never_count_as_furniture():
     assert furniture_set({1: ["12", "Trang 12/40"]}) == {("trang", "12", "40")}
+
+
+def test_watermark_larger_than_the_title_left_for_lint_r9():
+    lines = [("Quy chế nhân sự", 16.0), (WM, 40.0)]
+    assert split_heading(f"Quy chế nhân sự {WM}", lines, FURN) is None

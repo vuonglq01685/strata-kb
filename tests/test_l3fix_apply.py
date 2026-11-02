@@ -743,6 +743,8 @@ def test_first_title_word_as_id_refused(tmp_path, monkeypatch):
     [
         ("4.2", "NGHỈ PHÉP NĂM", True),
         ("appendix-a", "Glossary", True),
+        ("appendixes", "Appendixes", True),  # its own slug
+        ("attachmentfoo", "Danh mục", False),
         ("Điều", "5 Quy định", False),
         ("Nợ", "kỹ thuật mang theo", False),
         ("nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),

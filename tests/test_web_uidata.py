@@ -405,6 +405,7 @@ def test_heading_inline_and_toc_label():
         ("4.2", "2", False),
         ("appendix-x1", "Supplementary Requirements", False),
         ("appendix-x1-2", "Scope", False),
+        ("appendix-x1-x2", "※", True),
     ],
 )
 def test_is_fallback_id(sid, title, fallback):

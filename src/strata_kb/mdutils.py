@@ -47,13 +47,13 @@ def slugify_id(text: str) -> str:
 
 
 _SYNTHETIC_ID = re.compile(r"(?:.+-)?x\d+(?:-\d+)?")
-_PART_X_ID = re.compile(r"(?:appendix|attachment)-x\d")  # ASTM "Appendix X1"
+_PART_X_ID = re.compile(r"(?:appendix|attachment)-x\d+(?:-\d+)?")  # ASTM "Appendix X1"
 
 
 def is_fallback_id(sid: str, title: str) -> bool:
     """True for an id the sectioner made up for a heading it could not parse:
     the title's slug (under its parent id, deduped `-N`) or `x<n>`."""
-    if _SYNTHETIC_ID.fullmatch(sid) and not _PART_X_ID.match(sid):
+    if _SYNTHETIC_ID.fullmatch(sid) and not _PART_X_ID.fullmatch(sid):
         return True
     slug = slugify_id(title)
     if not slug or slug.replace("-", "").isdigit():
