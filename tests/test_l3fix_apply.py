@@ -10,7 +10,7 @@ from strata_kb.cli import app
 from strata_kb.config import set_block_enabled
 from strata_kb.ingest.scaffold import scaffold_doc
 from strata_kb.ingest.sectioner import SectionUnit
-from strata_kb.l3check import fix, fixrecord, lint, report, spans
+from strata_kb.l3check import fix, fixchecks, fixrecord, lint, report, spans
 from strata_kb.l3check.fixrecord import BaselineUnit, L3Fix
 from strata_kb.l3check.report import Finding, L3Check, SectionCheck
 from strata_kb.l3check.spans import SpansFile, UnitSpan
@@ -354,6 +354,93 @@ def test_from_image_only_where_allowed(kb):
     assert r.status == "applied", r.reason
     rec = fixrecord.load(kb / "doc")
     assert rec is not None and rec.sections[0].verified is False
+
+
+# a broken font: the heading line of page 12 is garbage in the text layer
+BROKEN_HEADING_PAGES = {
+    **PDF_PAGES,
+    12: PDF_PAGES[12].replace("4.2 NGHỈ PHÉP NĂM", "Ⓧ Ⓨ"),
+}
+
+
+def test_from_image_heading_only_on_usable_text_layer_applies_unverified(kb):
+    _draft(kb, "x1", FIXED_42)
+    assert _apply(kb, pdf_pages=BROKEN_HEADING_PAGES)[0].status == "rejected"
+
+    [r] = _apply(kb, pdf_pages=BROKEN_HEADING_PAGES, from_image={"x1"})
+
+    assert r.status == "applied" and r.new_ids == ("4.2",), r.reason
+    rec = fixrecord.load(kb / "doc")
+    assert rec is not None and rec.sections[0].verified is False
+
+
+def test_from_image_on_usable_text_layer_still_checks_the_body(kb):
+    _draft(kb, "x1", FIXED_42.replace("đủ 12 tháng", "đủ 6 tháng"))
+
+    [r] = _apply(kb, pdf_pages=BROKEN_HEADING_PAGES, from_image={"x1"})
+
+    assert r.status == "rejected"
+    assert r.reason.startswith("words: --from-image not allowed for x1"), r.reason
+    assert "only headings may come from the image" in r.reason
+    assert "6" in r.reason
+
+
+BODY_PDF = ["thân", "một", "thân", "hai"]
+
+
+def test_bodies_drop_headings_and_a_garbled_line_promoted_to_heading():
+    orig = "## x1 Đầu\n\nthân một\n\n16.1 Tieu de hong\n\nthân hai"
+    draft = "## 16 Đầu\n\nthân một\n\n### 16.1 Tiêu đề\n\nthân hai"
+
+    a, b = fixchecks._bodies(orig, draft, BODY_PDF)
+
+    assert a.split() == b.split() == ["thân", "một", "thân", "hai"]
+
+
+def test_bodies_keep_a_line_the_pdf_matches():
+    orig = "## x1 Đầu\n\nthân một\n\nthân hai"
+
+    a, _ = fixchecks._bodies(
+        orig, "## 16 Đầu\n\n### 16.1 mười sáu\n\nthân hai", BODY_PDF
+    )
+
+    assert "thân một" in a
+
+
+def test_bodies_heading_edit_does_not_absorb_a_body_line():
+    a, _ = fixchecks._bodies(
+        "## x1 Đầu\n\nTieu de hong\n\nthân hai", "## 16 Đầu\n\nthân hai", BODY_PDF
+    )
+
+    assert "Tieu de hong" in a
+
+
+def test_bodies_keep_a_long_line_replaced_by_a_heading():
+    long_line = " ".join(["chữ"] * (fixchecks.HEADING_MAX_TOKENS + 1))
+    a, _ = fixchecks._bodies(
+        f"## x1 Đầu\n\n{long_line}", "## 16 Đầu\n\n### 16.1 T", BODY_PDF
+    )
+
+    assert long_line in a
+
+
+def test_bodies_keep_hash_lines_inside_a_code_fence():
+    orig = "## x1 Đầu\n\n```\n## step one rm -rf a\n```"
+    draft = "## 16 Đầu\n\n```\n## step one rm -rf /\n```"
+
+    a, b = fixchecks._bodies(orig, draft, BODY_PDF)
+
+    assert "rm -rf a" in a and "rm -rf /" in b
+
+
+def test_from_image_mixed_scanned_and_usable_units_plain_refusal(kb):
+    pages = {**BROKEN_HEADING_PAGES, 11: ""}
+    _draft(kb, "merge", MERGED.replace("### 4.2 NGHỈ", "### 4.2 NGHỈ PHÉP NĂM X"))
+
+    [r] = _apply(kb, pdf_pages=pages, from_image={"4.1"})
+
+    assert r.status == "rejected"
+    assert r.reason == "words: --from-image not allowed for x1 (text layer is usable)"
 
 
 def test_from_image_multi_unit_needs_every_unit_scanned(kb):

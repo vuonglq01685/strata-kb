@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from itertools import zip_longest
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from strata_kb.l3check.spans import SpansFile, UnitSpan
 from strata_kb.mdutils import section_map
 
 FROM_IMAGE_SHARE = 0.30  # --from-image only where this much of the unit is unmatched
+HEADING_MAX_TOKENS = 15  # a body line a draft turns into a heading is at most this long
+_HEADING_LINE = re.compile(r"^[ \t]*#{2,4}[ \t]")
 EVIDENCE_MAX = 80
 _UNSAFE_ID = re.compile(r"[/\\]")
 
@@ -194,20 +197,89 @@ def image_allowed(
     return wordcheck.uncovered_share(unit_md, pdf_words) > FROM_IMAGE_SHARE
 
 
+def _heading_lines(lines: list[str]) -> set[int]:
+    """Indices of the `##`-`####` heading lines outside a ``` fence."""
+    out: set[int] = set()
+    fenced = False
+    for i, line in enumerate(lines):
+        if lint._BACKTICK_FENCE.match(line):
+            fenced = not fenced
+        elif not fenced and _HEADING_LINE.match(line):
+            out.add(i)
+    return out
+
+
+def _garbled(line: str, pdf: list[str]) -> bool:
+    """A short line the PDF text layer does not match: a heading with a broken font."""
+    words = wordcheck.prose_tokens(line)
+    return 0 < len(words) <= HEADING_MAX_TOKENS and (
+        wordcheck.uncovered_share(line, pdf) > FROM_IMAGE_SHARE
+    )
+
+
+def _bodies(orig: str, draft: str, pdf: list[str]) -> tuple[str, str]:
+    """Both sides without their heading lines. A garbled original body line the
+    draft replaces in place with a new heading (one the ingest missed) goes too;
+    each new heading takes at most one such line."""
+    a, b = orig.split("\n"), draft.split("\n")
+    heads_a, heads_b = _heading_lines(a), _heading_lines(b)
+    drop = set(heads_a)
+    for tag, i1, i2, j1, j2 in SequenceMatcher(
+        None, a, b, autojunk=False
+    ).get_opcodes():
+        if tag != "replace":
+            continue
+        if any(b[j].strip() and j not in heads_b for j in range(j1, j2)):
+            continue  # the draft side is not headings only
+        slots = len(heads_b & set(range(j1, j2))) - len(heads_a & set(range(i1, i2)))
+        old = [i for i in range(i1, i2) if a[i].strip() and i not in heads_a]
+        if old and len(old) <= slots and all(_garbled(a[i], pdf) for i in old):
+            drop.update(old)
+    return (
+        "\n".join(x for i, x in enumerate(a) if i not in drop),
+        "\n".join(x for j, x in enumerate(b) if j not in heads_b),
+    )
+
+
+def _word_issue(
+    t: _Target, orig: str, draft: str, pdf: list[str]
+) -> wordcheck.WordIssue | None:
+    return wordcheck.check_words(
+        orig, draft, pdf, _without_images(t.neighbours), t.furniture
+    )
+
+
+def _describe(issue: wordcheck.WordIssue) -> str:
+    return f'{issue.op}: draft "{issue.draft}" vs original "{issue.original}"'
+
+
 def _check_image(
-    t: _Target, pdf_pages: dict[int, str], furniture: dict[int, list[str]]
+    t: _Target, draft: str, pdf_pages: dict[int, str], furniture: dict[int, list[str]]
 ) -> None:
     """The word check is skipped for the whole draft, so every replaced unit
-    must be one the text layer cannot verify, each judged on its own."""
+    must be one the text layer cannot verify, each judged on its own. On a
+    usable text layer only headings may come from the image (a broken font on
+    a heading line): the draft must fail the word check and its body pass it."""
     by_id = {u.id: u for u in t.data.units}
     pieces = section_map(t.raw)
+    usable = []
     for sid in t.ids:
         span = by_id[sid]
         pdf = wordcheck.pdf_tokens(pdf_pages, furniture, span.page, span.end_page)
         if not image_allowed(t.kb_dir, t.doc_id, span, pieces[sid][0], pdf):
-            raise _Reject(
-                f"words: --from-image not allowed for {sid} (text layer is usable)"
-            )
+            usable.append(sid)
+    if not usable:
+        return
+    refused = f"words: --from-image not allowed for {usable[0]} (text layer is usable"
+    pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
+    orig, new = _without_images(t.run), _without_images(draft)
+    if usable != t.ids or _word_issue(t, orig, new, pdf) is None:
+        raise _Reject(refused + ")")  # mixed scanned/usable units, or no image needed
+    issue = _word_issue(t, *_bodies(orig, new, pdf), pdf)
+    if issue is not None:
+        raise _Reject(
+            f"{refused}; only headings may come from the image): {_describe(issue)}"
+        )
 
 
 def _check_words(
@@ -219,20 +291,12 @@ def _check_words(
 ) -> bool:
     """Run the word check; True when `--from-image` skipped it."""
     if t.ids[0] in from_image:
-        _check_image(t, pdf_pages, furniture)
+        _check_image(t, draft, pdf_pages, furniture)
         return True
     pdf = wordcheck.pdf_tokens(pdf_pages, furniture, t.span.page, t.span.end_page)
-    issue = wordcheck.check_words(
-        _without_images(t.run),
-        _without_images(draft),
-        pdf,
-        _without_images(t.neighbours),
-        t.furniture,
-    )
+    issue = _word_issue(t, _without_images(t.run), _without_images(draft), pdf)
     if issue is not None:
-        raise _Reject(
-            f'words: {issue.op}: draft "{issue.draft}" vs original "{issue.original}"'
-        )
+        raise _Reject(f"words: {_describe(issue)}")
     return False
 
 

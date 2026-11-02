@@ -96,7 +96,8 @@ Allowed:
   most, no skipped level).
 - Joining lines that the PDF broke into one paragraph.
 - Removing a block that is an exact repeat of one that stays, and page
-  header or footer lines (furniture) left in the text.
+  header, footer or watermark lines (furniture, lint rule R5) left in the
+  text.
 - List markup (`-`, `*`, `1.`, two levels), fenced code, and the inline
   marks `**`, `*`, `_` and `` ` ``.
 - Replacing a garbled word with the word the PDF has at that place.
@@ -139,10 +140,21 @@ whose text layer is usable; then redo the draft without it, or leave the
 section for the human. A change applied this way is marked unverified, and
 the reviewer sees it must be checked against the PDF.
 
+**Headings with a broken font.** When the text layer is usable except for
+heading lines (a heading id or title the word check rejects because the
+PDF text shows garbage there, or a heading the ingest left as a short,
+garbled body line), read the heading from the page image and apply with `--from-image`
+too. Apply then checks every non-heading line against the PDF as usual;
+only `##`–`####` heading lines, and a short body line the PDF text does
+not match that the draft turns into a new heading in place, come from the
+image. A body line the PDF text matches must keep its words. It refuses with
+`only headings may come from the image` when the body changed in a way the
+PDF does not justify: fix the body, never the check.
+
 ## Hard stops
 
 - Switch off, document or PDF not found, or any CLI error you do not
   understand → show the output verbatim and stop. Do not guess options.
 - Never use `--from-image` to get past a rejection of a section with a
-  usable text layer.
+  usable text layer, except for heading lines as described above.
 - Never run `kb l3 confirm`, `kb l3 fix on` or `kb l3 fix off`.
