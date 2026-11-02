@@ -46,6 +46,28 @@ def slugify_id(text: str) -> str:
     return slug[:40].rstrip("-")
 
 
+_SYNTHETIC_ID = re.compile(r"(?:.+-)?x\d+(?:-\d+)?")
+_PART_X_ID = re.compile(r"(?:appendix|attachment)-x\d")  # ASTM "Appendix X1"
+
+
+def is_fallback_id(sid: str, title: str) -> bool:
+    """True for an id the sectioner made up for a heading it could not parse:
+    the title's slug (under its parent id, deduped `-N`) or `x<n>`."""
+    if _SYNTHETIC_ID.fullmatch(sid) and not _PART_X_ID.match(sid):
+        return True
+    slug = slugify_id(title)
+    if not slug or slug.replace("-", "").isdigit():
+        return False
+    return re.fullmatch(rf"(?:.+-)?{re.escape(slug)}(?:-\d+)?", sid) is not None
+
+
+def leads_with_number(heading: str) -> bool:
+    """True when the heading's first word carries a digit ("4 .2", "§5.7"):
+    a number the PDF gives that could become its id."""
+    first = heading.split(maxsplit=1)
+    return bool(first) and any(ch.isdigit() for ch in first[0])
+
+
 def tiktoken_cache_dir() -> Path:
     """Where the cl100k_base BPE file is cached: `~/.strata-kb/tiktoken`.
     tiktoken's own default is under the system temp dir, which a reboot or

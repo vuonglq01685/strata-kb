@@ -31,7 +31,18 @@ def test_clean_unit_has_no_issues():
 
 
 def test_r1_fallback():
-    assert _rules("## 1 T\n\nx\n", _ctx("1", fallback=True)) == [("R1", 1)]
+    md = "## x1 4.2 NGHỈ PHÉP\n\nx\n"
+    assert _rules(md, _ctx("x1", fallback=True)) == [("R1", 1)]
+
+
+def test_r1_folded_numbered_fallback_flagged_on_its_line():
+    md = "## 4 A\n\n### 4-x2 4.3 B\n\nx\n"
+    assert _rules(md, _ctx("4", fallback=True)) == [("R1", 3)]
+
+
+def test_r1_unnumbered_slug_heading_from_an_older_ingest_not_flagged():
+    md = "## nợ-kỹ-thuật-mang-theo Nợ kỹ thuật mang theo\n\nx\n"
+    assert _rules(md, _ctx("nợ-kỹ-thuật-mang-theo", fallback=True)) == []
 
 
 def test_r2_duplicate_id_in_file():
@@ -96,11 +107,13 @@ def test_r8_break():
 
 def test_lint_doc_reads_chapter_files(tmp_path):
     (tmp_path / "d").mkdir()
-    (tmp_path / "d" / "ch1.raw.md").write_text("## 1 A\n\n#### x\n", encoding="utf-8")
+    (tmp_path / "d" / "ch1.raw.md").write_text(
+        "## x1 1 A\n\n#### x\n", encoding="utf-8"
+    )
     data = SpansFile(
         doc_id="d",
-        units=[UnitSpan(id="1", file="ch1", chapter="1", page=1, end_page=1)],
-        fallback_units=["1"],
+        units=[UnitSpan(id="x1", file="ch1", chapter="1", page=1, end_page=1)],
+        fallback_units=["x1"],
     )
     issues = lint.lint_doc(tmp_path, "d", data, {}, {})
     assert [(i.rule, i.line) for i in issues] == [("R1", 1), ("R3", 3)]
@@ -220,3 +233,19 @@ def test_r9_subheading_flagged_and_short_furniture_ignored():
 
 def test_r5_watermark_twice_on_one_line():
     assert _rules(f"## 1 A\n\n{WM} {WM}\n", _ctx("1", furniture=[WM])) == [("R5", 3)]
+
+
+def test_r9_running_header_inside_a_real_title_not_flagged():
+    md = "## 2 Strata Architecture overview\n\nx\n"
+    assert _rules(md, _ctx("2", furniture=["Strata Architecture"])) == []
+
+
+def test_r9_title_equal_to_running_header_not_flagged():
+    md = "## 2 Strata Architecture\n\nx\n"
+    assert _rules(md, _ctx("2", furniture=["Strata Architecture"])) == []
+
+
+def test_r5_numeric_table_row_not_furniture():
+    md = "## 1 A\n\n| a | b |\n|---|---|\n| 3 | 11 |\n"
+    ctx = _ctx("1", furniture=[str(p) for p in range(1, 13)], end=12)
+    assert _rules(md, ctx) == []

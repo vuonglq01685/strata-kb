@@ -135,7 +135,13 @@ def _code_item(item, doc, pdf_path: Path | None, page, bbox) -> DocItem | None:
 
 
 def _heading_items(
-    item, doc, pdf_path: Path | None, furniture: set[str], level: int, page, bbox
+    item,
+    doc,
+    pdf_path: Path | None,
+    furniture: set[tuple[str, ...]],
+    level: int,
+    page,
+    bbox,
 ) -> list[DocItem]:
     """The heading, split into heading and body lines when docling boxed
     several PDF lines (a page-header block) as one heading."""

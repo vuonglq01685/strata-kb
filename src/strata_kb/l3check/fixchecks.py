@@ -23,6 +23,7 @@ HEADING_MAX_TOKENS = 15  # a body line a draft turns into a heading is at most t
 _HEADING_LINE = re.compile(r"^[ \t]*#{2,4}[ \t]")
 EVIDENCE_MAX = 80
 _UNSAFE_ID = re.compile(r"[/\\]")
+_PART_IDS = ("appendix", "attachment")
 
 
 class _Reject(KbError):
@@ -316,9 +317,10 @@ def _check_ids(t: _Target, heads: list[tuple[str, str]]) -> None:
 
 
 def _numbered_or_slug(sid: str, title: str) -> bool:
-    """A new id carries the PDF's numbering, or is the fallback slug of its own
-    title. A bare word is the title's first word read as an id."""
+    """A new id carries the PDF's numbering, is a part id (`appendix-a`), or is
+    the fallback slug of its own title. A bare word is the title's first word
+    read as an id."""
+    if any(ch.isdigit() for ch in sid) or sid.startswith(_PART_IDS):
+        return True
     slug = slugify_id(title)
-    return any(ch.isdigit() for ch in sid) or (
-        bool(slug) and (sid == slug or sid.endswith(f"-{slug}"))
-    )
+    return bool(slug) and (sid == slug or sid.endswith(f"-{slug}"))

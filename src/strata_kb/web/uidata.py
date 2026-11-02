@@ -17,27 +17,15 @@ from strata_kb import gitio, models
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.kinds import DEV, KB
-from strata_kb.mdutils import count_tokens, slugify_id
+from strata_kb.mdutils import count_tokens, is_fallback_id
 from strata_kb.models import Manifest, SectionEntry
 from strata_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("strata_kb.web.uidata")
 
 _QUEUE_ORDER = {"pending": 0, "summarized": 1}
-_SYNTHETIC_ID = re.compile(r"(?:.+-)?x\d+(?:-\d+)?")
 _ID_HEADING = re.compile(r"^(#{2,6}) (\S+)[ \t]+(\S.*)$")
 _CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
-
-
-def is_fallback_id(sid: str, title: str) -> bool:
-    """True for an id the sectioner made up for a heading the PDF does not
-    number: the title's slug (under its parent id, deduped `-N`) or `x<n>`."""
-    if _SYNTHETIC_ID.fullmatch(sid):
-        return True
-    slug = slugify_id(title)
-    if not slug or slug.replace("-", "").isdigit():
-        return False
-    return re.fullmatch(rf"(?:.+-)?{re.escape(slug)}(?:-\d+)?", sid) is not None
 
 
 def section_label(sid: str, title: str) -> str:

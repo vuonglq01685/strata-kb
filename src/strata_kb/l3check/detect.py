@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from strata_kb import quality
 from strata_kb.ingest.sectioner import SectioningNotes
 from strata_kb.l3check.report import Finding, SectionCheck
+from strata_kb.mdutils import leads_with_number
 
 SHINGLE = 4  # words per shingle
 MIN_RUN = 5  # shortest missing/extra run reported
@@ -351,7 +352,7 @@ def fallback_findings(
 ) -> dict[str, list[Finding]]:
     """A slug-id heading is a real heading the sectioner could not parse; flag it
     on the unit that holds it, except in front matter and part-root units, and
-    when the heading has no number up front: then the PDF gives no id to use
+    when the heading's first word has no number: then the PDF gives no id to use
     and the slug id is the right one."""
     owner = enclosing_unit(sections)
     chapter = {sec.id: sec.chapter for sec in sections}
@@ -360,7 +361,7 @@ def fallback_findings(
         unit = owner.get(fb.id)
         if unit is None or chapter[unit] == "front-matter" or chapter[unit] == unit:
             continue  # front matter, or a part's root unit (its title heading)
-        if not any(ch.isdigit() for ch in "".join(fb.heading.split()[:2])):
+        if not leads_with_number(fb.heading):
             continue
         finding = Finding(
             kind="fallback", page=fb.page, evidence={"heading": fb.heading}

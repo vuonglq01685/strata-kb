@@ -280,7 +280,8 @@ def test_folded_fallback_reported_on_parent_unit():
 
 
 @pytest.mark.parametrize(
-    "heading", ["Notes", "Nợ kỹ thuật mang theo", "Phụ thuộc: thay đổi bắt buộc"]
+    "heading",
+    ["Notes", "Nợ kỹ thuật mang theo", "Phụ thuộc: thay đổi bắt buộc", "Điều 5 Quyền"],
 )
 def test_unnumbered_fallback_not_flagged(heading):
     # nothing to repair: the PDF gives the heading no number to use as its id
@@ -288,7 +289,7 @@ def test_unnumbered_fallback_not_flagged(heading):
     assert fallback_findings(_units(), notes) == {}
 
 
-@pytest.mark.parametrize("heading", ["Điều 5 Quyền lợi", "4 .2 NGHỈ PHÉP", "A.2 Scope"])
+@pytest.mark.parametrize("heading", ["§5.7 NDB", "4 .2 NGHỈ PHÉP", "A.2 Scope"])
 def test_fallback_with_a_number_up_front_flagged(heading):
     notes = SectioningNotes(fallbacks=[Fallback("x1", heading, 3)])
     assert list(fallback_findings(_units(), notes)) == ["2"]

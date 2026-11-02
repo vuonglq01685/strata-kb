@@ -12,7 +12,12 @@ from pathlib import Path
 from strata_kb.ingest import parser, pdftext
 from strata_kb.l3check import detect, spans
 from strata_kb.l3check.spans import SpansFile, UnitSpan
-from strata_kb.mdutils import HEADING_RE, section_map
+from strata_kb.mdutils import (
+    HEADING_RE,
+    is_fallback_id,
+    leads_with_number,
+    section_map,
+)
 
 EVIDENCE_MAX = 80
 TAB_WIDTH = 4
@@ -150,24 +155,36 @@ def _only_furniture(words: list[str], furniture: set[tuple[str, ...]]) -> bool:
 
 
 def _r9(
-    body: list[tuple[int, str]], furniture: set[tuple[str, ...]]
+    body: list[tuple[int, str]], long: set[tuple[str, ...]]
 ) -> list[tuple[int, str]]:
     """Headings holding text that is not heading text: a link, or a watermark
-    or running header (furniture of two words or more) docling boxed with it."""
-    long = [f for f in furniture if len(f) >= MIN_FURNITURE_WORDS]
+    or running header (two words or more) docling boxed at the end of the
+    title. At least two chunks (id and title) are never furniture, the same
+    rule the word check uses to let a draft drop it."""
     bad: list[tuple[int, str]] = []
     for n, line in body:
         m = _HEADING.match(line)
         if m is None or not m.group(2):
             continue
-        words = detect.normalize_words(m.group(2))
+        chunks = m.group(2).split()
         if _URL.search(m.group(2)) or any(
-            tuple(words[i : i + len(f)]) == f
-            for f in long
-            for i in range(len(words) - len(f) + 1)
+            _only_furniture(detect.normalize_words(" ".join(chunks[keep:])), long)
+            for keep in range(2, len(chunks))
         ):
             bad.append((n, line))
     return bad
+
+
+def _numbered_fallback(body: list[tuple[int, str]]) -> tuple[int, str] | None:
+    """(line, text) of the first heading with a made-up id whose title starts
+    with a number the PDF gives. Read from the text, so units recorded as
+    fallback by an older ingest stop being flagged once that holds."""
+    for n, line in body:
+        m = _HEADING.match(line)
+        parts = (m.group(2) or "").split(maxsplit=1) if m else []
+        if len(parts) == 2 and is_fallback_id(*parts) and leads_with_number(parts[1]):
+            return n, line
+    return None
 
 
 def _r8(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
@@ -194,17 +211,22 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     lines = unit_md.splitlines()
     body = _body_lines(lines)
     found: list[tuple[str, int, str]] = []
-    if ctx.is_fallback:
-        found.append(("R1", 1, lines[0] if lines else ""))
+    if ctx.is_fallback and (at := _numbered_fallback(body)):
+        found.append(("R1", at[0], at[1]))
     found += [("R3", n, t) for n, t in _r3(body)]
     found += [("R4", n, t) for n, t in _r4(body)]
     furniture = {w for f in ctx.furniture if (w := tuple(detect.normalize_words(f)))}
+    long = {f for f in furniture if len(f) >= MIN_FURNITURE_WORDS}
     found += [
         ("R5", n, t)
         for n, t in body
-        if _only_furniture(detect.normalize_words(t), furniture)
+        if (words := detect.normalize_words(t))
+        and (
+            tuple(words) in furniture
+            or (not t.lstrip().startswith("|") and _only_furniture(words, long))
+        )
     ]
-    found += [("R9", n, t) for n, t in _r9(body, furniture)]
+    found += [("R9", n, t) for n, t in _r9(body, long)]
     found += [("R6", n, t) for n, t in _r6(lines, body)]
     fences = [n for n, t in enumerate(lines, 1) if _BACKTICK_FENCE.match(t)]
     if len(fences) % 2:

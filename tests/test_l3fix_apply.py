@@ -742,7 +742,8 @@ def test_first_title_word_as_id_refused(tmp_path, monkeypatch):
     ("sid", "title", "ok"),
     [
         ("4.2", "NGHỈ PHÉP NĂM", True),
-        ("appendix-a", "Phụ lục A", False),
+        ("appendix-a", "Glossary", True),
+        ("Điều", "5 Quy định", False),
         ("Nợ", "kỹ thuật mang theo", False),
         ("nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),
         ("6.8-nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),

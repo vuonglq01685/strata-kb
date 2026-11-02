@@ -43,6 +43,25 @@ def test_link_line_is_body_even_at_title_size():
     assert split_heading(f"{TITLE} {LINK}", lines, FURN) == (TITLE, [LINK])
 
 
-def test_watermark_dropped_from_a_one_line_title():
-    lines = [(TITLE, 16.0), (WM, 16.0)]
+def test_small_watermark_dropped_from_a_one_line_title():
+    lines = [(TITLE, 16.0), (WM, 9.0)]
     assert split_heading(f"{TITLE} {WM}", lines, FURN) == (TITLE, [])
+
+
+def test_title_size_watermark_left_for_lint_r9():
+    # never drop a title-size line here; R9 flags the furniture ending the heading
+    lines = [(TITLE, 16.0), (WM, 16.0)]
+    assert split_heading(f"{TITLE} {WM}", lines, FURN) is None
+
+
+def test_title_equal_to_running_header_is_kept():
+    furn = furniture_set({2: ["Strata Architecture"], 3: ["24"], 20: ["20"]})
+    lines = [("Strata Architecture", 24.0), ("Version 1.2", 10.0), ("2024", 10.0)]
+    assert split_heading("Strata Architecture Version 1.2 2024", lines, furn) == (
+        "Strata Architecture",
+        ["Version 1.2", "2024"],
+    )
+
+
+def test_page_numbers_never_count_as_furniture():
+    assert furniture_set({1: ["12", "Trang 12/40"]}) == {("trang", "12", "40")}

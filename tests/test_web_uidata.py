@@ -403,6 +403,8 @@ def test_heading_inline_and_toc_label():
         ("6.8", "CDE", False),
         ("appendix-a", "Phụ lục A", False),
         ("4.2", "2", False),
+        ("appendix-x1", "Supplementary Requirements", False),
+        ("appendix-x1-2", "Scope", False),
     ],
 )
 def test_is_fallback_id(sid, title, fallback):

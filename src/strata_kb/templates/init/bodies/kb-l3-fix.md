@@ -122,8 +122,9 @@ heading text (`## 4.2 NGHỈ PHÉP NĂM`). A heading the PDF does not number
 keeps its slug id and its text as written
 (`## nợ-kỹ-thuật-mang-theo Nợ kỹ thuật mang theo`). Never delete that id:
 the title's first word would become the id, and apply refuses it with
-`ids: '<word>' is not a section number`. Lint does not flag such a heading,
-and the hub reader shows it without the slug.
+`ids: '<word>' is not a section number`. Lint flags a made-up id (R1) only
+when the heading's first word carries a number; the hub reader shows the
+heading and the previous/next links without the slug.
 
 ## Sections whose text layer is unusable
 
