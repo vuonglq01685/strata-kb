@@ -17,13 +17,36 @@ from strata_kb import gitio, models
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.kinds import DEV, KB
-from strata_kb.mdutils import count_tokens
+from strata_kb.mdutils import count_tokens, is_fallback_id
 from strata_kb.models import Manifest, SectionEntry
 from strata_kb.review import MACHINE_SECTION_PREFIX
 
 logger = logging.getLogger("strata_kb.web.uidata")
 
 _QUEUE_ORDER = {"pending": 0, "summarized": 1}
+_ID_HEADING = re.compile(r"^(#{2,6}) (\S+)[ \t]+(\S.*)$")
+_CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
+
+
+def section_label(sid: str, title: str) -> str:
+    """`§6.8 CDE`, or the bare title when the id is a made-up slug."""
+    return title if is_fallback_id(sid, title) else f"§{sid} {title}".rstrip()
+
+
+def hide_fallback_ids(md: str) -> str:
+    """Drop made-up ids from `## <id> <title>` heading lines (outside code
+    fences) so the reader shows the PDF's heading, not its slug."""
+    out: list[str] = []
+    fence = False
+    for line in md.split("\n"):
+        if _CODE_FENCE.match(line):
+            fence = not fence
+        elif (
+            not fence and (m := _ID_HEADING.match(line)) and is_fallback_id(m[2], m[3])
+        ):
+            line = f"{m[1]} {m[3]}"
+        out.append(line)
+    return "\n".join(out)
 
 
 @dataclass(frozen=True)

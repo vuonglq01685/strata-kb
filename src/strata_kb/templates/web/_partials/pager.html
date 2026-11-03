@@ -3,11 +3,11 @@
 <div class="pager">
   {% if prev %}
   <a href="/ui/docs/{{ doc_id | urlencode }}/{{ prev.id | urlencode }}?repo={{ repo | urlencode }}">
-    <span class="dir">← previous</span><span class="label">§{{ prev.id }} {{ prev.title }}</span></a>
+    <span class="dir">← previous</span><span class="label">{{ section_label(prev.id, prev.title) }}</span></a>
   {% else %}<span></span>{% endif %}
   {% if next %}
   <a class="next" href="/ui/docs/{{ doc_id | urlencode }}/{{ next.id | urlencode }}?repo={{ repo | urlencode }}">
-    <span class="dir">next →</span><span class="label">§{{ next.id }} {{ next.title }}</span></a>
+    <span class="dir">next →</span><span class="label">{{ section_label(next.id, next.title) }}</span></a>
   {% endif %}
 </div>
 {% endif %}

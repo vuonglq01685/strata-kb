@@ -3,6 +3,17 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.34.3 — 2026-11-02
+
+Headings read like the PDF again: no page-header block swallowed into one heading, no made-up slug in front of a heading, and the L3 AI fix can no longer turn a heading's first word into its id.
+
+- **Page-header block split at ingest.** docling can box a whole page header (title, version, status, owner, source link, watermark) as one heading and join its lines with spaces. `kb ingest` now reads that heading's lines back from the PDF text layer with their font sizes: the title-size lines stay the heading, smaller lines and lines with a link become body text, and smaller lines that are page furniture (a watermark such as `TÀI LIỆU MẬT`; never a bare page number) are dropped. A title-size line is never dropped, so a running header that repeats the title cannot take it. It splits only when the lines hold exactly the characters docling read; otherwise the heading stays as before. Re-ingest a document to get it.
+- **Lint R9.** `kb l3 lint` flags a heading that holds a link, or that ends with a watermark or running header of two words or more after its id and title, front matter included. A running header inside a real title (`## 2 Strata Architecture overview`) is not flagged. A draft may split such a heading into the title and body lines, and may drop the furniture that ends it; the word check accepts both. Two watermarks side by side on one line now count as furniture for R5 and the word check (furniture of two words or more; table rows and bare page numbers keep the old exact match).
+- **Headings the PDF does not number.** Their slug id (`nợ-kỹ-thuật-mang-theo`) is the right id: lint R1 and `kb l3 report` flag a made-up id only when the heading's first word carries a number (`x1 4.2 NGHỈ PHÉP`, `§5.7 …`). Lint reads this from the text, so documents ingested before 1.34.3 benefit without re-ingest; `kb l3 report` keeps their old fallback findings until re-ingest. `kb l3 fix apply` refuses a new id that has no digit, is not a part id (`appendix-…`, `attachment-…`) and is not the slug of its own title, with `ids: '<word>' is not a section number — a heading the PDF does not number keeps its current id`. Before, a draft that deleted the slug was applied and the title's first word became the id (`§Nợ kỹ thuật mang theo`).
+- **Reader.** The hub's section page, search results and previous/next links no longer show a made-up id (a title slug or `x<n>`) in front of the heading. Real ids such as `appendix-x1` still show. The breadcrumb, the document's section table and the left rail still list the id.
+- **Skill.** The `kb-l3-fix` skill describes R9 and the slug-id rule. Run `kb init` to get it.
+- **Upgrade.** Upgrade the CLI and the hub (the reader), run `kb init`, and re-ingest documents whose first heading swallowed the page header. No CI pin change is needed.
+
 ## 1.34.2 — 2026-11-02
 
 The L3 AI fix can now remove a watermark and repair a heading with a broken font. Nothing changes for a KB that does not run `kb l3 fix on`.

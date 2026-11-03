@@ -21,6 +21,8 @@ from pathlib import Path
 
 logger = logging.getLogger("strata_kb.ingest.pdftext")
 
+_LINE_END_HYPHEN = "\ufffe"  # pdfium's code for a hyphen that ends a line
+
 Box = tuple[
     float, float, float, float
 ]  # (left, top, right, bottom), BOTTOMLEFT, points
@@ -52,6 +54,76 @@ def region_text(
         logger.warning("pdf text for page %s skipped: %s", page_no, exc)
         return None
     return text or None
+
+
+def region_lines(
+    pdf_path: Path | None, page_no: int | None, box: Box | None
+) -> list[tuple[str, float]] | None:
+    """Visual lines inside `box`, top to bottom, each with its largest font
+    size in points; None when unavailable."""
+    if pdf_path is None or page_no is None or page_no < 1 or box is None:
+        return None
+    try:
+        import pypdfium2  # pyright: ignore[reportMissingImports]
+        import pypdfium2.raw as pdfium_c  # pyright: ignore[reportMissingImports]
+
+        pdf = pypdfium2.PdfDocument(str(pdf_path))
+        try:
+            textpage = pdf[page_no - 1].get_textpage()
+            try:
+                return _lines(textpage, box, pdfium_c.FPDFText_GetFontSize)
+            finally:
+                textpage.close()
+        finally:
+            pdf.close()
+    except Exception as exc:  # noqa: BLE001 -- text layer is best-effort; caller keeps docling's text
+        logger.warning("pdf lines for page %s skipped: %s", page_no, exc)
+        return None
+
+
+def _lines(textpage, box: Box, font_size) -> list[tuple[str, float]]:
+    """Group the box's chars into rows by vertical centre; a space joins the
+    row of the char before it. Row text keeps the text layer's char order."""
+    left, top, right, bottom = box
+    chars: list[tuple[float, int, str, float, float]] = []  # (y, index, char, size, h)
+    spaces: list[int] = []
+    for i in range(textpage.count_chars()):
+        ch = textpage.get_text_range(i, 1).replace(_LINE_END_HYPHEN, "-")
+        if not ch:
+            continue
+        if ch.isspace():
+            spaces.append(i)
+            continue
+        # loose box: the font's ascent to descent, the same for every glyph of
+        # a line, so accents, quotes and commas share their line's centre
+        cl, cb, cr, ct = textpage.get_charbox(i, loose=True)
+        cx, cy = (cl + cr) / 2, (cb + ct) / 2
+        if left <= cx <= right and bottom <= cy <= top:
+            size = font_size(textpage.raw, i)
+            # a PDF that sets 1 pt and scales the matrix: the box height is the size
+            chars.append((cy, i, ch, size if size > 1 else ct - cb, ct - cb))
+    rows: list[tuple[float, float, dict[int, str]]] = []  # (centre y, size, chars)
+    row_of: dict[int, int] = {}
+    heights: list[float] = []
+    for cy, i, ch, size, height in sorted(chars, key=lambda c: -c[0]):
+        if rows and abs(rows[-1][0] - cy) <= max(heights[-1], height) / 2:
+            y, big, members = rows[-1]
+            rows[-1] = (y, max(big, size), members)
+            heights[-1] = max(heights[-1], height)
+        else:
+            rows.append((cy, size, {}))
+            heights.append(height)
+        rows[-1][2][i] = ch
+        row_of[i] = len(rows) - 1
+    for i in spaces:
+        if i - 1 in row_of:
+            rows[row_of[i - 1]][2][i] = " "
+    out: list[tuple[str, float]] = []
+    for _, size, members in rows:
+        text = " ".join("".join(members[i] for i in sorted(members)).split())
+        if text:
+            out.append((text, size))
+    return out
 
 
 def page_texts(pdf_path: Path) -> dict[int, str]:

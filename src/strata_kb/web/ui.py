@@ -475,7 +475,7 @@ def _hit_cards(hub, found: list, terms: set[str]) -> list[dict]:
             # r.content (via md_render below), never r.snippet.
             "tokens": r.content_tokens,
             "score_pct": round(100 * r.score / top),
-            "body_html": md_render(r.content, terms=terms),
+            "body_html": md_render(uidata.hide_fallback_ids(r.content), terms=terms),
             "file": f"{r.doc_id}/{r.section_id}",
             "href": (planstatus.hit_href(plan_paths, r) if r.kind == BA else None)
             or (
@@ -995,7 +995,9 @@ def build_routes(
                 _kind_of(config, result.source),
                 active=result.section_id,
             )
-        content_html, toc = uidata.inject_heading_anchors(md_render(result.content))
+        content_html, toc = uidata.inject_heading_anchors(
+            md_render(uidata.hide_fallback_ids(result.content))
+        )
         return _render_page(
             "section.html",
             config,

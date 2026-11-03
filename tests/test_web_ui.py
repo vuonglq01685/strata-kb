@@ -2183,3 +2183,22 @@ def test_section_page_doc_line_without_revision(demo_doc_hub):
         "/ui/docs/demo-doc/1.1", params={"repo": "demo-kb"}
     )
     assert '<p class="doc-line">Demo Document · ch1</p>' in resp.text
+
+
+def test_section_page_hides_made_up_heading_id(fed_hub):
+    sid = "nợ-kỹ-thuật-mang-theo"
+    make_fed_entry(
+        fed_hub / "federation",
+        "slug-kb",
+        "slug-doc",
+        title="Slug Doc",
+        sec_id=sid,
+        sec_title="Nợ kỹ thuật mang theo",
+    )
+    resp = _client(fed_hub / ".kb", str(fed_hub)).get(
+        f"/ui/docs/slug-doc/{sid}", params={"level": "l3", "repo": "slug-kb"}
+    )
+    assert resp.status_code == 200
+    body = _main(resp).split('<article class="reader-body">', 1)[1]
+    assert "Nợ kỹ thuật mang theo</h2>" in body
+    assert sid not in body.split("</h2>", 1)[0]

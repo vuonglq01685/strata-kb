@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 
 from strata_kb import models
 from strata_kb.cli import app
+from strata_kb.ingest.sectioner import DocItem
 from strata_kb.l3check import report, spans
 from strata_kb.l3check.spans import SpansFile, UnitSpan
 from tests.test_ingest_cli import (
@@ -14,6 +15,12 @@ from tests.test_ingest_cli import (
 )
 
 runner = CliRunner()
+# R1 flags a fallback heading only when a number leads it ("§5.7" is not parsed)
+SPAN_ITEMS = [
+    *NOISY_ITEMS[:-2],
+    DocItem("heading", "§5.7 NDB Navaid Record", 2, page=3),
+    NOISY_ITEMS[-1],
+]
 
 
 def test_roundtrip(tmp_path):
@@ -44,7 +51,7 @@ def test_section_input_carries_span():
 def _ingest(tmp_path, monkeypatch, page_texts):
     from strata_kb.ingest import parser, pdftext
 
-    _stub_parser(monkeypatch, NOISY_ITEMS)
+    _stub_parser(monkeypatch, SPAN_ITEMS)
     monkeypatch.setattr(parser, "furniture_by_page", lambda doc: {})
     monkeypatch.setattr(pdftext, "page_texts", lambda pdf: page_texts)
     _write_pdf(tmp_path)

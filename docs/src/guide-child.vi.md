@@ -252,7 +252,7 @@ kb summarize
 ```
 
 - `--assistant` là `claude-code`, `copilot`, `cursor` hoặc `other`: công cụ đã viết các bản
-  nháp. `kb l3 lint` chỉ mang tính tham khảo (quy tắc bố cục R1 đến R8, exit 1 khi có vấn
+  nháp. `kb l3 lint` chỉ mang tính tham khảo (quy tắc bố cục R1 đến R9, exit 1 khi có vấn
   đề).
 - `kb l3 fix apply` kiểm tra từng bản nháp với PDF và không ghi gì cho bản nháp không đạt.
   Mỗi dòng kết quả có dạng `§<name> applied → <new ids>`, `§<name> unchanged` hoặc

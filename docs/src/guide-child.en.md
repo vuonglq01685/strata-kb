@@ -256,7 +256,7 @@ kb summarize
 ```
 
 - `--assistant` is `claude-code`, `copilot`, `cursor` or `other`: the tool that wrote the
-  drafts. `kb l3 lint` is advisory (layout rules R1 to R8, exit 1 on any issue).
+  drafts. `kb l3 lint` is advisory (layout rules R1 to R9, exit 1 on any issue).
 - `kb l3 fix apply` checks each draft against the PDF and writes nothing for a draft that
   fails. Each line reads `§<name> applied → <new ids>`, `§<name> unchanged` or
   `§<name> rejected: <check>: <detail>`; it exits 1 on any rejection. The checks (tables

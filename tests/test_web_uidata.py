@@ -387,3 +387,45 @@ def test_heading_inline_and_toc_label():
     content, toc = uidata.inject_heading_anchors(render("## 4.2 **NGHỈ** PHÉP"))
     assert "<strong>NGHỈ</strong>" in content
     assert toc[0].label == "4.2 NGHỈ PHÉP"
+
+
+@pytest.mark.parametrize(
+    ("sid", "title", "fallback"),
+    [
+        (
+            "phụ-thuộc-thay-đổi-bắt-buộc-ở-module-hiệ",
+            "Phụ thuộc: thay đổi bắt buộc ở module hiện có",
+            True,
+        ),
+        ("6.8-nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo", True),
+        ("nợ-kỹ-thuật-mang-theo-2", "Nợ kỹ thuật mang theo", True),
+        ("x3", "※ ※", True),
+        ("6.8", "CDE", False),
+        ("appendix-a", "Phụ lục A", False),
+        ("4.2", "2", False),
+        ("appendix-x1", "Supplementary Requirements", False),
+        ("appendix-x1-2", "Scope", False),
+        ("appendix-x1-x2", "※", True),
+    ],
+)
+def test_is_fallback_id(sid, title, fallback):
+    assert uidata.is_fallback_id(sid, title) is fallback
+
+
+def test_section_label_drops_fallback_id():
+    assert uidata.section_label("6.8", "CDE") == "§6.8 CDE"
+    assert uidata.section_label("nợ-kỹ-thuật-mang-theo", "Nợ kỹ thuật mang theo") == (
+        "Nợ kỹ thuật mang theo"
+    )
+
+
+def test_hide_fallback_ids_in_headings_only():
+    md = (
+        "## phụ-thuộc-thay-đổi Phụ thuộc: thay đổi\n\nbody\n\n"
+        "### phụ-thuộc-thay-đổi-ghi-chú Ghi chú\n\n"
+        "```\n## ghi-chú Ghi chú\n```\n\n## 6.8 CDE\n"
+    )
+    assert uidata.hide_fallback_ids(md) == (
+        "## Phụ thuộc: thay đổi\n\nbody\n\n### Ghi chú\n\n"
+        "```\n## ghi-chú Ghi chú\n```\n\n## 6.8 CDE\n"
+    )

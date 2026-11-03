@@ -457,7 +457,7 @@ def _apply_one(
         ids = [u.id for u in units]
         _check_contract(t, draft.text, ids, pdf_pages)
         skipped = _check_words(t, draft.text, pdf_pages, furniture, from_image)
-        _check_ids(t, ids)
+        _check_ids(t, [(u.id, u.title) for u in units])
     except _Reject as why:
         return ApplyResult(draft.name, "rejected", str(why))
     # the record goes first: a crash in any later write leaves digests that do

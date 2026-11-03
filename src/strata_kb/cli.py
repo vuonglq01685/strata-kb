@@ -5024,7 +5024,7 @@ def l3_lint(
         Path(".kb-work"), help="Intermediate cache directory"
     ),
 ) -> None:
-    """Check the L3 layout contract (R1-R8) of a document (exit 1 on any issue)."""
+    """Check the L3 layout contract (R1-R9) of a document (exit 1 on any issue)."""
     from strata_kb.l3check import lint, spans
 
     try:
