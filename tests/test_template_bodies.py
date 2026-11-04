@@ -1389,11 +1389,14 @@ def test_three_round_cap_is_called_deliberate(name):
 @pytest.mark.parametrize(
     "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
 )
-def test_short_tail_after_round_2_is_fixed_without_another_review(name):
-    # Auto mode: no BLOCKER and one or two SUGGESTED left after round 2 are
-    # fixed and approved with no further review round.
+def test_short_tail_at_the_last_round_is_fixed_not_failed(name):
+    # Auto mode: no BLOCKER and one or two SUGGESTED left at the last round
+    # before the flow would stop (round 2 for A1/A2, round 3 for A3-A5) are
+    # fixed and approved instead of ending `failed`.
     text = _dev_text(name)
-    assert "**Short tail after round 2**" in text
+    assert "**Short tail at the last round**" in text
+    last = "round 2 of" if name in ("dev-design", "dev-plan") else "round 3 of"
+    assert f"when {last}" in text
     assert "only one or two SUGGESTED" in text
 
 
