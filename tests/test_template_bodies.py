@@ -1386,6 +1386,17 @@ def test_three_round_cap_is_called_deliberate(name):
     assert "3-round cap stays as written here, on purpose" in _dev_text(name)
 
 
+@pytest.mark.parametrize(
+    "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
+)
+def test_short_tail_after_round_2_is_fixed_without_another_review(name):
+    # Auto mode: no BLOCKER and one or two SUGGESTED left after round 2 are
+    # fixed and approved with no further review round.
+    text = _dev_text(name)
+    assert "**Short tail after round 2**" in text
+    assert "only one or two SUGGESTED" in text
+
+
 @pytest.mark.parametrize("kind", ["ba", "dev"])
 def test_kb_auto_body_pins_its_contract(tmp_path, kind):
     init_repo(tmp_path, kind)
