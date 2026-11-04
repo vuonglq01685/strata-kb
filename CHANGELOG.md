@@ -3,6 +3,14 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.34.4 — 2026-11-04
+
+A BA ticket that auto mode merged no longer reads as not yet drafted, and a ticket that settles its own Technology decision can tick its grounding box in the same run (#140).
+
+- **The BA picker reads the plan from `origin/<default>`.** `kb auto run` ran `kb mission next` in the repo's own working tree. That tree is the session branch on cloud, or a local default branch nobody pulls, so it never got a ticket a task had just merged: the story read `to-draft`, the runner waited on it five times and skipped it. The picker now fetches the default branch and reads the plan from a detached worktree of it (`.kb/auto/worktrees/plan`), with the repo's own `.kb/` as `--kb-dir`. A merged ticket with an unticked box reads `draft`, so `ba-ticket-author --amend` is picked. A repo with no remote reads its own tree as before. A failed fetch skips the pick for this round; the runner never reads the stale tree.
+- **Skill.** In `ba-ticket-author` Auto mode, the "already finished" check runs on the fetched `main` first. Before the PR, `kb_ticket_check` runs with this branch's parent mission as `mission_markdown`. When the mission is too large for one MCP call, the skill passes its `> Mission:` line and its whole `## Technology decisions` section, which is all the check reads. It never leaves the grounding box unticked only because the hub has not published a D-row this branch adds. Run `kb init` to get it.
+- **Upgrade.** Upgrade the CLI in the BA repo and run `kb init`. No CI pin change is needed.
+
 ## 1.34.3 — 2026-11-02
 
 Headings read like the PDF again: no page-header block swallowed into one heading, no made-up slug in front of a heading, and the L3 AI fix can no longer turn a heading's first word into its id.
