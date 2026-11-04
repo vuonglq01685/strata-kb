@@ -65,6 +65,15 @@ def _local_mode(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_publish_check(monkeypatch):
+    """The BA loop's kb-publish check calls `gh`; loop tests stay hermetic.
+    tests/test_autorun_publishwatch.py calls the real check directly."""
+    from strata_kb.autorun import runner
+
+    monkeypatch.setattr(runner, "_publish_check", lambda root, kb_dir, state: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_real_embedder(request, monkeypatch):
     """search() now resolves default_embedder() eagerly on every query — unit tests
     must be hermetic: a dev machine with fastembed must not load/download the real

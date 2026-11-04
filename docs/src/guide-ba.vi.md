@@ -530,7 +530,8 @@ Nó dừng sau hai lần thử thất bại ở một task (CI đỏ sau hai vò
 tick lại được Definition of Ready thì bị đỗ (parked), không phải thất bại (bản nháp của nó
 đi vào `auto/qa-parked/<ticket>`); khi chỉ còn ticket bị đỗ, nó dừng với `parked: <tickets>`.
 Một task vẫn bị chọn lại sau 5 lần kiểm tra thì bị bỏ qua, và khi mọi task còn lại đều bị bỏ
-qua, nó dừng. Chờ do chạm giới hạn sử dụng (15, 30, rồi 60 phút) không phải thất bại. Nó kết
+qua, nó dừng. Một lần chạy `kb-publish` thất bại được chạy lại một lần; khi lần chạy lại
+cũng thất bại, nó dừng với `publish failed for <tag>: <step>: <error>`. Chờ do chạm giới hạn sử dụng (15, 30, rồi 60 phút) không phải thất bại. Nó kết
 thúc, exit `0`, khi mọi story, ticket không có mission cha và bug đều `done` và không còn
 câu hỏi mở. Trạng thái và log nằm ở `.kb/auto/` (git bỏ qua).
 
