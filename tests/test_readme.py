@@ -455,17 +455,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_34_3_everywhere():
+def test_version_is_1_34_4_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.34.3"
+    assert project["project"]["version"] == "1.34.4"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.34.3"]
+    assert [p["version"] for p in own] == ["1.34.4"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.34.3 — 2026-11-02")
+    assert first.startswith("1.34.4 — 2026-11-04")
 
 
 def test_docs_describe_structural_coverage():

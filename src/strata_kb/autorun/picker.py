@@ -9,13 +9,14 @@ from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata_kb import planstatus
+from strata_kb import gitio, planstatus
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.hubapi import HubApi
 from strata_kb.missionnext import StoryStatus
 
 MAX_STDERR = 300
+PLAN_WORKTREE = Path("auto") / "worktrees" / "plan"  # under kb_dir
 TEST_WORKFLOW_MARK = "kb-test"
 # Mission blockers: an open D-row or question. Every other reason (DoR,
 # dependencies, a demoted ticket) is the ticket's own to fix.
@@ -32,9 +33,29 @@ class Task:
         return f"{self.skill}:{self.arg}"
 
 
-def _mission_next(root: Path, run) -> dict:
+def _plan_tree(root: Path, kb_dir: Path) -> Path:
+    """Where the BA plan is read: a detached worktree of origin/<default>, just
+    fetched. `root`'s own branch never gets a merged ticket (a cloud session
+    branch, a local default branch nobody pulls), so it reads stale (#140).
+    `root` itself when there is no remote."""
+    if not gitio.has_remote(root):
+        return root
+    gitio.default_branch(root)  # sets origin/HEAD from the remote when missing
+    # origin/HEAD only: default_branch falls back to the checked-out branch,
+    # which on cloud is the very session branch this read must avoid.
+    ref = gitio.origin_head_ref(root)
+    gitio.fetch_branch(root, ref.partition("/")[2])
+    tree = kb_dir.resolve() / PLAN_WORKTREE
+    gitio.worktree_remove(root, tree)
+    gitio.worktree_prune(root)
+    gitio.worktree_add_detached(root, tree, ref)
+    return tree
+
+
+def _mission_next(root: Path, tree: Path, run) -> dict:
+    # cwd stays root: a relative hub path in the config resolves from there.
     proc = run(
-        ["kb", "mission", "next", "--json"],
+        ["kb", "mission", "next", "--json", "--missions-dir", str(tree / "missions")],
         cwd=root,
         capture_output=True,
         text=True,
@@ -75,8 +96,16 @@ def pick_ba(
 ) -> Task | None:
     """Mission blocker, then a draft ticket to amend, then the next ticket to
     write. First match in mission order within each rule whose key is not in
-    `skip`."""
-    data = _mission_next(root, run)
+    `skip`. The plan is read from origin/<default> (`_plan_tree`)."""
+    try:
+        tree = _plan_tree(root, kb_dir)
+    except gitio.GitError as exc:
+        raise KbError(f"plan not read from the default branch: {exc}") from exc
+    try:
+        data = _mission_next(root, tree, run)
+    finally:
+        if tree != root:  # a snapshot `kb publish` would mirror it from .kb/
+            gitio.worktree_remove(root, tree)
     try:
         return _first(_ba_tasks(data), skip)
     except (KeyError, TypeError) as exc:

@@ -16,7 +16,7 @@ from typing import Literal
 import yaml
 
 from strata_kb import claimclient, cloud, gitio, hubapi
-from strata_kb.autorun import claude, picker
+from strata_kb.autorun import claude, picker, publishwatch
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
@@ -44,6 +44,7 @@ AUTO_TASK_ENV = claude.AUTO_TASK_ENV  # set on every task process by run_task
 EXIT_STOPPED = 2
 CLAIMED_SKILLS = ("dev-implement-ticket", "dev-fix-bug")  # tasks that carry a claim
 _BUILD = object()  # run_loop: no `claims` injected, build the real ones
+_publish_check = publishwatch.check  # BA: a failed kb-publish is re-run, then stops
 
 
 class Backoff:
@@ -386,6 +387,11 @@ def run_once(
     finished = _check_done(cfg, hub, qa)
     if finished is not None:
         return finished
+    if cfg.kind == "ba":
+        published = _publish_check(root, kb_dir, state)
+        if published is not None:
+            return published
+        state = autostate.load(kb_dir)  # the check may have cleared its mark
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
@@ -497,12 +503,19 @@ def _resolve_hub(
 
 def resume(kb_dir: Path) -> None:
     """The owner is running again after a stop: same task, fresh attempts, and
-    the skipped tasks get another chance."""
+    the skipped tasks and a failed publish get another chance."""
     first = autostate.load(kb_dir)
     if first.stop_reason:
         autostate.save(
             kb_dir,
-            replace(first, stop_reason=None, attempts=0, same_pick=0, skipped=()),
+            replace(
+                first,
+                stop_reason=None,
+                attempts=0,
+                same_pick=0,
+                skipped=(),
+                publish_retry=None,
+            ),
         )
 
 

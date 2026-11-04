@@ -530,7 +530,8 @@ once); `kb auto status` shows the reason, and `kb auto run` resumes after you fi
 ticket whose Definition of Ready cannot be re-ticked is parked, not failed (its draft goes
 to `auto/qa-parked/<ticket>`); with only parked tickets left it stops with
 `parked: <tickets>`. A task still picked after 5 checks is skipped, and when every task
-left is skipped it stops. A usage-limit wait (15, 30, then 60 minutes) is not a failure.
+left is skipped it stops. A failed `kb-publish` run is re-run once; when the re-run
+fails too, it stops with `publish failed for <tag>: <step>: <error>`. A usage-limit wait (15, 30, then 60 minutes) is not a failure.
 It finishes, exit `0`, when every story, unparented ticket and bug is `done` and no
 question is open. State and logs are in `.kb/auto/` (git-ignored).
 

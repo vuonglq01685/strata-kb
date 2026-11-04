@@ -1,7 +1,7 @@
 """ghio — thin wrapper over the GitHub CLI (`gh`) for publish.
 
 Answers whether `gh` can open a PR on a checkout's origin, finds the open PR
-for a branch, and creates one. Only publish.py calls it. Every `gh` call has a
+for a branch, and creates one; `run_text`/`run_json` serve the auto runner. Every `gh` call has a
 60 s timeout; a timeout reads as a failed call (exit 124), never as a hang.
 """
 
@@ -127,3 +127,23 @@ def list_open_issues(root: Path, label: str) -> list[dict]:
     ):
         raise GHError("gh issue list returned an unexpected shape")
     return data
+
+
+def run_text(root: Path, *args: str) -> str:
+    """`gh <args>`'s stdout; GHError when gh is missing or the call fails."""
+    try:
+        proc = _run_gh(root, *args)
+    except FileNotFoundError:
+        raise GHError("gh not found: install and authenticate the GitHub CLI") from None
+    if proc.returncode != 0:
+        raise GHError(f"gh {' '.join(args[:2])} failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def run_json(root: Path, *args: str) -> object:
+    """`gh <args>` (a `--json` call) parsed; GHError on failure or bad JSON."""
+    out = run_text(root, *args)
+    try:
+        return json.loads(out)
+    except ValueError as exc:
+        raise GHError(f"gh {' '.join(args[:2])} returned invalid JSON: {exc}") from None

@@ -30,6 +30,8 @@ class AutoState:
     same_pick: int = 0  # consecutive picks equal to `last_done`
     # task keys that ended `done` but stayed picked: the picker passes over them
     skipped: tuple[str, ...] = ()
+    # "<run id>:<attempt>" of the failed kb-publish run the loop re-ran once
+    publish_retry: str | None = None
 
 
 def _empty() -> AutoState:
@@ -69,6 +71,9 @@ def _parse(raw: object) -> AutoState:
     skipped = raw.get("skipped", [])
     if not isinstance(skipped, list) or not all(isinstance(k, str) for k in skipped):
         raise ValueError("skipped must be a list of strings")
+    publish_retry = raw.get("publish_retry")
+    if publish_retry is not None and not isinstance(publish_retry, str):
+        raise ValueError("publish_retry must be a string or null")
     return AutoState(
         task,
         attempts,
@@ -78,6 +83,7 @@ def _parse(raw: object) -> AutoState:
         last_done,
         same_pick,
         tuple(skipped),
+        publish_retry,
     )
 
 
