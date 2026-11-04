@@ -53,8 +53,8 @@ def test_ba_runs_mission_next_in_root(tmp_path: Path):
         "mission",
         "next",
         "--json",
-        "--kb-dir",
-        str((tmp_path / ".kb").resolve()),
+        "--missions-dir",
+        str(tmp_path / "missions"),
     ]
     assert kwargs["cwd"] == tmp_path  # no remote: root is the plan
     assert kwargs["capture_output"] is True
@@ -62,22 +62,31 @@ def test_ba_runs_mission_next_in_root(tmp_path: Path):
     assert kwargs["encoding"] == "utf-8"
 
 
-def test_ba_reads_the_plan_from_origin_default_not_roots_branch(
-    tmp_path: Path, run_git
-):
-    # A cloud session branch (or a local main nobody pulls) never gets the
-    # ticket a task merged on origin/main; the pick must see it (#140).
-    root, origin, clone = tmp_path / "repo", tmp_path / "origin.git", tmp_path / "c"
+def _session_repo(tmp_path: Path, run_git, origin_head: str = "main"):
+    """root on branch `session`, pushed `main` on a bare origin whose HEAD
+    names `origin_head`; origin/HEAD is not set locally, as on a cloud clone."""
+    root, origin = tmp_path / "repo", tmp_path / "origin.git"
     kb_dir = root / ".kb"
     kb_dir.mkdir(parents=True)
     run_git(root, "init", "-b", "main")
     (root / "a.txt").write_text("a\n", encoding="utf-8", newline="\n")
     run_git(root, "add", "a.txt")
     run_git(root, "commit", "-m", "init")
-    run_git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    run_git(tmp_path, "init", "--bare", "-b", origin_head, str(origin))
     run_git(root, "remote", "add", "origin", str(origin))
     run_git(root, "push", "-u", "origin", "main")
     run_git(root, "checkout", "-b", "session")
+    run_git(root, "push", "-u", "origin", "session")
+    return root, kb_dir, origin
+
+
+def test_ba_reads_the_plan_from_origin_default_not_roots_branch(
+    tmp_path: Path, run_git
+):
+    # A cloud session branch (or a local main nobody pulls) never gets the
+    # ticket a task merged on origin/main; the pick must see it (#140).
+    root, kb_dir, origin = _session_repo(tmp_path, run_git)
+    clone = tmp_path / "c"
     run_git(tmp_path, "clone", str(origin), str(clone))
     run_git(clone, "checkout", "-B", "main", "origin/main")
     ticket = Path("tickets") / "M-x" / "US1.md"
@@ -90,13 +99,27 @@ def test_ba_reads_the_plan_from_origin_default_not_roots_branch(
     inner = _runner([])
 
     def run(cmd, **kwargs):
-        seen.append((Path(kwargs["cwd"]) / ticket).exists())
+        assert kwargs["cwd"] == root  # a relative hub path still resolves from root
+        seen.append((Path(cmd[-1]).parent / ticket).exists())
         return inner(cmd, **kwargs)
 
     assert pick_ba(root, kb_dir, run) is None
     assert seen == [True]
     assert not (root / ticket).exists()  # root keeps its own branch and files
-    assert inner.calls[0][0][-1] == str(kb_dir.resolve())
+    # removed after the read: a snapshot publish walks all of .kb/
+    assert not (kb_dir / "auto" / "worktrees" / "plan").exists()
+
+
+def test_ba_unknown_remote_default_raises_not_reads_session_branch(
+    tmp_path: Path, run_git
+):
+    # origin's HEAD names no branch it has: the default branch is unknown, and
+    # the checked-out session branch must not stand in for it.
+    root, kb_dir, _ = _session_repo(tmp_path, run_git, origin_head="trunk")
+    run = _runner([])
+    with pytest.raises(KbError, match="plan not read"):
+        pick_ba(root, kb_dir, run)
+    assert run.calls == []
 
 
 def test_ba_plan_fetch_failure_raises(tmp_path: Path, run_git):

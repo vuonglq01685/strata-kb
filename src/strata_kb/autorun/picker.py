@@ -40,19 +40,23 @@ def _plan_tree(root: Path, kb_dir: Path) -> Path:
     `root` itself when there is no remote."""
     if not gitio.has_remote(root):
         return root
-    default = gitio.default_branch(root)
-    gitio.fetch_branch(root, default)
-    tree = kb_dir / PLAN_WORKTREE
+    gitio.default_branch(root)  # sets origin/HEAD from the remote when missing
+    # origin/HEAD only: default_branch falls back to the checked-out branch,
+    # which on cloud is the very session branch this read must avoid.
+    ref = gitio.origin_head_ref(root)
+    gitio.fetch_branch(root, ref.partition("/")[2])
+    tree = kb_dir.resolve() / PLAN_WORKTREE
     gitio.worktree_remove(root, tree)
     gitio.worktree_prune(root)
-    gitio.worktree_add_detached(root, tree, f"origin/{default}")
+    gitio.worktree_add_detached(root, tree, ref)
     return tree
 
 
-def _mission_next(tree: Path, kb_dir: Path, run) -> dict:
+def _mission_next(root: Path, tree: Path, run) -> dict:
+    # cwd stays root: a relative hub path in the config resolves from there.
     proc = run(
-        ["kb", "mission", "next", "--json", "--kb-dir", str(kb_dir.resolve())],
-        cwd=tree,
+        ["kb", "mission", "next", "--json", "--missions-dir", str(tree / "missions")],
+        cwd=root,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -97,7 +101,11 @@ def pick_ba(
         tree = _plan_tree(root, kb_dir)
     except gitio.GitError as exc:
         raise KbError(f"plan not read from the default branch: {exc}") from exc
-    data = _mission_next(tree, kb_dir, run)
+    try:
+        data = _mission_next(root, tree, run)
+    finally:
+        if tree != root:  # a snapshot `kb publish` would mirror it from .kb/
+            gitio.worktree_remove(root, tree)
     try:
         return _first(_ba_tasks(data), skip)
     except (KeyError, TypeError) as exc:
