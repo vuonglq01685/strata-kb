@@ -1386,6 +1386,22 @@ def test_three_round_cap_is_called_deliberate(name):
     assert "3-round cap stays as written here, on purpose" in _dev_text(name)
 
 
+def test_ba_ticket_open_questions_are_worked_by_owner_role():
+    # BA- and SA-owned rows get that role's agent; Dev-owned rows stay open.
+    text = " ".join(_auto_section("bodies/ba-ticket-author.md").split())
+    assert "**Open questions by owner.**" in text
+    assert "`BA` → dispatch a BA subagent in a fresh context" in text
+    assert "`SA` → dispatch `sa-ticket-ground` as its own subagent" in text
+    assert "`Dev` → leave the row open, untouched" in text
+    assert "A row that no source settles stays open with its owner." in text
+
+
+def test_dev_design_settles_dev_owned_ticket_questions():
+    text = " ".join(_auto_section("bodies/dev-design.md").split())
+    assert "**Ticket open questions owned by the Dev**" in text
+    assert "handle it as a `technical` raised question" in text
+
+
 @pytest.mark.parametrize(
     "name", ["dev-design", "dev-plan", "dev-execute", "dev-handover"]
 )

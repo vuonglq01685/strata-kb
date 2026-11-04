@@ -367,7 +367,14 @@ The runner starts this skill as `/ba-ticket-author <us-id>` (a new ticket) or `/
 
 **Decisions.** Write each decision as one `**Auto decision:**` line: what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row, so the one-row-per-revision check is unaffected. A new ticket has no rows yet; its Auto decision lines still go there.
 
-**Open questions stay owned.** The Hard rule "never tick an open-question checkbox" is replaced for one case: you may tick an open question this ticket carries when the mission, the KB or an earlier answer already settles it. Check it with a fresh-context reviewer, as for a mission's open question (the question, the source, your reading; on an objection, leave it open), and log an Auto decision line. Every other open question stays open with its owner.
+**Open questions by owner.** The Hard rule "never tick an open-question checkbox" is replaced here. Before the branch rule, work each unticked row of the ticket's `## Open questions` by the role its `owner:` names (`BA`, `SA` or `Dev`, case aside):
+
+- `BA` → dispatch a BA subagent in a fresh context. It gets the question, the ticket file and the parent mission file as paths, and the `strata-kb` MCP tools. It answers from the mission, the KB or an earlier answer, citing the source, or returns `no source settles it`.
+- `SA` → dispatch `sa-ticket-ground` as its own subagent, as in "Ground technical", with the question added. It answers from the hub's `<repo>-code` document, citing the section, or returns `no source settles it`.
+- `Dev` → leave the row open, untouched: the Dev settles it while implementing the ticket.
+- Any other owner → leave the row open with its owner.
+
+Check each answer with a fresh-context reviewer (the question, the cited source, the answer; on an objection, leave the row open). Apply an accepted answer: rewrite the ACs and sections it changes, replace the matching `OPEN(<owner>)` markers, tick the row and append `— answered: <answer> (<source>)`, log an Auto decision line, then re-run `kb_ticket_lint`, `kb_ticket_check` and the AC review. A row that no source settles stays open with its owner.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin main && git switch --detach FETCH_HEAD` (the working tree may be on an older branch that lacks merged tickets), then `kb mission next --json`. This ticket's story is finished only when its status is `ready` or `done` (not `draft` or `to-draft`) and `kb_ticket_lint` and `kb_ticket_check` pass on the current text: then change nothing and end `AUTO-RESULT: done`. Otherwise look for an open PR with `kb pr find --head auto/<ticket-id> --state open --json`, and on each `auto/<ticket-id>-r<N>` branch `git ls-remote --heads origin 'auto/<ticket-id>*'` lists. An open PR means a crashed run: `git fetch origin && git switch <its branch>`, check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below. With neither, do the work (the amend, for a `draft` story).
 
