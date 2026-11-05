@@ -16,6 +16,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from strata_kb import authored, models
 from strata_kb.ingest.sectioner import HeadingConfig, SectionUnit
@@ -280,6 +281,7 @@ def scaffold_doc(
     heading_config: HeadingConfig | None = None,
     part_titles: dict[str, str] | None = None,
     used_bookmarks: bool = False,
+    source_kind: Literal["pdf", "md"] = "pdf",
 ) -> ScaffoldReport:
     validate_doc_id(doc_id)
     if authored.is_authored(kb_dir, doc_id):
@@ -391,6 +393,7 @@ def scaffold_doc(
             appendix_pattern=cfg.appendix_pattern,
             attachment_pattern=cfg.attachment_pattern,
             used_bookmarks=used_bookmarks,
+            source_kind=source_kind,
         ),
     )
     models.save_yaml_model(doc_dir / "_manifest.yaml", manifest)

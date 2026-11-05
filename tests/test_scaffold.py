@@ -717,3 +717,38 @@ def test_sections_reingest_shared_id_confirmation_is_scoped_to_the_named_chapter
 
     assert _snapshot(doc, "appendix-a-alpha") == before
     assert (doc / "_manifest.yaml").read_bytes() == manifest_before
+
+
+def test_manifest_records_source_kind_md(tmp_path: Path):
+    kb = tmp_path / ".kb"
+    scaffold_doc(
+        _units(),
+        doc_id="doc",
+        title="Doc",
+        tags=[],
+        revision="1",
+        source_path=None,
+        kb_dir=kb,
+        source_kind="md",
+    )
+    manifest = models.load_yaml_model(kb / "doc" / "_manifest.yaml", models.Manifest)
+    assert manifest.ingest is not None
+    assert manifest.ingest.source_kind == "md"
+
+
+def test_manifest_without_source_kind_loads_as_pdf(tmp_path: Path):
+    kb = tmp_path / ".kb"
+    scaffold_doc(
+        _units(),
+        doc_id="doc",
+        title="Doc",
+        tags=[],
+        revision="1",
+        source_path=None,
+        kb_dir=kb,
+    )
+    path = kb / "doc" / "_manifest.yaml"
+    assert "source_kind" not in path.read_text()  # pdf default is not written
+    manifest = models.load_yaml_model(path, models.Manifest)
+    assert manifest.ingest is not None
+    assert manifest.ingest.source_kind == "pdf"
