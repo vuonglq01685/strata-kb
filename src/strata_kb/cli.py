@@ -897,7 +897,7 @@ def ingest(
 
     _validate_llm_choice(llm)
     opts = ingestcmd.IngestOptions(
-        pdf=pdf,
+        source=pdf,
         doc_id=doc_id,
         tags=tags,
         revision=revision,
