@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Version 1.34.4 → 1.35.0; CHANGELOG entry `## 1.35.0 — <date>`.
+- Version 1.34.4 → 1.34.5; CHANGELOG entry `## 1.34.5 — <date>`.
 - MD path must not import docling, pypdfium2, Pillow or rapidocr (works without the `ingest` extra).
 - PDF ingest output byte-identical: no existing test or fixture under `tests/` or `tests-gate/` changes (`tests/test_ingest_seam.py` stays green untouched).
 - Suffixes `.md` / `.markdown`, case-insensitive, select the MD path.
@@ -211,10 +211,10 @@
 **Files:**
 - Modify: `.claude/skills/kb-ingest/SKILL.md`, `.claude/skills/kb-l3-fix/SKILL.md`, and every template copy under `src/strata_kb/templates/init/` named `*kb-ingest*` / `*kb-l3-fix*` (claude-skill, claude-command, cursor, copilot)
 - Modify: `docs/src/guide-hub.{en,vi}.md`, `docs/src/guide-child.{en,vi}.md`; rebuild `docs/strata-guide-*.pdf` with `python docs/src/build_pdf.py`
-- Modify: `CHANGELOG.md`, `pyproject.toml` (`version = "1.35.0"`), `uv.lock` if it pins the project version
+- Modify: `CHANGELOG.md`, `pyproject.toml` (`version = "1.34.5"`), `uv.lock` if it pins the project version
 
 - [ ] **Step 1: Edit skills:** kb-ingest accepts `.md`; kb-l3-fix says "source file (PDF or Markdown)", hard rule 4 for MD = "a word may enter L3 only where the source Markdown has it", `--source` in commands, no `--from-image` / `kb l3 fix pages` for MD.
 - [ ] **Step 2: Guides:** one short "Ingest a Markdown file" subsection (en + vi, same facts): command, rules applied, refusals (kind switch, fenced `## `), images (png/webp copied), MD is the master — edit and re-ingest.
 - [ ] **Step 3: Run** `pytest -q -n auto` (catches template/skill drift tests and guide fact tests) → PASS; `python docs/src/build_pdf.py` → PDFs regenerated.
 - [ ] **Step 4: CHANGELOG + version**, then full gate: `ruff check . && ruff format --check . && pyright && pytest -q -n auto` → all pass.
-- [ ] **Step 5: Commit** `docs: Markdown ingest in skills and guides — 1.35.0`.
+- [ ] **Step 5: Commit** `docs: Markdown ingest in skills and guides — 1.34.5`.

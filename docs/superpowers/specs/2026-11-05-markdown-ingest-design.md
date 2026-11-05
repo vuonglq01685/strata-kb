@@ -1,6 +1,6 @@
 # Markdown ingest — `.md` source straight to L3 (design)
 
-Date: 2026-11-05 · Size: project · Version: 1.34.4 → 1.35.0
+Date: 2026-11-05 · Size: project · Version: 1.34.4 → 1.34.5
 
 ## Intent
 
@@ -222,7 +222,7 @@ furniture `{}`.
   `--from-image` / page images not available for MD.
 - `guide-hub` / `guide-child` (en + vi): short MD-ingest subsection; rebuild
   the guide PDFs.
-- CHANGELOG entry; version 1.35.0.
+- CHANGELOG entry; version 1.34.5.
 
 ## Testing
 

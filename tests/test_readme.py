@@ -459,13 +459,13 @@ def test_version_is_1_35_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.35.0"
+    assert project["project"]["version"] == "1.34.5"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.35.0"]
+    assert [p["version"] for p in own] == ["1.34.5"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.35.0 — 2026-11-05")
+    assert first.startswith("1.34.5 — 2026-11-05")
 
 
 def test_docs_describe_structural_coverage():

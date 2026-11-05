@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.35.0 — 2026-11-05
+## 1.34.5 — 2026-11-05
 
 `kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.
 
