@@ -3387,6 +3387,20 @@ def ticket_stale(
         raise typer.Exit(code)
 
 
+def _warn_other_target(text: str, ticket_id: str, kb_dir: Path) -> None:
+    """Yellow warning when the fetched ticket targets a repo other than this one."""
+    from strata_kb import ticket as ticket_mod
+    from strata_kb.config import load_config
+
+    repo_id = load_config(kb_dir).repo_id
+    target = ticket_mod.target_repo(text)
+    if repo_id and target and target != repo_id:
+        typer.secho(
+            f"{ticket_id} targets {target}, this repo is {repo_id}",
+            fg=typer.colors.YELLOW,
+        )
+
+
 @ticket_app.command("fetch")
 def ticket_fetch(
     ticket: str = typer.Argument(
@@ -3415,6 +3429,7 @@ def ticket_fetch(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
     ticket_id = ticketfetch.split_ref(ticket)[1]
+    _warn_other_target(text, ticket_id, kb_dir)
     path = out or Path("docs") / "impl" / ticket_id / "ticket.md"
     if out is None and not path.resolve().is_relative_to(Path("docs/impl").resolve()):
         typer.secho(f"refusing to write outside docs/impl: {path}", fg=typer.colors.RED)
@@ -4216,6 +4231,14 @@ def mission_next(
                 )
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
+
+    if ticket_texts and not cloud.is_cloud():
+        target_hub, _ = _hub_or_reason(hub, kb_dir)
+        if target_hub is not None:
+            done, target_notes = planstatus.done_per_target(
+                target_hub, ticket_texts, done
+            )
+            notes.extend(n for n in target_notes if n not in notes)
 
     mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
     demoted = planrev.demotions(mission_texts, ticket_texts)

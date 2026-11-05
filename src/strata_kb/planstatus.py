@@ -177,6 +177,34 @@ def done_for(
     return cache[target]
 
 
+def done_per_target(
+    hub: HubHandle, ticket_texts: dict[str, str], base: set[str] | None
+) -> tuple[set[str] | None, list[str]]:
+    """Local `kb mission next`: a story whose local ticket names a target repo
+    is done by that repo's `<target>-svc` history; others keep `base`. An
+    unpublished `<target>-svc` leaves the story not done (never another repo's
+    history) and adds a note."""
+    routing = _Routing.load(hub)
+    targets = {
+        tid: found
+        for tid, text in ticket_texts.items()
+        if (found := ticket.target_repo(text, routing.holders))
+    }
+    if not targets:
+        return base, []
+    done = {d for d in base or () if d not in targets}
+    notes: list[str] = []
+    for tid, target in targets.items():
+        ids = done_for(hub, target, routing.cache)
+        if ids is None:
+            note = f"done: unknown ({target}-svc not published)"
+            if note not in notes:
+                notes.append(note)
+        elif tid in ids:
+            done.add(tid)
+    return done, notes
+
+
 @dataclass
 class _Routing:
     """What routing a ticket to its Dev repo needs, loaded once per
