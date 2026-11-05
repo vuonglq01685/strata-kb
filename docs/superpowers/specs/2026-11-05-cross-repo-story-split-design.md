@@ -1,6 +1,6 @@
 # Cross-repo stories — parent story + per-repo child tickets (design)
 
-Date: 2026-11-05 · Size: project (phased) · Version: 1.34.5 → 1.35.0
+Date: 2026-11-05 · Size: project (5 phases) · Version: 1.34.5 → 1.35.0 (phase 1)
 
 ## Intent
 
@@ -9,364 +9,442 @@ setup), each with its own `kb init --kind dev`, its own `<repo>-code` /
 `<repo>-svc` on the hub and its own Dev or auto runner. A business need
 regularly touches several of them ("pay with MoMo" = API + web + notify).
 
-Today the framework assumes one ticket = one repo, but nothing enforces or
-supports the multi-repo case:
+The framework assumes one ticket = one repo but does not enforce or support
+the multi-repo case:
 
-- The BA cannot know which repo a story belongs to — and should not have to.
+- The BA cannot know which repo a story belongs to, and should not have to.
 - `/ba-ticket-author` splits only on >10 AC or a second "As a …"; the SA
-  grounds on a single `<repo-id>-code` (`Grounded on:` keeps the `-code`
-  entry). Work for another repo degrades to `[NEW: …]` / `Open decisions`.
+  grounds on one `<repo-id>-code`. Work for another repo degrades to
+  `[NEW: …]` / `Open decisions`.
 - **Routing gap:** `autorun/picker.dev_candidates` hands every ready ticket on
-  the hub to every Dev runner — with 10 dev repos, 10 runners race for the
-  same ticket.
-- **Dependency gap:** an unparented ticket's `- Blocked by:` is ignored by
-  the runner (`picker._dev_tasks` yields every ready unparented ticket).
+  the hub to every Dev runner: with 10 dev repos, 10 runners race for it.
+- **Dependency gap:** an unparented ticket's `- Blocked by:` is ignored by the
+  runner (`picker._dev_tasks`).
 - **Done gap:** `planstatus._done_ids` reads one `-svc` history per BA plan
-  (the first mission's `Grounded on:`), so "done" for tickets of other repos
-  is unknown.
+  (the first mission's `Grounded on:`), so done for other repos is unknown.
 
-The owner wants: the framework detects early that a need touches several
-repos, **proposes** a split (how many children, names, which AC where, the
-order), and only after the BA agrees writes **one normal ticket per repo**
-under a lightweight **parent story**, with the cross-cutting parts (changes,
-Q&A, bugs) kept consistent between parent and children.
+The owner wants the framework to detect early that a need touches several
+repos, **propose** a split (how many children, their names, which AC where,
+the order) and, once accepted, write **one normal ticket per repo** under a
+lightweight **parent story**, with changes, Q&A and bugs kept consistent
+between parent and children.
 
 ## Goals
 
-1. **Routing (every ticket):** a Dev runner / `kb ticket fetch` picks only
-   tickets whose target repo is its own `repo_id`.
+1. **Routing (every ticket):** a Dev runner picks only tickets whose target
+   repo is its own `repo_id`.
 2. **Dependencies without a mission:** `- Blocked by:` between sibling
-   tickets (and any unparented ticket) is honored by the runner and shown by
-   `kb mission next` / hub.
-3. **Done per target repo:** a ticket is `done` when its own target repo's
+   children is honored by the runner and shown by `kb mission next` / hub.
+3. **Done per target repo:** a ticket is `done` when its target repo's
    `<repo>-svc` history lists it.
-4. **Parent story + child tickets:** a new parent-story file (index only) and
-   child tickets that are normal tickets plus two header lines; a lint that
-   keeps parent and children consistent; `kb plan-ingest` publishes both; hub
-   shows the story with its children and rolled-up status.
+4. **Parent story + child tickets:** a parent-story file (index only), child
+   tickets that are normal tickets plus header lines, a lint that keeps them
+   consistent, plan-ingest publishing both, hub showing the story with its
+   children and rolled-up status.
 5. **Detect and propose the split** in `/ba-ticket-author` (right after
-   Intake) and in `/ba-mission-plan` (split runs after SA services analysis).
-   Nothing is written until the BA accepts.
-6. **Change flow:** the BA describes a change at the parent; the SA proposes
-   which children to amend / which new children to add; the BA accepts; each
-   child goes through the normal amend.
-7. **Q&A at the parent:** a business question asked on a child is recorded
-   at the parent story; the SA proposes widening `blocks:` to sibling ACs;
-   only BA-confirmed blocks block; the BA answers once; the SA proposes the
-   amendments.
-8. **Bugs:** a bug is assigned to one first-responder repo (SA proposes from
-   the symptoms, BA confirms); after root cause, the Dev proposes child bugs
-   for other repos; the BA confirms.
+   Intake) and in `/ba-mission-plan` (per backlog story, after Split).
+6. **Change flow at the parent**, **Q&A at the parent**, **bugs** routed to a
+   first-responder repo and split after root cause.
 
 ## Non-goals
 
-- No automatic ticket writing without BA acceptance (propose only).
-- No cross-repo PRs or a "meta" Dev that works in several repos.
+- Tracker integration: no change to `kb ticket export`, no mapping from
+  child ids to tracker keys (owner: handle later).
+- No cross-repo PRs; no Dev that works in several repos.
 - No change to the one-ticket-one-repo rule or to per-repo `kb init`.
-- No new mission features; missions keep their own `Depends on`.
-- The parent story is not reviewed: no maturity review, no DoR on it.
+- The parent is never reviewed (no maturity review, no DoR) and never a task.
 
 ## Anti-goals (a failure even if it "works")
 
-- Two runners implementing the same ticket.
+- Two runners implementing the same ticket, or a runner implementing a
+  ticket of another repo.
 - A child starting while a sibling it is blocked by is not merged.
-- Parent and children disagreeing silently (an AC in two children, an AC in
-  no child, a split table that names a child that does not exist, a child's
-  `Blocked by` different from the table).
-- A question's answer applied to one child while a sibling that shares the
-  meaning keeps the old reading, without anyone being told.
-- An AI deciding a split, a block or an amendment on its own.
-- Breaking existing single-repo setups (tickets/bugs without a target must
-  keep working where there is only one dev repo).
+- Parent and children disagreeing silently.
+- An answer applied to one child while a sibling that shares the meaning
+  keeps the old reading, without anyone being told.
+- A whole story disappearing from the hub because of one bad edit.
+- A split, a block or an amendment decided without a recorded decision: in
+  interactive mode the BA accepts; in auto mode the agent decides **and** a
+  fresh-context reviewer checks, and both are recorded (owner decision).
+- Breaking existing single-repo setups.
 
 ## Decisions (owner)
 
-- **Model:** one business US = a **parent story** (index only) + N **child
+- **Model:** one business US = **parent story** (index only) + N **child
   tickets**, one per repo. Children are normal tickets and the only thing
-  that goes through review and BA approval. No mission is created for it.
+  reviewed and approved. No mission is created for it.
 - **ACs live only in children.** The parent holds the user story, the split
-  table (child, repo, AC ids, blocked by, why) and its change log — no AC
-  text. AC ids are unique across the whole story (AC1–3 in one child, AC4–5
-  in another).
-- **Early detection:** in `/ba-ticket-author` right after Intake; in
-  `/ba-mission-plan` the split step runs after the SA services analysis.
-- **Propose, never auto-split:** the framework states how many children,
-  their names (one per repo) and which AC goes where; the BA accepts first.
-- **Changes are described at the parent;** the SA analyses and proposes which
-  children to amend or add; the BA accepts; children follow the normal amend.
-- **Q&A:** business questions on a child go to the parent; the SA proposes
-  widening `blocks:`; **blocks widen only after BA confirmation**.
+  table and its change log. AC ids are unique across the story.
+- **Early detection:** `/ba-ticket-author` right after Intake;
+  `/ba-mission-plan` per backlog story.
+- **Propose, never silently split:** child count, names (one per repo), AC per
+  child, order, evidence. Interactive: the BA accepts. **Auto mode: the agent
+  accepts under the existing decision-plus-fresh-reviewer rule** (owner, 1b).
+- **Changes are described at the parent;** the SA proposes which children to
+  amend or add; accepted as above; children follow the normal amend.
+- **Q&A:** business questions on a child are recorded at the parent; the SA
+  proposes widening `blocks:`; widened blocks take effect only once accepted
+  (BA, or agent + reviewer in auto mode).
 - **Bugs:** first-responder repo first; split only after root cause.
-- **Approach A** (below).
+- **Tracker export out of scope** for now.
+- **Approach A.**
 
 ## Approaches considered
 
-**A. Parent-story file in the BA repo + normal child tickets (chosen).**
-`tickets/<folder>/US-<n>.md` with `> Kind: parent story`; children carry
-`> Parent story:`; lint checks consistency; plan-ingest publishes both;
-runner routes by target repo and honors `Blocked by`. Gives the BA a place
-to describe changes at the parent and the SA a place to record proposals;
-children keep every existing rule. Cost: a new file kind that plan-ingest,
-planstatus, hub UI and lint must understand.
+**A. Parent-story file in the BA repo + normal child tickets (chosen).** Gives
+the BA a place to describe parent-level changes and the SA a place to record
+split proposals; children keep every existing rule. Cost: a new file kind
+for plan-ingest, planstatus, hub, lint, picker and claims.
 
-**B. No parent file; children only carry `> Parent story: US-12`, hub groups
-them.** Less code, but no place for the BA's parent-level change, no record
-of the SA split, consistency only pairwise. Works against the agreed change
-flow. Rejected.
+**B. No parent file; children carry `> Parent story:`, hub groups them.**
+No place for parent-level changes or split records; consistency only
+pairwise. Rejected.
 
-**C. Auto-created mini mission as the parent.** Reuses Sequencing / D-rows,
-but the owner rejected creating a mission for one US, and mission lint
-(maturity review, scope split, C4) does not fit. Rejected.
+**C. Auto-created mini mission.** Owner rejected a mission for one US;
+mission lint (maturity review, scope split, C4) does not fit. Rejected.
 
 ## Design
 
-### 0. Vocabulary and ids
+### 0. Ids and header lines
 
-- **Parent story id:** the BA's US id, e.g. `US-12` (or `M-x-US3` inside a
-  mission). File `tickets/<folder>/US-12.md`.
-- **Child id:** `<parent-id>-<repo-id>`, e.g. `US-12-payments-api`. A second
-  child for the same repo (added after the first is done) gets `-2`:
-  `US-12-payments-api-2`. File `tickets/<folder>/<child-id>.md`.
-- **Bug child id:** `BUG-<n>-<repo-id>` (same rule).
-- A repo id that contains `/` (nested federation id) is written with `/`
-  replaced by `--` in the child id; the header keeps the real id.
+- **Parent id:** the BA's US id (`US-12`, or `M-x-US3` in a mission). File
+  `tickets/<folder>/US-12.md`, header `> Kind: parent story`.
+- **Child id:** `<parent-id>.<repo-id>` (dot separator), e.g.
+  `US-12.payments-api`; a later child for the same repo `US-12.payments-api.2`.
+  Bug child: `BUG-7.payments-api`. (Claude's call: a dot cannot appear in a
+  dev repo id or a `US<n>`/`BUG-<n>` id, so it never collides with
+  `-<digit>` repo ids or the `\b…-US\d+\b` regexes; see Review §C2, M1.)
+- **Child headers:** `> Parent story: US-12 @ rev <N>` and
+  `> Target repo: <repo-id>`.
+- **Bug headers (any bug, phase 1):** `> Target repo: <repo-id>`;
+  parent bug: `> Kind: parent bug`.
+- **Uniqueness:** a stem must be unique under `tickets/` (lint error, not
+  plan-ingest's silent "kept the first"). CI lint (it has the hub) errors on
+  an id another BA repo already publishes; planstatus marks such ids
+  `blocked: id published by several BA repos`. Dependencies resolve inside
+  the same BA plan only. (Review C6, M10.)
+- Bug numbering ("highest `BUG-<n>.md` + 1") counts digits-only stems only.
 
-### 1. Target repo (phase 1, every ticket)
+### 1. Target repo and routing (phase 1)
 
-- **Story/child ticket:** the target repo is the repo of the `-code` entry of
-  `Grounded on:` (`missionnext.grounded_doc`). A child also states it in
-  `> Target repo: <repo-id>`; lint fails if the two disagree.
-- **Bug:** `> Target repo: <repo-id>` header (new, set by the SA quick look in
-  `/ba-bug-report`, confirmed by the BA).
-- **Missing target (legacy / ungrounded):** the ticket is routed to the only
-  dev repo in the hub registry when there is exactly one; otherwise it is not
-  picked automatically and `kb mission next` / hub show
-  `no target repo — run /sa-ticket-ground or set > Target repo:`.
-  (Claude's call: keeps today's single-repo setups working, refuses to guess
-  with several.)
-- `StoryStatus` gains `target_repo: str | None`.
-- `picker.dev_candidates(..., repo_id)` keeps only tasks whose target is
-  `repo_id` (or resolves to it by the single-repo rule). Same filter for the
-  hub ticket list `?for=<repo>` and `kb mission next --from-hub --for <repo>`.
-- `kb ticket fetch <id>` in a dev repo warns (does not refuse) when the
-  target is another repo: `US-12-web-app targets web-app, this repo is
-  payments-api`. (Claude's call: a human may legitimately read it.)
+- **Target:** a child's or bug's `> Target repo:` line. A plain (non-split)
+  story without the line: the `-code` entry of its first `Grounded on:` must
+  be qualified (`<repo>:<repo>-code`); its repo is the target. For a child,
+  lint requires the first `Grounded on:` entry to equal
+  `<target>:<target>-code`. (Review I8.)
+- **Bugs in phase 1:** `/ba-bug-report` asks the BA for the target repo (or
+  takes the only dev repo); the SA quick look that proposes it arrives in
+  phase 5. (Review I6.)
+- **No target:** routed to the only dev repo in the hub registry when there is
+  exactly one; otherwise `blocked: no target repo` and not picked. (Claude's
+  call: keeps single-repo setups working.)
+- **Unknown target** (not a dev repo on the hub): planstatus marks the ticket
+  `blocked: target <x> is not a dev repo on the hub` (plan-ingest is offline
+  and cannot check it). (Review I9.)
+- `StoryStatus` gains `target_repo: str | None`; the hub computes it, so
+  routing is server-side on cloud.
+- `picker.dev_candidates` keeps only tasks routed to the runner's `repo_id`.
+  The Dev runner's `all_done` counts only its routed tickets. (Review M5.)
+- The hub plan API takes a new `for_repo=<dev-repo>` parameter, distinct from
+  the existing `repo` (BA repo) parameter. (Review M13.)
+- **Mixed versions:** the runner reads `target_repo` with `.get`; it refuses to
+  start against a hub whose plan API lacks the field (`hub is older than
+  1.35 — upgrade the hub first`); plan-ingest warns when publishing to such a
+  hub. Pre-1.35 runners do not route; the release note says upgrade every
+  Dev runner. (Review I16.)
+- `kb ticket fetch <id>` in a dev repo warns when the target is another repo.
+- **Stored tasks:** before resuming a stored task the runner re-checks that
+  the ticket is still published, still routed to it and not a parent; on
+  `unknown_ticket` from claim take it drops the local claim, clears the task,
+  logs the reason and picks again (no idle wedge). (Review I14, I15, M14.)
 
-### 2. Blocked by for unparented tickets (phase 1)
+### 2. Blocked by (phase 1)
 
-- Unparented tickets and children: `StoryStatus.depends_on` is filled from
-  `## Dependencies` → `- Blocked by: <id> — <why>` (ids only; external items
-  written as free text with no ticket id are ignored with a note).
-- Status `blocked` with reason `blocked by <id> (not done)` until every named
-  id is `done`. `picker._dev_tasks` checks `depends_on` for unparented items
-  exactly as it does for mission stories.
-- A `Blocked by` id that is not published anywhere on the hub: status
-  `blocked`, reason `blocked by <id> (unknown)` — never treated as done.
-- Cycle (A blocked by B blocked by A): both `blocked`, reason `dependency
-  cycle: A → B → A`; `kb ticket lint` on the parent (§4) fails on it too.
+- **Children:** `- Blocked by:` tokens count only as an exact match against
+  the parent's split ids. They are never parsed with `US_ID_IN_CELL_RE` /
+  `BARE_US_RE` (`dep_ids('US-12-payments-api')` returns `()` today, and
+  `M-x-US3-…` would resolve to the parent). An id not in the split is a lint
+  error. (Review C2.)
+- **Legacy unparented tickets:** only tokens that equal a ticket id published
+  by the same BA plan count; anything else (tracker keys, prose) is a note,
+  never a block. (Review I7.)
+- A listed dependency that is not `done` → `blocked: blocked by <id> (not
+  done)`; picker checks `depends_on` for unparented items as for mission
+  stories. Cycles → `blocked: dependency cycle …` and a parent lint error.
+- **Consumer → provider references:** a child that uses a route its blocking
+  sibling will create writes `[NEW: <sibling-child-id>]`; lint checks the id
+  is a sibling this child is blocked by; `kb ticket check` treats it as
+  resolved once the sibling is done. (Review M12.)
 
 ### 3. Done per target repo (phase 1)
 
-`planstatus._plan_repo` computes done per ticket: load the `-svc` history of
-the ticket's target repo (cache per repo per run); `done: unknown (<svc> not
-published)` per target instead of one note for the whole plan. Mission
-stories keep the mission's `Grounded on:` unless the story's own ticket has a
-target. A parent story's status is rolled up (§5).
+One shared function (used by `planstatus`, the local `kb mission next`, and
+the BA picker's local path) computes done per ticket from its target repo's
+`-svc` history, cached per repo per run; `done: unknown (<svc> not
+published)` per target. Mission stories that are not split keep the
+mission's `Grounded on:`. (Review I4.)
 
-### 4. Parent story file and consistency lint (phase 2)
-
-Parent file (`tickets/<folder>/US-12.md`):
+### 4. Parent story file, consistency lint, publish (phase 2)
 
 ```markdown
 # US-12 <title>
 > Kind: parent story
 > Revision: <N>
-[> Parent mission: M-x @ rev K]          (when the US is a mission story)
+[> Parent mission: M-x @ rev K]
 
 ## User Story
 As a …, I want …, so that ….
 
 ## Split
-| Child | Repo | AC | Blocked by | Why |
-|---|---|---|---|---|
-| US-12-payments-api | payments-api | AC1, AC2, AC3 | — | api.payments POST /payments |
-| US-12-web-app | web-app | AC4, AC5 | US-12-payments-api | page.web /checkout |
+| Child | Repo | AC | Blocked by | Own fix | Why |
+|---|---|---|---|---|---|
+| US-12.payments-api | payments-api | AC1, AC2, AC3 | — | | api.payments POST /payments |
+| US-12.web-app | web-app | AC4, AC5 | US-12.payments-api | | page.web /checkout |
 
 ## Change log
-| Rev | Date | Trigger | What changed |
+| Rev | Date | Trigger | What changed | Affected | Reviewed |
 ```
 
-Child ticket = normal ticket + header lines `> Parent story: US-12 @ rev N`
-and `> Target repo: <repo-id>`.
+- The change log uses the existing 6-column format and triggers (`scope`,
+  `question`, …); `Affected` lists the children touched. (Review I1.)
+- `Own fix` is used by parent bugs only (§9).
+- An AC that replaces a done child's AC is written `AC7 (replaces AC2)` in the
+  split; lint accepts the old id staying in the done child. (Review M8.)
 
-`kb ticket lint` gains parent-story rules (run on the parent file, and on a
-child when its parent is in the same repo):
+**Lint (`kb ticket lint`, CLI and MCP):**
 
 | Rule | Severity |
 |---|---|
-| every child in `## Split` exists as a file and has `> Parent story: <parent>` | error |
-| every file with `> Parent story: X` is listed in X's split | error |
-| child's AC ids == the split row's AC ids; no AC id in two children; no gaps in numbering are allowed only if the change log removed them | error |
-| child's `- Blocked by:` ids == the split row's `Blocked by` | error |
-| child's `> Target repo:` == split row repo == `Grounded on:` repo (once grounded) | error |
-| child's `## User Story` == parent's `## User Story` (whitespace-normalised) | error |
-| child's `@ rev N` < parent revision | warning (`stale against parent rev M`) |
-| dependency cycle in the split | error |
-| parent has no AC section and no DoR (they belong to children) | error if present |
+| every split child exists and has `> Parent story: <parent>` | error |
+| every file with `> Parent story: X` is in X's split | error |
+| child AC ids == split row AC ids; no AC id in two live children | error |
+| child `Blocked by` == split row; ids exist in the split; no cycle | error |
+| child `> Target repo:` == split repo == first `Grounded on:` repo | error |
+| child `## User Story` == parent's (whitespace-normalised) | error |
+| each child has ≥2 ACs (existing rule) — the split proposal must respect it | error |
+| parent has no AC section, no DoR | error if present |
+| child pinned to an older parent rev and named in a later row's Affected | child reads `draft` (demotion), see below |
 
-The parent skips DoR, maturity review and technical grounding.
-`kb plan-ingest`: a parent publishes when it lints (like a mission); a child
-publishes when it lints and its DoR is ticked (like any ticket); a child whose
-parent fails lint is skipped with `parent US-12 fails lint`.
-`planstatus` / hub: parent shows `k/N done` and its children (repo, status,
-PR); the hub ticket page of a child links its parent and siblings.
+- MCP `kb_ticket_lint` gains `parent_markdown`; without it a child's parent
+  rules report an **error** (`parent not given`), not a note. (Review I11.)
+- BA CI (`kb-ticket-lint.yml`) lints the parent of every added, changed **or
+  deleted** child (today `--diff-filter=ACMR` misses deletes). (Review C4.)
+- **Demotion:** `planrev.demotions` extends to `> Parent story:` pins: a child
+  named in the Affected of a later parent row than its pin reads `draft` (off
+  the hub) until re-amended; done children are exempt. (Review I12.)
 
-### 5. Status roll-up
+**Publish (`kb plan-ingest` / `kb publish`):**
 
-Parent status: `done` when every child is `done`; `blocked` when no child is
-ready and at least one is blocked; otherwise `in progress`. The parent itself
-is never a task for a runner.
+- A parent publishes when it lints (no DoR gate); a child when it lints and its
+  DoR is ticked.
+- **Fail closed:** if any parent story fails lint, plan-ingest exits non-zero
+  and publishes nothing, so the hub keeps the last good version — instead of
+  silently dropping every child of that story. (Review C4.)
+- A ticket id with a live claim or a `hist` row cannot become a parent (CI
+  lint, which has the hub). (Review I14.)
+
+**Status and tasks:**
+
+- planstatus and plan-ingest read `> Kind: parent story|parent bug`. A parent
+  stays in the status list (mission `Depends on` and the picker's done set
+  need it) with a rolled-up status and `is_parent = True`; `_dev_tasks`,
+  claim `take` and the hub claim UI refuse it. (Review C1.)
+- Roll-up: `done` when every child (and a parent bug's own fix, §9) is done;
+  `blocked` when nothing is ready and something is blocked; else
+  `in progress`. `in progress` is used for parents only; consumers (planui
+  labels, `_next_line`, `all_done`) learn it. A split child with no file yet
+  reads `to-draft`. (Review M4.)
+- BA picker: a parent is never `draft`; `_ba_tasks` yields
+  `ba-ticket-author <child-id>` for each split row with no file. (Review I4.)
+- Hub: the parent page shows the split with each child's repo, status, PR;
+  each child links its parent and siblings.
+
+### 5. Children of a mission story
+
+A child inherits from its parent (Review C3):
+
+- backlog membership is checked for the **parent** id;
+- `depends_on(child)` = the parent's mission `Depends on` + the split row's
+  `Blocked by`;
+- mission D-row / open-question blockers and demotion of the parent apply to
+  every child; `[NEW: D<n>]` in a child resolves against the parent's mission;
+- `Blocked by` between siblings lives only in the split, not in the mission's
+  `## Sequencing`; `_check_blocked_by_declared` skips sibling ids.
 
 ### 6. Detect and propose the split (phase 3)
 
-**`/ba-ticket-author`** — new step 1b *Scope by repo*, after Intake, before
-Draft:
+**`/ba-ticket-author`**, new step 1b *Scope by repo* (after Intake, before
+Draft):
 
-1. The agent runs an SA quick look (`/sa-ticket-ground --scope`, read-only):
-   `kb_search` over the hub with `kinds=["dev"]` for the routes, pages,
-   tables, jobs and services the need implies; maps each hit to its repo.
-2. One repo → continue exactly as today (the ticket is a normal ticket with
-   a target).
-3. Several repos → print the proposal and stop for the BA:
-   `This need touches 2 repos. Proposed: parent US-12 + 2 child tickets:
-   US-12-payments-api (payments-api: AC about payment creation, refunds) ·
-   US-12-web-app (web-app: AC about the checkout page) — US-12-web-app is
-   blocked by US-12-payments-api. Evidence: …`
-4. BA accepts / edits (rename, merge two repos, move an AC) / rejects (→ one
-   ticket as today, with a lint warning that it touches several repos).
-5. On accept: write the parent; draft the ACs once for the whole need, then
-   distribute them into children by the accepted split; run the normal
-   pipeline (Lint → Ground → Maturity review → BA review) **per child**.
-   Grounding of each child uses its own repo.
+1. SA quick look (`/sa-ticket-ground --scope`, read-only): `kb_search` with
+   `kinds=["dev"]` for the routes, pages, tables, jobs and services the need
+   implies; each hit mapped to its repo.
+2. One repo → today's flow; the ticket gets that repo as target.
+3. Several repos → proposal: child count, ids, repo, which ACs (by subject;
+   ids after Draft), order (`Blocked by`), evidence. Each child must get ≥2
+   ACs, otherwise the proposal merges it into a sibling. (Review I10.)
+4. Accept / edit / reject. Reject → one ticket, with a lint warning
+   `grounding touches several repos` when grounding finds hits elsewhere.
+5. Accepted → write the parent; draft the ACs once for the whole need,
+   distribute them by the split; run Lint → Ground (own repo) → Maturity
+   review → BA review **per child**.
 
-**`/ba-mission-plan`** — reorder: *Ground services* (SA) runs before
-*Split*; for each backlog story the SA reports its repos; a multi-repo
-story gets the same proposal; on accept the backlog row becomes a parent
-story (`M-x-US3`) whose children are drafted later by `/ba-ticket-author`.
-`## Sequencing` keeps story-level `Depends on`; child-level order lives in
-the parent's split.
+**`/ba-mission-plan`:** order stays Split → Ground services; then a new
+per-story repo proposal; an accepted multi-repo story is written as a parent
+file at mission time, its children are drafted later by `/ba-ticket-author`
+(the BA picker yields them, §4). `## Services & order` may cite several
+`<repo>:<repo>-code` docs; `kb ticket check --mission` resolves each id in its
+own repo's doc. (Review I13.)
 
 ### 7. Change flow (phase 4)
 
-1. BA runs `/ba-ticket-author --amend US-12` and describes the change in
-   business words at the parent.
-2. SA analyses against the split and the children's ACs and proposes:
-   `amend US-12-web-app (AC5 changes) · add US-12-payments-api-2 (new AC6:
-   refund; US-12-payments-api is done) · no change to …`.
-3. BA accepts → parent revision N+1 + change-log row; each touched child gets
-   the normal amend (revision +1, change-log row with Trigger `parent rev
-   N+1`, one maturity review round, DoR re-ticked by the BA); new children
-   go through the full pipeline.
-4. **A `done` child is never amended**; a change to its scope becomes a new
-   child (`-2`), so shipped history stays intact.
-5. Lint (§4) must pass on parent and all children before publish.
+1. `/ba-ticket-author --amend US-12`: the BA describes the change at the
+   parent.
+2. SA proposes: amend child X (which AC), add child `.2` for a done child,
+   no change to Y.
+3. Accepted → parent rev N+1 with a change-log row whose Affected lists the
+   children; each listed child gets the normal amend (rev +1, trigger
+   `scope`/`question`, What changed `parent rev N+1: …`, one maturity round,
+   DoR re-ticked). New children go through the full pipeline.
+4. A **done** child is never amended; its change becomes a new child. A
+   **done parent** (every child done) is frozen: a further change is a new
+   US (existing rule, ba-ticket-author "done stories are frozen"). (Review M9.)
+5. Until each Affected child is re-published at its new revision it reads
+   `draft` (demotion, §4), so no runner works on the old reading.
 
 ### 8. Q&A at the parent (phase 4)
 
-- `kb_question_ask(ticket=<child>, …)` on a child of a parent story records
-  the question on the **parent** (`ticket = US-12`) with new field
-  `asked_from = <child>`; `blocks` = the asker's AC ids. Technical questions
-  still go to the repo's `dev-sa`.
-- Q&A store (`.kb-qa/qa.db`): add nullable columns `asked_from TEXT` and
-  `proposed_blocks TEXT`; migration on open; existing rows unchanged.
-- When a parent-level question is recorded, the SA triage (part of
-  `/ba-answer-questions`, or the BA auto loop) writes `proposed_blocks`
-  (sibling AC ids + reason). It does **not** block.
-- `/ba-answer-questions` shows the question with the whole story: split table
-  + every child's ACs + `proposed_blocks`. The BA confirms or edits the
-  widened blocks → `blocks` updated (only now siblings block). Then the BA
-  answers once; the SA proposes amendments (→ §7 flow); answer recorded
-  when the amendments are published, as today ("waiting for publish").
-- Every child's `BA-Q:` line lists the parent's questions; the existing gate
-  (`blocks` names one of *this child's* ACs → stop) needs no change because
-  AC ids are unique across the story.
+- `kb_question_ask(ticket=<child>)` on a child records the question on the
+  **parent** (`ticket = US-12`) with `asked_from = <child>`; `blocks` = the
+  asker's AC ids. Technical questions go to the repo's `dev-sa` as today.
+- `list_questions(ticket=<child>)` also returns its parent's questions, so the
+  child sees them and the "already asked" check works. (Review I2.)
+- The Dev gate stops only when `blocks` names one of **this ticket's** AC ids;
+  ids are compared after normalising `AC-2` → `AC2`. (Review I2.)
+- Q&A store: nullable columns `asked_from`, `proposed_blocks`, `confirmed_by`;
+  the migration checks columns inside `BEGIN IMMEDIATE`. (Review M6.)
+- SA triage writes `proposed_blocks` (sibling ACs + reason); it blocks only
+  after acceptance (BA in `/ba-answer-questions`; in auto mode the agent +
+  fresh reviewer), recorded in `confirmed_by`. Limit stated in the guide:
+  Q&A names are self-declared, so `confirmed_by` is an audit trail, not an
+  access control. (Review M7.)
+- The BA answers once; the SA proposes amendments (§7).
+- **Answered:** a parent question is `answered` only when every child in the
+  Affected of the parent's change-log row for `answer_rev` is on the hub with
+  `@ rev ≥ answer_rev`; `ticket_sections` = that row's Affected. The DoR stop
+  in `/ba-answer-questions` applies to each amended child. (Review C7.)
+- **In-flight siblings:** right before merge, `dev-handover` re-runs
+  `kb_question_list` and compares the hub revision with the fetched one; a
+  newly blocking question or a newer revision stops with `blocked-qa`.
+  (Review I3.)
 
 ### 9. Bugs across repos (phase 5)
 
-- `/ba-bug-report` gains an SA quick look after Intake: from the symptoms it
-  proposes the first-responder repo with evidence; BA confirms →
-  `> Target repo:`.
-- `/dev-fix-bug` root-cause step: if the cause is (partly) in another repo,
-  the Dev records it in `rootcause.md` and proposes child bugs
-  (`BUG-7-payments-api`) with the root cause and repro steps for that repo;
-  the BA confirms (`/ba-bug-report --child-of BUG-7`), which turns `BUG-7`
-  into a parent bug (`> Kind: parent bug`, split table) and publishes the
-  child.
-- The first-responder's own fix, if any, stays in `BUG-7`'s own target work;
-  `BUG-7` is done when its own fix (if any) and every child bug are merged.
+- `/ba-bug-report`: SA quick look after Intake proposes the first-responder
+  repo from the symptoms → `> Target repo:` (accepted as above).
+- `/dev-fix-bug` root cause: cause (partly) elsewhere → `rootcause.md` + a
+  proposal of child bugs (`BUG-7.payments-api`) with the root cause and repro
+  steps for that repo. In auto mode the run **ends** after writing the
+  proposal (`AUTO-RESULT: blocked-split BUG-7`); it never creates tickets.
+- `/ba-bug-report --child-of BUG-7` (BA repo) turns BUG-7 into a parent bug:
+  the split carries a row for BUG-7 itself with `Own fix: yes|no` and its
+  `Blocked by` (the own fix often needs the child's fix first). The skill
+  writes files only; committing/publishing stays the BA's step. (Review M11.)
+- Before BUG-7 is edited, the first responder's claim is set to `stopped`
+  with reason `split into child bugs`. (Review I5.)
+- Done: roll-up only — every child bug done, and BUG-7's own fix done when
+  `Own fix: yes`. `close_done_tickets` and `all_done` use the roll-up.
 
-### 10. Phases (each ships alone)
+### 10. Auto mode (all phases)
 
-1. Routing + `Blocked by` for unparented + done per target repo (§1–3).
-2. Parent story format, lint, plan-ingest, hub (§4–5).
-3. Detect + propose in `/ba-ticket-author` and `/ba-mission-plan` (§6).
-4. Change flow + Q&A at the parent (§7–8).
+Every new acceptance step ("BA accepts the split / widened blocks /
+amendments / child bugs") is, in auto mode, decided by the agent and checked
+by a fresh-context reviewer, exactly like existing auto-mode decisions, and
+both the decision and the review are written where the BA would have
+accepted (parent change log, Q&A `confirmed_by`). Each skill's Auto mode
+section names these steps explicitly. (Owner 1b; Review C5.)
+
+### 11. Branch names
+
+Crash-recovery and branch lookups match the exact ticket id or `<id>-r<N>`,
+never a prefix glob, so a parent never resumes a child's branch and a child
+never resumes its `.2` sibling's. (Review M2.)
+
+### 12. Phases (each ships alone)
+
+1. Routing + target lines for tickets and bugs + `Blocked by` + done per
+   target + stored-task recovery (§1–3, §11).
+2. Parent story format, lint (CLI/MCP/CI), publish fail-closed, roll-up,
+   demotion, hub, mission children (§4–5).
+3. Detect + propose (§6).
+4. Change flow + Q&A at the parent + pre-merge re-check (§7–8).
 5. Bugs (§9).
+Auto-mode wording (§10) ships with each phase that adds a step.
 
-## Flow walkthrough (to be reviewed end to end)
+## Flow walkthrough
 
 1. BA: `/ba-ticket-author` "khách hàng thanh toán bằng ví MoMo".
-2. Scope by repo → proposal (2 repos) → BA accepts.
-3. Parent `US-12.md` written; ACs drafted once, distributed: AC1–3 →
-   `US-12-payments-api.md`, AC4–5 → `US-12-web-app.md` (`Blocked by:
-   US-12-payments-api`).
-4. Per child: lint → SA ground on its repo → maturity review → BA review,
-   DoR tick, commit. Parent lint PASS.
-5. `kb plan-ingest` + publish → hub: US-12 `0/2`, `payments-api` ready,
-   `web-app` blocked.
-6. Runner in payments-api picks `US-12-payments-api` (target match); runner
-   in web-app picks nothing for US-12.
-7. payments-api PR merged → `-svc` history lists it → done → web-app child
+2. Scope by repo → 2 repos → proposal → accepted (BA, or agent + reviewer).
+3. `US-12.md` written; ACs drafted once: AC1–3 → `US-12.payments-api.md`,
+   AC4–5 → `US-12.web-app.md` (`Blocked by: US-12.payments-api`).
+4. Per child: lint (with parent) → ground on its repo → maturity review →
+   BA review, DoR tick. Parent lint PASS. Commit.
+5. plan-ingest + publish (fails closed if the parent is inconsistent) → hub:
+   US-12 `in progress 0/2`; payments-api child ready, web-app child blocked.
+6. payments-api runner picks its child (routed); web-app runner picks
+   nothing; neither picks US-12.
+7. payments-api PR merged → its `-svc` history lists it → done → web-app child
    unblocked → web-app runner picks it.
-8. Dev in web-app asks "minimum amount?" `blocks: AC4` → recorded on US-12;
-   SA proposes `+AC2`; BA confirms → payments-api child also blocked (it is
-   already done → SA proposes a new child `-2` if the answer changes AC2).
-9. BA answers; SA proposes amendments; BA accepts; children amended /
-   added; publish; questions answered.
-10. Both done → US-12 `2/2 done`.
+8. web-app Dev asks "minimum amount?" `blocks: AC4` → recorded on US-12;
+   SA proposes `+AC2`; accepted → `blocks: AC2, AC4`; AC2's child is done, so
+   the SA's amendment proposal will be a new child `US-12.payments-api.2`.
+9. BA answers; amendments accepted; parent rev 2 (Affected: web-app,
+   payments-api.2); web-app child demoted to draft until re-published; the
+   question reads answered once both are on the hub at rev ≥ 2.
+10. All children done → US-12 `done`.
 
-## Failure cases the design must handle
+## Failure cases
 
 | Case | Expected |
 |---|---|
-| SA quick look finds no repo (greenfield) | one ticket as today; SA proposes `[NEW: D<n>]`/`[NEW: …]` at grounding |
-| Target repo not in the hub registry | lint error on the child; not published |
-| Two BA repos publish the same parent/child id | existing `<repo>:<id>` qualification applies; lint warns on a cross-repo duplicate |
-| A child is cancelled | removed from the split + change-log row; file deleted; lint passes; hub drops it on next publish |
-| A child depends on a sibling that is cancelled | lint error until its `Blocked by` is updated |
-| Parent edited by hand inconsistently | lint error; nothing publishes |
-| Child DoR unticked after an amend | that child drops off the hub (existing rule); siblings unaffected |
-| BA rejects the split | single ticket; lint warning "grounding touches several repos" when SA finds hits outside the target |
-| Runner of repo X fetches a child of repo Y by hand | warning, not refusal |
-| Q&A DB from an older hub | migration adds nullable columns; old questions have `asked_from = NULL` |
-| Hub without the new code (older install) reads a child | header lines are ignored; it is a normal ticket |
+| SA finds no repo (greenfield) | one ticket; target set at grounding |
+| Target not a dev repo on the hub | `blocked: target … is not a dev repo` |
+| Several dev repos, ticket without target | `blocked: no target repo` |
+| Same child id from two BA repos | CI lint error; planstatus `blocked: id published by several BA repos` |
+| Child cancelled | removed from split + change-log row; file deleted; CI lints the parent; siblings' `Blocked by` must be updated (lint) |
+| Parent edited inconsistently | lint error; publish fails closed; hub keeps last good version |
+| Child DoR unticked after amend | that child off the hub; siblings unaffected; its runner re-picks after `unknown_ticket` |
+| Ticket already claimed/done made a parent | CI lint error |
+| Runner of X fetches a child of Y by hand | warning |
+| Older hub, new runner | runner refuses to start with an upgrade message |
+| Older runner, new hub | no routing (documented: upgrade runners) |
+| Q&A DB from an older hub | migration adds nullable columns |
 
 ## Testing (per phase)
 
-- Phase 1: picker filters by repo; single-repo fallback; unparented `Blocked
-  by` blocks/unblocks; unknown and cyclic deps; done read from each target's
-  `-svc`.
-- Phase 2: every lint rule (one failing fixture each); plan-ingest publish /
-  skip; roll-up statuses; hub page shows parent + children.
-- Phase 3: skill text tests (templates/mirrors drift checks) for the new step
-  and wording; an e2e on a fixture hub with two dev repos.
-- Phase 4: Q&A migration; parent-level record; proposed vs confirmed blocks;
-  gate stops only on confirmed blocks.
-- Phase 5: bug target header; child-bug creation; parent-bug roll-up.
+- P1: routing per repo; single-repo fallback; no/unknown target; `Blocked by`
+  exact-id matching (incl. `M-x-US3.repo`), legacy prose ignored; done per
+  target; stored-task recovery on `unknown_ticket`; old-hub refusal.
+- P2: one failing fixture per lint rule; MCP `parent_markdown`; CI deleted
+  child; plan-ingest fail-closed; roll-up; parent never a task (picker,
+  claim take); demotion of Affected children; mission children inherit.
+- P3: skill text drift checks; e2e on a fixture hub with two dev repos.
+- P4: Q&A migration; parent-level record and listing on children; gate only
+  on this ticket's ACs; proposed vs confirmed blocks; answered only after all
+  Affected children publish; pre-merge re-check.
+- P5: bug target; child-bug proposal ends auto run; parent bug roll-up with
+  `Own fix`.
 
 ## Left to the builder
 
-- Exact function names/signatures, where routing lives (`picker` vs
-  `planstatus`), CLI flag names (`--for`), hub template layout.
-- Wording of the agents' proposal messages (must contain: child count, names,
-  repo per child, AC per child, blocked-by, evidence).
+- Function names/signatures, module placement of the shared done/roll-up
+  function, CLI flag names, hub template layout.
+- Wording of proposals (must contain: child count, ids, repo, ACs, order,
+  evidence).
+
+## Review record
+
+Builder check and an adversarial flow audit (7 Critical, 16 Important, 14
+Minor) were run on the first draft; every finding is closed by a rule above
+(tagged `Review <id>`). Owner answered: auto mode accepts with reviewer
+(1b); tracker export out of scope.
