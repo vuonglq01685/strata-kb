@@ -221,7 +221,7 @@ def _r8(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     cursor = 1
     sid = ctx.span.id
     for f in detect.break_findings(
-        spans.section_input(ctx.span, unit_md), ctx.pdf_pages
+        spans.section_input(ctx.span, unit_md, ctx.md), ctx.pdf_pages
     ):
         head = " ".join(f.evidence.get("next", "").split()[:3])
         at = next(

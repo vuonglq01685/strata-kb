@@ -225,11 +225,21 @@ def test_md_ingest_warns_no_bookmarks_and_empty_heading(tmp_path):
     assert "heading with no text: 1" in warnings
 
 
+def test_md_empty_repeated_heading_warned_once_with_final_id(tmp_path, caplog):
+    src = _md(tmp_path, "## 1 Empty\n\ntext\n\n## 1 Again\n", "r.md")
+
+    with caplog.at_level("WARNING"):
+        _, warnings = _run(_opts(tmp_path, src))
+
+    assert [w for w in warnings if "no text" in w] == ["heading with no text: 1-2"]
+    assert not [r for r in caplog.records if "no text" in r.getMessage()]
+
+
 def test_md_ingest_without_docling(tmp_path):
     src = _md(tmp_path)
     code = (
         "import sys\n"
-        "for m in ('docling', 'pypdfium2', 'PIL', 'rapidocr_onnxruntime'):\n"
+        "for m in ('docling', 'docling_core', 'pypdfium2', 'PIL', 'rapidocr', 'rapidocr_onnxruntime'):\n"
         "    sys.modules[m] = None\n"
         "from pathlib import Path\n"
         "from strata_kb import ingestcmd\n"

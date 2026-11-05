@@ -330,3 +330,9 @@ def test_inline_code_span_image_untouched(tmp_path):
     sha = hashlib.sha256(_PNG).hexdigest()
     assert out[0].text == f"see `![x](inl.png)` and ![y](assets/{sha}.png)"
     assert len(list(assets.iterdir())) == 1 and warns == []
+
+
+def test_unnumbered_h1_after_other_content_stays_a_heading_item():
+    doc = read_md("## 1 Intro\n\ntext\n\n# Glossary\n\n## Terms\n\nmore\n", "a.md")
+    assert doc.title is None
+    assert "Glossary" in [i.text for i in doc.items]

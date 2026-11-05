@@ -763,7 +763,10 @@ def build_units_with_notes(
                 root, max_depth, min_tokens, max_unit_tokens, None, notes, md_mode
             )
         )
-        return _dedupe_ids(units, notes), notes
+        units = _dedupe_ids(units, notes)
+        if md_mode:  # final ids: the dedupe above may have renamed a repeat
+            notes.empty_headings = [u.id for u in units if not u.body_md.strip()]
+        return units, notes
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
@@ -863,10 +866,6 @@ def _units_from_tree(
         # md_mode: a heading-only leaf still emits a unit (its title is content).
         empty_leaf = md_mode and not body_md.strip()
         if node.depth > 0 and (body_md.strip() or empty_leaf):
-            if empty_leaf:
-                logger.warning("heading with no text: %s", node.id)
-                if notes is not None:
-                    notes.empty_headings.append(node.id)
             units.append(
                 SectionUnit(
                     id=node.id,

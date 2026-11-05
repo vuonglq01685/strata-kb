@@ -4930,14 +4930,14 @@ def l3_fix_apply(
         [],
         "--from-image",
         help="Draft read from a page image: skip the word check (only where "
-        "the PDF has no usable text; repeatable)",
+        "the PDF has no usable text (PDF only); repeatable)",
     ),
     kb_dir: Path = _KB_DIR_OPT,
     work_dir: Path = typer.Option(
         Path(".kb-work"), help="Intermediate cache directory"
     ),
 ) -> None:
-    """Verify AI drafts of L3 units against the PDF and apply the ones that pass (exit 1 on any rejection)."""
+    """Verify AI drafts of L3 units against the source and apply the ones that pass (exit 1 on any rejection)."""
     from strata_kb.l3check import fix
 
     kind = _l3_fix_preflight(kb_dir, work_dir, doc_id, source)

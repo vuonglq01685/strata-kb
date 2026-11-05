@@ -185,6 +185,7 @@ def _section_inputs(
     units: list[sectioner.SectionUnit],
     slices: dict[str, list[str | None]],
     last_page: int | None,
+    md: bool = False,
 ) -> list[detect.SectionInput]:
     """One input per unit: its page span (to the next unit's start page, or
     `last_page`) and its slice of the written L3."""
@@ -198,7 +199,9 @@ def _section_inputs(
         piece = pieces[taken[unit.id]] if taken[unit.id] < len(pieces) else None
         taken[unit.id] += 1
         inputs.append(
-            detect.SectionInput(unit.id, unit.chapter, unit.page, end_page, piece or "")
+            detect.SectionInput(
+                unit.id, unit.chapter, unit.page, end_page, piece or "", md
+            )
         )
     return inputs
 
@@ -259,7 +262,12 @@ def l3_check(
     checked = {u.id for u in units if chapters is None or u.chapter in chapters}
     doc_dir = opts.kb_dir / opts.doc_id
     manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
-    inputs = _section_inputs(units, slices, max(pages))
+    inputs = _section_inputs(
+        units,
+        slices,
+        max(pages),
+        manifest.ingest is not None and manifest.ingest.source_kind == "md",
+    )
     found = detect.check_document(
         inputs,
         {u.id: u.title for u in units},

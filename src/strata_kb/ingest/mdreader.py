@@ -152,7 +152,8 @@ def _parse(text: str, name: str) -> _Parsed:
 
     h1 = [it for _, it in blocks if it.kind == "heading" and it.level == 1]
     title = None
-    if len(h1) == 1 and parse_section_id(h1[0].text) is None:
+    # only the first block can be the title: a later H1 is a real section
+    if len(h1) == 1 and h1[0] is blocks[0][1] and parse_section_id(h1[0].text) is None:
         title = h1[0].text
         blocks = [(s, it) for s, it in blocks if it is not h1[0]]
 
