@@ -1,7 +1,7 @@
 """Layout contract of an L3 unit (rules R1-R9): what the AI structure fix must
 leave behind. Pure checks over the unit's markdown plus the PDF context; the
-only I/O is reading the chapter files in `lint_doc` and the PDF in
-`load_pdf_context`."""
+only I/O is reading the chapter files in `lint_doc` and the source in
+`source.load_context`."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata_kb.ingest import parser, pdftext
 from strata_kb.l3check import detect, spans
+from strata_kb.l3check.source import load_context
 from strata_kb.l3check.spans import SpansFile, UnitSpan
 from strata_kb.mdutils import (
     HEADING_RE,
@@ -49,6 +49,7 @@ class UnitContext:
     is_fallback: bool
     furniture: list[str]  # furniture strings of the span's pages
     pdf_pages: dict[int, str]
+    md: bool = False  # Markdown source: R6 allows what Markdown legitimately has
 
 
 def _clip(text: str) -> str:
@@ -125,7 +126,11 @@ def _r4(body: list[tuple[int, str]]) -> list[tuple[int, str]]:
     return bad
 
 
-def _r6(lines: list[str], body: list[tuple[int, str]]) -> list[tuple[int, str]]:
+def _r6(
+    lines: list[str], body: list[tuple[int, str]], md: bool
+) -> list[tuple[int, str]]:
+    if md:
+        return []
     bad = [(n, line) for n, line in body if _QUOTE.match(line)]
     bad += [(n, ln) for n, ln in enumerate(lines, 1) if _TILDE_FENCE.match(ln)]
     base: int | None = None
@@ -227,7 +232,7 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
         )
     ]
     found += [("R9", n, t) for n, t in _r9(body, long)]
-    found += [("R6", n, t) for n, t in _r6(lines, body)]
+    found += [("R6", n, t) for n, t in _r6(lines, body, ctx.md)]
     fences = [n for n, t in enumerate(lines, 1) if _BACKTICK_FENCE.match(t)]
     if len(fences) % 2:
         found.append(("R7", fences[-1], lines[fences[-1] - 1]))
@@ -253,7 +258,9 @@ def _orphans(raw_md: str) -> list[LintIssue]:
     return out
 
 
-def lint_file(raw_md: str, contexts: dict[str, UnitContext]) -> list[LintIssue]:
+def lint_file(
+    raw_md: str, contexts: dict[str, UnitContext], md: bool = False
+) -> list[LintIssue]:
     """Lint every `## ` unit of a chapter file (or a draft) plus R2 and orphan
     text across it. A unit whose id has no context gets a neutral one (no PDF
     checks): the PDF-free rules still apply."""
@@ -266,6 +273,7 @@ def lint_file(raw_md: str, contexts: dict[str, UnitContext]) -> list[LintIssue]:
             False,
             [],
             {},
+            md,
         )
         for unit in slices:
             issues += lint_unit(unit, ctx)
@@ -278,6 +286,7 @@ def lint_doc(
     data: SpansFile,
     pdf_pages: dict[int, str],
     furniture: dict[int, list[str]],
+    md: bool = False,
 ) -> list[LintIssue]:
     """Lint each chapter file that holds units of `data`."""
     by_file: dict[str, dict[str, UnitContext]] = {}
@@ -288,19 +297,18 @@ def lint_doc(
             span.id in data.fallback_units,
             [text for p in pages for text in furniture.get(p, [])],
             pdf_pages,
+            md,
         )
     issues: list[LintIssue] = []
     for file, contexts in by_file.items():
         raw = kb_dir / doc_id / f"{file}.raw.md"
         if raw.is_file():
-            issues += lint_file(raw.read_text(encoding="utf-8"), contexts)
+            issues += lint_file(raw.read_text(encoding="utf-8"), contexts, md)
     return issues
 
 
 def load_pdf_context(
     pdf: Path, work_dir: Path, doc_id: str
 ) -> tuple[dict[int, str], dict[int, list[str]]]:
-    """(text layer per page, furniture per page) of the source PDF."""
-    return pdftext.page_texts(pdf), parser.furniture_by_page(
-        parser.load_or_parse(pdf, work_dir / doc_id)
-    )
+    """Kept for existing callers: the PDF case of `source.load_context`."""
+    return load_context(pdf, work_dir, doc_id, "pdf")
