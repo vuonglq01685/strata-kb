@@ -187,7 +187,8 @@ def md_pages(text: str) -> dict[int, str]:
 # `![alt](target "title")`: group 1 is everything before the target, 3 the title part
 _IMAGE = re.compile(r"(!\[[^\]]*\]\(\s*)([^)\s]+)(\s+\"[^\"]*\")?(\s*\))")
 _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)", re.DOTALL)
-_URL = re.compile(r"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)")
+_URL = re.compile(r"^(?:[a-zA-Z][a-zA-Z0-9+.-]+:|//)")  # 2+ chars: `C:` is a drive
+_ABSOLUTE = re.compile(r"^(?:[/\\]|[a-zA-Z]:[/\\])")  # POSIX, UNC or drive path
 _IMAGE_SUFFIXES = {".png", ".webp"}
 
 
@@ -207,7 +208,7 @@ def copy_images(
             return m.group(0)
         decoded = unquote(target)
         try:
-            if decoded.startswith("/") or Path(decoded).is_absolute():
+            if _ABSOLUTE.match(decoded) or Path(decoded).is_absolute():
                 reason = "outside the source folder"
             else:
                 path = (root / decoded).resolve()

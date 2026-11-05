@@ -312,6 +312,19 @@ def test_absolute_path_inside_source_tree_not_copied(tmp_path):
     assert not assets.exists()
 
 
+@pytest.mark.parametrize(
+    "target", ["C:\\docs\\pic.png", "C:/docs/pic.png", "\\\\server\\share\\pic.png"]
+)
+def test_windows_absolute_target_warned_not_copied(tmp_path, target):
+    # A drive letter is not a URL scheme: the target must be refused with a warning.
+    src, assets, _ = _img_setup(tmp_path, "")
+    items = read_md(f"![a]({target})\n", "doc.md").items
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert out[0].text == items[0].text
+    assert warns == [f"image kept as written: {target} (outside the source folder)"]
+    assert not assets.exists()
+
+
 @pytest.mark.parametrize("target", ["%00.png", "a" * 300 + ".png"])
 def test_unreadable_target_kept_with_warning(tmp_path, target):
     src, assets, items = _img_setup(tmp_path, f"![a]({target})\n")
