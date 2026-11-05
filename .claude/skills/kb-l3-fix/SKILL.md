@@ -79,7 +79,7 @@ every `kb` command below with `docker compose run --rm hub`.
    retries per section. Do not retry, and leave the section for the human,
    when the check is `status:` (the chapter file already has summarized or
    reviewed units), when it says to re-ingest, or when the only way to pass
-   would be to add, reword or drop PDF text. When you give up on a section,
+   would be to add, reword or drop source text. When you give up on a section,
    delete its draft file under `.kb-work/<doc-id>/l3fix/` so a later apply
    does not pick it up again. Apply exits 1 when any draft was rejected,
    even if others were applied.
@@ -96,18 +96,18 @@ every `kb` command below with `docker compose run --rm hub`.
 Allowed:
 - Section ids, headings and heading levels (`##` unit, `###`, `####` at
   most, no skipped level).
-- Joining lines that the PDF broke into one paragraph.
+- Joining lines that the source broke into one paragraph.
 - Removing a block that is an exact repeat of one that stays, and page
   header, footer or watermark lines (furniture, lint rule R5) left in the
   text.
 - Splitting a heading that holds text that is not heading text (lint rule
   R9: a link, a watermark, or the version, status and owner lines of a page
   header boxed into the title). Keep the title as the heading, put the other
-  lines under it as body lines in the PDF's order, and drop a watermark at
+  lines under it as body lines in the source's order, and drop a watermark at
   the end of the heading.
 - List markup (`-`, `*`, `1.`, two levels), fenced code, and the inline
   marks `**`, `*`, `_` and `` ` ``.
-- Replacing a garbled word with the word the PDF has at that place.
+- Replacing a garbled word with the word the source has at that place.
 
 Forbidden:
 - Adding, rewording, translating or "cleaning up" any text.
@@ -119,12 +119,12 @@ Forbidden:
 ## Section ids
 
 The word check treats a section id as text: a changed id must be text the
-PDF shows. Take ids only from the PDF's own numbering (`4.2`, `4.2.1`,
+source shows. Take ids only from the source's own numbering (`4.2`, `4.2.1`,
 `Điều 5`). Never invent an id.
 
 A synthetic fallback id such as `x1` or a slug (`## x1 4.2 NGHỈ PHÉP NĂM`)
-may only be deleted when the PDF numbers that heading, leaving the PDF
-heading text (`## 4.2 NGHỈ PHÉP NĂM`). A heading the PDF does not number
+may only be deleted when the source numbers that heading, leaving the source
+heading text (`## 4.2 NGHỈ PHÉP NĂM`). A heading the source does not number
 keeps its slug id and its text as written
 (`## nợ-kỹ-thuật-mang-theo Nợ kỹ thuật mang theo`). Never delete that id:
 the title's first word would become the id, and apply refuses it with
