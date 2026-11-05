@@ -31,6 +31,7 @@ _HEADING = re.compile(r"^(#+)(?:[ \t]+(.*?))?[ \t]*$")
 _BACKTICK_FENCE = re.compile(r"^[ \t]*```")
 _TILDE_FENCE = re.compile(r"^[ \t]*~~~")
 _QUOTE = re.compile(r"^[ \t]*[<>]")
+_MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _URL = re.compile(r"https?://|www\.", re.IGNORECASE)
 _LIST_ITEM = re.compile(r"^([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
 
@@ -71,6 +72,28 @@ def _body_lines(lines: list[str]) -> list[tuple[int, str]]:
         elif not fenced:
             out.append((n, line))
     return out
+
+
+def _md_fences(lines: list[str]) -> tuple[list[tuple[int, str]], int | None]:
+    """CommonMark fences: (body lines outside any fence, line of an unclosed
+    opener). A fence closes on its own character with a run at least as long."""
+    out: list[tuple[int, str]] = []
+    opener: tuple[str, int, int] | None = None  # (char, run length, line)
+    for n, line in enumerate(lines, 1):
+        m = _MD_FENCE.match(line)
+        if opener is None:
+            if m:
+                opener = (m.group(1)[0], len(m.group(1)), n)
+            else:
+                out.append((n, line))
+        elif (
+            m
+            and m.group(1)[0] == opener[0]
+            and len(m.group(1)) >= opener[1]
+            and not m.group(2).strip()
+        ):
+            opener = None
+    return out, opener[2] if opener else None
 
 
 def _r3(body: list[tuple[int, str]]) -> list[tuple[int, str]]:
@@ -214,7 +237,7 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     """Issues of one unit (`unit_md` starts at its `## ` line), by rule then line."""
     sid = ctx.span.id
     lines = unit_md.splitlines()
-    body = _body_lines(lines)
+    body, open_fence = _md_fences(lines) if ctx.md else (_body_lines(lines), None)
     found: list[tuple[str, int, str]] = []
     if ctx.is_fallback and (at := _numbered_fallback(body)):
         found.append(("R1", at[0], at[1]))
@@ -233,9 +256,13 @@ def lint_unit(unit_md: str, ctx: UnitContext) -> list[LintIssue]:
     ]
     found += [("R9", n, t) for n, t in _r9(body, long)]
     found += [("R6", n, t) for n, t in _r6(lines, body, ctx.md)]
-    fences = [n for n, t in enumerate(lines, 1) if _BACKTICK_FENCE.match(t)]
-    if len(fences) % 2:
-        found.append(("R7", fences[-1], lines[fences[-1] - 1]))
+    if ctx.md:
+        if open_fence:
+            found.append(("R7", open_fence, lines[open_fence - 1]))
+    else:
+        fences = [n for n, t in enumerate(lines, 1) if _BACKTICK_FENCE.match(t)]
+        if len(fences) % 2:
+            found.append(("R7", fences[-1], lines[fences[-1] - 1]))
     issues = [LintIssue(sid, r, n, _clip(t)) for r, n, t in found]
     issues += _r8(unit_md, ctx)
     return sorted(issues, key=lambda i: (i.rule, i.line))

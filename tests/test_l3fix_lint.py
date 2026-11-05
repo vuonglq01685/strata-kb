@@ -272,3 +272,12 @@ def test_md_lint_keeps_r3_r4_r9():
     assert _rules(r3, ctx) == [("R3", 3)]
     assert _rules(r4, ctx) == [("R4", 5)]
     assert _rules(r9, ctx) == [("R9", 1)]
+
+
+def test_md_lint_follows_commonmark_fences():
+    md = "## 1 A\n\n~~~\n# comment\n#### x\n```\n~~~\n"
+    md_ctx = lint.UnitContext(_ctx("1").span, False, [], {}, md=True)
+    assert lint.lint_unit(md, md_ctx) == []
+    assert _rules(md, _ctx("1")) != []
+    unclosed = "## 1 A\n\n~~~bash\n# x\n"
+    assert _rules(unclosed, md_ctx) == [("R7", 3)]
