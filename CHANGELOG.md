@@ -3,6 +3,17 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.35.0 — 2026-11-05
+
+`kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.
+
+- **`kb ingest <file>.md --id <doc>`.** A `.md` or `.markdown` source (any case) writes the same artifacts as a PDF ingest and needs no `ingest` extra. Only heading lines are rewritten, by the PDF's id rules; an unnumbered heading nests by its `#` level. Every other byte reaches L3 unchanged. Local `.png` and `.webp` images inside the source folder are copied to `assets/<sha256>.<ext>` and their links rewritten; other images stay, with a warning. The positional argument of `kb ingest` is now `source`.
+- **Refusals.** `'<id>' was ingested from a PDF — ingest the Markdown under a new --id` (and the reverse); a fenced code or HTML block that holds a `## ` or `### ` line refuses the file, with line numbers.
+- **`--source`.** `kb l3 fix apply`, `kb l3 lint` and `kb l3 fix pages` take `--source <file>`; `--pdf` still works as an alias. `kb l3 fix pages` gained `--kb-dir`. For a Markdown document the word check aligns drafts to the Markdown text and PDF-only checks are skipped; `kb l3 fix pages` and `--from-image` refuse with `source is Markdown: no page images`.
+- **The source Markdown is the master.** Edit it and ingest again. Re-ingest resets the AI-fix record, so run `/kb-l3-fix` and confirm again. `kb authored <doc>` still freezes a document.
+- **Skills and guides.** `kb-ingest` and `kb-l3-fix` describe the Markdown path (`--source <file>`); the child guide (en, vi) has an "Ingest a Markdown file" paragraph. Run `kb init` to get the skills.
+- **Upgrade.** Upgrade the CLI and run `kb init`. PDF ingest output is unchanged; manifests ingested before this release load as they are.
+
 ## 1.34.4 — 2026-11-04
 
 A BA ticket that auto mode merged no longer reads as not yet drafted, and a ticket that settles its own Technology decision can tick its grounding box in the same run (#140).

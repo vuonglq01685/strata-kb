@@ -1,11 +1,11 @@
 ---
 name: kb-ingest
-description: Ingest a source PDF into the .kb/ knowledge base — interview for id/tags/revision, then run kb ingest
+description: Ingest a source PDF or Markdown file into the .kb/ knowledge base — interview for id/tags/revision, then run kb ingest
 ---
 
-# /kb-ingest — ingest a PDF into Strata
+# /kb-ingest — ingest a PDF or Markdown file into Strata
 
-Turn a source PDF into `.kb/` scaffolding via the `kb ingest` CLI. Your
+Turn a source PDF or Markdown file into `.kb/` scaffolding via the `kb ingest` CLI. Your
 job: resolve the file, confirm metadata with the user, run the command.
 
 NEVER run `kb ingest` until the user has explicitly confirmed all three
@@ -18,7 +18,7 @@ missing ones. "none" is a valid answer for tags and revision.
 1. **Resolve the file.** The argument is a file name — look for it in
    `source/`. If that directory does not exist, list the repository root
    to find the actual source folder before giving up.
-   - No argument given → list the PDFs in `source/` and ask which one.
+   - No argument given → list the PDF and Markdown (`.md`, `.markdown`) files in `source/` and ask which one.
    - File not found → say so, show the files that ARE present, and ask
      again. Never silently pick a different file.
 2. **Propose metadata, then ask.** Derive suggestions from the file name:
@@ -32,7 +32,7 @@ missing ones. "none" is a valid answer for tags and revision.
    extra, so prefer it — no local Python setup needed.
    - **Docker path** — when `docker info` succeeds and
      `docker-compose.yml` exists:
-     `docker compose run --rm hub kb ingest source/<file>.pdf --id <id> --tags "<tags>" --revision "<revision>" --no-summarize`
+     `docker compose run --rm hub kb ingest source/<file>.<pdf|md> --id <id> --tags "<tags>" --revision "<revision>" --no-summarize`
      The container has no LLM CLI, so `--no-summarize` is explicit; fill
      the summaries yourself afterwards (follow the kb-summarize rules).
      If `.kb/config.yaml` has `l3_fix: enabled: true`, fill them only after the
@@ -42,14 +42,14 @@ missing ones. "none" is a valid answer for tags and revision.
    - **Local fallback** — when Docker is not available (daemon down or no
      compose file), use the local CLI (requires
      `pip install "strata-kb[ingest]"`), which auto-summarizes as usual:
-     `kb ingest source/<file>.pdf --id <id> --tags "<tags>" --revision "<revision>"`
+     `kb ingest source/<file>.<pdf|md> --id <id> --tags "<tags>" --revision "<revision>"`
    Omit `--tags` / `--revision` when the user answered "none".
 4. **Review the L3 check.** If `.kb/config.yaml` has
    `l3_fix: enabled: true`, first run the kb-l3-fix command (Claude Code `/kb-l3-fix`,
    Copilot `#kb-l3-fix`, Cursor `/kb-l3-fix`) on this document, then
-   continue. `kb ingest` compares L3 with the PDF and
+   continue. `kb ingest` compares L3 with the source and
    flags suspect sections (wrong order, fallback ids, broken paragraphs,
-   text that differs from the PDF) in `.kb/<id>/_l3check.yaml`. When the
+   text that differs from the source) in `.kb/<id>/_l3check.yaml`. When the
    output says `Summarize skipped until the L3 review is confirmed`:
    run `kb l3 report <id>` and show the user every flagged section with
    its evidence and agent verdict. Only the user confirms: after they
@@ -63,6 +63,19 @@ missing ones. "none" is a valid answer for tags and revision.
    `kb l3 report <id>` lists; `kb summarize --print-prompt` refuses a
    document still awaiting review. With Docker, prefix the
    commands with `docker compose run --rm hub`.
+   **Markdown source** (`.md` / `.markdown`): needs no ingest extra. The rules
+   rewrite only heading lines into `## <id> <title>`; every other byte reaches
+   L3 unchanged. Local `.png` / `.webp` images inside the source folder are
+   copied to `.kb/<id>/assets/<sha256>.<ext>` and their links rewritten;
+   other images stay as written, with a warning. The command refuses a file
+   whose fenced code or HTML block holds a `## ` / `### ` line (it lists the
+   line numbers: move it out or indent it), and an id used for the other kind
+   (`'<id>' was ingested from a PDF — ingest the Markdown under a new --id`,
+   and the reverse). The source Markdown is the master: to change the text,
+   edit it and re-ingest; re-ingest resets the AI-fix record, so run
+   kb-l3-fix again and have the user confirm again. `kb authored <id>` still
+   freezes a document. No page images exist for it: `kb l3 fix pages` and
+   `--from-image` refuse with `source is Markdown: no page images`.
 5. **Report the outcome.** Relay the CLI output: number of sections,
    summarize result, `kb build` status.
    - Some sections failed to summarize → tell the user to run

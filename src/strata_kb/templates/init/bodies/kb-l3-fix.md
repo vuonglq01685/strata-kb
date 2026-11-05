@@ -4,8 +4,8 @@
 You repair the layout of L3 (the `.raw.md` chapter files) of one ingested
 document: wrong heading ids, fallback ids, broken paragraphs, repeated
 blocks, page headers and footers left in the text. You do it by writing
-drafts. `kb l3 fix apply` checks every draft against the source PDF and
-writes only the ones that pass. You never write into `.kb/` yourself, and a
+drafts. `kb l3 fix apply` checks every draft against the source file (PDF
+or Markdown) and writes only the ones that pass. You never write into `.kb/` yourself, and a
 human still confirms the result.
 
 <HARD-RULE>
@@ -17,9 +17,10 @@ human still confirms the result.
    `kb l3 fix apply` changes L3, and a direct edit is caught by the gate
    anyway.
 3. NEVER run `kb l3 confirm`. Only a human confirms.
-4. The text must stay the PDF's text. Do not add, reword, translate,
+4. The text must stay the source's text. Do not add, reword, translate,
    summarize, fix spelling or "clean up" anything. A word may enter L3 only
-   where the PDF has that word in that place.
+   where the source has that word in that place (for a Markdown source: only
+   where the source Markdown has it).
 5. Never change a table: same table blocks, byte for byte, same order.
 6. Retry a rejected draft at most 2 times, then stop on that section and
    leave it for the human.
@@ -30,12 +31,13 @@ every `kb` command below with `docker compose run --rm hub`.
 
 ## Workflow
 
-1. **Pick the document and the PDF.** The user names a document id (ask if
-   they did not). The PDF is the file it was ingested from, normally
-   `source/<file>.pdf`; ask if you cannot tell which one. A different PDF
-   is refused by the CLI.
+1. **Pick the document and the source file.** The user names a document id
+   (ask if they did not). The source is the file it was ingested from, a PDF
+   or a Markdown file, normally `source/<file>.pdf` or `source/<file>.md`;
+   ask if you cannot tell which one. A different file is refused by the CLI.
+   `--pdf` still works as an alias of `--source`.
 2. **Find what to fix.** Run both:
-   - `kb l3 lint <doc-id> --pdf <pdf>` — layout problems, one per line as
+   - `kb l3 lint <doc-id> --source <file>` — layout problems, one per line as
      `§<section> <rule> line <n>: <evidence>` (rules R1–R9; exit 1 when
      there are issues).
    - `kb l3 report <doc-id>` — flagged sections with evidence.
@@ -46,7 +48,7 @@ every `kb` command below with `docker compose run --rm hub`.
 3. **Read the unit.** The section's file is the `file:` of its row in
    `.kb/<doc-id>/_manifest.yaml`; its text is in
    `.kb/<doc-id>/<file>.raw.md`, from its `## ` heading to the next `## `
-   heading. Read it; do not edit it. Compare with the PDF text where the
+   heading. Read it; do not edit it. Compare with the source text where the
    evidence points.
 4. **Write one draft per unit.** Save it as
    `.kb-work/<doc-id>/l3fix/<section-id>.md`, named by the section's current
@@ -60,7 +62,7 @@ every `kb` command below with `docker compose run --rm hub`.
    - Units that are not consecutive, or sit in different files, need
      separate drafts.
 5. **Apply.** Run
-   `kb l3 fix apply <doc-id> --pdf <pdf> --assistant <name>` with `<name>`
+   `kb l3 fix apply <doc-id> --source <file> --assistant <name>` with `<name>`
    `claude-code`, `copilot` or `cursor` — the tool you are running in.
    To apply only some drafts, add `--section <id>` (repeatable). It prints
    one line per draft:
@@ -77,7 +79,7 @@ every `kb` command below with `docker compose run --rm hub`.
    delete its draft file under `.kb-work/<doc-id>/l3fix/` so a later apply
    does not pick it up again. Apply exits 1 when any draft was rejected,
    even if others were applied.
-7. **Re-check.** Run `kb l3 lint <doc-id> --pdf <pdf>` again for the
+7. **Re-check.** Run `kb l3 lint <doc-id> --source <file>` again for the
    sections you applied.
 8. **Report.** Give three lists: applied (with new ids), rejected (with
    the check and detail), left for the human. Then tell the user to run
@@ -128,18 +130,24 @@ heading and the previous/next links without the slug.
 
 ## Sections whose text layer is unusable
 
-Use this only for a section that is scanned or has a broken font, so the
+PDF sources only. A Markdown source has no page images: `kb l3 fix pages`
+and `--from-image` refuse with `source is Markdown: no page images`. For a
+Markdown document, fix what the Markdown text allows and leave the rest for
+the human; they edit the source Markdown and re-ingest (re-ingest resets the
+AI-fix record, so run this skill again and the human confirms again).
+
+Use this only for a PDF section that is scanned or has a broken font, so the
 PDF text cannot be the reference (lint or the report shows `unverifiable`
 or mostly mismatched content).
 
 1. Render the pages:
-   `kb l3 fix pages <doc-id> --pdf <pdf> --page <N> [--page <M> ...]`.
+   `kb l3 fix pages <doc-id> --source <file> --page <N> [--page <M> ...]`.
    It prints the PNG paths (`.kb-work/<doc-id>/pages/p<N>.png`). Open and
    read those images.
 2. Write the draft from what the page images show, with the same rules as
    above. Still never change a table.
 3. Apply that draft with `--from-image <id>` (the draft's first section id;
-   repeatable): `kb l3 fix apply <doc-id> --pdf <pdf> --assistant <name> --section <id> --from-image <id>`.
+   repeatable): `kb l3 fix apply <doc-id> --source <file> --assistant <name> --section <id> --from-image <id>`.
 
 `--from-image` skips the word check, so apply refuses it for a section
 whose text layer is usable; then redo the draft without it, or leave the
@@ -159,7 +167,7 @@ PDF does not justify: fix the body, never the check.
 
 ## Hard stops
 
-- Switch off, document or PDF not found, or any CLI error you do not
+- Switch off, document or source file not found, or any CLI error you do not
   understand → show the output verbatim and stop. Do not guess options.
 - Never use `--from-image` to get past a rejection of a section with a
   usable text layer, except for heading lines as described above.

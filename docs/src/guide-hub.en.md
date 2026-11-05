@@ -381,7 +381,7 @@ follow the [child guide](guide-child.en.md#3-daily-work). What differs:
   needs a working `gh`); with no remote it commits directly.
 - `kb ingest` also runs in the container: `docker compose run --rm hub kb ingest …`.
 - A document whose Markdown is now the master is tagged with `kb authored <doc>` (`--off`
-  removes the tag); `kb ingest` then refuses to re-ingest it, so a PDF cannot overwrite
+  removes the tag); `kb ingest` then refuses to re-ingest it, so a re-ingest cannot overwrite
   the hand fixes. `kb summarize --redo` stays allowed.
 - Source PDFs stay in `source/`, which Git ignores. Do not commit them.
 
