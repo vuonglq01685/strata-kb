@@ -20,7 +20,7 @@ from strata_kb.autorun import claude, picker, publishwatch
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
-from strata_kb.autorun.claims import RunnerClaims
+from strata_kb.autorun.claims import RunnerClaims, UnknownTicketError
 from strata_kb.autorun.done import all_done
 from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run_lock
 from strata_kb.autorun.picker import Task
@@ -123,7 +123,7 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
             "so intake would not merge its publish PRs"
         )
-    return reasons
+    return reasons + _old_hub_refusal(cfg)
 
 
 def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, str]:
@@ -143,6 +143,20 @@ def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, 
         None,
     )
     return entry is not None, bool(entry and entry.auto_merge), ""
+
+
+def _old_hub_refusal(cfg: KBConfig) -> list[str]:
+    """Cloud Dev only: the hub's plan rows must carry `target_repo`. Any other
+    plan error is transient and left to the loop."""
+    if cfg.kind != "dev" or not cloud.is_cloud():
+        return []
+    try:
+        hubapi.from_env().plan_next()
+    except hubapi.OldHubError as exc:
+        return [str(exc)]
+    except KbError:
+        return []
+    return []
 
 
 def _ticket_of(task_key: str | None) -> str | None:
@@ -244,6 +258,18 @@ def _claim_pick(
     return None
 
 
+def _still_ready_here(
+    hub: HubHandle | hubapi.HubApi, repo_id: str, ticket: str
+) -> bool:
+    """The plan still lists `ticket` as ready and routed to `repo_id`. Reads the
+    whole plan: the same client-side routing test as the pick."""
+    stories, unparented, _notes = picker.plan_next(hub)
+    return any(
+        t.us_id == ticket and t.status == "ready" and t.target_repo == repo_id
+        for t in (*stories, *unparented)
+    )
+
+
 def _task_for(
     root: Path,
     kb_dir: Path,
@@ -257,6 +283,12 @@ def _task_for(
     the pick fails, `_Early` when another Dev holds the ticket(s)."""
     if state.task:
         skill, _, arg = state.task.partition(":")
+        if skill in CLAIMED_SKILLS and not _still_ready_here(hub, cfg.repo_id, arg):
+            autostate.save(kb_dir, replace(state, task=None, attempts=0))
+            if claims is not None:
+                claims.forget(arg)
+            logger.info("%s is no longer ready for %s; picking again", arg, cfg.repo_id)
+            raise _Early("ran")
         if claims is not None and skill in CLAIMED_SKILLS and not claims.claim(arg):
             autostate.save(kb_dir, replace(state, task=None, attempts=0))
             logger.info("%s is now held by another Dev; picking again", arg)
@@ -411,6 +443,10 @@ def run_once(
         task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
+    except UnknownTicketError as exc:  # the hub dropped the ticket under us
+        logger.info("%s; picking again", exc)
+        autostate.save(kb_dir, replace(state, task=None, attempts=0))
+        return "ran"
     except (ClaimRouteMissing, ClaimRejectedError) as exc:
         return _stop(kb_dir, state, str(exc))  # no retry can fix either
     except KbError as exc:

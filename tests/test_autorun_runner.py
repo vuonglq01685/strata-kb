@@ -11,6 +11,7 @@ from strata_kb.autorun import lock as lock_mod
 from strata_kb.autorun import picker
 from strata_kb.autorun import runner as runner_mod
 from strata_kb.autorun import state as autostate
+from strata_kb.autorun.claims import UnknownTicketError
 from strata_kb.autorun.claude import TaskResult
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
@@ -68,7 +69,7 @@ def env(tmp_path: Path, monkeypatch):
     kb_dir = tmp_path / ".kb"
     kb_dir.mkdir()
     hub = HubHandle(root=tmp_path)
-    tickets = {"stories": [S("US3", "ready")]}
+    tickets = {"stories": [S("M-x-US3", "ready")]}
     monkeypatch.setattr(
         planstatus,
         "next_from_hub",
@@ -302,6 +303,7 @@ def test_resume_resets_repick_count_but_keeps_last_done(env):
 
 
 def test_crash_resumes_stored_task(env, monkeypatch):
+    env[3]["stories"] = [S("BUG-2", "ready")]
     autostate.save(env[1], autostate.AutoState("dev-fix-bug:BUG-2", 1, (), None, ""))
     script = Script(TaskResult("done"))
     assert once(env, script) == "ran"
@@ -892,6 +894,9 @@ class FakeClaims:
     def release_if_working(self, ticket, reason):
         self.calls.append(("release", ticket, reason))
 
+    def forget(self, ticket):
+        self.calls.append(("forget", ticket))
+
     def lost_reason(self, ticket):
         return "expired by hub"
 
@@ -953,6 +958,7 @@ def test_all_candidates_taken_is_idle(cenv):
 
 
 def test_stored_task_taken_by_other_drops_task(cenv, caplog):
+    cenv[3]["stories"].append(S("M-x-US3", "ready"))
     autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
     claims, script = FakeClaims(taken={"M-x-US3"}), Script()
     with caplog.at_level(logging.INFO):
@@ -962,6 +968,7 @@ def test_stored_task_taken_by_other_drops_task(cenv, caplog):
 
 
 def test_stored_task_is_reclaimed_and_mine_is_not_held(cenv):
+    cenv[3]["stories"].append(S("M-x-US3", "ready"))
     autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
     claims = FakeClaims()
     once(cenv, Script(TaskResult("done")), claims=claims)
@@ -1152,3 +1159,54 @@ def test_transient_waiting_qa_error_still_saves_waiting_on(cenv):
         cenv, Script(TaskResult("blocked-qa", (12,))), claims=FlakyPhase("waiting-qa")
     )
     assert out == "waiting" and autostate.load(cenv[1]).waiting_on == (12,)
+
+
+def _stored(env, ticket="US1"):
+    autostate.save(
+        env[1], autostate.AutoState(f"dev-implement-ticket:{ticket}", 1, (), None, "")
+    )
+
+
+@pytest.mark.parametrize(
+    "stories",
+    [
+        [S("US2", "ready")],  # unpublished: the ticket left the plan
+        [StoryStatus("US1", "M-x", "t", "ready", (), (), "other")],  # routed elsewhere
+        [StoryStatus("US1", "M-x", "t", "ready", (), (), None)],  # no target any more
+        [S("US1", "blocked"), S("US2", "ready")],  # not ready
+    ],
+    ids=["unpublished", "routed-elsewhere", "untargeted", "not-ready"],
+)
+def test_stored_task_no_longer_ready_here_is_dropped(cenv, stories, caplog):
+    cenv[3]["stories"] = stories
+    _stored(cenv)
+    claims, script = FakeClaims(), Script()
+    with caplog.at_level(logging.INFO):
+        assert once(cenv, script, claims=claims) == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.task, state.attempts) == (None, 0)
+    assert script.prompts == [] and claims.of("claim") == []
+    assert claims.of("forget") == [("forget", "US1")]
+    assert "US1 is no longer ready for svc; picking again" in caplog.text
+
+
+def test_stored_task_unpublished_is_dropped_and_repicked(cenv):
+    cenv[3]["stories"] = [S("US2", "ready")]
+    _stored(cenv)
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+
+
+def test_claim_unknown_ticket_recovers(cenv, caplog):
+    claims = FakeClaims()
+    claims.claim_error = UnknownTicketError(
+        "hub /api/claims returned 404: unknown_ticket"
+    )
+    _stored(cenv)
+    with caplog.at_level(logging.INFO):
+        assert once(cenv, Script(), claims=claims) == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
+    assert "unknown_ticket; picking again" in caplog.text

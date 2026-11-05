@@ -172,7 +172,9 @@ def test_cloud_preflight_refuses_without_auto_merge(
         runner_mod, "registry_or_reason", lambda *a: pytest.fail("cloud reads the API")
     )
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": entry(auto_merge=False)})
+    hub_api(
+        **{"/api/registry/entry": entry(auto_merge=False), "/api/plan/next": plan()}
+    )
 
     (reason,) = preflight(tmp_path, kb_dir)
 
@@ -185,14 +187,19 @@ def test_cloud_preflight_refuses_without_auto_merge(
 @pytest.mark.usefixtures("no_switch_check")
 def test_cloud_preflight_passes_with_auto_merge(tmp_path, kb_dir, hub_api):
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": entry()})
+    hub_api(**{"/api/registry/entry": entry(), "/api/plan/next": plan()})
     assert preflight(tmp_path, kb_dir) == []
 
 
 @pytest.mark.usefixtures("no_switch_check")
 def test_cloud_preflight_unregistered_repo(tmp_path, kb_dir, hub_api):
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": (404, {"error": "repo_not_registered"})})
+    hub_api(
+        **{
+            "/api/registry/entry": (404, {"error": "repo_not_registered"}),
+            "/api/plan/next": plan(),
+        }
+    )
     assert preflight(tmp_path, kb_dir) == ["repo_id 'svc' is not in the hub registry"]
 
 
@@ -260,3 +267,20 @@ def test_local_mode_unchanged(tmp_path, kb_dir, monkeypatch):
 
 def test_picker_module_exposes_plan_next():
     assert picker.plan_next
+
+
+OLD_ROW = {k: v for k, v in STORY.items() if k != "target_repo"}
+
+
+@pytest.mark.usefixtures("no_switch_check")
+def test_runner_refuses_old_hub(tmp_path, kb_dir, hub_api):
+    (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
+    hub_api(**{"/api/registry/entry": entry(), "/api/plan/next": plan([OLD_ROW])})
+    (reason,) = preflight(tmp_path, kb_dir)
+    assert "hub is older than 1.35" in reason
+
+
+def test_plan_next_accepts_null_target_repo():
+    http = FakeHub(**{"/api/plan/next": plan([STORY | {"target_repo": None}])})
+    (story,), _, _ = hubapi.HubApi("http://hub", "tok", http=http).plan_next()
+    assert story.target_repo is None

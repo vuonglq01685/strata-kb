@@ -1,3 +1,5 @@
+import json
+
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
@@ -432,3 +434,27 @@ def test_cli_query_unknown_kind_exit_1(tmp_path):
     assert result.exit_code == 1
     assert "unknown kind" in result.output
     assert "Traceback" not in result.output
+
+
+def test_publish_warns_old_hub(git_kb, hub_worktree, monkeypatch):
+    from strata_kb import hubapi
+
+    (git_kb["kb"] / "config.yaml").write_text("kind: ba\n", encoding="utf-8")
+    (git_kb["root"] / "missions").mkdir()
+    (git_kb["root"] / "tickets").mkdir()
+    old_row = {
+        "us_id": "US1", "mission_id": "M", "title": "t", "status": "ready",
+        "reasons": [], "depends_on": [],
+    }  # fmt: skip
+    body = json.dumps({"stories": [old_row], "unparented": [], "notes": []}).encode()
+    monkeypatch.setattr(
+        hubapi,
+        "from_env",
+        lambda: hubapi.HubApi("http://hub", "tok", http=lambda *a, **k: (200, body)),
+    )
+    result = runner.invoke(
+        app,
+        ["publish", "--hub", str(hub_worktree), "--kb-dir", str(git_kb["kb"])],
+    )
+    assert "hub is older than 1.35: Dev runners will not route by repo" in result.output
+    assert result.exit_code == 0, result.output

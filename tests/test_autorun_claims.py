@@ -11,7 +11,7 @@ import pytest
 
 from strata_kb import ghrest
 from strata_kb.autorun.claimbeat import ClaimBeat
-from strata_kb.autorun.claims import RunnerClaims
+from strata_kb.autorun.claims import RunnerClaims, UnknownTicketError
 from strata_kb.claimclient import ClaimLostError, ClaimTakenError, LocalClaims
 from strata_kb.errors import KbError
 
@@ -362,3 +362,19 @@ def test_begin_reports_a_lost_claim(kb_dir):
     claims.claim("US1")
     client.update_error = ClaimLostError("released", "admin")
     assert claims.begin("US1") is False
+
+
+def test_claim_unknown_ticket_drops_local_entry_and_raises(kb_dir):
+    LocalClaims(kb_dir).put("US1", 7, "tok")
+    client = FakeClient()
+    client.take_error = KbError("hub /api/claims returned 404: unknown_ticket")
+    with pytest.raises(UnknownTicketError):
+        RunnerClaims(Path("."), kb_dir, client, "me@m1").claim("US1")
+    assert LocalClaims(kb_dir).get("US1") is None
+
+
+def test_claim_other_hub_error_still_propagates(kb_dir):
+    client = FakeClient()
+    client.take_error = KbError("hub unreachable: refused")
+    with pytest.raises(KbError, match="unreachable"):
+        RunnerClaims(Path("."), kb_dir, client, "me@m1").claim("US1")

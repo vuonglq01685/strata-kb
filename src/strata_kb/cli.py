@@ -2607,6 +2607,23 @@ def _echo_publish_report(report) -> None:
     )
 
 
+def _warn_old_hub() -> None:
+    """A BA publish still goes through on a hub that cannot route by repo; the
+    Dev runners there will not. Silent when the hub API is not configured."""
+    from strata_kb import hubapi
+    from strata_kb.errors import KbError
+
+    try:
+        hubapi.from_env().plan_next()
+    except hubapi.OldHubError:
+        typer.secho(
+            "hub is older than 1.35: Dev runners will not route by repo",
+            fg=typer.colors.YELLOW,
+        )
+    except KbError:
+        pass
+
+
 @app.command()
 def publish(
     hub: str = typer.Option(
@@ -2650,6 +2667,8 @@ def publish(
     # PublishError, which the root guard prints as one line.
     plan = publish_mod.plan(kb_dir, hub, pr=pr, direct=direct)
     typer.echo(publish_mod.kind_line(plan.repo_kind))
+    if plan.repo_kind == "ba":
+        _warn_old_hub()
     if branch:
         # Before any refresh or write. publish() re-checks the git-side rules.
         if direct:

@@ -28,6 +28,10 @@ logger = logging.getLogger("strata_kb.autorun.claims")
 _PR_URL = re.compile(r"^https?://[^/]+/([^/]+/[^/]+)/pull/(\d+)")
 
 
+class UnknownTicketError(KbError):
+    """The hub has no such ticket: it was unpublished or never existed."""
+
+
 class RunnerClaims:
     def __init__(
         self, root: Path, kb_dir: Path, client: ClaimClient, holder: str
@@ -79,10 +83,19 @@ class RunnerClaims:
         except ClaimLostError as exc:
             self._lose(ticket, exc)
             return False
+        except KbError as exc:
+            if "unknown_ticket" not in str(exc):
+                raise
+            self.forget(ticket)
+            raise UnknownTicketError(str(exc)) from exc
         self._local.put(ticket, claim["id"], token)
         self._granted_phase[ticket] = str(claim.get("phase", ""))
         self._remember(ticket)
         return True
+
+    def forget(self, ticket: str) -> None:
+        """Drop the local claim token (the hub never knew, or no longer lists, it)."""
+        self._local.drop(ticket)
 
     def begin(self, ticket: str) -> bool:
         """Mark an attempt as started: `claimed`, unless the claim already waits

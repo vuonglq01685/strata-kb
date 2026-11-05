@@ -26,6 +26,11 @@ PLAN_ROUTE = "/api/plan/next"
 REGISTRY_ROUTE = "/api/registry/entry"
 RESOLVE_ROUTE = "/api/resolve"
 NOT_REGISTERED = "repo_not_registered"
+OLD_HUB = "hub is older than 1.35 — upgrade the hub first"
+
+
+class OldHubError(KbError):
+    """The hub's plan rows carry no `target_repo`: it cannot route by repo."""
 
 
 def _story(row: dict) -> StoryStatus:
@@ -72,6 +77,13 @@ class HubApi:
         query = f"?{urlencode(params)}" if params else ""
         data = self._json("GET", PLAN_ROUTE + query, PLAN_ROUTE)
         try:
+            # the 1.35 server always sends the key (null allowed)
+            if any(
+                "target_repo" not in r
+                for k in ("stories", "unparented")
+                for r in data[k]
+            ):
+                raise OldHubError(OLD_HUB)
             return (
                 [_story(s) for s in data["stories"]],
                 [_story(s) for s in data["unparented"]],
