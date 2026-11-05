@@ -99,6 +99,19 @@ The owner picked **A**.
 
 - Fixing is two-layer: rules at ingest, then the AI fix loop with human
   confirm (`kb l3 confirm`), same gates as PDF.
+- **No source-kind switch on an existing doc.** Ingesting an MD file into a
+  doc id whose manifest says `source_kind: pdf` (or the reverse) is refused:
+  "'<id>' was ingested from a PDF — ingest the Markdown under a new --id".
+  No migration path, no clean-up of PDF-era assets or checks.
+- **Local images are copied.** A relative `![alt](path)` to a `.png`/`.webp`
+  file inside the source's directory tree is copied to
+  `.kb/<doc>/assets/<sha256>.<ext>` and the link target rewritten; other
+  formats (jpg, svg, gif) and missing/outside files keep the link as written
+  with a warning (format conversion needs Pillow, not a core dependency).
+  The word and link checks treat a rewritten target as the source's target.
+- **Fenced code holding a `## ` / `### ` line is refused** at ingest, with
+  the line numbers, so the author fixes the MD (the master). Slicing in
+  `mdutils` stays as it is.
 - **The source MD is the master**, exactly like a PDF: it lives in `source/`
   (git-ignored), edits go into the MD, and `kb ingest` is re-run. A re-ingest
   re-runs the rules and resets `_l3fix.yaml` for the rewritten files (current
@@ -150,9 +163,10 @@ given). `manifest.source_sha256` = sha256 of the MD bytes.
   of that block (via token `.map`). Tables stay pipe tables byte for byte.
 - `page`: a synthetic page number per top-level heading block (see §4);
   `bbox=None`.
-- Images (`![alt](src)`) stay as written inside their block. Local relative
-  image files are **not** copied into `assets/` in this version (see Open
-  questions).
+- Images: local png/webp copied into `assets/` and the link rewritten; the
+  rest stays as written (see Decisions).
+- A fenced/indented code block with a line starting `## ` or `### ` refuses
+  the file (see Decisions).
 
 ### 3. Rules (sectioner changes)
 
@@ -221,15 +235,12 @@ furniture `{}`.
 - End-to-end `run_ingest` on a small MD fixture: files written, `uncovered`
   empty, every source word present in L3, re-ingest resets fix record,
   `authored` refusal.
+- Refusals: MD into a PDF-ingested id (and reverse); fenced `## ` line.
+- Images: png copied + link rewritten; jpg kept with warning; path outside
+  the source tree kept with warning.
 - `kb l3 fix apply` with MD source: a passing draft, a draft adding a word not
   in the MD (rejected), `--from-image` refused, wrong `--source` file refused.
 - Ingest without the `ingest` extra installed works for MD.
-
-## Open questions
-
-1. **Local images** referenced by the MD (`![](img/a.png)`): leave the link as
-   written (current proposal, link may break once published to the hub), or
-   copy the file into `.kb/<doc>/assets/` and rewrite the link?
 
 ## Left to the builder
 
