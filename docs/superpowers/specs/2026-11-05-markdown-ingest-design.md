@@ -105,6 +105,25 @@ The owner picked **A**.
   `_reset_fix_record` behavior), so `/kb-l3-fix` and confirm are re-run. To
   freeze a doc, `kb authored <doc>` still works and makes ingest refuse it.
 
+## Calls made after the builder check (Claude's, owner may override)
+
+- **MD mode in the sectioner, not just `use_levels`.** The flag
+  (`md_mode=True`) also turns off the PDF page-furniture heuristics:
+  repeated-id-reopens-node (running header), `_noise_reason` repeat
+  demotion, trailing-`:` and caption-shape demotion. In MD mode a repeated
+  id is a real duplicate: renamed `-N`, warned, left for the AI fix. Reason:
+  an MD file has no page headers; every heading is the author's.
+- **Lint has a source kind.** For MD, R6 does not flag blockquote, HTML
+  block, `~~~` fences or deep lists (valid MD that rules must keep
+  verbatim). R3, R4, R9 and the rest stay. `_check_contract` uses the same
+  switch, so a unit with a blockquote can still pass a fix.
+- **Unnumbered heading above numbered ones** (`# Part I` over `## 1 …`):
+  numbered ids stay authoritative and flat (`1`, `2`; no new namespacing).
+  The unnumbered heading keeps its own fallback unit even with an empty body,
+  so its text never vanishes; a warning names it.
+- Source context is passed through `strip_markdown` before word alignment,
+  so link URLs and table pipes are not counted as source words.
+
 ## Design
 
 ### 1. Entry point
