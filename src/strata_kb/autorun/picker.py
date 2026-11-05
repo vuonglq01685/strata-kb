@@ -126,50 +126,63 @@ def _has_test_workflow(root: Path) -> bool:
 
 
 def plan_next(
-    hub: HubHandle | HubApi,
+    hub: HubHandle | HubApi, for_repo: str | None = None
 ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
-    """The hub's plan: over its API on cloud, off the cloned hub otherwise."""
+    """The hub's plan: over its API on cloud, off the cloned hub otherwise.
+    With `for_repo`, only the items targeting that Dev repo."""
     if isinstance(hub, HubApi):
-        return hub.plan_next()
-    return planstatus.next_from_hub(hub)
+        return hub.plan_next(for_repo=for_repo)
+    return planstatus.next_from_hub(hub, for_repo=for_repo)
 
 
-def _dev_tasks(stories, unparented) -> Iterator[Task]:
+def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
+    """Ready tickets routed to `repo_id` whose dependencies are done. `done`
+    spans every repo's rows: a dependency may be built elsewhere."""
+    done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
+
+    def ready(t: StoryStatus) -> bool:
+        return (
+            t.status == "ready"
+            and t.target_repo == repo_id
+            and all(d in done for d in t.depends_on)
+        )
+
     for u in unparented:
-        if u.status == "ready" and u.us_id.startswith("BUG-"):
+        if ready(u) and u.us_id.startswith("BUG-"):
             yield Task("dev-fix-bug", u.us_id)
     for u in unparented:
-        if u.status == "ready" and not u.us_id.startswith("BUG-"):
+        if ready(u) and not u.us_id.startswith("BUG-"):
             yield Task("dev-implement-ticket", u.us_id)
-    done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
     for s in stories:
-        if s.status == "ready" and all(d in done for d in s.depends_on):
+        if ready(s):
             yield Task("dev-implement-ticket", s.us_id)
 
 
 def dev_candidates(
     hub: HubHandle | HubApi,
     root: Path,
+    repo_id: str,
     skip: Collection[str] = (),
     held: Collection[str] = (),
 ) -> list[Task]:
     """Every task the Dev may take, in pick order: the CI workflow first, then
-    a ready bug, then a ready unparented ticket, then each ready story whose
-    dependencies are done. Tasks whose key is in `skip`, or whose ticket is in
+    a ready bug, then a ready unparented ticket, then each ready story, all
+    routed to `repo_id` with dependencies done. Tasks whose key is in `skip`, or whose ticket is in
     `held` (claimed by another Dev), are left out."""
     if not _has_test_workflow(root):
         tasks: Iterable[Task] = [Task("dev-test-workflow", "")]
     else:
         stories, unparented, _notes = plan_next(hub)
-        tasks = _dev_tasks(stories, unparented)
+        tasks = _dev_tasks(stories, unparented, repo_id)
     return [t for t in tasks if t.key not in skip and t.arg not in held]
 
 
 def pick_dev(
     hub: HubHandle | HubApi,
     root: Path,
+    repo_id: str,
     skip: Collection[str] = (),
     held: Collection[str] = (),
 ) -> Task | None:
     """The first of `dev_candidates`."""
-    return next(iter(dev_candidates(hub, root, skip, held)), None)
+    return next(iter(dev_candidates(hub, root, repo_id, skip, held)), None)

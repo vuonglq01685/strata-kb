@@ -184,7 +184,13 @@ def _check_done(
     except KbError as exc:
         logger.warning("open questions not read: %s", exc)
         return "waiting"
-    finished, why = all_done(stories, unparented, ba=ba, open_questions=open_questions)
+    finished, why = all_done(
+        stories,
+        unparented,
+        ba=ba,
+        open_questions=open_questions,
+        repo_id=cfg.repo_id,
+    )
     if finished:
         logger.info("auto mode finished: %s", why)
         return "done"
@@ -221,11 +227,14 @@ def _claim_pick(
     hub: HubHandle | hubapi.HubApi,
     state: autostate.AutoState,
     claims: RunnerClaims,
+    repo_id: str,
 ) -> Task | None:
     """The first candidate this Dev wins the claim on; raises `_Early("idle")`
     when other Devs hold every ready ticket."""
     held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
-    candidates = picker.dev_candidates(hub, root, skip=state.skipped, held=held)
+    candidates = picker.dev_candidates(
+        hub, root, repo_id, skip=state.skipped, held=held
+    )
     for task in candidates:
         if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
             return task
@@ -256,8 +265,8 @@ def _task_for(
     if cfg.kind == "ba":
         return picker.pick_ba(root, kb_dir, skip=state.skipped)
     if claims is None:
-        return picker.pick_dev(hub, root, skip=state.skipped)
-    return _claim_pick(root, hub, state, claims)
+        return picker.pick_dev(hub, root, cfg.repo_id, skip=state.skipped)
+    return _claim_pick(root, hub, state, claims, cfg.repo_id)
 
 
 def _settle(

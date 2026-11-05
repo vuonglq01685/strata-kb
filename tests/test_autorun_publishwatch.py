@@ -157,7 +157,9 @@ def test_ba_loop_stops_on_a_failed_re_run_before_picking(tmp_path, gh, monkeypat
     monkeypatch.setattr(runner, "_publish_check", publishwatch.check)
     story = StoryStatus("US9", "M-x", "t", "to-draft", ())
     monkeypatch.setattr(
-        planstatus, "next_from_hub", lambda h, repo=None: ([story], [], [])
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: ([story], [], []),
     )
     picked: list[int] = []
     monkeypatch.setattr(picker, "pick_ba", lambda *a, **k: picked.append(1))

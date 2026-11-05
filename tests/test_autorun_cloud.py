@@ -24,9 +24,10 @@ from tests.test_autorun_runner import (  # noqa: F401
     no_switch_check,
 )
 
+REPO = "svc"
 STORY = {
     "us_id": "M-x-US3", "mission_id": "M-x", "title": "t", "status": "ready",
-    "reasons": [], "depends_on": [],
+    "reasons": [], "depends_on": [], "target_repo": "svc",
 }  # fmt: skip
 
 
@@ -90,7 +91,7 @@ def test_picker_reads_the_plan_through_the_api(tmp_path: Path):
     http = FakeHub(**{"/api/plan/next": plan()})
     hub = hubapi.HubApi("http://hub", "tok", http=http)
 
-    assert pick_dev(hub, tmp_path) == Task("dev-implement-ticket", "M-x-US3")  # type: ignore[arg-type]
+    assert pick_dev(hub, tmp_path, REPO) == Task("dev-implement-ticket", "M-x-US3")  # type: ignore[arg-type]
     assert http.calls == ["/api/plan/next"]
 
 
@@ -98,9 +99,9 @@ def test_picker_still_calls_next_from_hub_by_module_attribute(tmp_path, monkeypa
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / ".github" / "workflows" / "kb-test.yml").write_text("name: kb-test\n")
     monkeypatch.setattr(
-        planstatus, "next_from_hub", lambda hub, repo=None: ([], [], [])
+        planstatus, "next_from_hub", lambda hub, repo=None, for_repo=None: ([], [], [])
     )
-    assert pick_dev(HubHandle(root=tmp_path), tmp_path) is None
+    assert pick_dev(HubHandle(root=tmp_path), tmp_path, REPO) is None
 
 
 def test_cloud_runner_idles_when_hub_unreachable(tmp_path, kb_dir):

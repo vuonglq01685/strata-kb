@@ -25,7 +25,7 @@ TASK = Task("dev-implement-ticket", "M-x-US3")
 
 
 def S(us_id: str, status: str) -> StoryStatus:
-    return StoryStatus(us_id, "M-x", "t", status, ())
+    return StoryStatus(us_id, "M-x", "t", status, (), (), "svc")
 
 
 def cfg_of(kind: str = "dev", **auto) -> KBConfig:
@@ -70,9 +70,11 @@ def env(tmp_path: Path, monkeypatch):
     hub = HubHandle(root=tmp_path)
     tickets = {"stories": [S("US3", "ready")]}
     monkeypatch.setattr(
-        planstatus, "next_from_hub", lambda h, repo=None: (tickets["stories"], [], [])
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: (tickets["stories"], [], []),
     )
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): TASK)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): TASK)
     monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): TASK)
     return tmp_path, kb_dir, hub, tickets
 
@@ -193,12 +195,12 @@ def test_ba_open_question_blocks_done(env):
 
 
 def test_idle_when_nothing_to_pick(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): None)
     assert once(env, Script()) == "idle"
     monkeypatch.setattr(
         picker,
         "pick_dev",
-        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
+        lambda h, root, repo_id, skip=(): (_ for _ in ()).throw(KbError("boom")),
     )
     assert once(env, Script()) == "idle"
 
@@ -230,7 +232,7 @@ def test_fifth_repick_of_done_task_skips_it_and_moves_on(env, monkeypatch, caplo
     other = Task("dev-implement-ticket", "M-x-US4")
     seen: list = []
 
-    def pick(h, root, skip=()):
+    def pick(h, root, repo_id, skip=()):
         seen.append(tuple(skip))
         return other if TASK.key in skip else TASK
 
@@ -255,7 +257,7 @@ def test_every_task_left_skipped_stops(env, monkeypatch):
     autostate.save(
         env[1], autostate.AutoState(None, 0, (), None, "", skipped=(TASK.key,))
     )
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): None)
     assert once(env, Script()) == "stopped"
     assert (
         autostate.load(env[1]).stop_reason == f"every task left was skipped: {TASK.key}"
@@ -269,7 +271,7 @@ def test_pick_error_with_skipped_tasks_idles(env, monkeypatch):
     monkeypatch.setattr(
         picker,
         "pick_dev",
-        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
+        lambda h, root, repo_id, skip=(): (_ for _ in ()).throw(KbError("boom")),
     )
     assert once(env, Script()) == "idle"
     assert autostate.load(env[1]).stop_reason is None
@@ -280,7 +282,7 @@ def test_different_pick_resets_the_repick_guard(env, monkeypatch):
     once(env, script)
     assert once(env, script) == "idle"
     other = Task("dev-implement-ticket", "M-x-US4")
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): other)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): other)
 
     assert once(env, script) == "ran"
 
@@ -365,7 +367,7 @@ def test_run_loop_sleeps_per_outcome_and_survives_errors(env, monkeypatch):
     sleeps: list[float] = []
     picks = iter([None, KbError("x"), RuntimeError("boom"), TASK])
 
-    def pick(hub, root, skip=()):
+    def pick(hub, root, repo_id, skip=()):
         item = next(picks)
         if isinstance(item, Exception):
             raise item
