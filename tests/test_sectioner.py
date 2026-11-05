@@ -1249,3 +1249,117 @@ def test_numeric_heading_id_rejects_non_decimal_digit_classes():
     units, notes = build_units_with_notes(items, config=cfg)  # must not raise
     assert [u.id for u in units] == ["5.³", "5.²"]
     assert notes.inversions == []
+
+
+# --- md_mode -----------------------------------------------------------------
+
+
+def _md(*pairs: tuple[int, str, str]) -> list[DocItem]:
+    """(level, heading, body) triples -> Markdown-shaped DocItems."""
+    items: list[DocItem] = []
+    for level, head, body in pairs:
+        items.append(DocItem("heading", head, level=level, page=1))
+        if body:
+            items.append(DocItem("text", body, page=1))
+    return items
+
+
+def _md_units(items):
+    from strata_kb.ingest.sectioner import build_units_with_notes
+
+    return build_units_with_notes(items, min_tokens=0, md_mode=True)
+
+
+def test_md_mode_repeated_id_renamed():
+    units, notes = _md_units(
+        _md((2, "2.1 Foo", "foo"), (2, "2.2 Bar", "bar"), (2, "2.1 Baz", "baz"))
+    )
+    assert [u.id for u in units] == ["2.1", "2.2", "2.1-2"]
+    assert len(notes.duplicates) == 1
+    assert "Baz" in units[2].title and "baz" in units[2].body_md
+
+
+def test_md_mode_unnumbered_nest_by_level():
+    units, _ = _md_units(
+        _md((1, "A", "a"), (2, "B", "b"), (2, "C", "c"), (1, "D", "d"))
+    )
+    ids = [u.id for u in units]
+    assert ids == ["a", "a-b", "a-c", "d"]
+
+
+def test_md_mode_repeated_unnumbered_subheadings_kept():
+    items = _md(*[t for n in "XYZ" for t in ((1, f"Top {n}", ""), (2, "Notes", "n"))])
+    units, notes = _md_units(items)
+    assert [u.title for u in units].count("Notes") == 3
+    assert not notes.demoted
+
+
+def test_md_mode_colon_and_caption_headings_kept():
+    units, notes = _md_units(
+        _md((1, "Intro", "i"), (2, "Source/Content:", "s"), (2, "Figure 3", "f"))
+    )
+    assert {u.title for u in units} >= {"Source/Content:", "Figure 3"}
+    assert not notes.demoted
+
+
+def test_md_mode_part_heading_above_numbers():
+    units, _ = _md_units(
+        _md((1, "Part I", ""), (2, "1 Intro", "x"), (2, "2 Scope", "y"))
+    )
+    ids = [u.id for u in units]
+    assert "1" in ids and "2" in ids
+    assert next(u for u in units if u.title == "Part I").body_md == ""
+
+
+def test_md_mode_empty_heading_noted():
+    from strata_kb.ingest.sectioner import build_units_with_notes
+
+    _, notes = build_units_with_notes(_md((1, "Empty", "")), min_tokens=0, md_mode=True)
+    assert notes.empty_headings == ["empty"]
+
+
+def test_pdf_mode_unchanged():
+    """Golden output captured from the sectioner before md_mode existed."""
+    D = DocItem
+    items = [
+        D("heading", "1 Intro", page=1), D("text", "alpha", page=1),
+        D("heading", "Running Header", page=1),
+        D("heading", "1.1 Scope", page=1), D("text", "scope body", page=1),
+        D("heading", "Source/Content:", page=1), D("text", "listed", page=1),
+        D("heading", "Figure 3", page=1), D("text", "cap", page=1),
+        D("heading", "2 Next", page=2), D("text", "beta", page=2),
+        D("heading", "Running Header", page=2), D("text", "more", page=2),
+        D("heading", "Annex Notes", page=3), D("text", "tail", page=3),
+    ]  # fmt: skip
+    got = [(u.id, u.title, u.body_md) for u in build_units(items, min_tokens=0)]
+    assert got == [
+        ("1", "Intro", "alpha"),
+        (
+            "1.1",
+            "Scope",
+            "scope body\n\n**Source/Content:**\n\nlisted\n\n**Figure 3**\n\ncap",
+        ),
+        ("2", "Next", "beta"),
+        ("2-running-header", "Running Header", "more"),
+        ("2-annex-notes", "Annex Notes", "tail"),
+    ]
+
+
+def test_md_mode_bodyless_parent_with_children_keeps_title():
+    units, _ = _md_units(_md((1, "Top", ""), (2, "Child", "word " * 600)))
+    assert any(u.title == "Top" and u.body_md == "" for u in units)
+
+
+@pytest.mark.parametrize("head", ["---", "\U0001f389", "2024"])
+def test_md_mode_odd_headings_open_units_without_loss(head):
+    from strata_kb.ingest.sectioner import uncovered
+
+    items = _md((1, head, "party"))
+    units, _ = _md_units(items)
+    assert any(u.title == head for u in units)
+    assert not uncovered(items, units)
+
+
+def test_md_mode_text_keeps_leading_whitespace():
+    units, _ = _md_units(_md((1, "A", "   indented para")))
+    assert units[0].body_md == "   indented para"
