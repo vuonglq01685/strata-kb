@@ -139,7 +139,12 @@ def test_hub_plans_unparented_tickets(plan_hub):
     (repo,), _ = planstatus.hub_plans(plan_hub)
     assert repo.unparented == [
         missionnext.StoryStatus(
-            "TAL-1580", "", "TAL-1580 — Show restrictive airspace details", "ready", ()
+            "TAL-1580",
+            "",
+            "TAL-1580 — Show restrictive airspace details",
+            "ready",
+            (),
+            target_repo="demo",  # its qualified grounding; no Dev repo to refuse it
         )
     ]
 

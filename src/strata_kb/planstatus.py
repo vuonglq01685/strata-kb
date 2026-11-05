@@ -198,14 +198,13 @@ class _Routing:
 
         return cls(hub, _dev_ids(repos), holders)
 
-    def target(self, text: str) -> str | None:
-        """The ticket's target repo; the only Dev repo when there is just
-        one; None when the hub has no Dev repo (nothing to route to)."""
-        if not self.devs:
-            return None
-        return ticket.target_repo(text, self.holders) or (
-            self.devs[0] if len(self.devs) == 1 else None
-        )
+    def target(self, text: str) -> tuple[str | None, bool]:
+        """(target repo, explicit): the header / grounding repo, else the only
+        Dev repo when there is just one (not explicit), else None."""
+        found = ticket.target_repo(text, self.holders)
+        if found:
+            return found, True
+        return (self.devs[0], False) if len(self.devs) == 1 else (None, False)
 
     def refusal(self, target: str | None) -> str | None:
         """Why a ticket cannot be routed; None when it can (or the hub has
@@ -325,12 +324,23 @@ def _plan_repo(
     )
     if note:
         notes.append(note)
-    targets = {tid: routing.target(text) for tid, text in ticket_l3.items()}
+    routed = {tid: routing.target(text) for tid, text in ticket_l3.items()}
+    targets = {tid: t for tid, (t, _) in routed.items()}
     # a story's done comes from its target's `-svc` when that is published
     merged, answered = set(done or ()), done is not None
     done_of: dict[str, bool] = {}
-    for tid, target in targets.items():
+    unknown: set[str] = set()  # tickets whose done nothing could answer
+    for tid, (target, explicit) in routed.items():
         ds = routing.done(target)
+        if ds is None and explicit and target in routing.devs:
+            # the mission-level answer may belong to another repo
+            merged.discard(tid)
+            unknown.add(tid)
+            note = f"{manifest.id}: done: unknown ({target}-svc not published)"
+            if note not in notes:
+                notes.append(note)
+        elif ds is None and done is None:
+            unknown.add(tid)
         if ds is not None:
             merged.discard(tid)
             if tid in ds:
@@ -348,7 +358,7 @@ def _plan_repo(
                 title,
                 targets[tid],
                 done_of[tid],
-                done is None and routing.done(targets[tid]) is None,
+                tid in unknown,
                 tuple(
                     d
                     for d in _blocked_by_tokens(ticket_l3[tid])

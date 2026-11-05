@@ -15,8 +15,15 @@ from strata_kb.hub import HubHandle
 from strata_kb.mcp import ServerConfig
 from strata_kb.web import api
 from tests.conftest import make_fed_entry
-from tests.test_planingest import context_block, ticket_text, write_repo
-from tests.test_planstatus import _mirror
+from tests.test_missionlint import MISSION_ID
+from tests.test_planingest import (
+    PARENT,
+    context_block,
+    mission_text,
+    ticket_text,
+    write_repo,
+)
+from tests.test_planstatus import BACKLOG, SEQUENCING, US, _mirror
 
 DEVS = ("payments-api", "web-app")
 GROUND = "- Grounded on: demo:demo-code @ c12b24f"
@@ -222,3 +229,86 @@ def test_plan_api_passes_for_repo(build, fed_hub):
     body = client.get("/api/plan/next", params={"for_repo": "web-app"}).json()
     assert [u["us_id"] for u in body["unparented"]] == ["T-1"]
     assert body["unparented"][0]["target_repo"] == "web-app"
+
+
+def _code_only_dev(hub: Path, repo: str) -> None:
+    """A Dev repo that publishes `<repo>-code` but no `-svc` yet."""
+    make_fed_entry(hub / "federation", repo, f"{repo}-code", tags=["code", "generated"])
+
+
+def _mission_plan(
+    fed_hub: Path, tmp_path: Path, ticket_target: str, loose: dict[str, dict]
+) -> None:
+    """BA plan whose mission is grounded on payments-api, with one published
+    story ticket (US2) targeting `ticket_target`, plus unparented tickets."""
+    block = context_block(fed_hub)
+    root = tmp_path / "ba-x"
+    grounded = "- Grounded on: payments-api:payments-api-code @ abc1234"
+    mission = mission_text(
+        block,
+        overrides={"## US backlog": BACKLOG, "## Sequencing": SEQUENCING},
+        extra={"## Services & order": grounded},
+    )
+    story = _ticket(block, US[1], target=ticket_target).replace(
+        "> Revision: 1\n", f"> Revision: 1\n{PARENT}\n", 1
+    )
+    write_repo(
+        root,
+        {f"{MISSION_ID}.md": mission},
+        {
+            f"{MISSION_ID}/{US[1]}.md": story,
+            **{f"{t}.md": _ticket(block, t, **kw) for t, kw in loose.items()},
+        },
+    )
+    report = planingest.run(
+        root, root / ".kb", "demo", root / "missions", root / "tickets"
+    )
+    assert report.skipped == [], report.skipped
+    _mirror(fed_hub, root, "ba-x")
+
+
+def test_explicit_target_with_unpublished_svc_is_not_done_from_mission(
+    fed_hub, tmp_path
+):
+    _mission_plan(fed_hub, tmp_path, "web-app", {"T-1": {"target": "web-app"}})
+    _code_only_dev(fed_hub, "web-app")  # web-app-svc not published
+    _dev(fed_hub, "payments-api", ("T-1", US[1]))  # the mission's svc lists both
+    hub = HubHandle(root=fed_hub)
+
+    stories, unparented, notes = planstatus.next_from_hub(hub)
+
+    (row,) = unparented
+    assert (row.status, row.reasons) == ("ready", ("done: unknown",))
+    assert {s.us_id: s.status for s in stories}[US[1]] != "done"
+    assert "ba-x-plan: done: unknown (web-app-svc not published)" in notes
+
+
+def test_mission_story_target_and_done_come_from_its_ticket(fed_hub, tmp_path):
+    _mission_plan(fed_hub, tmp_path, "web-app", {})
+    _dev(fed_hub, "web-app", (US[1],))
+    _dev(fed_hub, "payments-api", (US[0],))
+    hub = HubHandle(root=fed_hub)
+
+    stories, _, _ = planstatus.next_from_hub(hub)
+
+    by_id = {s.us_id: s for s in stories}
+    assert (by_id[US[1]].target_repo, by_id[US[1]].status) == ("web-app", "done")
+    # no published ticket: no target, mission-level done (payments-api-svc)
+    assert (by_id[US[0]].target_repo, by_id[US[0]].status) == (None, "done")
+    assert by_id[US[2]].target_repo is None
+    assert planstatus.next_from_hub(hub, for_repo="web-app")[0] == [by_id[US[1]]]
+
+
+def test_mission_story_not_done_in_other_targets_svc(fed_hub, tmp_path):
+    _mission_plan(fed_hub, tmp_path, "web-app", {})
+    _dev(fed_hub, "web-app")  # published, does not list the story
+    _dev(fed_hub, "payments-api", (US[1],))  # the mission's svc does
+    stories, _, _ = planstatus.next_from_hub(HubHandle(root=fed_hub))
+    assert {s.us_id: s.status for s in stories}[US[1]] == "ready"
+
+
+def test_zero_dev_repos_keep_explicit_target_without_blocking(build):
+    hub = build({"T-1": {"target": "web-app"}, "T-2": {}}, devs=())
+    rows = _rows(hub)
+    assert (rows["T-1"].target_repo, rows["T-1"].status) == ("web-app", "ready")
+    assert (rows["T-2"].target_repo, rows["T-2"].status) == (None, "ready")
