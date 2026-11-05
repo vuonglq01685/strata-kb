@@ -185,6 +185,7 @@ def md_pages(text: str) -> dict[int, str]:
 
 # `![alt](target "title")`: group 1 is everything before the target, 3 the title part
 _IMAGE = re.compile(r"(!\[[^\]]*\]\(\s*)([^)\s]+)(\s+\"[^\"]*\")?(\s*\))")
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)", re.DOTALL)
 _URL = re.compile(r"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)")
 _IMAGE_SUFFIXES = {".png", ".webp"}
 
@@ -199,28 +200,39 @@ def copy_images(
     root = source.parent.resolve()
     warnings: list[str] = []
 
-    def rewrite(m: re.Match[str]) -> str:
+    def rewrite(m: re.Match[str], spans: list[tuple[int, int]]) -> str:
         target = m.group(2)
-        if _URL.match(target):
+        if _URL.match(target) or any(a <= m.start() < b for a, b in spans):
             return m.group(0)
-        path = (root / unquote(target)).resolve()
-        if not path.is_relative_to(root):
-            reason = "outside the source folder"
-        elif path.suffix.lower() not in _IMAGE_SUFFIXES:
-            reason = "not png/webp"
-        elif not path.is_file():
+        decoded = unquote(target)
+        try:
+            if decoded.startswith("/") or Path(decoded).is_absolute():
+                reason = "outside the source folder"
+            else:
+                path = (root / decoded).resolve()
+                if not path.is_relative_to(root):
+                    reason = "outside the source folder"
+                elif path.suffix.lower() not in _IMAGE_SUFFIXES:
+                    reason = "not png/webp"
+                elif not path.is_file():
+                    reason = "missing"
+                else:
+                    data = path.read_bytes()
+                    name = f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
+                    assets_dir.mkdir(parents=True, exist_ok=True)
+                    (assets_dir / name).write_bytes(data)
+                    return f"{m.group(1)}assets/{name}{m.group(3) or ''}{m.group(4)}"
+        except (OSError, ValueError):  # e.g. NUL byte or over-long name
             reason = "missing"
-        else:
-            data = path.read_bytes()
-            name = f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
-            assets_dir.mkdir(parents=True, exist_ok=True)
-            (assets_dir / name).write_bytes(data)
-            return f"{m.group(1)}assets/{name}{m.group(3) or ''}{m.group(4)}"
         warnings.append(f"image kept as written: {target} ({reason})")
         return m.group(0)
 
+    def rewrite_text(text: str) -> str:
+        spans = [m.span() for m in _CODE_SPAN.finditer(text)]
+        return _IMAGE.sub(lambda m: rewrite(m, spans), text)
+
     out = [
-        it if it.kind == "code" else replace(it, text=_IMAGE.sub(rewrite, it.text))
+        it if it.kind == "code" else replace(it, text=rewrite_text(it.text))
         for it in items
     ]
     return out, warnings

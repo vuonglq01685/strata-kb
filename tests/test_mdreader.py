@@ -298,3 +298,35 @@ def test_input_items_not_mutated(tmp_path):
     out, _ = mdreader.copy_images(items, src, assets)
     assert [i.text for i in items] == before
     assert out[0] is not items[0] and out[0].kind == items[0].kind
+
+
+def test_absolute_path_inside_source_tree_not_copied(tmp_path):
+    src, assets, _ = _img_setup(tmp_path, "")
+    (src.parent / "pic.png").write_bytes(_PNG)
+    items = read_md(f"![a]({src.parent}/pic.png)\n", "doc.md").items
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert out[0].text == items[0].text
+    assert warns == [
+        f"image kept as written: {src.parent}/pic.png (outside the source folder)"
+    ]
+    assert not assets.exists()
+
+
+@pytest.mark.parametrize("target", ["%00.png", "a" * 300 + ".png"])
+def test_unreadable_target_kept_with_warning(tmp_path, target):
+    src, assets, items = _img_setup(tmp_path, f"![a]({target})\n")
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert out[0].text == items[0].text
+    assert warns == [f"image kept as written: {target} (missing)"]
+
+
+def test_inline_code_span_image_untouched(tmp_path):
+    src, assets, items = _img_setup(
+        tmp_path, "see `![x](inl.png)` and ![y](real.png)\n"
+    )
+    (src.parent / "inl.png").write_bytes(b"inl")
+    (src.parent / "real.png").write_bytes(_PNG)
+    out, warns = mdreader.copy_images(items, src, assets)
+    sha = hashlib.sha256(_PNG).hexdigest()
+    assert out[0].text == f"see `![x](inl.png)` and ![y](assets/{sha}.png)"
+    assert len(list(assets.iterdir())) == 1 and warns == []
