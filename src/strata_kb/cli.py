@@ -2614,7 +2614,7 @@ def _warn_old_hub() -> None:
     from strata_kb.errors import KbError
 
     try:
-        hubapi.from_env().plan_next()
+        hubapi.from_env().plan_next(require_target=True)
     except hubapi.OldHubError:
         typer.secho(
             "hub is older than 1.35: Dev runners will not route by repo",

@@ -118,7 +118,7 @@ def test_cloud_resolve_unreachable_hub_exits_1_one_line(
 def _plan_http(*done_ids: str, code=200):
     stories = [
         {"us_id": u, "mission_id": "M-platform", "title": "t", "status": "done",
-         "reasons": [], "depends_on": [], "target_repo": None}
+         "reasons": [], "depends_on": []}
         for u in done_ids
     ]  # fmt: skip
 
@@ -149,7 +149,7 @@ def test_cloud_mission_next_counts_unparented_done(tmp_path, api_over, cloud):
 
     def http(method, url, headers, body=None, timeout=60):
         row = {"us_id": "M-platform-US1", "mission_id": "", "title": "t",
-               "status": "done", "reasons": [], "depends_on": [], "target_repo": None}  # fmt: skip
+               "status": "done", "reasons": [], "depends_on": []}  # fmt: skip
         return 200, json.dumps(
             {"stories": [], "unparented": [row], "notes": []}
         ).encode()

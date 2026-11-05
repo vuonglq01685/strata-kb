@@ -1186,6 +1186,7 @@ def test_stored_task_no_longer_ready_here_is_dropped(cenv, stories, caplog):
     state = autostate.load(cenv[1])
     assert (state.task, state.attempts) == (None, 0)
     assert script.prompts == [] and claims.of("claim") == []
+    assert claims.of("release") == [("release", "US1", "US1 no longer ready for svc")]
     assert claims.of("forget") == [("forget", "US1")]
     assert "US1 is no longer ready for svc; picking again" in caplog.text
 
@@ -1210,3 +1211,23 @@ def test_claim_unknown_ticket_recovers(cenv, caplog):
     state = autostate.load(cenv[1])
     assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
     assert "unknown_ticket; picking again" in caplog.text
+
+
+class _UnknownFirst(FakeClaims):
+    def claim(self, ticket):
+        if ticket == "US1":
+            raise UnknownTicketError("hub /api/claims returned 404: unknown_ticket")
+        return super().claim(ticket)
+
+
+def test_pick_unknown_ticket_moves_on_to_next_candidate(cenv):
+    claims, script = _UnknownFirst(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+
+
+def test_pick_only_unknown_tickets_is_idle(cenv):
+    cenv[3]["stories"] = [S("US1", "ready")]
+    claims, script = _UnknownFirst(), Script()
+    assert once(cenv, script, claims=claims) == "idle"
+    assert script.prompts == []

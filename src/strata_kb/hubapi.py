@@ -70,15 +70,19 @@ class HubApi:
         self._http = http
 
     def plan_next(
-        self, repo: str | None = None, for_repo: str | None = None
+        self,
+        repo: str | None = None,
+        for_repo: str | None = None,
+        require_target: bool = False,
     ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
-        """Same triple as `planstatus.next_from_hub`."""
+        """Same triple as `planstatus.next_from_hub`. `require_target` (Dev
+        runner, publish check) raises `OldHubError` for rows without the key."""
         params = {k: v for k, v in (("repo", repo), ("for_repo", for_repo)) if v}
         query = f"?{urlencode(params)}" if params else ""
         data = self._json("GET", PLAN_ROUTE + query, PLAN_ROUTE)
         try:
             # the 1.35 server always sends the key (null allowed)
-            if any(
+            if require_target and any(
                 "target_repo" not in r
                 for k in ("stories", "unparented")
                 for r in data[k]

@@ -284,3 +284,12 @@ def test_plan_next_accepts_null_target_repo():
     http = FakeHub(**{"/api/plan/next": plan([STORY | {"target_repo": None}])})
     (story,), _, _ = hubapi.HubApi("http://hub", "tok", http=http).plan_next()
     assert story.target_repo is None
+
+
+def test_plan_next_old_rows_pass_unless_target_required():
+    http = FakeHub(**{"/api/plan/next": plan([OLD_ROW])})
+    api = hubapi.HubApi("http://hub", "tok", http=http)
+    (story,), _, _ = api.plan_next()  # BA / CLI reads stay as before
+    assert story.target_repo is None
+    with pytest.raises(hubapi.OldHubError, match="older than 1.35"):
+        api.plan_next(require_target=True)

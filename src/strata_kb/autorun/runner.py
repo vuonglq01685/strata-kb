@@ -151,7 +151,7 @@ def _old_hub_refusal(cfg: KBConfig) -> list[str]:
     if cfg.kind != "dev" or not cloud.is_cloud():
         return []
     try:
-        hubapi.from_env().plan_next()
+        hubapi.from_env().plan_next(require_target=True)
     except hubapi.OldHubError as exc:
         return [str(exc)]
     except KbError:
@@ -188,7 +188,9 @@ def _check_done(
     """`done` when every ticket is; `idle`/`waiting` when the hub or Q&A cannot
     answer yet (transient, never a task failure); None to carry on."""
     try:
-        stories, unparented, _notes = picker.plan_next(hub)
+        stories, unparented, _notes = picker.plan_next(
+            hub, require_target=cfg.kind == "dev"
+        )
     except KbError as exc:
         logger.warning("hub plan not read: %s", exc)
         return "idle"
@@ -250,10 +252,13 @@ def _claim_pick(
         hub, root, repo_id, skip=state.skipped, held=held
     )
     for task in candidates:
-        if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
-            return task
+        try:
+            if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
+                return task
+        except UnknownTicketError as exc:  # unpublished under us: like a lost race
+            logger.info("%s; trying the next ticket", exc)
     if candidates:
-        logger.info("every ready ticket is held by another Dev")
+        logger.info("every ready ticket is held by another Dev or unknown to the hub")
         raise _Early("idle")
     return None
 
@@ -263,7 +268,7 @@ def _still_ready_here(
 ) -> bool:
     """The plan still lists `ticket` as ready and routed to `repo_id`. Reads the
     whole plan: the same client-side routing test as the pick."""
-    stories, unparented, _notes = picker.plan_next(hub)
+    stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(
         t.us_id == ticket and t.status == "ready" and t.target_repo == repo_id
         for t in (*stories, *unparented)
@@ -285,7 +290,10 @@ def _task_for(
         skill, _, arg = state.task.partition(":")
         if skill in CLAIMED_SKILLS and not _still_ready_here(hub, cfg.repo_id, arg):
             autostate.save(kb_dir, replace(state, task=None, attempts=0))
-            if claims is not None:
+            if claims is not None:  # free the hub claim: its token dies with the forget
+                claims.release_if_working(
+                    arg, f"{arg} no longer ready for {cfg.repo_id}"
+                )
                 claims.forget(arg)
             logger.info("%s is no longer ready for %s; picking again", arg, cfg.repo_id)
             raise _Early("ran")

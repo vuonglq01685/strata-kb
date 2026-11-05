@@ -126,12 +126,12 @@ def _has_test_workflow(root: Path) -> bool:
 
 
 def plan_next(
-    hub: HubHandle | HubApi, for_repo: str | None = None
+    hub: HubHandle | HubApi, for_repo: str | None = None, require_target: bool = False
 ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
     """The hub's plan: over its API on cloud, off the cloned hub otherwise.
     With `for_repo`, only the items targeting that Dev repo."""
     if isinstance(hub, HubApi):
-        return hub.plan_next(for_repo=for_repo)
+        return hub.plan_next(for_repo=for_repo, require_target=require_target)
     return planstatus.next_from_hub(hub, for_repo=for_repo)
 
 
@@ -172,7 +172,7 @@ def dev_candidates(
     if not _has_test_workflow(root):
         tasks: Iterable[Task] = [Task("dev-test-workflow", "")]
     else:
-        stories, unparented, _notes = plan_next(hub)
+        stories, unparented, _notes = plan_next(hub, require_target=True)
         tasks = _dev_tasks(stories, unparented, repo_id)
     return [t for t in tasks if t.key not in skip and t.arg not in held]
 
