@@ -193,3 +193,17 @@ def test_thematic_break_is_not_front_matter():
     assert doc.warnings == []
     assert [i.text for i in doc.items][0] == "---"
     assert "Title" in [i.text for i in doc.items]
+
+
+@pytest.mark.parametrize(
+    ("src", "sid"), [("## **1.2.** Scope", "1.2"), ("## **2.0** Scope", "2")]
+)
+def test_normalized_ids_behind_markup_are_parsed(src, sid):
+    parsed = sectioner.parse_section_id(read_md(src + "\n", "a.md").items[0].text)
+    assert parsed and parsed[0] == sid
+
+
+def test_unparseable_yaml_block_is_not_front_matter():
+    doc = read_md("---\na: 2001-13-01\n---\nx\n", "a.md")
+    assert doc.warnings == []
+    assert "x" in [i.text for i in doc.items]

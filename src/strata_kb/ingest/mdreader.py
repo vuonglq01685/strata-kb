@@ -61,7 +61,7 @@ def _drop_front_matter(lines: list[str]) -> tuple[list[str], int]:
             if lines[i].rstrip() == "---":
                 try:
                     meta = yaml.safe_load("\n".join(lines[1:i]))
-                except yaml.YAMLError:
+                except (yaml.YAMLError, ValueError):  # e.g. a malformed timestamp
                     return lines, 0
                 # a thematic break + setext `Title\n---` is not front matter
                 return (lines[i + 1 :], i + 1) if isinstance(meta, dict) else (lines, 0)
@@ -78,7 +78,11 @@ def _heading_text(inline_content: str) -> str:
         return text
     # unwrap only markup that wraps an id: title words stay as written
     parsed = parse_section_id(unwrapped)
-    return unwrapped if parsed and parsed[0] == unwrapped.split()[0] else text
+    if not parsed:
+        return text
+    # ids are normalized (`1.2.` -> `1.2`, `2.0` -> `2`): compare the token's own id
+    token = parse_section_id(unwrapped.split()[0] + " x")
+    return unwrapped if token and token[0] == parsed[0] else text
 
 
 def _refuse_fenced_headings(
