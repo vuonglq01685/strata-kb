@@ -626,7 +626,7 @@ def test_cli_refuses_wrong_pdf(kb, tmp_path, monkeypatch):
     result = _cli(kb, "apply", extra=("--pdf", str(other), "--assistant", "cursor"))
 
     assert result.exit_code == 1
-    assert f"{other} is not the PDF doc was ingested from" in result.output.replace(
+    assert f"{other} is not the source doc was ingested from" in result.output.replace(
         "\n", ""
     )
     assert _draft_path(kb, "x1").exists()

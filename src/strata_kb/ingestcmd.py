@@ -334,7 +334,11 @@ def _echo_l3_check(
 ) -> int:
     """Save the check, echo its outcome, return the unconfirmed section count."""
     if check is None:
-        echo("L3 check skipped: PDF text layer unreadable")
+        echo(
+            "L3 check skipped: source has no text"
+            if is_md(opts.source)
+            else "L3 check skipped: PDF text layer unreadable"
+        )
         return 0
     doc_dir = opts.kb_dir / opts.doc_id
     l3report.save(doc_dir, check)

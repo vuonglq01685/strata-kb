@@ -19,7 +19,7 @@ import unicodedata
 from datetime import UTC
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, NoReturn
 
 import typer
 import yaml
@@ -51,7 +51,7 @@ force_utf8_streams()
 _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError)
 
 
-def _invalid_yaml_exit(path: Path, exc: Exception) -> None:
+def _invalid_yaml_exit(path: Path, exc: Exception) -> NoReturn:
     """Report an unparseable/invalid operator-authored YAML file and exit 1."""
     typer.secho(f"{path} is invalid: {' '.join(str(exc).split())}", fg=typer.colors.RED)
     raise typer.Exit(1)
@@ -852,7 +852,7 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
 
 @app.command()
 def ingest(
-    pdf: Path = typer.Argument(..., help="Source PDF file"),
+    source: Path = typer.Argument(..., help="Source PDF or Markdown file"),
     doc_id: str = typer.Option(..., "--id", help="Document ID, e.g. hr-handbook"),
     tags: str = typer.Option("", help="Tags, comma-separated"),
     revision: str = typer.Option("", help="Revision, e.g. '2026 edition'"),
@@ -892,12 +892,12 @@ def ingest(
         help="Skip the LLM verdicts on broken-paragraph findings",
     ),
 ) -> None:
-    """Parse PDF → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
+    """Parse PDF or Markdown → split into sections → generate L3 + L1/L2 scaffolding pending summarization."""
     from strata_kb import ingestcmd
 
     _validate_llm_choice(llm)
     opts = ingestcmd.IngestOptions(
-        source=pdf,
+        source=source,
         doc_id=doc_id,
         tags=tags,
         revision=revision,
@@ -4854,12 +4854,15 @@ def _l3_fix_refuse(message: str) -> None:
     raise typer.Exit(1)
 
 
-def _l3_fix_preflight(kb_dir: Path, work_dir: Path, doc_id: str, pdf: Path) -> None:
-    """Refuse (exit 1) unless the switch is on, `pdf` is the ingested PDF and
-    `sections.json` exists. Runs before any draft is read."""
+def _l3_fix_preflight(
+    kb_dir: Path, work_dir: Path, doc_id: str, source: Path
+) -> Literal["pdf", "md"]:
+    """Refuse (exit 1) unless the switch is on, `source` is the ingested file and
+    `sections.json` exists; return its kind. Runs before any draft is read."""
     import hashlib
 
     from strata_kb.l3check import fixswitch, spans
+    from strata_kb.l3check import source as l3source
 
     reading = kb_dir / "config.yaml"
     manifest_path = kb_dir / doc_id / "_manifest.yaml"
@@ -4870,20 +4873,52 @@ def _l3_fix_preflight(kb_dir: Path, work_dir: Path, doc_id: str, pdf: Path) -> N
         if not manifest_path.exists():
             _l3_fix_refuse(f"no document {doc_id} in {kb_dir}")
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
-        if hashlib.sha256(pdf.read_bytes()).hexdigest() != manifest.source_sha256:
-            _l3_fix_refuse(f"{pdf} is not the PDF {doc_id} was ingested from")
+        if hashlib.sha256(source.read_bytes()).hexdigest() != manifest.source_sha256:
+            _l3_fix_refuse(f"{source} is not the source {doc_id} was ingested from")
         reading = work_dir / doc_id / spans.FILE_NAME
         if spans.load(work_dir, doc_id) is None:
             _l3_fix_refuse(f"no sections.json for {doc_id} — re-ingest")
+        return l3source.source_kind(kb_dir, doc_id)
     except (*_CONFIG_READ_ERRORS, OSError) as exc:
         _invalid_yaml_exit(reading, exc)
+
+
+_MD_NO_IMAGES = "source is Markdown: no page images"
+
+
+def _l3_kind_or_pdf(kb_dir: Path, doc_id: str) -> Literal["pdf", "md"]:
+    """Source kind from the manifest; no manifest means the PDF behaviour."""
+    from strata_kb.l3check import source as l3source
+
+    try:
+        return l3source.source_kind(kb_dir, doc_id)
+    except FileNotFoundError:
+        return "pdf"
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        _invalid_yaml_exit(kb_dir / doc_id / "_manifest.yaml", exc)
+
+
+def _l3_context(
+    source: Path, work_dir: Path, doc_id: str, kind: Literal["pdf", "md"]
+) -> tuple[dict[int, str], dict[int, list[str]]]:
+    from strata_kb.l3check import lint
+    from strata_kb.l3check import source as l3source
+
+    if kind == "pdf":  # lint.load_pdf_context stays the patch point for PDF tests
+        return lint.load_pdf_context(source, work_dir, doc_id)
+    return l3source.load_context(source, work_dir, doc_id, kind)
 
 
 @fix_app.command("apply")
 def l3_fix_apply(
     doc_id: str = typer.Argument(..., help="Document ID"),
-    pdf: Path = typer.Option(
-        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    source: Path = typer.Option(
+        ...,
+        "--source",
+        "--pdf",
+        exists=True,
+        dir_okay=False,
+        help="Source PDF or Markdown file",
     ),
     assistant: _Assistant = typer.Option(
         ..., "--assistant", help="The AI tool that wrote the drafts"
@@ -4903,14 +4938,16 @@ def l3_fix_apply(
     ),
 ) -> None:
     """Verify AI drafts of L3 units against the PDF and apply the ones that pass (exit 1 on any rejection)."""
-    from strata_kb.l3check import fix, lint
+    from strata_kb.l3check import fix
 
-    _l3_fix_preflight(kb_dir, work_dir, doc_id, pdf)
+    kind = _l3_fix_preflight(kb_dir, work_dir, doc_id, source)
+    if kind == "md" and from_image:
+        _l3_fix_refuse(_MD_NO_IMAGES)
     drafts = fix.load_drafts(work_dir, doc_id, set(section) or None)
     if not drafts:
         typer.echo(f"no drafts in {work_dir / doc_id / fix.DRAFT_DIR}")
         return
-    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
+    pdf_pages, furniture = _l3_context(source, work_dir, doc_id, kind)
     results = fix.apply_drafts(
         kb_dir,
         work_dir,
@@ -4935,12 +4972,18 @@ def l3_fix_apply(
 @fix_app.command("pages")
 def l3_fix_pages(
     doc_id: str = typer.Argument(..., help="Document ID"),
-    pdf: Path = typer.Option(
-        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    source: Path = typer.Option(
+        ...,
+        "--source",
+        "--pdf",
+        exists=True,
+        dir_okay=False,
+        help="Source PDF or Markdown file",
     ),
     page: list[int] = typer.Option(
         ..., "--page", min=1, help="1-based page to render (repeatable)"
     ),
+    kb_dir: Path = _KB_DIR_OPT,
     work_dir: Path = typer.Option(
         Path(".kb-work"), help="Intermediate cache directory"
     ),
@@ -4948,13 +4991,15 @@ def l3_fix_pages(
     """Render PDF pages to PNG under .kb-work/<doc-id>/pages/ and print their paths."""
     from strata_kb.l3check import fix
 
+    if _l3_kind_or_pdf(kb_dir, doc_id) == "md":
+        _l3_fix_refuse(_MD_NO_IMAGES)
     try:
-        paths = fix.render_pages(pdf, work_dir, doc_id, page)
+        paths = fix.render_pages(source, work_dir, doc_id, page)
     except ImportError:
         _l3_fix_refuse("pypdfium2 is not installed — install strata-kb[ingest]")
         return
     except (IndexError, ValueError, OSError) as exc:
-        _l3_fix_refuse(f"cannot render {pdf}: {' '.join(str(exc).split())}")
+        _l3_fix_refuse(f"cannot render {source}: {' '.join(str(exc).split())}")
         return
     for path in paths:
         typer.echo(path)
@@ -5016,8 +5061,13 @@ def l3_report(
 @l3_app.command("lint")
 def l3_lint(
     doc_id: str = typer.Argument(..., help="Document ID"),
-    pdf: Path = typer.Option(
-        ..., "--pdf", exists=True, dir_okay=False, help="Source PDF file"
+    source: Path = typer.Option(
+        ...,
+        "--source",
+        "--pdf",
+        exists=True,
+        dir_okay=False,
+        help="Source PDF or Markdown file",
     ),
     kb_dir: Path = _KB_DIR_OPT,
     work_dir: Path = typer.Option(
@@ -5035,8 +5085,9 @@ def l3_lint(
     if data is None:
         typer.secho(f"no sections.json for {doc_id} — re-ingest", fg=typer.colors.RED)
         raise typer.Exit(1)
-    pdf_pages, furniture = lint.load_pdf_context(pdf, work_dir, doc_id)
-    issues = lint.lint_doc(kb_dir, doc_id, data, pdf_pages, furniture)
+    kind = _l3_kind_or_pdf(kb_dir, doc_id)
+    pdf_pages, furniture = _l3_context(source, work_dir, doc_id, kind)
+    issues = lint.lint_doc(kb_dir, doc_id, data, pdf_pages, furniture, md=kind == "md")
     for i in issues:
         typer.echo(f"§{i.section} {i.rule} line {i.line}: {i.evidence}")
     if not issues:
