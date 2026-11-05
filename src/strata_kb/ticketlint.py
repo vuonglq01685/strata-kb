@@ -23,7 +23,6 @@ from strata_kb import (
     missionnext,
     planrev,
     ticket,
-    ticketcheck,
 )
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
@@ -682,20 +681,15 @@ def _check_target_repo(text: str) -> list[Issue]:
     header = ticket.target_header(text)
     if not header:
         return []
-    for line in text.splitlines():
-        entries = ticketcheck.grounded_entries(line)
-        if not entries:
-            continue
-        code = next((e for e in entries if e[1].endswith("-code")), None)
-        if code and code[0] and code[0] != header:
-            return [
-                Issue(
-                    "error",
-                    f"Target repo '{header}' disagrees with Grounded on "
-                    f"'{code[0]}:{code[1]}' — fix one of them",
-                )
-            ]
-        return []
+    code = ticket.grounded_code_entry(text)
+    if code and code[0] and code[0] != header:
+        return [
+            Issue(
+                "error",
+                f"Target repo '{header}' disagrees with Grounded on "
+                f"'{code[0]}:{code[1]}' — fix one of them",
+            )
+        ]
     return []
 
 

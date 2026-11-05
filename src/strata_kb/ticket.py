@@ -206,6 +206,17 @@ def target_header(text: str) -> str | None:
     return (m.group(1) or None) if m else None
 
 
+def grounded_code_entry(text: str) -> tuple[str | None, str] | None:
+    """`(repo qualifier, doc)` of the first `-code` entry on the first
+    parseable `Grounded on:` line of the visible text, or None."""
+    for line in mdmask._visible_text(text).splitlines():
+        entries = grounded_entries(line)
+        if entries:
+            code = next((e for e in entries if e[1].endswith("-code")), None)
+            return (code[0], code[1]) if code else None
+    return None
+
+
 def target_repo(
     text: str, holders: Callable[[str], list[str]] | None = None
 ) -> str | None:
@@ -216,18 +227,13 @@ def target_repo(
     header = target_header(text)
     if header:
         return header
-    for line in mdmask._visible_text(text).splitlines():
-        entries = grounded_entries(line)
-        if not entries:
-            continue
-        code = next((e for e in entries if e[1].endswith("-code")), None)
-        if code is None:
-            return None
-        if code[0]:
-            return code[0]
-        found = holders(code[1]) if holders else []
-        return found[0] if len(found) == 1 else None
-    return None
+    code = grounded_code_entry(text)
+    if code is None:
+        return None
+    if code[0]:
+        return code[0]
+    found = holders(code[1]) if holders else []
+    return found[0] if len(found) == 1 else None
 
 
 # Bug / hotfix contract (`buglint.py`). Like REQUIRED_HEADINGS this is a
