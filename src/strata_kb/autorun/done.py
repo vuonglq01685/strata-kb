@@ -23,10 +23,10 @@ def all_done(
     Dev work is open. BA also needs no open question, and names a story still
     to write (`to-draft`/`draft`/`blocked`) before one merely `ready`. No
     tickets at all is not done: an empty hub is a hub the plan has not reached
-    yet. A Dev (`repo_id` given) counts only the rows routed to its repo."""
+    yet. A Dev (`repo_id` given) counts only rows routed to its repo or not routed yet."""
     tickets = [*stories, *unparented]
     if repo_id and not ba:
-        tickets = [t for t in tickets if t.target_repo == repo_id]
+        tickets = [t for t in tickets if t.target_repo in (repo_id, None)]
     if not tickets:
         return False, "no tickets"
     open_ = [t for t in tickets if t.status != "done"]

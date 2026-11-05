@@ -99,3 +99,12 @@ def test_all_done_scoped_to_repo():
         False,
         "TAL-2 ready",
     )
+
+
+def test_all_done_dev_keeps_untargeted_rows():
+    mine = StoryStatus("US1", "M-x", "t", "done", (), (), "web-app")
+    draft = StoryStatus("US2", "M-x", "t", "to-draft", (), (), None)
+    assert all_done([mine, draft], [], ba=False, repo_id="web-app") == (
+        False,
+        "US2 to-draft",
+    )
