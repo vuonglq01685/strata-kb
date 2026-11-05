@@ -85,6 +85,21 @@ def _refuse_fenced_headings(
         )
 
 
+def _gap_blocks(tokens: list, lines: list[str]) -> list[tuple[int, DocItem]]:
+    """Non-blank lines no top-level token maps (link reference definitions)
+    become verbatim text items, so no source content misses L3."""
+    covered = {n for t in tokens if t.level == 0 and t.map for n in range(*t.map)}
+    out: list[tuple[int, DocItem]] = []
+    run: list[int] = []
+    for n in [*range(len(lines)), len(lines)]:
+        if n < len(lines) and n not in covered and lines[n].strip():
+            run.append(n)
+        elif run:
+            out.append((run[0], DocItem("text", "\n".join(lines[run[0] : n]))))
+            run = []
+    return out
+
+
 def _parse(text: str, name: str) -> _Parsed:
     lines, offset = _drop_front_matter(_normalize(text).split("\n"))
     warnings = [f"front matter dropped ({offset} lines)"] if offset else []
@@ -110,6 +125,9 @@ def _parse(text: str, name: str) -> _Parsed:
         else:
             continue
         blocks.append((t.map[0], item))
+
+    blocks += _gap_blocks(tokens, lines)
+    blocks.sort(key=lambda b: b[0])
 
     h1 = [it for _, it in blocks if it.kind == "heading" and it.level == 1]
     title = None

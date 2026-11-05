@@ -131,3 +131,30 @@ def test_reader_imports_no_docling():
 
 def test_module_exports():
     assert mdreader.MdDoc
+
+
+def test_link_reference_definitions_kept():
+    src = "See [a][r].\n\n[r]: http://x.example/a\n[s]: http://x.example/b\n\nend\n"
+    doc = read_md(src, "a.md")
+    assert _texts(doc) == [
+        ("text", "See [a][r]."),
+        ("text", "[r]: http://x.example/a\n[s]: http://x.example/b"),
+        ("text", "end"),
+    ]
+
+
+def test_every_source_line_reaches_an_item():
+    src = (
+        "---\nk: v\n---\n# Doc Title\n\nintro\n[r]: http://u\n\n## 1 A\n\n"
+        "| a | b |\n|---|---|\n| 1 | 2 |\n\n- x\n  - y\n\n> q\n\n"
+        "    indented\n\n```\ncode\n```\n\n<div>\nh\n</div>\n\n---\n\n[z]: /z\n"
+    )
+    doc = read_md(src, "a.md")
+    covered = {ln for it in doc.items for ln in it.text.split("\n")}
+    body = src.split("\n")[3:]  # minus front matter
+    missing = [
+        ln for ln in body if ln.strip() and ln != "# Doc Title" and ln not in covered
+    ]
+    # heading lines are rewritten (markers dropped) -> compare by text
+    missing = [ln for ln in missing if ln.lstrip("# ") not in covered]
+    assert missing == []
