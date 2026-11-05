@@ -66,7 +66,7 @@ def test_ingest_refuses_authored_doc(fixture_kb, tmp_path, monkeypatch, sections
     before = _snapshot(fixture_kb)
     _forbid_parse(monkeypatch)
     opts = ingestcmd.IngestOptions(
-        pdf=tmp_path / "x.pdf",
+        source=tmp_path / "x.pdf",
         doc_id=DOC,
         sections=sections,
         kb_dir=fixture_kb,

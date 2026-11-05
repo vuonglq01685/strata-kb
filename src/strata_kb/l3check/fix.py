@@ -366,7 +366,11 @@ def _recheck(
     for sid in ids:
         l3 = pieces[sid][0]
         near = "\n\n".join(p for o, ps in pieces.items() if o != sid for p in ps)
-        sec = spans.section_input(t.span.model_copy(update={"id": sid}), l3)
+        sec = spans.section_input(
+            t.span.model_copy(update={"id": sid}),
+            l3,
+            t.manifest.ingest is not None and t.manifest.ingest.source_kind == "md",
+        )
         unverified = detect.unverifiable(sec, pdf_pages)
         findings = (
             [unverified]

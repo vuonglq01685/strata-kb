@@ -213,6 +213,27 @@ document is deleted and rewritten, including summaries you already reviewed. Wit
 reviewed summaries included, is untouched. A `--sections` value that matches no heading
 **deletes** that chapter, and the report says so: read it.
 
+**Ingest a Markdown file.** A `.md` or `.markdown` file goes straight to L3, with no
+ingest extra and no PDF:
+
+```bash
+kb ingest source/policy.md --id policy
+```
+
+Only heading lines are rewritten, by the same id rules as a PDF (a numbered heading keeps
+its number, an unnumbered one gets a slug id under its parent, and an unnumbered heading
+nests by its `#` level); every other byte of the file reaches L3 unchanged. Local `.png`
+and `.webp` images inside the source folder are copied to `assets/<sha256>.<ext>` and their
+links rewritten; any other image stays as written, with a warning. Ingest refuses a file
+whose fenced code or HTML block holds a `## ` or `### ` line (it lists the line numbers:
+move the line out or indent it), and an id already used for the other kind:
+`'<id>' was ingested from a PDF — ingest the Markdown under a new --id`, and the reverse.
+`kb l3 fix apply`, `kb l3 lint` and `kb l3 fix pages` take `--source <file>` (`--pdf` still
+works); a Markdown document has no page images, so `kb l3 fix pages` and `--from-image`
+refuse with `source is Markdown: no page images`. The source Markdown is the master: to
+change the text, edit it and ingest again. That resets the AI-fix record, so run
+`/kb-l3-fix` and confirm again. `kb authored <doc>` still freezes a document.
+
 ## 3.2 Check L3 against the PDF
 
 After writing L3, `kb ingest` compares every section with the PDF's own text layer and

@@ -14,15 +14,16 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from strata_kb import authored, models, review
-from strata_kb.ingest import parser, pdftext, scaffold, sectioner
+from strata_kb.ingest import mdreader, parser, pdftext, scaffold, sectioner
 from strata_kb.ingest.scaffold import ScaffoldReport
-from strata_kb.l3check import detect, fixrecord, fixswitch, spans
+from strata_kb.ingest.sectioner import DocItem
+from strata_kb.l3check import detect, fixrecord, fixswitch, source, spans
 from strata_kb.l3check import report as l3report
 
 
 @dataclass
 class IngestOptions:
-    pdf: Path
+    source: Path
     doc_id: str
     tags: str = ""
     revision: str = ""
@@ -35,6 +36,7 @@ class IngestOptions:
     no_bookmarks: bool = False
 
 
+_MD_SUFFIXES = {".md", ".markdown"}
 _MAX_UNCOVERED_SHOWN = 10
 _MAX_NOTES_SHOWN = 20
 _INGEST_LOGGER = "strata_kb.ingest"
@@ -76,6 +78,48 @@ def _warn_uncovered(missing, warn: Callable[[str], None]) -> None:
         )
 
 
+def is_md(path: Path) -> bool:
+    return path.suffix.lower() in _MD_SUFFIXES
+
+
+def _refuse_kind_switch(
+    opts: IngestOptions, previous: models.Manifest | None, kind: str
+) -> None:
+    """A document keeps the kind it was first ingested as; manifests without
+    `ingest` are PDF."""
+    if previous is None:
+        return
+    old = previous.ingest.source_kind if previous.ingest else "pdf"
+    if old == kind:
+        return
+    if old == "pdf":
+        raise ValueError(
+            f"'{opts.doc_id}' was ingested from a PDF — ingest the Markdown under a new --id"
+        )
+    raise ValueError(
+        f"'{opts.doc_id}' was ingested from Markdown — ingest the PDF under a new --id"
+    )
+
+
+def _read_markdown(opts: IngestOptions, warn: Callable[[str], None]) -> mdreader.MdDoc:
+    try:
+        text = opts.source.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"{opts.source.name} is not UTF-8") from None
+    md = mdreader.read_md(text, opts.source.name)
+    for w in md.warnings:
+        warn(w)
+    items, image_warnings = mdreader.copy_images(
+        md.items, opts.source, opts.kb_dir / opts.doc_id / "assets"
+    )
+    for w in image_warnings:
+        warn(w)
+    if items and not any(i.kind == "heading" for i in items):
+        # No heading to open a unit: the whole file becomes one, named after the document.
+        items = [DocItem("heading", md.title or opts.doc_id, level=2, page=1), *items]
+    return replace(md, items=items)
+
+
 def _warn_notes(notes: sectioner.SectioningNotes, warn: Callable[[str], None]) -> None:
     demoted = []
     for d in notes.demoted:
@@ -88,6 +132,8 @@ def _warn_notes(notes: sectioner.SectioningNotes, warn: Callable[[str], None]) -
             where = f"{d.reason}, {_page(d.pages[0] if d.pages else None)}"
         demoted.append(f"heading demoted to text ({where}): '{d.heading}'")
     _warn_capped(demoted, "demoted headings", warn)
+    for unit_id in notes.empty_headings:
+        warn(f"heading with no text: {unit_id}")
     _warn_capped(
         [
             f"fallback id '{f.id}' for unparsed heading '{f.heading}' ({_page(f.page)})"
@@ -139,6 +185,7 @@ def _section_inputs(
     units: list[sectioner.SectionUnit],
     slices: dict[str, list[str | None]],
     last_page: int | None,
+    md: bool = False,
 ) -> list[detect.SectionInput]:
     """One input per unit: its page span (to the next unit's start page, or
     `last_page`) and its slice of the written L3."""
@@ -152,7 +199,9 @@ def _section_inputs(
         piece = pieces[taken[unit.id]] if taken[unit.id] < len(pieces) else None
         taken[unit.id] += 1
         inputs.append(
-            detect.SectionInput(unit.id, unit.chapter, unit.page, end_page, piece or "")
+            detect.SectionInput(
+                unit.id, unit.chapter, unit.page, end_page, piece or "", md
+            )
         )
     return inputs
 
@@ -193,31 +242,37 @@ def _write_spans(
 
 def l3_check(
     opts: IngestOptions,
-    doc,  # docling document; untyped like parser.py's
     units: list[sectioner.SectionUnit],
     notes: sectioner.SectioningNotes,
     slices: dict[str, list[str | None]],
-    pdf_pages: dict[int, str],
+    pages: dict[int, str],
+    furniture: dict[int, list[str]],
 ) -> l3report.L3Check | None:
-    """Check the L3 just written against the PDF's text layer (`pdf_pages`) and
-    merge the result into the previous `_l3check.yaml`. `slices` is the written
-    L3 (`l3report.l3_slices`). None when the PDF has no readable text layer
-    (nothing to compare against). Writes nothing.
+    """Check the L3 just written against the source's text (`pages`: PDF text
+    layer or Markdown pages) and merge the result into the previous
+    `_l3check.yaml`. `slices` is the written L3 (`l3report.l3_slices`). None
+    when the source has no readable text (nothing to compare against). Writes
+    nothing.
 
     Every unit is checked, so spans and neighbours are as in a full run; on
     `--sections` only the findings of the re-ingested chapters are kept."""
-    if not pdf_pages:
+    if not pages:
         return None
     chapters = _chapter_filter(opts.sections)
     checked = {u.id for u in units if chapters is None or u.chapter in chapters}
     doc_dir = opts.kb_dir / opts.doc_id
     manifest = models.load_yaml_model(doc_dir / "_manifest.yaml", models.Manifest)
-    inputs = _section_inputs(units, slices, max(pdf_pages))
+    inputs = _section_inputs(
+        units,
+        slices,
+        max(pages),
+        manifest.ingest is not None and manifest.ingest.source_kind == "md",
+    )
     found = detect.check_document(
         inputs,
         {u.id: u.title for u in units},
-        pdf_pages,
-        parser.furniture_by_page(doc),
+        pages,
+        furniture,
         notes,
     )
     digests = l3report.digest_slices(slices)
@@ -287,7 +342,11 @@ def _echo_l3_check(
 ) -> int:
     """Save the check, echo its outcome, return the unconfirmed section count."""
     if check is None:
-        echo("L3 check skipped: PDF text layer unreadable")
+        echo(
+            "L3 check skipped: source has no text"
+            if is_md(opts.source)
+            else "L3 check skipped: PDF text layer unreadable"
+        )
         return 0
     doc_dir = opts.kb_dir / opts.doc_id
     l3report.save(doc_dir, check)
@@ -335,37 +394,60 @@ def _run_ingest(
     if authored.is_authored(opts.kb_dir, opts.doc_id):
         raise ValueError(authored.refusal_message(opts.doc_id))
     manifest_path = opts.kb_dir / opts.doc_id / "_manifest.yaml"
-    previous = None
-    if manifest_path.exists():
-        previous = models.load_yaml_model(manifest_path, models.Manifest).ingest
+    manifest = (
+        models.load_yaml_model(manifest_path, models.Manifest)
+        if manifest_path.exists()
+        else None
+    )
+    previous = manifest.ingest if manifest else None
+    kind: source.SourceKind = "md" if is_md(opts.source) else "pdf"
+    _refuse_kind_switch(opts, manifest, kind)  # before anything is written
     heading_config = sectioner.resolve_heading_config(
         opts.chapter_pattern, opts.appendix_pattern, opts.attachment_pattern, previous
     )
 
-    doc = parser.load_or_parse(opts.pdf, opts.work_dir / opts.doc_id)
-    items = parser.doc_to_items(
-        doc, assets_dir=opts.kb_dir / opts.doc_id / "assets", pdf_path=opts.pdf
-    )
-    parts = (
-        None if opts.no_bookmarks else parser.outline_parts(opts.pdf, heading_config)
-    )
-    if parts:
-        echo(f"sectioning: bookmarks ({len(parts)} parts)")
+    if kind == "md":
+        md = _read_markdown(opts, warn)
+        items, parts, title = md.items, None, md.title or opts.doc_id
+        if opts.no_bookmarks:
+            warn("--no-bookmarks has no effect on Markdown")
+        echo("sectioning: Markdown headings")
+        units, notes = sectioner.build_units_with_notes(
+            items, config=heading_config, md_mode=True
+        )
     else:
-        echo("sectioning: heading patterns")
-    units, notes = sectioner.build_units_with_notes(
-        items, config=heading_config, parts=parts
-    )
+        doc = parser.load_or_parse(opts.source, opts.work_dir / opts.doc_id)
+        items = parser.doc_to_items(
+            doc, assets_dir=opts.kb_dir / opts.doc_id / "assets", pdf_path=opts.source
+        )
+        parts = (
+            None
+            if opts.no_bookmarks
+            else parser.outline_parts(opts.source, heading_config)
+        )
+        if parts:
+            echo(f"sectioning: bookmarks ({len(parts)} parts)")
+        else:
+            echo("sectioning: heading patterns")
+        units, notes = sectioner.build_units_with_notes(
+            items, config=heading_config, parts=parts
+        )
+        title = (
+            opts.doc_id
+            if not hasattr(doc, "name")
+            else (getattr(doc, "name", "") or opts.doc_id)
+        )
 
     _warn_notes(notes, warn)
     _warn_uncovered(sectioner.uncovered(items, units), warn)
 
-    bm_ids = parser.bookmark_ids(opts.pdf, heading_config)
-    if bm_ids is None:
-        warn("PDF outline unreadable — bookmark cross-check skipped")
-    elif bm_ids:
-        for warning in parser.crosscheck({u.id for u in units}, bm_ids):
-            warn(warning)
+    if kind == "pdf":
+        bm_ids = parser.bookmark_ids(opts.source, heading_config)
+        if bm_ids is None:
+            warn("PDF outline unreadable — bookmark cross-check skipped")
+        elif bm_ids:
+            for warning in parser.crosscheck({u.id for u in units}, bm_ids):
+                warn(warning)
 
     chapters = _chapter_filter(opts.sections)
     if chapters and not any(u.chapter in chapters for u in units):
@@ -382,26 +464,29 @@ def _run_ingest(
     report = scaffold.scaffold_doc(
         units,
         doc_id=opts.doc_id,
-        title=(
-            opts.doc_id
-            if not hasattr(doc, "name")
-            else (getattr(doc, "name", "") or opts.doc_id)
-        ),
+        title=title,
         tags=tag_list,
         revision=opts.revision,
-        source_path=opts.pdf,
+        source_path=opts.source,
         kb_dir=opts.kb_dir,
         chapters=chapters,
         heading_config=heading_config,
         part_titles={p.id: p.title for p in parts} if parts else None,
         used_bookmarks=bool(parts),
+        source_kind=kind,
     )
     _echo_token_stats(report, len(notes.fallbacks), echo)
     slices = l3report.l3_slices(opts.kb_dir, opts.doc_id)
-    pdf_pages = pdftext.page_texts(opts.pdf)
-    _write_spans(opts, units, notes, slices, max(pdf_pages) if pdf_pages else None)
+    furniture: dict[int, list[str]] = {}
+    if kind == "md":
+        pages, _ = source.load_context(opts.source, opts.work_dir, opts.doc_id, kind)
+    else:
+        pages = pdftext.page_texts(opts.source)
+    _write_spans(opts, units, notes, slices, max(pages) if pages else None)
+    if kind == "pdf" and pages:  # l3_check skips an unreadable layer
+        furniture = parser.furniture_by_page(doc)
     flagged = _echo_l3_check(
-        l3_check(opts, doc, units, notes, slices, pdf_pages),
+        l3_check(opts, units, notes, slices, pages, furniture),
         opts,
         l3report.digest_slices(slices),
         echo,

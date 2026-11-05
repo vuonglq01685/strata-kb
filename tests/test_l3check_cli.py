@@ -3,7 +3,7 @@ import subprocess
 from typer.testing import CliRunner
 
 from strata_kb.cli import app
-from strata_kb.l3check import fixrecord, report
+from strata_kb.l3check import fix, fixrecord, report
 from strata_kb.l3check.fixrecord import BaselineUnit, FixEntry, L3Fix
 from strata_kb.l3check.report import AgentVerdict, Finding, L3Check, SectionCheck
 from tests.test_l3check_report import _flag, _kb
@@ -441,3 +441,174 @@ def test_confirm_all_with_flagged_and_removed_id(tmp_path):
     assert result.exit_code == 0
     assert "confirmed: §x1, §1" in result.output
     assert report.blocked_docs(kb) == []
+
+
+# --- Markdown sources: --source, refusals ---
+
+MD_SOURCE = (
+    "# Handbook\n\n## 1 Scope\n\nLeave is paid in full.\n\n"
+    "> A quoted rule about leave.\n\n## 2 Pay\n\nSalary is paid monthly.\n"
+)
+
+
+def _md_doc(tmp_path):
+    from strata_kb import ingestcmd
+    from strata_kb.config import set_block_enabled
+
+    src = tmp_path / "doc.md"
+    src.write_text(MD_SOURCE, encoding="utf-8")
+    ingestcmd.run_ingest(
+        ingestcmd.IngestOptions(
+            source=src,
+            doc_id="doc",
+            kb_dir=tmp_path / ".kb",
+            work_dir=tmp_path / ".kb-work",
+        ),
+        echo=lambda _: None,
+        warn=lambda _: None,
+    )
+    set_block_enabled(tmp_path / ".kb" / "config.yaml", "l3_fix", True)
+    return src
+
+
+def _fix_cmd(tmp_path, sub, *extra, src_flag="--source", src=None):
+    return runner.invoke(
+        app,
+        [
+            "l3", "fix", sub, "doc",
+            src_flag, str(src or tmp_path / "doc.md"),
+            "--kb-dir", str(tmp_path / ".kb"),
+            "--work-dir", str(tmp_path / ".kb-work"),
+            *extra,
+        ],
+    )  # fmt: skip
+
+
+def _md_draft(tmp_path, name, text):
+    path = tmp_path / ".kb-work" / "doc" / fix.DRAFT_DIR / f"{name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_fix_apply_md_passing_draft_applied(tmp_path):
+    _md_doc(tmp_path)
+    _md_draft(
+        tmp_path,
+        "1",
+        "## 1 Scope\n\n**Leave** is paid in full.\n\n> A quoted rule about leave.\n",
+    )
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor")
+
+    assert result.exit_code == 0, result.output
+    assert "§1 applied" in result.output
+
+
+def test_fix_apply_md_draft_adding_word_rejected(tmp_path):
+    _md_doc(tmp_path)
+    _md_draft(
+        tmp_path,
+        "1",
+        "## 1 Scope\n\nLeave is always paid in full.\n\n> A quoted rule about leave.\n",
+    )
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor")
+
+    assert result.exit_code == 1
+    assert "§1 rejected: words:" in result.output
+
+
+def test_fix_apply_md_from_image_refused(tmp_path):
+    _md_doc(tmp_path)
+    _md_draft(tmp_path, "1", "## 1 Scope\n\nLeave is paid in full.\n")
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor", "--from-image", "1")
+
+    assert result.exit_code == 1
+    assert "source is Markdown: no page images" in result.output
+
+
+def test_fix_pages_md_refused(tmp_path):
+    _md_doc(tmp_path)
+
+    result = _fix_cmd(tmp_path, "pages", "--page", "1")
+
+    assert result.exit_code == 1
+    assert "source is Markdown: no page images" in result.output
+
+
+def test_fix_apply_wrong_source_refused(tmp_path):
+    _md_doc(tmp_path)
+    other = tmp_path / "other.md"
+    other.write_text("# Other\n", encoding="utf-8")
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor", src=other)
+
+    assert result.exit_code == 1
+    assert f"{other} is not the source doc was ingested from" in result.output.replace(
+        "\n", ""
+    )
+
+
+def test_pdf_alias_still_works(tmp_path):
+    _md_doc(tmp_path)
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor", src_flag="--pdf")
+
+    assert result.exit_code == 0
+    assert "no drafts" in result.output
+
+
+def test_l3_lint_md_clean_with_blockquote(tmp_path):
+    _md_doc(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "l3", "lint", "doc", "--source", str(tmp_path / "doc.md"),
+            "--kb-dir", str(tmp_path / ".kb"),
+            "--work-dir", str(tmp_path / ".kb-work"),
+        ],
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    assert "L3 lint: clean" in result.output
+
+
+CODE_SOURCE = (
+    "# Handbook\n\n## 1 Setup\n\nRun this command\n\n    pip install foo\n\n"
+    "## 2 Pay\n\nSalary is paid monthly.\n"
+)
+
+
+def test_fix_apply_md_keeping_indented_code_after_lead_in_is_applied(tmp_path):
+    from strata_kb import ingestcmd
+    from strata_kb.l3check import report as l3report
+
+    src = _md_doc(tmp_path)
+    src.write_text(CODE_SOURCE, encoding="utf-8")
+    ingestcmd.run_ingest(
+        ingestcmd.IngestOptions(
+            source=src,
+            doc_id="doc",
+            kb_dir=tmp_path / ".kb",
+            work_dir=tmp_path / ".kb-work",
+        ),
+        echo=lambda _: None,
+        warn=lambda _: None,
+    )
+    check = l3report.load(tmp_path / ".kb" / "doc")
+    assert not [
+        f
+        for s in (check.sections if check else [])
+        for f in s.findings
+        if f.kind == "break"
+    ]
+    _md_draft(
+        tmp_path, "1", "## 1 Setup\n\n**Run** this command\n\n    pip install foo\n"
+    )
+
+    result = _fix_cmd(tmp_path, "apply", "--assistant", "cursor")
+
+    assert result.exit_code == 0, result.output
+    assert "§1 applied" in result.output

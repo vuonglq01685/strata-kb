@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from strata_kb import models
@@ -548,3 +549,20 @@ def test_ingest_no_llm_review_flag_skips_agent(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "L3 agent review" not in result.output
     assert "Summarize skipped until the L3 review is confirmed" in result.output
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("a.md", "L3 check skipped: source has no text"),
+        ("a.pdf", "L3 check skipped: PDF text layer unreadable"),
+    ],
+)
+def test_l3_check_skipped_copy_follows_source_kind(tmp_path: Path, name, expected):
+    from strata_kb import ingestcmd
+
+    lines: list[str] = []
+    opts = ingestcmd.IngestOptions(source=tmp_path / name, doc_id="d")
+
+    assert ingestcmd._echo_l3_check(None, opts, {}, lines.append) == 0
+    assert lines == [expected]

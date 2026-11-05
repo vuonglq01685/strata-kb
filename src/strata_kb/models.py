@@ -20,7 +20,15 @@ from pathlib import Path
 from typing import Literal, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from strata_kb import kinds
 
@@ -84,6 +92,17 @@ class IngestConfig(BaseModel):
     appendix_pattern: str
     attachment_pattern: str = ""  # "" = default pattern (backward compat)
     used_bookmarks: bool = False
+    source_kind: Literal["pdf", "md"] = "pdf"
+
+    @model_serializer(mode="wrap")
+    def _omit_default_source_kind(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, object]:
+        # PDF manifests stay byte-identical to pre-source_kind ones.
+        data = handler(self)
+        if data.get("source_kind") == "pdf":
+            del data["source_kind"]
+        return data
 
 
 class Manifest(BaseModel):

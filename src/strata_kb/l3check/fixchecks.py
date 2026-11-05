@@ -168,16 +168,19 @@ def _check_contract(
 ) -> None:
     if not ids:
         raise _Reject("contract: the draft has no ## unit")
+    ingest = t.manifest.ingest
+    md = ingest is not None and ingest.source_kind == "md"
     contexts = {
         sid: lint.UnitContext(
             t.span.model_copy(update={"id": sid}),
             sid in t.data.fallback_units,
             t.furniture,
             pdf_pages,
+            md,
         )
         for sid in ids
     }
-    issues = lint.lint_file(draft, contexts)
+    issues = lint.lint_file(draft, contexts, md)
     if issues:
         i = issues[0]
         raise _Reject(f"contract: §{i.section} {i.rule} line {i.line}: {i.evidence}")

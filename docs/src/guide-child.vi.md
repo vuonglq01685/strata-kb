@@ -208,6 +208,26 @@ file và mục manifest của chương đó được ghi lại; phần còn lạ
 không bị đụng tới. Một giá trị `--sections` không khớp tiêu đề nào sẽ **xoá** chương đó,
 và báo cáo nói rõ điều này: hãy đọc nó.
 
+**Ingest một file Markdown.** File `.md` hoặc `.markdown` đi thẳng vào L3, không cần extra
+ingest và không cần PDF:
+
+```bash
+kb ingest source/policy.md --id policy
+```
+
+Chỉ các dòng tiêu đề bị ghi lại, theo cùng quy tắc id như PDF (tiêu đề đánh số giữ số của
+nó, tiêu đề không đánh số nhận id dạng slug dưới mục cha, và lồng theo cấp `#`); mọi byte
+khác của file vào L3 nguyên vẹn. Ảnh `.png` và `.webp` cục bộ nằm trong thư mục nguồn được
+chép vào `assets/<sha256>.<ext>` và liên kết được ghi lại; ảnh khác giữ nguyên, kèm cảnh
+báo. Ingest từ chối file có khối code rào (fence) hoặc khối HTML chứa dòng `## ` hoặc `### `
+(nó liệt kê số dòng: hãy dời dòng ra ngoài hoặc thụt lề), và từ chối id đã dùng cho loại
+kia: `'<id>' was ingested from a PDF — ingest the Markdown under a new --id`, và ngược lại.
+`kb l3 fix apply`, `kb l3 lint` và `kb l3 fix pages` nhận `--source <file>` (`--pdf` vẫn
+dùng được); tài liệu Markdown không có ảnh trang, nên `kb l3 fix pages` và `--from-image`
+từ chối với `source is Markdown: no page images`. Markdown nguồn là bản gốc: muốn đổi
+văn bản, hãy sửa nó rồi ingest lại. Việc này đặt lại bản ghi AI-fix, nên hãy chạy
+`/kb-l3-fix` và xác nhận lại. `kb authored <doc>` vẫn đóng băng tài liệu.
+
 ## 3.2 Kiểm tra L3 với PDF
 
 Sau khi ghi L3, `kb ingest` so từng section với lớp văn bản của chính PDF và ghi các phát

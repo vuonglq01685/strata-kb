@@ -41,6 +41,7 @@ class _Node:
     children: list[_Node] = field(default_factory=list)
     fallback: bool = False  # id synthesized from an unparsed heading
     page: int | None = None  # page of the heading that opened this node
+    md_level: int = 0  # Markdown `#` count (md_mode only); root is 0
 
 
 @dataclass
@@ -107,6 +108,7 @@ class SectioningNotes:
     fallbacks: list[Fallback] = field(default_factory=list)
     inversions: list[Inversion] = field(default_factory=list)
     duplicates: list[Duplicate] = field(default_factory=list)
+    empty_headings: list[str] = field(default_factory=list)  # md_mode unit ids
 
 
 def split_by_parts(
@@ -348,7 +350,9 @@ class _TreeBuilder:
         part: Part | None,
         notes: SectioningNotes | None = None,
         repeated: dict[str, tuple[int | None, ...]] | None = None,
+        md_mode: bool = False,
     ) -> None:
+        self.md_mode = md_mode
         self.cfg = cfg
         self.part = part
         self.notes = notes if notes is not None else SectioningNotes()
@@ -383,15 +387,17 @@ class _TreeBuilder:
             self.last_page = item.page
         if item.kind != "heading":
             if item.text.strip():
-                self.stack[-1].body.append(item.text.strip())
+                # md_mode: source bytes are verbatim -- keep leading indent.
+                text = item.text.rstrip() if self.md_mode else item.text.strip()
+                self.stack[-1].body.append(text)
             return
         normalized = " ".join(item.text.split())
-        if not any(ch.isalnum() for ch in normalized):
+        if not self.md_mode and not any(ch.isalnum() for ch in normalized):
             # Horizontal-rule / footnote-separator artifact ("_____",
             # "---"): pure graphics, no content -- skip entirely so it
             # never opens a fallback node.
             return
-        if normalized.endswith(":"):
+        if normalized.endswith(":") and not self.md_mode:
             # List intro / field label misclassified as a heading (e.g.
             # "Source/Content:" or "1.Material comprising the Annex
             # proper:") -- demote to text in the current node so it can
@@ -400,14 +406,14 @@ class _TreeBuilder:
             return
         parsed = parse_section_id(normalized, self.cfg)
         if parsed:
-            self._attach_parsed(normalized, *parsed)
+            self._attach_parsed(normalized, *parsed, item.level)
             return
         pages = self.repeated.get(normalized, ())
-        reason = _noise_reason(normalized, len(pages))
+        reason = None if self.md_mode else _noise_reason(normalized, len(pages))
         if reason:
             self._demote(normalized, reason, pages or (self.last_page,))
             return
-        self._attach_fallback(normalized)
+        self._attach_fallback(normalized, item.level)
 
     def _demote(
         self, normalized: str, reason: str, pages: tuple[int | None, ...]
@@ -444,21 +450,27 @@ class _TreeBuilder:
             return f"{top.id}-{sid}", depth + 1
         return sid, depth
 
-    def _attach_parsed(self, normalized: str, sid: str, title: str) -> None:
+    def _attach_parsed(
+        self, normalized: str, sid: str, title: str, level: int = 0
+    ) -> None:
         depth = _depth_of(sid)
         sid, depth = self._namespace(sid, depth, normalized)
-        if any(n.id == sid for n in self.stack):
+        # md_mode: a repeated id is a new node (renamed by _dedupe_ids), never
+        # a running header -- the heading text must reach L3.
+        if not self.md_mode and any(n.id == sid for n in self.stack):
             # Heading repeats a node already open (self or ancestor),
             # e.g. a running page header mid-section -> no-op so the
             # following content keeps accumulating where it belongs.
             return
-        if sid in self.seen:
+        if not self.md_mode and sid in self.seen:
             self.stack = list(self.seen[sid])
             return
         while self.stack[-1].depth >= depth:
             self.stack.pop()
         anchor = self.stack[-1]
-        node = _Node(id=sid, title=title, depth=depth, page=self.last_page)
+        node = _Node(
+            id=sid, title=title, depth=depth, page=self.last_page, md_level=level
+        )
         # Detect the orphan pattern: a numeric id whose current
         # attachment point is neither itself nor a real dotted/
         # namespaced ancestor of it. A legitimate skip-level
@@ -484,16 +496,20 @@ class _TreeBuilder:
         if sid in self.pending_orphans:
             node.children.extend(self.pending_orphans.pop(sid))
 
-    def _attach_fallback(self, normalized: str) -> None:
+    def _attach_fallback(self, normalized: str, level: int = 0) -> None:
         # Unparsed heading -> named after its title so SMEs can read
         # the id. Consecutive fallbacks are siblings (never x1-x2-x3
-        # chains): pop any open fallback before attaching.
-        while self.stack[-1].fallback:
+        # chains): pop any open fallback before attaching. md_mode nests
+        # by `#` count instead: pop every node at the same or deeper level.
+        if self.md_mode:
+            while self.stack[-1].md_level >= level > 0:
+                self.stack.pop()
+        while self.stack[-1].fallback and not self.md_mode:
             self.stack.pop()
         parent = self.stack[-1]
         slug = _fallback_slug(normalized)
         if not slug:
-            if any(ch.isdigit() for ch in normalized):
+            if not self.md_mode and any(ch.isdigit() for ch in normalized):
                 # Bare page number leaked in as a heading — content
                 # noise, not structure: demote to body text so it
                 # never opens an opaque x{n} section.
@@ -507,9 +523,9 @@ class _TreeBuilder:
                 normalized,
             )
         sid = f"{parent.id}-{slug}" if parent.id else slug
-        if any(n.id == sid for n in self.stack):
+        if not self.md_mode and any(n.id == sid for n in self.stack):
             return
-        if sid in self.seen:
+        if not self.md_mode and sid in self.seen:
             # Same heading again (running page header) -> reopen.
             self.stack = list(self.seen[sid])
             return
@@ -519,6 +535,7 @@ class _TreeBuilder:
             depth=parent.depth + 1,
             fallback=True,
             page=self.last_page,
+            md_level=level,
         )
         parent.children.append(node)
         self.stack.append(node)
@@ -541,8 +558,9 @@ def _build_tree(
     part: Part | None = None,
     notes: SectioningNotes | None = None,
     repeated: dict[str, tuple[int | None, ...]] | None = None,
+    md_mode: bool = False,
 ) -> _Node:
-    builder = _TreeBuilder(config or _DEFAULT_CONFIG, part, notes, repeated)
+    builder = _TreeBuilder(config or _DEFAULT_CONFIG, part, notes, repeated, md_mode)
     for item in items:
         builder.feed(item)
     return builder.finish()
@@ -713,15 +731,19 @@ def build_units_with_notes(
     max_unit_tokens: int = 5000,
     config: HeadingConfig | None = None,
     parts: list[Part] | None = None,
+    md_mode: bool = False,
 ) -> tuple[list[SectionUnit], SectioningNotes]:
     """Section the item stream and return what the sectioner decided along
     the way — the ingest report prints the notes; build_units() drops them."""
     notes = SectioningNotes()
     cfg = config or _DEFAULT_CONFIG
-    repeated = _repeated_unparsed_headings(items, cfg)
-    items = _reorder_inverted_pages(items, cfg, notes)
+    # md_mode: no PDF page furniture -- no running-header demotion, no bbox
+    # reorder, no front-matter split.
+    repeated = {} if md_mode else _repeated_unparsed_headings(items, cfg)
+    if not md_mode:
+        items = _reorder_inverted_pages(items, cfg, notes)
     if not parts:
-        front, rest = _split_front_matter(items, cfg)
+        front, rest = ([], items) if md_mode else _split_front_matter(items, cfg)
         front_units: list[SectionUnit] = []
         if front:
             froot = _build_tree(
@@ -734,12 +756,17 @@ def build_units_with_notes(
             front_units = _units_from_tree(
                 froot, max_depth, min_tokens, max_unit_tokens, "front-matter"
             )
-        root = _build_tree(rest, cfg, notes=notes, repeated=repeated)
+        root = _build_tree(rest, cfg, notes=notes, repeated=repeated, md_mode=md_mode)
         units = order_units(
             front_units
-            + _units_from_tree(root, max_depth, min_tokens, max_unit_tokens, None)
+            + _units_from_tree(
+                root, max_depth, min_tokens, max_unit_tokens, None, notes, md_mode
+            )
         )
-        return _dedupe_ids(units, notes), notes
+        units = _dedupe_ids(units, notes)
+        if md_mode:  # final ids: the dedupe above may have renamed a repeat
+            notes.empty_headings = [u.id for u in units if not u.body_md.strip()]
+        return units, notes
     units: list[SectionUnit] = []
     for part, part_items in split_by_parts(items, parts):
         if not part_items:
@@ -796,6 +823,8 @@ def _units_from_tree(
     min_tokens: int,
     max_unit_tokens: int,
     chapter_override: str | None,
+    notes: SectioningNotes | None = None,
+    md_mode: bool = False,
 ) -> list[SectionUnit]:
     units: list[SectionUnit] = []
 
@@ -834,7 +863,9 @@ def _units_from_tree(
 
         body_md = render(fold_predicate)
         kept = [c for c in node.children if not fold_predicate(c)]
-        if node.depth > 0 and body_md.strip():
+        # md_mode: a heading-only leaf still emits a unit (its title is content).
+        empty_leaf = md_mode and not body_md.strip()
+        if node.depth > 0 and (body_md.strip() or empty_leaf):
             units.append(
                 SectionUnit(
                     id=node.id,

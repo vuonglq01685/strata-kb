@@ -372,7 +372,7 @@ Hub ingest, tóm tắt, build và duyệt tài liệu bằng đúng các lệnh 
   remote thì nó commit thẳng.
 - `kb ingest` cũng chạy được trong container: `docker compose run --rm hub kb ingest …`.
 - Tài liệu mà Markdown nay là bản gốc được gắn tag bằng `kb authored <doc>` (`--off` gỡ tag);
-  `kb ingest` sau đó từ chối ingest lại nó, để một PDF không ghi đè các chỉnh sửa tay.
+  `kb ingest` sau đó từ chối ingest lại nó, để lần ingest lại không ghi đè các chỉnh sửa tay.
   `kb summarize --redo` vẫn được phép.
 - PDF nguồn ở trong `source/`, thư mục Git bỏ qua. Đừng commit chúng.
 

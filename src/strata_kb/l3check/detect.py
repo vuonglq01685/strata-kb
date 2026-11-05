@@ -35,6 +35,8 @@ _TABLE_SEPARATOR = re.compile(r"^[ \t]*\|?[ \t]*:?-+:?[ \t:|-]*$", re.MULTILINE)
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _NON_PROSE = re.compile(r"[ \t]*(#|\||!\[|[-*+][ \t]|\d+[.)][ \t])")
+# Markdown only: indented code, blockquotes and HTML blocks are not prose either
+_NON_PROSE_MD = re.compile(r"(?: {4}|\t)|[ \t]*[<>]")
 _SUBHEADING = re.compile(r"^### (\S+)", re.MULTILINE)
 # a word as written, hyphenated line breaks included: normalise_words rejoins them
 _RAW_WORD = re.compile(r"[^\W_]+(?:-[^\S\n]*\n\s*[^\W_]+)*")
@@ -48,6 +50,7 @@ class SectionInput:
     page: int | None  # start page (SectionUnit.page)
     end_page: int | None  # last page of the span (next section's start, or doc's last)
     l3: str  # the section's L3 slice as written
+    md: bool = False  # Markdown source: more blocks are non-prose
 
 
 def normalize_words(text: str) -> list[str]:
@@ -193,7 +196,7 @@ def _find_run(stream: list[str], needle: list[str], start: int = 0) -> int:
     return -1
 
 
-def _prose_blocks(l3: str) -> list[str | None]:
+def _prose_blocks(l3: str, md: bool = False) -> list[str | None]:
     """Paragraphs as blocks of pure prose lines. A blank line ends a block; a
     non-prose line (heading, table row, image, list item, fence and what it
     fences, an unclosed fence running to the end) ends it too and leaves None,
@@ -205,7 +208,12 @@ def _prose_blocks(l3: str) -> list[str | None]:
         is_fence = _FENCE.match(line) is not None
         if is_fence:
             fenced = not fenced
-        if fenced or is_fence or _NON_PROSE.match(line):
+        if (
+            fenced
+            or is_fence
+            or _NON_PROSE.match(line)
+            or (md and _NON_PROSE_MD.match(line))
+        ):
             blocks += ["\n".join(current), None] if current else [None]
             current = []
         elif line.strip():
@@ -248,7 +256,7 @@ def break_findings(sec: SectionInput, pdf_pages: dict[int, str]) -> list[Finding
         stream += words
         word_pages += [p] * len(words)
     findings: list[Finding] = []
-    blocks = _prose_blocks(sec.l3)
+    blocks = _prose_blocks(sec.l3, sec.md)
     for first, second in zip(blocks, blocks[1:], strict=False):
         if first is None or second is None:
             continue

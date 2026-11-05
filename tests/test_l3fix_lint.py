@@ -249,3 +249,35 @@ def test_r5_numeric_table_row_not_furniture():
     md = "## 1 A\n\n| a | b |\n|---|---|\n| 3 | 11 |\n"
     ctx = _ctx("1", furniture=[str(p) for p in range(1, 13)], end=12)
     assert _rules(md, ctx) == []
+
+
+def test_md_lint_allows_blockquote_html_tilde_deep_list():
+    cases = [
+        "## 1 A\n\n> quote\n",
+        "## 1 A\n\n<div>x</div>\n",
+        "## 1 A\n\n~~~\ncode\n~~~\n",
+        "## 1 A\n\n- a\n      - deep\n",
+    ]
+    for md in cases:
+        assert {i.rule for i in lint.lint_unit(md, _ctx("1"))} == {"R6"}, md
+        md_ctx = lint.UnitContext(_ctx("1").span, False, [], {}, md=True)
+        assert lint.lint_unit(md, md_ctx) == [], md
+
+
+def test_md_lint_keeps_r3_r4_r9():
+    ctx = lint.UnitContext(_ctx("1").span, False, [], {}, md=True)
+    r3 = "## 1 A\n\n#### 1.1 B\n"
+    r4 = "## 1 T\n\nmột hai ba bốn năm sáu\n\nmột hai ba bốn năm sáu\n"
+    r9 = "## 1 A https://x.io\n\nText\n"
+    assert _rules(r3, ctx) == [("R3", 3)]
+    assert _rules(r4, ctx) == [("R4", 5)]
+    assert _rules(r9, ctx) == [("R9", 1)]
+
+
+def test_md_lint_follows_commonmark_fences():
+    md = "## 1 A\n\n~~~\n# comment\n#### x\n```\n~~~\n"
+    md_ctx = lint.UnitContext(_ctx("1").span, False, [], {}, md=True)
+    assert lint.lint_unit(md, md_ctx) == []
+    assert _rules(md, _ctx("1")) != []
+    unclosed = "## 1 A\n\n~~~bash\n# x\n"
+    assert _rules(unclosed, md_ctx) == [("R7", 3)]

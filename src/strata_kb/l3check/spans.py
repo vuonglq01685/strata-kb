@@ -46,5 +46,5 @@ def load(work_dir: Path, doc_id: str) -> SpansFile | None:
     return SpansFile.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def section_input(span: UnitSpan, l3: str) -> SectionInput:
-    return SectionInput(span.id, span.chapter, span.page, span.end_page, l3)
+def section_input(span: UnitSpan, l3: str, md: bool = False) -> SectionInput:
+    return SectionInput(span.id, span.chapter, span.page, span.end_page, l3, md)
