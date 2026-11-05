@@ -158,3 +158,38 @@ def test_every_source_line_reaches_an_item():
     # heading lines are rewritten (markers dropped) -> compare by text
     missing = [ln for ln in missing if ln.lstrip("# ") not in covered]
     assert missing == []
+
+
+@pytest.mark.parametrize(
+    ("src", "text"),
+    [
+        ("## **Important** changes", "**Important** changes"),
+        ("## _private_ api", "_private_ api"),
+        ("## **1.2 Scope**", "1.2 Scope"),
+    ],
+)
+def test_only_markup_wrapping_an_id_is_unwrapped(src, text):
+    assert read_md(src + "\n", "a.md").items[0].text == text
+
+
+@pytest.mark.parametrize("src", ["<!--\n## x\n-->\n", "<pre>\n## y\n</pre>\n"])
+def test_heading_line_in_html_block_refused(src):
+    with pytest.raises(ValueError) as e:
+        read_md("intro\n\n" + src, "d.md")
+    assert str(e.value) == (
+        "d.md: fenced code holds a '## ' heading line at line(s) 4"
+        " — move it out of the fence or indent it"
+    )
+
+
+def test_yaml_dict_front_matter_dropped():
+    doc = read_md("---\na: 1\n---\ntext\n", "a.md")
+    assert doc.warnings == ["front matter dropped (3 lines)"]
+    assert [i.text for i in doc.items] == ["text"]
+
+
+def test_thematic_break_is_not_front_matter():
+    doc = read_md("---\n\nintro\n\nTitle\n---\n\nbody\n", "a.md")
+    assert doc.warnings == []
+    assert [i.text for i in doc.items][0] == "---"
+    assert "Title" in [i.text for i in doc.items]

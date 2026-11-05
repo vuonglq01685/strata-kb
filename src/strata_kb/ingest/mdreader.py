@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import yaml
 from markdown_it import MarkdownIt
 
 from strata_kb.ingest.sectioner import DocItem, parse_section_id
@@ -28,8 +29,10 @@ _KINDS = {
     "ordered_list_open": "list",
 }
 _FENCED_HEADING = re.compile(r"^#{2,3} ")
-# emphasis or a link wrapping the leading id token: `**1.2** Scope`, `[1.2](u) Scope`
+# emphasis or a link wrapping the leading id token (`**1.2** Scope`,
+# `[1.2](u) Scope`) or the whole heading (`**1.2 Scope**`)
 _LEAD_WRAP = re.compile(r"^(?:(\*\*|__|\*|_)(\S+?)\1|\[([^\]\s]+)\]\([^)]*\))(?=\s|$)")
+_WHOLE_WRAP = re.compile(r"^(\*\*|__|\*|_)(.+)\1$")
 
 
 @dataclass(frozen=True)
@@ -56,16 +59,26 @@ def _drop_front_matter(lines: list[str]) -> tuple[list[str], int]:
     if lines and lines[0].rstrip() == "---":
         for i in range(1, len(lines)):
             if lines[i].rstrip() == "---":
-                return lines[i + 1 :], i + 1
+                try:
+                    meta = yaml.safe_load("\n".join(lines[1:i]))
+                except yaml.YAMLError:
+                    return lines, 0
+                # a thematic break + setext `Title\n---` is not front matter
+                return (lines[i + 1 :], i + 1) if isinstance(meta, dict) else (lines, 0)
     return lines, 0
 
 
 def _heading_text(inline_content: str) -> str:
     text = " ".join(inline_content.split())
-    m = _LEAD_WRAP.match(text)
-    if not m:
+    if m := _LEAD_WRAP.match(text):
+        unwrapped = (m.group(2) or m.group(3)) + text[m.end() :]
+    elif m := _WHOLE_WRAP.match(text):
+        unwrapped = m.group(2)
+    else:
         return text
-    return (m.group(2) or m.group(3)) + text[m.end() :]
+    # unwrap only markup that wraps an id: title words stay as written
+    parsed = parse_section_id(unwrapped)
+    return unwrapped if parsed and parsed[0] == unwrapped.split()[0] else text
 
 
 def _refuse_fenced_headings(
@@ -74,7 +87,7 @@ def _refuse_fenced_headings(
     bad = [
         n + offset + 1
         for t in tokens
-        if t.level == 0 and t.type in ("fence", "code_block") and t.map
+        if t.level == 0 and t.type in ("fence", "code_block", "html_block") and t.map
         for n in range(*t.map)
         if _FENCED_HEADING.match(lines[n])
     ]
