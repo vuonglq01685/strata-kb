@@ -312,3 +312,36 @@ def test_zero_dev_repos_keep_explicit_target_without_blocking(build):
     rows = _rows(hub)
     assert (rows["T-1"].target_repo, rows["T-1"].status) == ("web-app", "ready")
     assert (rows["T-2"].target_repo, rows["T-2"].status) == (None, "ready")
+
+
+@pytest.mark.parametrize(
+    "blocked_by", ["T-1, T-2 — both", "T-1 T-2", "\n  - T-1\n  - T-2 — both"]
+)
+def test_blocked_by_lists_block_on_every_published_id(build, blocked_by):
+    hub = build(
+        {
+            "T-1": {"target": "web-app"},
+            "T-2": {"target": "web-app"},
+            "T-3": {"target": "web-app", "blocked_by": blocked_by},
+        },
+        done={"web-app": ("T-1",)},
+    )
+    row = _rows(hub)["T-3"]
+    assert (row.status, row.reasons) == ("blocked", ("blocked by T-2 (not done)",))
+
+
+@pytest.mark.parametrize("target", [None, "ghost"])
+def test_mission_story_ticket_without_routable_target_is_blocked(
+    fed_hub, tmp_path, target
+):
+    _mission_plan(fed_hub, tmp_path, target or "", {})
+    _dev(fed_hub, "web-app")
+    _dev(fed_hub, "payments-api")
+    stories, _, _ = planstatus.next_from_hub(HubHandle(root=fed_hub))
+    row = {s.us_id: s for s in stories}[US[1]]
+    assert row.status == "blocked"
+    assert row.reasons == (
+        ("no target repo",)
+        if target is None
+        else (f"target {target} is not a dev repo on the hub",)
+    )

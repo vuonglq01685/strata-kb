@@ -489,3 +489,13 @@ def test_mission_story_routed_and_depends_on_still_applies(tmp_path: Path, monke
     assert dev_candidates(None, tmp_path, "web-app") == [  # type: ignore[arg-type]
         Task("dev-implement-ticket", "US4")
     ]
+
+
+def test_dev_candidates_untargeted_ready_ticket_when_hub_has_no_routing(
+    tmp_path: Path, monkeypatch
+):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [], [_routed("TAL-1", "ready", None)])
+    assert dev_candidates(None, tmp_path, "web-app") == [  # type: ignore[arg-type]
+        Task("dev-implement-ticket", "TAL-1")
+    ]

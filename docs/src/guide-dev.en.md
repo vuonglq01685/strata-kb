@@ -490,7 +490,9 @@ fetch a ticket of another repo.
 
 **Upgrade order.** Upgrade the hub first, then every Dev runner. A runner refuses to start
 against a hub older than 1.35 (`hub is older than 1.35 — upgrade the hub first`), and
-`kb publish` warns `hub is older than 1.35: Dev runners will not route by repo`.
+`kb publish` warns `hub is older than 1.35: Dev runners will not route by repo`. Add
+`> Target repo:` or qualified grounding to open tickets before registering a second dev repo:
+from then on untargeted tickets are blocked.
 
 When a business question blocks a ticket, the Dev asks the BA through hub Q&A and waits;
 once answered, the same ticket resumes in a fresh process. It stops after two failed

@@ -258,12 +258,20 @@ _BLOCKED_BY_LINE_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$", re.M)
 
 
 def _blocked_by_tokens(text: str) -> list[str]:
-    """First word before ` — ` of every `- Blocked by:` line of the visible text."""
-    out = []
-    for m in _BLOCKED_BY_LINE_RE.finditer(mdmask._visible_text(text)):
-        words = m.group("rest").partition(" — ")[0].split()
-        if words:
-            out.append(words[0])
+    """Every word before ` — ` of each `- Blocked by:` line and of its indented
+    sub-bullets (the form `ticketlint` accepts), split on commas and spaces."""
+    out: list[str] = []
+    inside = False
+    for line in mdmask._visible_text(text).splitlines():
+        m = _BLOCKED_BY_LINE_RE.match(line)
+        if m:
+            inside, rest = True, m.group("rest")
+        elif inside and line[:1].isspace() and line.strip():
+            rest = line.strip().removeprefix("-")
+        else:
+            inside = False
+            continue
+        out += [w for w in re.split(r"[,\s]+", rest.partition(" — ")[0]) if w]
     return out
 
 
@@ -319,6 +327,18 @@ def _loose_rows(
             )
         )
     return rows
+
+
+def _routed_story(
+    row: missionnext.StoryStatus, target: str | None, routing: _Routing, published: bool
+) -> missionnext.StoryStatus:
+    """`row` with its target; a ready story whose published ticket cannot be
+    routed is blocked, like a loose ticket."""
+    row = dataclasses.replace(row, target_repo=target)
+    reason = routing.refusal(target) if published and row.status == "ready" else None
+    if reason:
+        return dataclasses.replace(row, status="blocked", reasons=(reason,))
+    return row
 
 
 def _plan_repo(
@@ -384,7 +404,8 @@ def _plan_repo(
         done_of[tid] = tid in merged
     results = missionnext.statuses(parsed, drafted, merged if answered else None)
     results = [
-        dataclasses.replace(r, target_repo=targets.get(r.us_id)) for r in results
+        _routed_story(r, targets.get(r.us_id), routing, r.us_id in targets)
+        for r in results
     ]
     unparented = _loose_rows(
         [

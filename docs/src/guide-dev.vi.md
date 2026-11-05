@@ -488,7 +488,9 @@ claim trên hub và chọn lại. `kb ticket fetch` cảnh báo `<id> targets <x
 
 **Thứ tự nâng cấp.** Nâng cấp hub trước, rồi đến mọi runner của Dev. Runner từ chối khởi
 động với hub cũ hơn 1.35 (`hub is older than 1.35 — upgrade the hub first`), và
-`kb publish` cảnh báo `hub is older than 1.35: Dev runners will not route by repo`.
+`kb publish` cảnh báo `hub is older than 1.35: Dev runners will not route by repo`. Hãy thêm
+`> Target repo:` hoặc grounding có repo ở đầu cho các ticket đang mở trước khi đăng ký repo dev
+thứ hai: từ lúc đó ticket không có target bị chặn.
 
 Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
 `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có

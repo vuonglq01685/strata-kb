@@ -137,13 +137,15 @@ def plan_next(
 
 def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     """Ready tickets routed to `repo_id` whose dependencies are done. `done`
-    spans every repo's rows: a dependency may be built elsewhere."""
+    spans every repo's rows: a dependency may be built elsewhere. A ready row
+    with no target only exists on a hub without dev repos (no routing): every
+    runner may take it."""
     done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
 
     def ready(t: StoryStatus) -> bool:
         return (
             t.status == "ready"
-            and t.target_repo == repo_id
+            and t.target_repo in (None, repo_id)
             and all(d in done for d in t.depends_on)
         )
 

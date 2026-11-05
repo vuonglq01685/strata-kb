@@ -434,6 +434,9 @@ kb doctor
 Commit what `kb init` changed. Then tell the owners of every child, BA and Dev repo to run
 `kb doctor`. `kb doctor` does not sync the hub repo itself: `kb init` is how it moves.
 
+Add `> Target repo:` or qualified grounding to open tickets before registering a second dev
+repo: from then on untargeted tickets are blocked.
+
 ---
 
 # 4. Automation modes
