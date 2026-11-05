@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 import sys
 
@@ -207,3 +208,93 @@ def test_unparseable_yaml_block_is_not_front_matter():
     doc = read_md("---\na: 2001-13-01\n---\nx\n", "a.md")
     assert doc.warnings == []
     assert "x" in [i.text for i in doc.items]
+
+
+# --- copy_images -----------------------------------------------------------
+
+_PNG = b"\x89PNG\r\n\x1a\nfake"
+
+
+def _img_setup(tmp_path, md):
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    src = src_dir / "doc.md"
+    return src, tmp_path / "out" / "assets", read_md(md, "doc.md").items
+
+
+def test_png_copied_and_link_rewritten(tmp_path):
+    src, assets, items = _img_setup(tmp_path, '![a b](pic.PNG "t")\n')
+    (src.parent / "pic.PNG").write_bytes(_PNG)
+    out, warns = mdreader.copy_images(items, src, assets)
+    sha = hashlib.sha256(_PNG).hexdigest()
+    assert out[0].text == f'![a b](assets/{sha}.png "t")'
+    assert (assets / f"{sha}.png").read_bytes() == _PNG
+    assert warns == []
+
+
+def test_same_image_twice_one_asset(tmp_path):
+    src, assets, items = _img_setup(tmp_path, "![a](a.png)\n\n![b](sub/b.png)\n")
+    (src.parent / "sub").mkdir()
+    (src.parent / "a.png").write_bytes(_PNG)
+    (src.parent / "sub" / "b.png").write_bytes(_PNG)
+    out, _ = mdreader.copy_images(items, src, assets)
+    assert len(list(assets.iterdir())) == 1
+    assert out[0].text.split("](")[1] == out[1].text.split("](")[1]
+
+
+def test_jpg_kept_with_warning(tmp_path):
+    src, assets, items = _img_setup(tmp_path, "![a](p.jpg)\n")
+    (src.parent / "p.jpg").write_bytes(b"x")
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert out[0].text == "![a](p.jpg)"
+    assert warns == ["image kept as written: p.jpg (not png/webp)"]
+    assert not assets.exists()
+
+
+def test_missing_image_kept_with_warning(tmp_path):
+    src, assets, items = _img_setup(tmp_path, "![a](nope.png)\n")
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert out[0].text == "![a](nope.png)"
+    assert warns == ["image kept as written: nope.png (missing)"]
+
+
+def test_path_outside_source_tree_not_copied(tmp_path):
+    outside = tmp_path / "x.png"
+    outside.write_bytes(_PNG)
+    src, assets, items = _img_setup(
+        tmp_path, f"![a](../x.png)\n\n![b]({outside})\n\n![c](link.png)\n"
+    )
+    (src.parent / "link.png").symlink_to(outside)
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert [i.text for i in out] == [i.text for i in items]
+    assert len(warns) == 3
+    assert all(w.endswith("(outside the source folder)") for w in warns)
+    assert not assets.exists()
+
+
+def test_url_image_untouched(tmp_path):
+    src, assets, items = _img_setup(
+        tmp_path, "![a](https://e.com/a.png)\n\n![b](data:image/png;base64,AAAA)\n"
+    )
+    out, warns = mdreader.copy_images(items, src, assets)
+    assert [i.text for i in out] == [i.text for i in items]
+    assert warns == []
+
+
+def test_code_items_untouched_and_stale_assets_cleared(tmp_path):
+    src, assets, items = _img_setup(tmp_path, "```\n![a](a.png)\n```\n")
+    (src.parent / "a.png").write_bytes(_PNG)
+    assets.mkdir(parents=True)
+    (assets / "stale.png").write_bytes(b"old")
+    out, _ = mdreader.copy_images(items, src, assets)
+    assert out[0].text == items[0].text
+    assert not (assets / "stale.png").exists()
+
+
+def test_input_items_not_mutated(tmp_path):
+    src, assets, items = _img_setup(tmp_path, "![a](a.png)\n")
+    (src.parent / "a.png").write_bytes(_PNG)
+    before = [i.text for i in items]
+    out, _ = mdreader.copy_images(items, src, assets)
+    assert [i.text for i in items] == before
+    assert out[0] is not items[0] and out[0].kind == items[0].kind

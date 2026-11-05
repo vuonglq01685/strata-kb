@@ -8,8 +8,12 @@ one per top-level heading block, so the page checks have something to cite.
 
 from __future__ import annotations
 
+import hashlib
 import re
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, replace
+from pathlib import Path
+from urllib.parse import unquote
 
 import yaml
 from markdown_it import MarkdownIt
@@ -177,3 +181,46 @@ def md_pages(text: str) -> dict[int, str]:
         n: strip_markdown("\n".join(p.lines[s:e]))
         for n, (s, e) in enumerate(zip(p.page_starts, ends, strict=True), start=1)
     }
+
+
+# `![alt](target "title")`: group 1 is everything before the target, 3 the title part
+_IMAGE = re.compile(r"(!\[[^\]]*\]\(\s*)([^)\s]+)(\s+\"[^\"]*\")?(\s*\))")
+_URL = re.compile(r"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)")
+_IMAGE_SUFFIXES = {".png", ".webp"}
+
+
+def copy_images(
+    items: list[DocItem], source: Path, assets_dir: Path
+) -> tuple[list[DocItem], list[str]]:
+    """Copy local png/webp images under the source folder into `assets_dir`
+    as `<sha256>.<ext>` and point the links at `assets/<sha256>.<ext>`."""
+    if assets_dir.exists():
+        shutil.rmtree(assets_dir)  # re-ingest: assets are re-derived
+    root = source.parent.resolve()
+    warnings: list[str] = []
+
+    def rewrite(m: re.Match[str]) -> str:
+        target = m.group(2)
+        if _URL.match(target):
+            return m.group(0)
+        path = (root / unquote(target)).resolve()
+        if not path.is_relative_to(root):
+            reason = "outside the source folder"
+        elif path.suffix.lower() not in _IMAGE_SUFFIXES:
+            reason = "not png/webp"
+        elif not path.is_file():
+            reason = "missing"
+        else:
+            data = path.read_bytes()
+            name = f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            (assets_dir / name).write_bytes(data)
+            return f"{m.group(1)}assets/{name}{m.group(3) or ''}{m.group(4)}"
+        warnings.append(f"image kept as written: {target} ({reason})")
+        return m.group(0)
+
+    out = [
+        it if it.kind == "code" else replace(it, text=_IMAGE.sub(rewrite, it.text))
+        for it in items
+    ]
+    return out, warnings
