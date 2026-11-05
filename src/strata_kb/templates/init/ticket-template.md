@@ -1,5 +1,7 @@
 # <Title — one line, imperative, with identifier>
 > Revision: 1
+<!-- Optional header line `> Target repo: <repo-id>`: the dev repo this
+ticket is built in. Omit it when `Grounded on: <repo>:<doc>-code` names it. -->
 <!-- Optional back-link to a mission plan, on its own line under the
 title: `> Parent mission: M-<slug> @ rev <N>` (N = mission revision this
 ticket was written against). -->

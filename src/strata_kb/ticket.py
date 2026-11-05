@@ -13,6 +13,7 @@ the BA's working language.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from strata_kb import mdmask
 
@@ -162,6 +163,44 @@ def ticket_type(text: str) -> str:
     if m is None:
         return "story"
     return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
+
+
+# '> Target repo: <repo-id>' in the header block names the dev repo a ticket
+# is built in; absent, the repo qualifier of the `-code` Grounded-on entry.
+TARGET_REPO_RE = re.compile(r"^>[ \t]*Target repo:[ \t]*(.*?)[ \t]*$", re.M)
+
+
+def target_header(text: str) -> str | None:
+    """The `> Target repo:` value from the header block, or None when the
+    line is absent or blank."""
+    m = TARGET_REPO_RE.search(header_block(text))
+    return (m.group(1) or None) if m else None
+
+
+def target_repo(
+    text: str, holders: Callable[[str], list[str]] | None = None
+) -> str | None:
+    """The ticket's target repo: the header value, else the repo of the
+    first `-code` entry of the first parseable `Grounded on:` line. An
+    unqualified entry resolves through `holders(doc_id)` (repo ids that
+    publish the doc) only when exactly one holder exists."""
+    header = target_header(text)
+    if header:
+        return header
+    from strata_kb import ticketcheck  # ticketcheck imports this module
+
+    for line in mdmask._visible_text(text).splitlines():
+        entries = ticketcheck.grounded_entries(line)
+        if not entries:
+            continue
+        code = next((e for e in entries if e[1].endswith("-code")), None)
+        if code is None:
+            return None
+        if code[0]:
+            return code[0]
+        found = holders(code[1]) if holders else []
+        return found[0] if len(found) == 1 else None
+    return None
 
 
 # Bug / hotfix contract (`buglint.py`). Like REQUIRED_HEADINGS this is a
