@@ -1,0 +1,144 @@
+"""mdreader — turn a Markdown file into the `DocItem` stream the sectioner
+reads, without docling.
+
+Only heading lines are interpreted; every other top-level block keeps its
+exact source lines, so L3 carries the author's bytes. Pages are synthetic:
+one per top-level heading block, so the page checks have something to cite.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from markdown_it import MarkdownIt
+
+from strata_kb.ingest.sectioner import DocItem, parse_section_id
+from strata_kb.l3check.detect import strip_markdown
+
+_KINDS = {
+    "paragraph_open": "text",
+    "html_block": "text",
+    "blockquote_open": "text",
+    "hr": "text",
+    "table_open": "table",
+    "fence": "code",
+    "code_block": "code",
+    "bullet_list_open": "list",
+    "ordered_list_open": "list",
+}
+_FENCED_HEADING = re.compile(r"^#{2,3} ")
+# emphasis or a link wrapping the leading id token: `**1.2** Scope`, `[1.2](u) Scope`
+_LEAD_WRAP = re.compile(r"^(?:(\*\*|__|\*|_)(\S+?)\1|\[([^\]\s]+)\]\([^)]*\))(?=\s|$)")
+
+
+@dataclass(frozen=True)
+class MdDoc:
+    items: list[DocItem]
+    title: str | None
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
+class _Parsed:
+    items: list[DocItem]
+    title: str | None
+    warnings: list[str]
+    lines: list[str]
+    page_starts: list[int]  # source line index where each page begins
+
+
+def _normalize(text: str) -> str:
+    return text.removeprefix("﻿").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _drop_front_matter(lines: list[str]) -> tuple[list[str], int]:
+    if lines and lines[0].rstrip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].rstrip() == "---":
+                return lines[i + 1 :], i + 1
+    return lines, 0
+
+
+def _heading_text(inline_content: str) -> str:
+    text = " ".join(inline_content.split())
+    m = _LEAD_WRAP.match(text)
+    if not m:
+        return text
+    return (m.group(2) or m.group(3)) + text[m.end() :]
+
+
+def _refuse_fenced_headings(
+    tokens: list, lines: list[str], offset: int, name: str
+) -> None:
+    bad = [
+        n + offset + 1
+        for t in tokens
+        if t.level == 0 and t.type in ("fence", "code_block") and t.map
+        for n in range(*t.map)
+        if _FENCED_HEADING.match(lines[n])
+    ]
+    if bad:
+        raise ValueError(
+            f"{name}: fenced code holds a '## ' heading line at line(s) "
+            f"{', '.join(map(str, bad))} — move it out of the fence or indent it"
+        )
+
+
+def _parse(text: str, name: str) -> _Parsed:
+    lines, offset = _drop_front_matter(_normalize(text).split("\n"))
+    warnings = [f"front matter dropped ({offset} lines)"] if offset else []
+    tokens = MarkdownIt("commonmark").enable("table").parse("\n".join(lines))
+    _refuse_fenced_headings(tokens, lines, offset, name)
+
+    blocks: list[tuple[int, DocItem]] = []  # (first source line, item)
+    for i, t in enumerate(tokens):
+        if t.level != 0 or not t.map:
+            continue
+        if t.type == "heading_open":
+            item = DocItem(
+                "heading", _heading_text(tokens[i + 1].content), level=int(t.tag[1])
+            )
+        elif t.type in _KINDS:
+            kind = _KINDS[t.type]
+            if t.type == "paragraph_open":
+                kids = tokens[i + 1].children or []
+                if len(kids) == 1 and kids[0].type == "image":
+                    kind = "image"
+            body = "\n".join(lines[t.map[0] : t.map[1]]).rstrip("\n")
+            item = DocItem(kind, body)
+        else:
+            continue
+        blocks.append((t.map[0], item))
+
+    h1 = [it for _, it in blocks if it.kind == "heading" and it.level == 1]
+    title = None
+    if len(h1) == 1 and parse_section_id(h1[0].text) is None:
+        title = h1[0].text
+        blocks = [(s, it) for s, it in blocks if it is not h1[0]]
+
+    levels = [it.level for _, it in blocks if it.kind == "heading"]
+    top = min(levels, default=0)
+    page, page_starts, items, seen_top = 1, [0], [], False
+    for start, it in blocks:
+        if it.kind == "heading" and it.level == top:
+            if seen_top:
+                page += 1
+                page_starts.append(start)
+            seen_top = True
+        items.append(DocItem(it.kind, it.text, it.level, page))
+    return _Parsed(items, title, warnings, lines, page_starts)
+
+
+def read_md(text: str, name: str) -> MdDoc:
+    p = _parse(text, name)
+    return MdDoc(p.items, p.title, p.warnings)
+
+
+def md_pages(text: str) -> dict[int, str]:
+    p = _parse(text, "")
+    ends = [*p.page_starts[1:], len(p.lines)]
+    return {
+        n: strip_markdown("\n".join(p.lines[s:e]))
+        for n, (s, e) in enumerate(zip(p.page_starts, ends, strict=True), start=1)
+    }
