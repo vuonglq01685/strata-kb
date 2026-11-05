@@ -36,6 +36,7 @@ def _story(row: dict) -> StoryStatus:
         status=row["status"],
         reasons=tuple(row["reasons"]),
         depends_on=tuple(row["depends_on"]),
+        target_repo=row.get("target_repo"),
     )
 
 
@@ -64,10 +65,11 @@ class HubApi:
         self._http = http
 
     def plan_next(
-        self, repo: str | None = None
+        self, repo: str | None = None, for_repo: str | None = None
     ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
         """Same triple as `planstatus.next_from_hub`."""
-        query = f"?{urlencode({'repo': repo})}" if repo else ""
+        params = {k: v for k, v in (("repo", repo), ("for_repo", for_repo)) if v}
+        query = f"?{urlencode(params)}" if params else ""
         data = self._json("GET", PLAN_ROUTE + query, PLAN_ROUTE)
         try:
             return (

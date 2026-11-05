@@ -46,6 +46,7 @@ def test_plan_next_matches_next_from_hub(web_client, hub_with_ticket, auth):
     for item in body["stories"] + body["unparented"]:
         assert set(item) == {
             "us_id", "mission_id", "title", "status", "reasons", "depends_on",
+            "target_repo",
         }  # fmt: skip
         assert isinstance(item["reasons"], list)
         assert isinstance(item["depends_on"], list)

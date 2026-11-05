@@ -21,6 +21,7 @@ def test_to_json_carries_unparented():
             "status": "ready",
             "reasons": [],
             "depends_on": [],
+            "target_repo": None,
         }
     ]
     assert to_json([], [])["unparented"] == []
