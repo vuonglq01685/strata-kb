@@ -4247,7 +4247,8 @@ def mission_next(
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 
     if not cloud.is_cloud() and any(
-        ticket.target_repo(t) for t in ticket_texts.values()
+        ticket.target_header(t) or ticket.grounded_code_entry(t)
+        for t in ticket_texts.values()
     ):
         # resolve the hub only for a targeted ticket; reuse the one the
         # -svc lookup above already resolved (or failed to)

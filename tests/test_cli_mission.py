@@ -958,3 +958,32 @@ def test_local_mission_next_untargeted_tickets_never_resolve_a_hub(
 
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
+
+
+def test_local_mission_next_unqualified_grounding_resolves_target_via_hub(
+    tmp_path, fed_hub, run_git, monkeypatch
+):
+    from strata_kb.hub import HubHandle
+    from tests.test_planstatus_routing import _dev, _publish_code
+
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1", "M-platform-US2"))
+    for us in ("M-platform-US1", "M-platform-US2"):
+        (root / "tickets" / f"{us}.md").write_text(
+            f"# {us}\n\n- Grounded on: web-app-code @ abc1234\n\n{DOR_FULL}",
+            encoding="utf-8",
+        )
+    _dev(fed_hub, "web-app", ("M-platform-US1",))
+    _publish_code(
+        HubHandle(root=fed_hub), "web-app"
+    )  # web-app alone holds web-app-code
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish web-app")
+    empty_kb = tmp_path / "ba-kb"
+    empty_kb.mkdir()
+
+    result = runner.invoke(app, [*_next_args(root, empty_kb), "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
+    assert "| M-platform-US2 | M-platform | ready |  |" in result.output
