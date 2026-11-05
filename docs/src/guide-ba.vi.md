@@ -290,7 +290,7 @@ khi `DoR: PASS`. Bug bỏ qua maturity review và technical grounding.
 - **Dòng tiêu đề.** `> Type: bug|hotfix` (hotfix ship trước bản phát hành kế tiếp) và
   `> Severity: S1..S4`, cả hai bắt buộc; tùy chọn `> Related ticket: <id|none>`. Không có
   `> Parent mission:`. Agent cũng hỏi bản sửa nằm ở dev repo nào và ghi
-  `> Target repo: <repo-id>` (bạn chọn; hub chỉ có một dev repo thì nó dùng repo đó). Không
+  `> Target repo: <repo-id>` (bạn chọn; hub chỉ có một dev repo thì có thể bỏ dòng này, hub sẽ định tuyến bug tới repo đó). Không
   có đích, hub có từ hai dev repo trở lên sẽ chặn bug với lý do `no target repo`.
 - **Ảnh chụp.** Chỉ PNG hoặc WebP, trong `tickets/bugs/BUG-<n>/`, tham chiếu dạng
   `![caption](BUG-<n>/<file>.png)` dưới `## Attachments`; không có thì `N/A — <reason>`.

@@ -290,7 +290,7 @@ it until `DoR: PASS`. A bug skips the maturity review and the technical groundin
 - **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next release) and
   `> Severity: S1..S4`, both required; optionally `> Related ticket: <id|none>`. No
   `> Parent mission:`. The agent also asks which dev repo the fix lands in and writes
-  `> Target repo: <repo-id>` (you choose; with one dev repo on the hub it uses that one).
+  `> Target repo: <repo-id>` (you choose; with only one dev repo on the hub you may leave the line out, since the hub routes the bug to it).
   Without a target, a hub with two or more dev repos blocks the bug as `no target repo`.
 - **Screenshots.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced as
   `![caption](BUG-<n>/<file>.png)` under `## Attachments`; with none, `N/A — <reason>`.
