@@ -500,3 +500,19 @@ def test_ticket_fetch_no_warning_same_target(fed_hub, tmp_path, run_git, monkeyp
 
     assert result.exit_code == 0, result.output
     assert "targets" not in result.output
+
+
+def test_ticket_fetch_malformed_config_does_not_block_fetch(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    us1, _ = _plan_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    (work / ".kb").mkdir(parents=True)
+    (work / ".kb" / "config.yaml").write_text("repo_id: [unclosed\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", us1, "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    assert result.exception is None
+    assert (Path("docs") / "impl" / us1 / "ticket.md").is_file()

@@ -178,24 +178,31 @@ def done_for(
 
 
 def done_per_target(
-    hub: HubHandle, ticket_texts: dict[str, str], base: set[str] | None
+    hub: HubHandle | None,
+    ticket_texts: dict[str, str],
+    base: set[str] | None,
+    answered: str | None = None,
 ) -> tuple[set[str] | None, list[str]]:
     """Local `kb mission next`: a story whose local ticket names a target repo
     is done by that repo's `<target>-svc` history; others keep `base`. An
     unpublished `<target>-svc` leaves the story not done (never another repo's
-    history) and adds a note."""
-    routing = _Routing.load(hub)
+    history) and adds a note. With no hub, only a ticket targeting `answered`
+    (the repo whose local -svc produced `base`) keeps its `base` verdict."""
+    routing = _Routing.load(hub) if hub is not None else None
     targets = {
         tid: found
         for tid, text in ticket_texts.items()
-        if (found := ticket.target_repo(text, routing.holders))
+        if (found := ticket.target_repo(text, routing.holders if routing else None))
     }
     if not targets:
         return base, []
     done = {d for d in base or () if d not in targets}
     notes: list[str] = []
     for tid, target in targets.items():
-        ids = done_for(hub, target, routing.cache)
+        if routing is None:
+            ids = base if target == answered else None
+        else:
+            ids = done_for(routing.hub, target, routing.cache)
         if ids is None:
             note = f"done: unknown ({target}-svc not published)"
             if note not in notes:

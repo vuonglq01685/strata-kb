@@ -3392,7 +3392,10 @@ def _warn_other_target(text: str, ticket_id: str, kb_dir: Path) -> None:
     from strata_kb import ticket as ticket_mod
     from strata_kb.config import load_config
 
-    repo_id = load_config(kb_dir).repo_id
+    try:
+        repo_id = load_config(kb_dir).repo_id
+    except (*_CONFIG_READ_ERRORS, OSError):
+        return  # a warning must never block the fetch
     target = ticket_mod.target_repo(text)
     if repo_id and target and target != repo_id:
         typer.secho(
@@ -4097,7 +4100,15 @@ def mission_next(
     <repo>-svc history (kb svc note rows); ready and draft from the
     ticket's Definition of Ready checklist. Read-only; exit 0 after a
     report."""
-    from strata_kb import cloud, hubapi, missionnext, planrev, planstatus, ticketcheck
+    from strata_kb import (
+        cloud,
+        hubapi,
+        missionnext,
+        planrev,
+        planstatus,
+        ticket,
+        ticketcheck,
+    )
     from strata_kb.errors import KbError
 
     if repo and not from_hub:
@@ -4196,6 +4207,8 @@ def mission_next(
     else:
         rid = doc_id = None
     done: set[str] | None = None
+    target_hub = None
+    hub_tried = False
     if cloud.is_cloud():
         # The hub's published plan already marks each story done; no -svc doc is read.
         try:
@@ -4217,6 +4230,7 @@ def mission_next(
                 doc = ticketcheck.load_doc_dir(local, str(local))
             else:
                 handle, hub_reason = _hub_or_reason(hub, kb_dir)
+                hub_tried, target_hub = True, handle
                 if handle is not None:
                     doc = ticketcheck.load_from_hub(handle.federation_dir, rid, doc_id)
         except ticketcheck.DocLoadError as exc:
@@ -4232,13 +4246,17 @@ def mission_next(
         if doc is not None:
             done = missionnext.done_ids_from_history(doc.read_group("history"))
 
-    if ticket_texts and not cloud.is_cloud():
-        target_hub, _ = _hub_or_reason(hub, kb_dir)
-        if target_hub is not None:
-            done, target_notes = planstatus.done_per_target(
-                target_hub, ticket_texts, done
-            )
-            notes.extend(n for n in target_notes if n not in notes)
+    if not cloud.is_cloud() and any(
+        ticket.target_repo(t) for t in ticket_texts.values()
+    ):
+        # resolve the hub only for a targeted ticket; reuse the one the
+        # -svc lookup above already resolved (or failed to)
+        if not hub_tried:
+            target_hub, _ = _hub_or_reason(hub, kb_dir)
+        done, target_notes = planstatus.done_per_target(
+            target_hub, ticket_texts, done, rid
+        )
+        notes.extend(n for n in target_notes if n not in notes)
 
     mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
     demoted = planrev.demotions(mission_texts, ticket_texts)

@@ -898,3 +898,63 @@ def test_local_mission_next_done_per_target(tmp_path, fed_hub, run_git, monkeypa
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
     assert "| M-platform-US2 | M-platform | ready |  |" in result.output
     assert "note: done: unknown (web-app-svc not published)" in result.output
+
+
+def _next_args(root, kb_dir):
+    return [
+        "mission",
+        "next",
+        "--missions-dir",
+        str(root / "missions"),
+        "--kb-dir",
+        str(kb_dir),
+    ]
+
+
+def test_local_mission_next_other_target_does_not_take_local_svc_done(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "tickets" / "M-platform-US1.md").write_text(
+        f"# US1\n\n> Target repo: web-app\n\n{DOR_FULL}", encoding="utf-8"
+    )
+    kb_dir = _svc_kb(tmp_path)  # demo-svc lists US1 as done
+
+    result = runner.invoke(app, _next_args(root, kb_dir))
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | ready |  |" in result.output
+    assert "note: done: unknown (web-app-svc not published)" in result.output
+
+
+def test_local_mission_next_same_target_keeps_local_svc_done(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+    (root / "tickets" / "M-platform-US1.md").write_text(
+        f"# US1\n\n> Target repo: demo\n\n{DOR_FULL}", encoding="utf-8"
+    )
+
+    result = runner.invoke(app, _next_args(root, _svc_kb(tmp_path)))
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
+
+
+def test_local_mission_next_untargeted_tickets_never_resolve_a_hub(
+    tmp_path, monkeypatch
+):
+    from strata_kb import cli
+
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+
+    def boom(*_a, **_k):
+        raise AssertionError("hub resolved for untargeted tickets")
+
+    monkeypatch.setattr(cli, "_hub_or_reason", boom)
+    root = _ba_layout(tmp_path, drafted=("M-platform-US1",))
+
+    result = runner.invoke(app, _next_args(root, _svc_kb(tmp_path)))
+
+    assert result.exit_code == 0, result.output
+    assert "| M-platform-US1 | M-platform | done |  |" in result.output
