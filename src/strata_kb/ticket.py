@@ -165,6 +165,35 @@ def ticket_type(text: str) -> str:
     return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
 
 
+# `- Grounded on: [<repo>:]<doc> @ <rev>` — repo/doc classes as in
+# kbcontext._REF_RE; rev is a 7..40 hex commit (core.run() writes 7).
+GROUNDED_ON_RE = re.compile(
+    r"^-\s*Grounded on:\s*"
+    r"(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
+    r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\s*$"
+)
+
+_GROUNDED_PREFIX_RE = re.compile(r"^-\s*Grounded on:\s*(?P<rest>.*)$")
+
+
+def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
+    """`(repo, doc, rev)` per comma-separated entry of a `- Grounded on:`
+    line. The mission template shows one entry; the SA writes the `-code`
+    and `-svc` docs on one line, so the list is accepted here. Any entry
+    that is not `[<repo>:]<doc> @ <rev>` makes the whole line unparseable
+    (`[]`) — a half-read line would silently ground on the wrong doc."""
+    m = _GROUNDED_PREFIX_RE.match(line.strip())
+    if m is None:
+        return []
+    out: list[tuple[str | None, str, str]] = []
+    for part in m.group("rest").split(","):
+        em = GROUNDED_ON_RE.match(f"- Grounded on: {part.strip()}")
+        if em is None:
+            return []
+        out.append((em.group("repo"), em.group("doc"), em.group("rev").lower()))
+    return out
+
+
 # '> Target repo: <repo-id>' in the header block names the dev repo a ticket
 # is built in; absent, the repo qualifier of the `-code` Grounded-on entry.
 TARGET_REPO_RE = re.compile(r"^>[ \t]*Target repo:[ \t]*(.*?)[ \t]*$", re.M)
@@ -187,10 +216,8 @@ def target_repo(
     header = target_header(text)
     if header:
         return header
-    from strata_kb import ticketcheck  # ticketcheck imports this module
-
     for line in mdmask._visible_text(text).splitlines():
-        entries = ticketcheck.grounded_entries(line)
+        entries = grounded_entries(line)
         if not entries:
             continue
         code = next((e for e in entries if e[1].endswith("-code")), None)

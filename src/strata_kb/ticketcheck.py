@@ -41,34 +41,9 @@ from strata_kb.resolve import ResolvedRef
 
 HEADING = "## Technical grounding"
 
-# `- Grounded on: [<repo>:]<doc> @ <rev>` — repo/doc classes as in
-# kbcontext._REF_RE; rev is a 7..40 hex commit (core.run() writes 7).
-GROUNDED_ON_RE = re.compile(
-    r"^-\s*Grounded on:\s*"
-    r"(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
-    r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\s*$"
-)
-
-_GROUNDED_PREFIX_RE = re.compile(r"^-\s*Grounded on:\s*(?P<rest>.*)$")
-
-
-def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
-    """`(repo, doc, rev)` per comma-separated entry of a `- Grounded on:`
-    line. The mission template shows one entry; the SA writes the `-code`
-    and `-svc` docs on one line, so the list is accepted here. Any entry
-    that is not `[<repo>:]<doc> @ <rev>` makes the whole line unparseable
-    (`[]`) — a half-read line would silently ground on the wrong doc."""
-    m = _GROUNDED_PREFIX_RE.match(line.strip())
-    if m is None:
-        return []
-    out: list[tuple[str | None, str, str]] = []
-    for part in m.group("rest").split(","):
-        em = GROUNDED_ON_RE.match(f"- Grounded on: {part.strip()}")
-        if em is None:
-            return []
-        out.append((em.group("repo"), em.group("doc"), em.group("rev").lower()))
-    return out
-
+# The `- Grounded on:` parser lives in `ticket` (a leaf module), re-exported here.
+GROUNDED_ON_RE = ticket.GROUNDED_ON_RE
+grounded_entries = ticket.grounded_entries
 
 # A framework file name is not a section id. Two guards: `route|page|job|sym`
 # are not matched when glued to a path or file name (`app/api/route.ts`,
