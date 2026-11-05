@@ -3768,3 +3768,27 @@ def test_l3_fix_command_wrappers_invoke_the_skill():
         text = _tpl(name)
         assert "l3_fix: enabled: true" in text and "kb-l3-fix" in text
         assert "never edit L3 to clear a flag" not in text
+
+
+def test_bug_skill_writes_the_target_repo_header():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        assert "> Target repo: <repo-id>" in text, name
+
+
+def test_sa_ticket_ground_first_grounding_is_the_qualified_own_code_doc():
+    text = _normalised(_read_init_template("claude-skill-sa-ticket-ground.md"))
+    assert "first entry is always this qualified `<repo-id>:<repo-id>-code`" in text
+
+
+def test_no_template_looks_up_a_ticket_branch_by_prefix_or_substring():
+    # `*<id>*` and `auto/<id>*` also match another ticket whose id starts the
+    # same (US-1 vs US-10); lookups name the exact branch and `-r<N>` forms.
+    from strata_kb.initcmd import read_template
+
+    for f in resources.files("strata_kb").joinpath("templates/init").iterdir():
+        if f.is_file():
+            text = read_template(f.name)
+            assert 'branch --list "*<' not in text, f.name
+            assert "'auto/<ticket-id>*'" not in text, f.name
+            assert "'auto/<mission-id>*'" not in text, f.name

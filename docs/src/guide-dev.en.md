@@ -476,6 +476,22 @@ One fresh `claude -p` process per task. In order:
 3. The first `ready` ticket that has no mission and is not a bug (`/dev-implement-ticket`).
 4. The first `ready` story in mission order whose dependencies are `done`.
 
+The runner takes only tickets the hub routes to this repo's `repo_id`: the ticket's
+`> Target repo:` header, else the repo of its first qualified `Grounded on:`; with one dev
+repo on the hub, every ticket without a target. A ticket aimed at another repo is never
+picked here, and the "all done" exit counts only this repo's tickets and the untargeted
+ones. The hub plan shows why a ticket waits: `no target repo`, `target <x> is not a dev
+repo on the hub`, `blocked by <id> (not done)` or `dependency cycle: ...`. Done is read
+from the target repo's `<repo>-svc` history; while that repo has not published, the plan
+says `done: unknown (<repo>-svc not published)`. If the task the runner stored vanished
+from the plan or moved to another repo, the runner drops it, releases its hub claim and
+picks again. `kb ticket fetch` warns `<id> targets <x>, this repo is <repo_id>` when you
+fetch a ticket of another repo.
+
+**Upgrade order.** Upgrade the hub first, then every Dev runner. A runner refuses to start
+against a hub older than 1.35 (`hub is older than 1.35 — upgrade the hub first`), and
+`kb publish` warns `hub is older than 1.35: Dev runners will not route by repo`.
+
 When a business question blocks a ticket, the Dev asks the BA through hub Q&A and waits;
 once answered, the same ticket resumes in a fresh process. It stops after two failed
 attempts at one ticket (a red CI after two fix rounds stops it at once); fix the cause and
@@ -540,6 +556,8 @@ pushing `auto/*` branches, a merge past a required review, and `gh run` over RES
 | `kb ticket fetch`: "is not on the hub" | The BA has not published it, or left it out of the plan | Ask the BA to `kb publish`; or pass the ticket file or paste the body |
 | `kb ticket fetch`: "published by several repos" | Two BA repos publish the same id | `kb ticket fetch <repo>:<id>` |
 | `kb ticket fetch` cannot reach the hub | `hub:` unset or unreachable | Fix `hub:` in `.kb/config.yaml` (or `STRATA_KB_HUB`) |
+| `kb auto run`: "hub is older than 1.35 — upgrade the hub first" | The hub does not route tickets by repo yet | Upgrade the hub, then every Dev runner (hub first) |
+| `kb ticket fetch` warns "<id> targets <x>, this repo is <repo_id>" | The ticket is routed to another dev repo | Fetch it from the repo it targets, or ask the BA to change `> Target repo:` |
 | `kb claim`: "hub server has no /api/claims" | The hub is older than this CLI | Upgrade the hub, then run `kb doctor` here |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP points at a local cache clone, a stdio server or any target other than the hub's HTTP server | Run `kb mcp-setup` and restart the assistant |
 | MCP server unreachable | `STRATA_KB_HUB_URL` or `STRATA_KB_HTTP_TOKEN` unset or wrong | Re-run `kb mcp-setup` (`/kb-mcp-setup`); it says which one. A bare re-run re-verifies without retyping |

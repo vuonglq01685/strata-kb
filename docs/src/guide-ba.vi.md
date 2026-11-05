@@ -220,6 +220,18 @@ cũng phải nằm trong ô `Depends on` của nó ở `## Sequencing` của mis
 `kb ticket lint` thất bại: auto runner của Dev chỉ đọc `Depends on`. `kb ticket tidy` chuyển
 một thư mục `tickets/` phẳng vào bố cục theo mission dựa trên dòng parent.
 
+**Một ticket, một repo đích.** Một ticket được xây trong đúng một dev repo, và hub định
+tuyến nó tới đó: dòng `> Target repo: <repo-id>` trong khối tiêu đề (như `> Type:`, không
+bao giờ nằm trong phần thân) được ưu tiên; không có thì repo đích là repo của mục
+`Grounded on: <repo>:<repo>-code` có tiền tố repo đầu tiên, do SA ghi (mục `-code` không
+có tiền tố được phân giải theo repo duy nhất nắm giữ nó trên hub). `kb ticket lint` báo lỗi
+khi dòng tiêu đề và một grounding có tiền tố nêu hai repo khác nhau. Hub chỉ có một dev
+repo thì mọi ticket đi vào repo đó và không cần gì thêm. Có từ hai dev repo trở lên, ticket
+không có đích bị chặn với lý do `no target repo`, còn đích không phải dev repo trên hub bị
+chặn với `target <x> is not a dev repo on the hub`. Công việc trải trên hai repo là hai
+ticket. Dòng `- Blocked by:` của ticket ngoài mission chỉ chặn theo các id đã publish trong
+cùng plan BA; mã tracker hay văn xuôi không bao giờ chặn.
+
 ## 3.3 SA bám nguồn cho nửa kỹ thuật
 
 Bước 7 chạy việc này hộ bạn. Khi lint báo `DoR: PASS`, agent lưu bản nháp và chạy
@@ -277,7 +289,9 @@ khi `DoR: PASS`. Bug bỏ qua maturity review và technical grounding.
 
 - **Dòng tiêu đề.** `> Type: bug|hotfix` (hotfix ship trước bản phát hành kế tiếp) và
   `> Severity: S1..S4`, cả hai bắt buộc; tùy chọn `> Related ticket: <id|none>`. Không có
-  `> Parent mission:`.
+  `> Parent mission:`. Agent cũng hỏi bản sửa nằm ở dev repo nào và ghi
+  `> Target repo: <repo-id>` (bạn chọn; hub chỉ có một dev repo thì nó dùng repo đó). Không
+  có đích, hub có từ hai dev repo trở lên sẽ chặn bug với lý do `no target repo`.
 - **Ảnh chụp.** Chỉ PNG hoặc WebP, trong `tickets/bugs/BUG-<n>/`, tham chiếu dạng
   `![caption](BUG-<n>/<file>.png)` dưới `## Attachments`; không có thì `N/A — <reason>`.
 - **Phần của bạn.** Tick Definition of Ready sau khi đọc bản nháp (agent không bao giờ tick),

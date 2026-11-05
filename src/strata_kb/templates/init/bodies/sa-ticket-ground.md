@@ -129,7 +129,7 @@ a denial to report. Stop only when the MCP tool fails too.
    exist or carry their own decision row.
 
    Then fill the section field by field:
-   - `Grounded on: <repo-id>:<repo-id>-code @ <revision>` — first line.
+   - `Grounded on: <repo-id>:<repo-id>-code @ <revision>` — first line. The first entry is always this qualified `<repo-id>:<repo-id>-code` of the repo the ticket is built in: the hub routes the ticket to that repo when it has no `> Target repo:` header. A later entry may ground on another repo's document, but never first.
    - `Service:` — `svc.<name>` ids as the document spells them (a name
      over 40 characters carries an opaque 6-hex-character suffix; copy
      it, never retype it). The record has no directory field — a

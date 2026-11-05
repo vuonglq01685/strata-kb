@@ -3,6 +3,19 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.35.0 — 2026-11-05
+
+The hub routes each ticket to the dev repo it is built in, and a Dev runner picks only its own tickets. Phase 1 of cross-repo stories: one ticket is still one repo.
+
+- **A ticket's target repo.** `> Target repo: <repo-id>` in the header block of any ticket or bug names it. Without the line, the target is the repo of the first qualified `Grounded on: <repo>:<repo>-code` entry; an unqualified `-code` entry resolves by its unique holder on the hub. `kb ticket lint` errors when the header and a qualified grounding name different repos.
+- **Hub plan routing.** Plan rows carry `target_repo`. A row waits as `no target repo` (two or more dev repos, no target), `target <x> is not a dev repo on the hub`, `blocked by <id> (not done)` or `dependency cycle: <a> → <b> → <a>`. With exactly one dev repo on the hub, every ticket without a target goes to it. The plan API takes `for_repo=<dev-repo>`; `repo` (the BA repo) is unchanged.
+- **`- Blocked by:` outside a mission.** It blocks only on ids published in the same BA plan; tracker keys and prose never block and never error.
+- **Done per target repo.** A ticket is done when its target repo's `<repo>-svc` history says so; while that repo has not published, the plan shows `done: unknown (<repo>-svc not published)`. `kb mission next` and `kb ticket fetch` read done the same way.
+- **Dev runner.** It picks only tickets routed to its `repo_id`, and its "all done" exit counts only its own and untargeted tickets. A stored task that vanished from the plan or moved to another repo is dropped, its hub claim is released, and the runner picks again. It refuses to start against a hub older than 1.35 (`hub is older than 1.35 — upgrade the hub first`). `kb publish` warns `hub is older than 1.35: Dev runners will not route by repo`, and `kb ticket fetch` warns `<id> targets <x>, this repo is <repo_id>` (the fetch still succeeds).
+- **Skills and branch lookups.** `ba-bug-report` asks the BA for the target repo (or uses the only dev repo) and writes `> Target repo:`. `sa-ticket-ground` always writes `<repo-id>:<repo-id>-code` as the first `Grounded on:` entry. `dev-implement-ticket` and `dev-fix-bug` look for a ticket's branch by its exact names, and the BA skills list only `auto/<id>` and `auto/<id>-r<N>`, so `US-1` no longer matches the branches of `US-10`. Run `kb init` to get them.
+- **Guides.** The BA and Dev guides (en, vi) explain the target line, one ticket per target repo, routing by repo and the upgrade order.
+- **Upgrade.** Upgrade the hub first, then every Dev runner (a runner refuses an older hub). Then upgrade the BA repos and run `kb init` everywhere. With one dev repo on the hub nothing else changes; with two or more, give each ticket a target.
+
 ## 1.34.5 — 2026-11-05
 
 `kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.

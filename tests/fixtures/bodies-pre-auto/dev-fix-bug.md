@@ -168,7 +168,7 @@ Re-entry is derived, never stored:
 - `kb pr find --head <branch> --state merged` non-empty → `PR ✅ merged`,
   flow done; `--state closed` non-empty → `PR ❌ closed`: re-handover or
   reopen; `gh` absent → `PR ? unknown (gh not installed)`.
-- no branch matches `git branch --list "*<BUG-id>*"` and HEAD is the
+- none of the branches `fix/<BUG-id>`, `fix/<BUG-id>-r<N>`, `hotfix/<BUG-id>` and `hotfix/<BUG-id>-r<N>` exists (`git branch --list "fix/<BUG-id>" "fix/<BUG-id>-r*" "hotfix/<BUG-id>" "hotfix/<BUG-id>-r*"` prints nothing) and HEAD is the
   default branch → offer the exact `git switch -c fix/<BUG-id>` (hotfix:
   `git switch -c hotfix/<BUG-id> <production-line>`; this session may never
   have named the production line, so ask the Dev for it first) and create

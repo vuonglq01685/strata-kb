@@ -55,7 +55,11 @@ a denial to report. Stop only when the MCP tool fails too.
    (a numbered list, one action per step, at least one), Expected result,
    Actual result, Attachments, Impact, Open questions. Header lines:
    `> Type: bug|hotfix`, `> Severity: S1|S2|S3|S4`, `> Revision: 1`,
-   `> Related ticket: <id|none>`. Copy each screenshot the BA gives you
+   `> Related ticket: <id|none>`, `> Target repo: <repo-id>` (header block
+   only, like `> Type:`): ask the BA which dev repo the fix lands in and
+   write that repo id; the BA chooses, never guess it from the symptom.
+   When the hub has exactly one dev repo, use it without asking. Copy each
+   screenshot the BA gives you
    into `tickets/bugs/BUG-<n>/` as PNG or WebP only (ask the BA to convert
    any other format) and reference it as `![caption](BUG-<n>/<file>.png)`
    in `## Attachments`; no screenshot → `N/A — <reason>`. Paths are

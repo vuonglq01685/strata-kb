@@ -219,6 +219,18 @@ must also be in its `Depends on` cell in the mission's `## Sequencing`, or `kb t
 fails: the Dev's auto runner reads only `Depends on`. `kb ticket tidy` moves a flat
 `tickets/` into the per-mission layout by the parent line.
 
+**One ticket, one target repo.** A ticket is built in exactly one dev repo. The hub routes
+it there: a `> Target repo: <repo-id>` line in the header block (like `> Type:`, never in
+the body) wins; without it the target is the repo of the ticket's first qualified
+`Grounded on: <repo>:<repo>-code` entry, which the SA writes (an unqualified `-code` entry
+resolves by its unique holder on the hub). `kb ticket lint` errors when the header and a
+qualified grounding name different repos. With one dev repo on the hub every ticket goes to
+it and none of this is needed. With two or more, a ticket with no target is blocked as
+`no target repo`, and a target that is not a dev repo on the hub is blocked as `target <x>
+is not a dev repo on the hub`. Work that spans two repos is two tickets. A `- Blocked by:`
+line in a ticket outside a mission blocks only on ids published in the same BA plan;
+tracker keys and prose never block.
+
 ## 3.3 The SA grounds the technical half
 
 Step 7 runs this for you. Once lint reports `DoR: PASS`, the agent saves the draft and runs
@@ -277,7 +289,9 @@ it until `DoR: PASS`. A bug skips the maturity review and the technical groundin
 
 - **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next release) and
   `> Severity: S1..S4`, both required; optionally `> Related ticket: <id|none>`. No
-  `> Parent mission:`.
+  `> Parent mission:`. The agent also asks which dev repo the fix lands in and writes
+  `> Target repo: <repo-id>` (you choose; with one dev repo on the hub it uses that one).
+  Without a target, a hub with two or more dev repos blocks the bug as `no target repo`.
 - **Screenshots.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced as
   `![caption](BUG-<n>/<file>.png)` under `## Attachments`; with none, `N/A — <reason>`.
 - **Your part.** Tick the Definition of Ready after reading the draft (the agent never

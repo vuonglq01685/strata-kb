@@ -474,6 +474,22 @@ phải thất bại. Nó kết thúc, mã thoát `0`, khi mọi story, ticket kh
 `off` và `run` từ chối (`status` vẫn chạy), nên một task không thể vừa bật công tắc vừa
 khởi động vòng lặp thứ hai.
 
+Runner chỉ nhận ticket mà hub định tuyến tới `repo_id` của repo này: dòng tiêu đề
+`> Target repo:` của ticket, nếu không có thì repo của mục `Grounded on:` có tiền tố repo
+đầu tiên; hub chỉ có một dev repo thì mọi ticket không có đích đều thuộc về nó. Ticket nhắm
+tới repo khác không bao giờ được nhận ở đây, và điều kiện kết thúc "tất cả đã done" chỉ đếm
+ticket của repo này cùng ticket chưa có đích. Plan trên hub cho biết vì sao một ticket phải
+chờ: `no target repo`, `target <x> is not a dev repo on the hub`, `blocked by <id> (not
+done)` hoặc `dependency cycle: ...`. Trạng thái done được đọc từ lịch sử `<repo>-svc` của
+repo đích; khi repo đó chưa publish, plan ghi `done: unknown (<repo>-svc not published)`.
+Nếu task runner đã lưu biến mất khỏi plan hoặc chuyển sang repo khác, runner bỏ nó, nhả
+claim trên hub và chọn lại. `kb ticket fetch` cảnh báo `<id> targets <x>, this repo is
+<repo_id>` khi bạn lấy ticket của repo khác.
+
+**Thứ tự nâng cấp.** Nâng cấp hub trước, rồi đến mọi runner của Dev. Runner từ chối khởi
+động với hub cũ hơn 1.35 (`hub is older than 1.35 — upgrade the hub first`), và
+`kb publish` cảnh báo `hub is older than 1.35: Dev runners will not route by repo`.
+
 Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
 `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có
 gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần thử thất bại (`no result line`,
@@ -527,6 +543,8 @@ hơn ba giờ, push các nhánh `auto/*`, merge vượt qua một review bắt b
 | `kb ticket fetch`: "is not on the hub" | BA chưa publish, hoặc bỏ nó khỏi plan | Nhờ BA `kb publish`; hoặc đưa file ticket hay dán nội dung |
 | `kb ticket fetch`: "published by several repos" | Hai repo BA publish cùng một id | `kb ticket fetch <repo>:<id>` |
 | `kb ticket fetch` không với tới hub | `hub:` chưa đặt hoặc không với tới được | Sửa `hub:` trong `.kb/config.yaml` (hoặc `STRATA_KB_HUB`) |
+| `kb auto run`: "hub is older than 1.35 — upgrade the hub first" | Hub chưa định tuyến ticket theo repo | Nâng cấp hub, rồi mọi runner của Dev (hub trước) |
+| `kb ticket fetch` cảnh báo "<id> targets <x>, this repo is <repo_id>" | Ticket được định tuyến tới dev repo khác | Lấy nó từ repo đích, hoặc nhờ BA đổi `> Target repo:` |
 | `kb claim`: "hub server has no /api/claims" | Hub cũ hơn CLI này | Nâng cấp hub, rồi chạy `kb doctor` ở đây |
 | `Q&A needs the shared hub server — point MCP at it (kb mcp-setup)` | MCP trỏ tới một bản clone cache cục bộ, một máy chủ stdio hoặc mục tiêu nào khác ngoài máy chủ HTTP của hub | Chạy `kb mcp-setup` và khởi động lại trợ lý |
 | Không với tới máy chủ MCP | `STRATA_KB_HUB_URL` hoặc `STRATA_KB_HTTP_TOKEN` chưa đặt hoặc sai | Chạy lại `kb mcp-setup` (`/kb-mcp-setup`); nó cho biết biến nào. Chạy lại không kèm gì sẽ xác minh mà không cần nhập lại |
