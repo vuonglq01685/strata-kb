@@ -389,6 +389,8 @@ def test_to_json_shape():
         "reasons": [],
         "depends_on": [],
         "target_repo": None,
+        "is_parent": False,
+        "parent": "",
     }
     assert data["stories"][1]["depends_on"] == ["M-platform-US1"]
     assert data["stories"][1]["reasons"] == [

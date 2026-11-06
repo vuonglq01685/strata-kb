@@ -1,0 +1,61 @@
+{
+ "notes": [],
+ "stories": [
+  {
+   "us_id": "M-airspace-filter-US1",
+   "mission_id": "M-airspace-filter",
+   "title": "Story 1",
+   "status": "done",
+   "reasons": [],
+   "depends_on": [],
+   "target_repo": null
+  },
+  {
+   "us_id": "M-airspace-filter-US2",
+   "mission_id": "M-airspace-filter",
+   "title": "Story 2",
+   "status": "ready",
+   "reasons": [],
+   "depends_on": [
+    "M-airspace-filter-US1"
+   ],
+   "target_repo": "demo"
+  },
+  {
+   "us_id": "M-airspace-filter-US3",
+   "mission_id": "M-airspace-filter",
+   "title": "Story 3",
+   "status": "to-draft",
+   "reasons": [],
+   "depends_on": [
+    "M-airspace-filter-US1"
+   ],
+   "target_repo": null
+  },
+  {
+   "us_id": "M-airspace-filter-US4",
+   "mission_id": "M-airspace-filter",
+   "title": "Story 4",
+   "status": "blocked",
+   "reasons": [
+    "US M-airspace-filter-US3 not done"
+   ],
+   "depends_on": [
+    "M-airspace-filter-US3"
+   ],
+   "target_repo": null
+  }
+ ],
+ "unparented": [
+  {
+   "us_id": "TAL-1580",
+   "mission_id": "",
+   "title": "TAL-1580 \u2014 Show restrictive airspace details",
+   "status": "ready",
+   "reasons": [],
+   "depends_on": [],
+   "target_repo": "demo"
+  }
+ ],
+ "next": "M-airspace-filter-US3"
+}

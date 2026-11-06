@@ -987,3 +987,64 @@ def test_local_mission_next_unqualified_grounding_resolves_target_via_hub(
     assert result.exit_code == 0, result.output
     assert "| M-platform-US1 | M-platform | done |  |" in result.output
     assert "| M-platform-US2 | M-platform | ready |  |" in result.output
+
+
+PARENT_US1 = """# Foundation slice
+> Kind: parent story
+> Revision: 2
+> Parent mission: M-platform @ rev 1
+
+## User Story
+As a dispatcher, I want a foundation, so that I can start.
+
+## Split
+| Child | Repo | AC | Blocked by | Own fix | Why |
+|---|---|---|---|---|---|
+| M-platform-US1.web | web | AC1 | - | - | ui |
+| M-platform-US1.demo | demo | AC2 | M-platform-US1.web | - | data |
+
+## Change log
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+| 2 | 2026-10-11 | scope | AC changed | M-platform-US1.demo | B4 D4 (agent) |
+"""
+
+
+def _child_us1(cid: str, repo: str, dor: str, rev: int) -> str:
+    return (
+        f"# {cid}\n> Parent story: M-platform-US1 @ rev {rev}\n"
+        f"> Target repo: {repo}\n\n{dor}"
+    )
+
+
+def test_local_mission_next_shows_parent_and_children(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _ba_layout(tmp_path)
+    tickets = root / "tickets"
+    (tickets / "M-platform-US1.md").write_text(PARENT_US1, encoding="utf-8")
+    (tickets / "M-platform-US1.web.md").write_text(
+        _child_us1("M-platform-US1.web", "web", DOR_FULL, 2), encoding="utf-8"
+    )
+    # pinned to rev 1: the later parent row lists it, so it reads draft
+    (tickets / "M-platform-US1.demo.md").write_text(
+        _child_us1("M-platform-US1.demo", "demo", DOR_FULL, 1), encoding="utf-8"
+    )
+    result = runner.invoke(
+        app,
+        ["mission", "next", "--missions-dir", str(root / "missions"), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = {r["us_id"]: r for r in json.loads(result.output)["stories"]}
+    parent = rows["M-platform-US1"]
+    assert (parent["status"], parent["reasons"]) == ("in progress", ["0/2 done"])
+    assert parent["is_parent"] and parent["target_repo"] is None
+    web, demo = rows["M-platform-US1.web"], rows["M-platform-US1.demo"]
+    assert (web["status"], web["parent"]) == ("ready", "M-platform-US1")
+    assert demo["status"] == "draft"
+    assert demo["reasons"] == ["parent story rev 2 affects this ticket"]
+    assert demo["depends_on"] == ["M-platform-US1.web"]
+    assert rows["M-platform-US2"]["status"] == "blocked"
+    text = runner.invoke(
+        app, ["mission", "next", "--missions-dir", str(root / "missions")]
+    )
+    assert "| M-platform-US1 | M-platform | in progress | 0/2 done |" in text.output

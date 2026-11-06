@@ -4111,6 +4111,7 @@ def mission_next(
         cloud,
         hubapi,
         missionnext,
+        planparents,
         planrev,
         planstatus,
         ticket,
@@ -4267,8 +4268,24 @@ def mission_next(
         notes.extend(n for n in target_notes if n not in notes)
 
     mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
-    demoted = planrev.demotions(mission_texts, ticket_texts)
+    parents = {t: x for t, x in ticket_texts.items() if planparents.is_parent(x)}
+    demoted = planrev.demotions(mission_texts, ticket_texts, parents=parents)
+    if done is not None:  # a parent is done when its children are
+        done = done | planparents.done_parents(parents, done)
     results = missionnext.statuses(parsed, drafted, done, demoted)
+    if parents:
+        results = planparents.expand(
+            results,
+            parents,
+            planparents.Facts(
+                written=frozenset(drafted),
+                dor=drafted,
+                done=frozenset(done or ()),
+                mission_texts=mission_texts,
+                titles={t: planparents.title_of(x) for t, x in ticket_texts.items()},
+                demoted=demoted,
+            ),
+        )
     if json_output:
         typer.echo(json.dumps(missionnext.to_json(results, notes)))
     else:
