@@ -2657,3 +2657,17 @@ def test_single_repo_mission_unchanged():
     )
     assert errors(report) == [] and warnings(report) == []
     assert notes(report) == ["demo-code read from fake/demo-code"]
+
+
+def test_multi_repo_issue_line_numbers_point_at_the_mission_file():
+    text = _multi(
+        [
+            "| 1 | demo:svc.api | — | base |",
+            "| 2 | web:svc.api | — | oops |",
+        ]
+    )
+    bad = next(i for i, ln in enumerate(text.splitlines(), 1) if "web:svc.api" in ln)
+    assert any(
+        m.startswith("[web] ") and f"(line {bad})" in m
+        for m in errors(_multi_check(text))
+    )

@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
+from typing import cast
 
 import yaml
 from pydantic import ValidationError
@@ -682,12 +683,24 @@ def _check_services_multi(
     checked by `check()` against its own repo's document. Rows qualify the
     service `<repo>:svc.x`; unqualified rows belong to the first entry."""
     start, end = _services_span(text)
-    body = text.splitlines()[start:end]
-    table = [ln for ln in body if ln.lstrip().startswith("|")]
-    header, rows = table[:2], table[2:]
+    lines = text.splitlines()
+    section = cast(
+        _Section, _parse_section(text, SERVICES_HEADING)
+    )  # parsed by check()
+    # Edit in place (other repos' rows blanked) so reported line numbers stay
+    # true to the mission file; comment lines are blanked in section.lines.
+    table = [
+        start + i for i, ln in enumerate(section.lines) if ln.lstrip().startswith("|")
+    ]
+    rows = table[2:]
+    grounded_at = next(
+        start + i
+        for i, ln in enumerate(section.lines)
+        if section.field_of_line[i] == "Grounded on" and not ln[:1].isspace()
+    )
     repos = {e[0]: e for e in entries}
     first_repo = entries[0][0]
-    by_repo: dict[str | None, list[str]] = {e[0]: [] for e in entries}
+    by_repo: dict[str | None, dict[int, str]] = {e[0]: {} for e in entries}
     issues: list[Issue] = []
     docs: dict[str | None, LoadedDoc | None] = {}
 
@@ -699,10 +712,11 @@ def _check_services_multi(
                 docs[repo] = None  # the per-repo check() reports it
         return docs[repo]
 
-    for row in rows:
+    for at in rows:
+        row = lines[at]
         cells = row.strip().strip("|").split("|")
         if len(cells) < 3:
-            by_repo[first_repo].append(row)
+            by_repo[first_repo][at] = row
             continue
         m = _QUALIFIED_RE.search(cells[1])
         owner = m.group("repo") if m else first_repo
@@ -742,14 +756,16 @@ def _check_services_multi(
         )
         cells[1] = _QUALIFIED_RE.sub(lambda q: q.group("id"), cells[1])
         cells[2] = deps if deps.strip(" ,") else " — "
-        by_repo[owner].append("|" + "|".join(cells) + "|")
+        by_repo[owner][at] = "|" + "|".join(cells) + "|"
 
     notes: list[str] = []
     for repo, doc_id, rev in entries:
         label = f"{repo}:{doc_id}" if repo else doc_id
-        section = [f"- Grounded on: {label} @ {rev}", "", *header, *by_repo[repo]]
-        lines = text.splitlines()
-        sub = "\n".join([*lines[:start], *section, "", *lines[end:]])
+        sub_lines = list(lines)
+        sub_lines[grounded_at] = f"- Grounded on: {label} @ {rev}"
+        for at in rows:
+            sub_lines[at] = by_repo[repo].get(at, "")
+        sub = "\n".join(sub_lines)
         report = check(sub, load_doc=load_doc, heading=SERVICES_HEADING, **kwargs)
         tag = f"[{repo or doc_id}] "
         issues.extend(
