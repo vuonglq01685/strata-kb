@@ -277,3 +277,36 @@ def test_mission_blocked_parent_warns_but_its_children_error(
         load_mission=load,
     )
     assert any("blocked by mission" in e for e in _errors(child))
+
+
+GROUNDED_TWO = "- Grounded on: demo:demo-code @ c12b24f, web:web-code @ def1234\n"
+WARN_TWO = (
+    "grounding touches several repos (demo, web) — split it into a parent "
+    "story (BA Guide 3.10) or keep one ticket"
+)
+
+
+def _two_repo_ticket(block: str, extra: str = "") -> str:
+    grounding = _default_sections(block)["## Technical grounding"].replace(
+        "- Grounded on: demo:demo-code @ c12b24f\n", GROUNDED_TWO
+    )
+    title = f"# T-1 — airspace\n{extra}"
+    return _build_ticket(
+        block, title=title, overrides={"## Technical grounding": grounding}
+    )
+
+
+def test_single_ticket_grounded_on_two_repos_warns(fed_hub: Path, golden_block: str):
+    report = lint(_two_repo_ticket(golden_block), _hub(fed_hub))
+    assert WARN_TWO in _warnings(report)
+
+
+def test_child_grounded_on_two_repos_does_not_warn(fed_hub: Path, golden_block: str):
+    text = _two_repo_ticket(
+        golden_block, f"> Parent story: {PID} @ rev 1\n> Target repo: demo\n"
+    )
+    assert WARN_TWO not in _warnings(lint(text, _hub(fed_hub)))
+
+
+def test_one_repo_grounding_does_not_warn(fed_hub: Path, golden_block: str):
+    assert WARN_TWO not in _warnings(lint(_build_ticket(golden_block), _hub(fed_hub)))

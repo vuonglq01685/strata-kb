@@ -829,3 +829,21 @@ def test_mission_blocked_parent_publishes_and_children_stay_off(
     assert API not in report.published and WEB not in report.published
     assert len(report.skipped) == 2
     assert all("Q1 open" in reason for _, reason in report.skipped)
+
+
+def test_mission_time_parent_with_planned_children_publishes(
+    tmp_path: Path, block: str
+):
+    missions, tickets = family(block)
+    tickets = {
+        f"{US1}.md": parent_story(
+            split=(
+                f"| {API} | demo | - | - | - | data |\n"
+                f"| {WEB} | web | - | - | - | ui |\n"
+            )
+        )
+    }
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    assert report.skipped == []
+    assert US1 in report.published
