@@ -52,27 +52,19 @@ a denial to report. Stop only when the MCP tool fails too.
    dependencies (`US … not done`) may be drafted with its reasons
    acknowledged by the BA — carry those reasons into the handover
    verbatim.
-1b. **Scope by repo** — skipped in child mode and in Amend mode.
+1b. **Scope by repo** — skipped in child mode and in Amend mode. This
+   step only decides and records the split; steps 2–9 then run in order
+   with the **Split story** rules below.
    (a) Run `/sa-ticket-ground --scope "<need>"` as a separate run.
    (b) `Repos: 0` or `Repos: 1`: today's flow. With one repo, put
-   `> Target repo: <repo-id>` under the title.
+   `> Target repo: <repo-id>` under the title at step 4.
    (c) `Repos: ≥ 2`: present a **split proposal**: the child count; each
    child id `<parent-id>.<repo-id>`, its repo, and its ACs by subject; the
    order as `Blocked by`; the evidence rows of the Repo scope block; each child gets ≥ 2 ACs,
    otherwise merge it into a sibling.
    (d) The BA accepts, edits or rejects. Reject: one ticket; lint warns
-   `grounding touches several repos`. Accept: write the parent
-   `tickets/<folder>/<parent-id>.md` from `PARENT-TEMPLATE.md`, with the
-   `**Split decision:**` line under its `## Change log`
-   (`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name>`).
-   Draft the ACs once for the whole need, numbered AC1… across the story,
-   and distribute them by the split. Write each child
-   `tickets/<folder>/<child-id>.md` with `> Parent story: <parent-id> @ rev 1`,
-   `> Target repo: <repo-id>` and the parent's `## User Story` copied word
-   for word. Run steps 6–8 **per child**: lint with `parent_markdown`,
-   ground on the child's own repo, maturity review. Lint the parent last.
-   A mission story keeps the mission id as the parent id
-   (`<M-id>-US<n>`); its parent file is `tickets/<M-id>/<M-id>-US<n>.md`.
+   `grounding touches several repos`. Accept: go on to step 2 with the
+   **Split story** rules.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
    row, and put `> Parent mission: <mission-id> @ rev <N>` on its own line
@@ -248,6 +240,26 @@ a denial to report. Stop only when the MCP tool fails too.
    Ready` and `## Review record`; `## KB context`, `## Dependencies` and
    `## Technical grounding` stay — the Dev reads them.
 
+**Split story.** After the BA accepts at 1b, steps 2–9 run once for the
+whole need, with these rules.
+- Step 2: sets the folder. A mission story keeps the mission id as the
+  parent id (`<M-id>-US<n>`); its parent file is
+  `tickets/<M-id>/<M-id>-US<n>.md` and carries `> Parent mission:`, never on a child.
+- Step 3: ground the whole need once.
+- Step 4: write the parent from `PARENT-TEMPLATE.md`, with the
+  `**Split decision:**` line under its `## Change log`
+  (`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name>`).
+  Draft the ACs once for the whole need, numbered AC1… across the story,
+  at most 10 ACs per child. Distribute them by the split and fill each
+  split row's AC cell.
+- Step 5: pin per child: each child pins the refs its own ACs cite.
+- Write each child `tickets/<folder>/<child-id>.md` with
+  `> Parent story: <parent-id> @ rev <N>` (`<N>` = the parent's current
+  `> Revision:`; 1 for a new parent), `> Target repo: <repo-id>` and the
+  parent's `## User Story` copied word for word.
+- Steps 6–8 run per child: lint with `parent_markdown`, ground on the
+  child's own repo, maturity review. The parent is linted last.
+
 ## Amend mode — `--amend <ticket>`
 
 `/ba-ticket-author --amend <ticket>` (a ticket id or a path under
@@ -328,6 +340,10 @@ exists: write that one child.
 - The same change fills that split row's AC cell, replacing `-`. No parent
   revision bump: the row was planned, not changed.
 - The `- Blocked by:` line in `## Dependencies` equals the split row.
+- Headers: `> Parent story: <parent-id> @ rev <the parent's current `> Revision:`>`
+  and `> Target repo: <repo-id>`. Save as
+  `tickets/<parent's folder>/<child-id>.md`. Step 2 is skipped: no
+  `> Parent mission:` goes on the child.
 
 ## Hard rules
 

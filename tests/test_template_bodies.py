@@ -1988,7 +1988,7 @@ def test_ticket_author_scope_by_repo_step(name):
         "each child gets ≥ 2 ACs",
         "**Split decision:**",
         "grounding touches several repos",
-        "> Parent story: <parent-id> @ rev 1",
+        "> Parent story: <parent-id> @ rev <N>",
         "> Target repo: <repo-id>",
         "PARENT-TEMPLATE.md",
     ]:
@@ -2023,3 +2023,40 @@ def test_ticket_author_auto_mode_has_split_and_child_gates(name):
         "never `ready`",
     ]:
         assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_split_story_note_rejoins_the_normal_steps(name):
+    t = _off_path(name)
+    for needle in [
+        "only decides and records the split",
+        "**Split story**",
+        "never on a child",
+        "Step 3: ground the whole need once",
+        "Step 5: pin per child",
+        "The parent is linted last",
+        "at most 10 ACs per child",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_child_mode_states_headers_file_and_skips_step_2(name):
+    t = _off_path(name)
+    for needle in [
+        "> Parent story: <parent-id> @ rev <the parent's current `> Revision:`>",
+        "> Target repo: <repo-id>",
+        "tickets/<parent's folder>/<child-id>.md",
+        "Step 2 is skipped",
+        "no `> Parent mission:` goes on the child",
+    ]:
+        assert needle in t, needle
+    auto = _normal(_auto_section(name))
+    assert "replaces the Intake gate's `tickets/<mission-id>/<us-id>.md` rule" in auto
+    assert "A non-parent story is finished only when" in auto
+
+
+def test_sa_opening_routes_scope_before_the_workflow():
+    t = _off_path("bodies/sa-ticket-ground.md")
+    assert "takes a need text, not a file" in t
+    assert "no Workflow step runs" in t

@@ -10,6 +10,8 @@ score it.
 
 The argument is the ticket (or mission) file path; `--mission` switches
 to the mission layer.
+`--scope "<need>"` takes a need text, not a file: go to `## Scope mode`
+below; no Workflow step runs.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,
