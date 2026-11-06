@@ -336,3 +336,30 @@ def test_claim_take_parent_refused(web_client, hub_with_ticket, auth):
         "detail": f"{US1} is a parent story — claim one of its children",
     }
     assert web_client.get("/api/claims", headers=auth).json()["claims"] == []
+
+
+def test_take_needs_no_git_read(web_client, hub_with_ticket, auth, monkeypatch):
+    from strata_kb import gitio
+
+    hub_with_ticket(rev=1)
+
+    def boom(*_a, **_k):
+        raise gitio.GitError("transient")
+
+    monkeypatch.setattr(gitio, "head_commit", boom)
+    assert _take(web_client, auth).status_code == 201
+
+
+def test_take_parent_bug_is_not_a_parent_story(web_client, hub_with_ticket, auth):
+    from strata_kb import ticketfetch
+
+    hub = hub_with_ticket(rev=1)
+    l3 = ticketfetch.find(hub, US1)[2]
+    head, sep, tail = l3.read_text(encoding="utf-8").partition(f"\n## {US1} ")
+    title, _, rest = tail.partition("\n")
+    l3.write_text(
+        f"{head}{sep}{title}\n> Kind: parent bug\n{rest}",
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert _take(web_client, auth).status_code == 201

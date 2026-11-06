@@ -457,9 +457,12 @@ def run_once(
         task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
-    except UnknownTicketError as exc:  # the hub dropped the ticket under us
+    except (UnknownTicketError, ParentStoryError) as exc:
+        # the hub dropped the ticket, or it is a parent (a stale stored task)
         logger.info("%s; picking again", exc)
         autostate.save(kb_dir, replace(state, task=None, attempts=0))
+        if claims is not None and state.task:
+            claims.forget(state.task.partition(":")[2])
         return "ran"
     except (ClaimRouteMissing, ClaimRejectedError) as exc:
         return _stop(kb_dir, state, str(exc))  # no retry can fix either

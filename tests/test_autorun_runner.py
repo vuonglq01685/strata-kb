@@ -1261,3 +1261,13 @@ def test_runner_skips_parent_claim_refusal(cenv):
     assert once(cenv, script, claims=claims) == "ran"
     assert script.prompts[0].startswith("/dev-implement-ticket US2")
     assert autostate.load(cenv[1]).stop_reason is None
+
+
+def test_stored_task_now_a_parent_is_dropped_not_stopped(cenv):
+    claims = FakeClaims()
+    claims.claim_error = ParentStoryError("hub returned 400: parent_story")
+    _stored(cenv)
+    assert once(cenv, Script(), claims=claims) == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
+    assert claims.of("forget") == [("forget", "US1")]

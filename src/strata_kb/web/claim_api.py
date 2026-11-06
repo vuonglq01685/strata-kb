@@ -21,8 +21,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from strata_kb import planstatus, ticketclaim, ticketfetch
-from strata_kb import ticket as ticket_mod
+from strata_kb import planparents, planstatus, ticketclaim, ticketfetch
 from strata_kb.hub import HubHandle
 from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
 from strata_kb.web import bodycap
@@ -174,15 +173,16 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         sent = _str_field(body, "token")
         try:
             _, ticket = ticketfetch.split_ref(ref)
-            repo, _doc, _l3 = ticketfetch.find(hub, ref)
-            text = ticketfetch.render(hub, ref)
+            repo, doc, l3 = ticketfetch.find(hub, ref)
+            # no git read here: a transient git error must not reject a take
+            section = ticketfetch.read_section(l3, doc, ticket)
         except ticketfetch.TicketNotOnHub as exc:
             return _error(404, "unknown_ticket", str(exc))
         except ticketfetch.TicketFetchError as exc:
             # find() raises one type for several holders and for a bad id
             kind = "ambiguous" if "several repos" in str(exc) else "bad_request"
             return _error(400, kind, str(exc))
-        if (ticket_mod.ticket_kind(text) or "").startswith("parent"):
+        if planparents.is_parent(planstatus._restore("", section)):
             return _error(
                 400,
                 "parent_story",
