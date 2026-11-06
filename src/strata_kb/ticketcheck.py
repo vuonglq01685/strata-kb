@@ -20,6 +20,7 @@ so the engine stays free of filesystem/CLI imports.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import posixpath
 import re
@@ -560,6 +561,19 @@ def check(
     if grounded is None:
         return LintReport(issues, notes)
     repo, doc_id, rev, line = grounded
+    if heading == SERVICES_HEADING:
+        code_entries = _code_entries(section)
+        if len(code_entries) >= 2:
+            return _check_services_multi(
+                text,
+                code_entries,
+                load_doc=load_doc,
+                load_decisions=load_decisions,
+                load_drift=load_drift,
+                load_at=load_at,
+                load_missions=load_missions,
+                load_ticket=load_ticket,
+            )
 
     try:
         doc = load_doc(repo, doc_id)
@@ -626,6 +640,122 @@ def check(
             issues,
             notes,
         )
+    return LintReport(issues, notes)
+
+
+_Entry = tuple[str | None, str, str]
+# `<repo-id>:svc.<name>` — the repo-id grammar of GROUNDED_ON_RE.
+_QUALIFIED_RE = re.compile(
+    r"(?<![\w./:-])(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*)"
+    r":(?P<id>svc\.[A-Za-z0-9._-]*[A-Za-z0-9_])"
+)
+
+
+def _code_entries(section: _Section) -> list[_Entry]:
+    """The distinct `-code` entries of the mission's `Grounded on:` line."""
+    for i, line in enumerate(section.lines):
+        if section.field_of_line[i] == "Grounded on" and not line[:1].isspace():
+            return list(
+                dict.fromkeys(
+                    e for e in grounded_entries(line) if e[1].endswith("-code")
+                )
+            )
+    return []
+
+
+def _services_span(text: str) -> tuple[int, int]:
+    """[start, end) line indexes of the `## Services & order` body."""
+    lines = text.splitlines()
+    scan = lintcore._blank_invisible(text).splitlines()
+    start = _heading_line_index(text, SERVICES_HEADING) + 1
+    end = next(
+        (j for j in range(start, len(scan)) if scan[j].startswith(("# ", "## "))),
+        len(lines),
+    )
+    return start, end
+
+
+def _check_services_multi(
+    text: str, entries: list[_Entry], *, load_doc: LoadDoc, **kwargs
+) -> LintReport:
+    """Mission whose `Grounded on:` lists several `-code` docs: each row is
+    checked by `check()` against its own repo's document. Rows qualify the
+    service `<repo>:svc.x`; unqualified rows belong to the first entry."""
+    start, end = _services_span(text)
+    body = text.splitlines()[start:end]
+    table = [ln for ln in body if ln.lstrip().startswith("|")]
+    header, rows = table[:2], table[2:]
+    repos = {e[0]: e for e in entries}
+    first_repo = entries[0][0]
+    by_repo: dict[str | None, list[str]] = {e[0]: [] for e in entries}
+    issues: list[Issue] = []
+    docs: dict[str | None, LoadedDoc | None] = {}
+
+    def doc_of(repo: str | None) -> LoadedDoc | None:
+        if repo not in docs:
+            try:
+                docs[repo] = load_doc(repo, repos[repo][1])
+            except DocLoadError:
+                docs[repo] = None  # the per-repo check() reports it
+        return docs[repo]
+
+    for row in rows:
+        cells = row.strip().strip("|").split("|")
+        if len(cells) < 3:
+            by_repo[first_repo].append(row)
+            continue
+        m = _QUALIFIED_RE.search(cells[1])
+        owner = m.group("repo") if m else first_repo
+        if owner not in repos:
+            issues.append(
+                Issue(
+                    "error",
+                    f"svc '{m.group(0) if m else cells[1].strip()}': repo '{owner}' "
+                    "is not on the 'Grounded on:' line",
+                )
+            )
+            continue
+        deps = cells[2]
+        for q in _QUALIFIED_RE.finditer(deps):
+            if q.group("repo") == owner:
+                continue
+            if q.group("repo") not in repos:
+                issues.append(
+                    Issue(
+                        "error",
+                        f"svc '{q.group(0)}': repo '{q.group('repo')}' "
+                        "is not on the 'Grounded on:' line",
+                    )
+                )
+            elif (d := doc_of(q.group("repo"))) is not None and not (
+                q.group("id") in _known_ids(d) or NEW_RE.search(row)
+            ):
+                issues.append(
+                    Issue(
+                        "error",
+                        f"[{owner}] unknown id '{q.group('id')}' in Depends on — not a "
+                        f"section of {d.manifest.id} (repo '{q.group('repo')}')",
+                    )
+                )
+        deps = _QUALIFIED_RE.sub(
+            lambda q, o=owner: q.group("id") if q.group("repo") == o else "", deps
+        )
+        cells[1] = _QUALIFIED_RE.sub(lambda q: q.group("id"), cells[1])
+        cells[2] = deps if deps.strip(" ,") else " — "
+        by_repo[owner].append("|" + "|".join(cells) + "|")
+
+    notes: list[str] = []
+    for repo, doc_id, rev in entries:
+        label = f"{repo}:{doc_id}" if repo else doc_id
+        section = [f"- Grounded on: {label} @ {rev}", "", *header, *by_repo[repo]]
+        lines = text.splitlines()
+        sub = "\n".join([*lines[:start], *section, "", *lines[end:]])
+        report = check(sub, load_doc=load_doc, heading=SERVICES_HEADING, **kwargs)
+        tag = f"[{repo or doc_id}] "
+        issues.extend(
+            dataclasses.replace(i, message=tag + i.message) for i in report.issues
+        )
+        notes.extend(tag + n for n in report.notes)
     return LintReport(issues, notes)
 
 

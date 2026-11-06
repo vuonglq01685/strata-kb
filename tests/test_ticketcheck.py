@@ -2560,3 +2560,100 @@ def test_child_resolves_new_decision_through_its_parents_mission(code_doc):
     # parent text not available: still the "needs a parent mission" error
     bare = run(child, kb_dir, load_decisions=load_decisions, load_ticket={}.get)
     assert any("[NEW: D1] needs a parent mission" in e for e in errors(bare))
+
+
+# --- Task 2 (cross-repo split): several `-code` docs on one mission ---------
+
+_R1, _R2 = "abc1234abc", "def5678def"
+
+
+def _fake_doc(doc_id: str, rev: str, *ids: str) -> ticketcheck.LoadedDoc:
+    sections = [
+        models.SectionEntry(id=i, title=i, file="g", status="reviewed") for i in ids
+    ]
+    manifest = models.Manifest(id=doc_id, title=doc_id, revision=rev, sections=sections)
+    return ticketcheck.LoadedDoc(
+        manifest=manifest,
+        source=f"fake/{doc_id}",
+        read_group=lambda g: None,
+        read_raw=lambda g: None,
+    )
+
+
+def _two_docs(repo, doc):
+    return {
+        ("demo", "demo-code"): _fake_doc("demo-code", _R1, "svc.api"),
+        ("web", "web-code"): _fake_doc("web-code", _R2, "svc.web"),
+    }.get((repo, doc))
+
+
+def _multi(rows: list[str], grounded: str | None = None) -> str:
+    grounded = grounded or f"demo:demo-code @ {_R1}, web:web-code @ {_R2}"
+    return (
+        MISSION
+        + f"\n{ticketcheck.SERVICES_HEADING}\n- Grounded on: {grounded}\n\n"
+        + "| Order | Service | Depends on | Why this order |\n|---|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
+
+
+def _multi_check(text: str):
+    return ticketcheck.check(
+        text, load_doc=_two_docs, heading=ticketcheck.SERVICES_HEADING
+    )
+
+
+def test_two_repo_services_each_id_resolves_in_its_own_doc():
+    text = _multi(
+        [
+            "| 1 | demo:svc.api | — | base |",
+            "| 2 | web:svc.web | demo:svc.api | needs api |",
+        ]
+    )
+    report = _multi_check(text)
+    assert errors(report) == [], report.render("Grounding")
+    assert any("demo-code read from" in n for n in notes(report))
+    assert any(
+        n.startswith("[web] ") and "web-code read from" in n for n in notes(report)
+    )
+
+
+def test_id_in_the_wrong_repo_errors():
+    report = _multi_check(_multi(["| 1 | web:svc.api | — | oops |"]))
+    assert any(m.startswith("[web] ") and "svc.api" in m for m in errors(report))
+
+
+def test_qualifier_not_on_grounded_line_errors():
+    report = _multi_check(_multi(["| 1 | notify:svc.mail | — | mail |"]))
+    assert (
+        "svc 'notify:svc.mail': repo 'notify' is not on the 'Grounded on:' line"
+        in errors(report)
+    )
+
+
+def test_cross_repo_depends_on_must_exist_in_that_repo():
+    report = _multi_check(_multi(["| 1 | web:svc.web | demo:svc.nope | x |"]))
+    assert any(
+        m.startswith("[web] ") and "svc.nope" in m and "demo-code" in m
+        for m in errors(report)
+    )
+
+
+def test_unqualified_id_resolves_in_the_first_code_entry():
+    ok = _multi_check(_multi(["| 1 | svc.api | — | base |"]))
+    assert errors(ok) == [], ok.render("Grounding")
+    bad = _multi_check(_multi(["| 1 | svc.web | — | base |"]))
+    assert any(m.startswith("[demo] ") and "svc.web" in m for m in errors(bad))
+
+
+def test_single_repo_mission_unchanged():
+    def load(repo, doc):
+        return _fake_doc("demo-code", _R1, "svc.api") if doc == "demo-code" else None
+
+    text = _multi(["| 1 | svc.api | — | base |"], grounded=f"demo:demo-code @ {_R1}")
+    report = ticketcheck.check(
+        text, load_doc=load, heading=ticketcheck.SERVICES_HEADING
+    )
+    assert errors(report) == [] and warnings(report) == []
+    assert notes(report) == ["demo-code read from fake/demo-code"]
