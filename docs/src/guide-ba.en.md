@@ -534,7 +534,7 @@ When any parent fails lint, nothing is published and the hub keeps its last good
 links each written one; a child's page links its parent and its siblings. A child waits on
 its split `Blocked by` ids; a child not written yet reads `not ready` (or `blocked` when the
 mission gates it). **Runners never take a parent**, and a claim on one answers 400
-(`parent_story`): Dev runners work the children. The BA auto runner drafts missing children.
+(`parent_story`): Dev runners work the children. A child not written yet is listed as to-draft on the hub; you write it (auto drafting of children arrives with phase 3).
 
 ---
 

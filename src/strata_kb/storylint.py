@@ -194,6 +194,36 @@ def _check_blocked_by(rows: list[SplitRow]) -> list[Issue]:
     return issues
 
 
+def _check_written_children(
+    rows: list[SplitRow],
+    children: dict[str, str | None],
+    parent_text: str,
+    parent_id: str,
+) -> list[Issue]:
+    """Each written child must agree with its split row, so a parent-only
+    edit cannot publish a split its children contradict. A child demoted by a
+    later change-log row (pin behind the parent, row lists the child) is
+    waiting for its own amendment and is skipped."""
+    current = planrev.parse_revision(parent_text) or 1
+    issues: list[Issue] = []
+    for row in rows:
+        text = children.get(row.child)
+        if text is None:
+            continue
+        pin = ticket.parent_story_pin(text)
+        if (
+            pin is not None
+            and pin[0] == parent_id
+            and pin[1] < current
+            and planrev.later_row_lists(parent_text, pin[1], row.child)
+        ):
+            continue
+        issues += lint_child_against_parent(
+            text, row.child, parent_text, parent_id, check_ac_count=False
+        )
+    return issues
+
+
 def lint_parent(
     parent_text: str, children: dict[str, str | None], *, parent_id: str
 ) -> LintReport:
@@ -214,6 +244,7 @@ def lint_parent(
         if children.get(r.child) is None
     ]
     issues += _check_acs_unique(rows) + _check_blocked_by(rows)
+    issues += _check_written_children(rows, children, parent_text, parent_id)
     return LintReport(issues)
 
 
@@ -241,7 +272,12 @@ def _norm(text: str | None) -> str:
 
 
 def lint_child_against_parent(
-    child_text: str, child_id: str, parent_text: str | None, parent_id: str
+    child_text: str,
+    child_id: str,
+    parent_text: str | None,
+    parent_id: str,
+    *,
+    check_ac_count: bool = True,
 ) -> list[Issue]:
     """Errors for a child ticket that disagrees with its parent's split row."""
     if parent_text is None:
@@ -265,7 +301,7 @@ def lint_child_against_parent(
             _err(f"child '{child_id}' is not listed in the split of {parent_id}"),
         ]
     ids, count = _ac_ids(child_text)
-    if count < 2:
+    if check_ac_count and count < 2:
         issues.append(
             _err(
                 f"Acceptance Criteria must have at least 2 '- [ ]' items — found {count}"

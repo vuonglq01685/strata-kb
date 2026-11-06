@@ -84,7 +84,8 @@ def test_replaces_lets_old_ac_stay_in_done_child():
     rows = f"| {API} | api | AC1, AC2 | - | - | d |\n| {WEB} | web | AC7 (replaces AC2) | - | - | u |\n"
     p = parent(rows)
     assert storylint.parse_split(p)[1].replaces == {"AC7": "AC2"}
-    assert storylint.lint_parent(p, kids(), parent_id=PID).passed
+    c = {**kids(), WEB: child(WEB, "web", ["AC7"])}
+    assert storylint.lint_parent(p, c, parent_id=PID).passed
 
 
 def test_split_child_missing_file_is_error():
@@ -229,3 +230,72 @@ def test_dotted_repo_id_cannot_be_split_target():
     rows = f"| {cid} | my.app | AC1 | - | - | d |\n"
     out = errors(storylint.lint_parent(parent(rows), {cid: "x"}, parent_id=PID))
     assert "repo ids containing '.' cannot be split targets" in out
+
+
+# --- final review: the parent lint checks every written child ---
+
+
+def moved_ac_parent() -> str:
+    return parent(
+        f"| {API} | api | AC1, AC2, AC3 | - | - | data |\n"
+        f"| {WEB} | web | AC4 | {API} | - | ui |\n"
+    )
+
+
+def test_parent_lint_catches_ac_moved_in_split_with_children_unchanged():
+    out = errors(storylint.lint_parent(moved_ac_parent(), kids(), parent_id=PID))
+    assert f"child '{API}' AC ids" in out and f"child '{WEB}' AC ids" in out
+
+
+def test_parent_lint_does_not_ask_children_for_two_acs():
+    p = parent(
+        f"| {API} | api | AC1, AC2 | - | - | data |\n"
+        f"| {WEB} | web | AC3 | {API} | - | ui |\n"
+    )
+    c = {API: child(API, "api", ["AC1", "AC2"]), WEB: child(WEB, "web", ["AC3"], API)}
+    assert storylint.lint_parent(p, c, parent_id=PID).passed
+
+
+@pytest.mark.parametrize(
+    ("edit", "needle"),
+    [
+        (lambda t: t.replace(f"> Parent story: {PID} @ rev 1\n", ""), "needs"),
+        (lambda t: t.replace(f"{PID} @ rev 1", "M-x-US9 @ rev 1"), "needs"),
+        (
+            lambda t: t.replace("> Target repo: web", "> Target repo: api"),
+            "Target repo",
+        ),
+        (lambda t: t.replace(f"{API} — needs data", "None"), "Blocked by"),
+        (lambda t: t.replace(STORY, "Another story."), "User Story"),
+    ],
+)
+def test_parent_lint_checks_each_written_child_against_its_row(edit, needle):
+    c = kids()
+    c[WEB] = edit(c[WEB])
+    assert needle in errors(storylint.lint_parent(parent(), c, parent_id=PID))
+
+
+def test_parent_lint_skips_a_demoted_child():
+    log = f"| 2 | 2026-10-11 | scope | AC moved | {WEB} | B4 D4 (agent) |\n"
+    p = parent(
+        f"| {API} | api | AC1, AC2, AC3 | - | - | data |\n"
+        f"| {WEB} | web | AC4 | {API} | - | ui |\n",
+        extra=log,
+    ).replace("> Revision: 1", "> Revision: 2")
+    out = errors(storylint.lint_parent(p, kids(), parent_id=PID))
+    assert f"child '{API}' AC ids" in out  # not listed in the later row
+    assert f"child '{WEB}'" not in out  # pinned rev 1 < 2 and listed: demoted
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "> Parent story: P-1 @ rev 3",
+        "> Parent story: P-1 @rev 3",
+        "> Parent story: P-1 @ rev3",
+        "> Parent story: P-1 @rev3",
+        "> Parent story: P-1 @ rev 3\r",
+    ],
+)
+def test_parent_story_pin_accepts_spacing_and_crlf(line: str):
+    assert ticket.parent_story_pin(f"# T\n{line}\n\n## X\n") == ("P-1", 3)

@@ -363,3 +363,16 @@ def test_take_parent_bug_is_not_a_parent_story(web_client, hub_with_ticket, auth
         newline="\n",
     )
     assert _take(web_client, auth).status_code == 201
+
+
+def test_take_section_read_failure_is_a_transient_503(
+    web_client, hub_with_ticket, auth
+):
+    from strata_kb import ticketfetch
+
+    hub = hub_with_ticket(rev=1)
+    ticketfetch.find(hub, US1)[2].unlink()  # mid auto-pull: the file is gone
+    r = _take(web_client, auth)
+    assert r.status_code == 503
+    assert r.json()["error"] == "hub_busy"
+    assert web_client.get("/api/claims", headers=auth).json()["claims"] == []

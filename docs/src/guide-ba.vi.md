@@ -535,8 +535,8 @@ hoạch tốt gần nhất. Chạy `kb ticket lint` trên parent và sửa lỗi
 thái, và liên kết từng child đã viết; trang của child liên kết tới parent và các child anh
 em. Child chờ các id `Blocked by` trong split; child chưa viết hiển thị `not ready` (hoặc
 `blocked` khi mission chặn nó). **Runner không bao giờ nhận parent**, và claim trên parent
-trả 400 (`parent_story`): runner của Dev làm các child. Auto runner của BA soạn các child còn
-thiếu.
+trả 400 (`parent_story`): runner của Dev làm các child. Child chưa viết được hub liệt kê là to-draft; BA tự viết
+(auto runner soạn child sẽ có ở phase 3).
 
 ---
 

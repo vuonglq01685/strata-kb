@@ -54,7 +54,12 @@ def lint_parent(
     }
     report = storylint.lint_parent(text, children, parent_id=pid)
     pm_issues, notes = check_mission(
-        text, path, missions_dir, ticket_id=pid, load_mission=load_mission
+        text,
+        path,
+        missions_dir,
+        ticket_id=pid,
+        load_mission=load_mission,
+        blockers_as="warning",
     )
     return LintReport(report.issues + pm_issues, notes)
 

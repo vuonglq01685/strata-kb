@@ -394,6 +394,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         ticket_markdown: str,
         mission_markdown: str | None = None,
         heading: str = "## Technical grounding",
+        parent_markdown: str | None = None,
     ) -> str:
         """SA grounding gate, the `kb ticket check` report: every id in
         '## Technical grounding' exists in the hub's -code document,
@@ -402,7 +403,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         DECIDED row of the parent mission's Technology decisions, and Open
         decisions is empty. The mission is `mission_markdown` (pass the
         mission file's text whenever it exists locally — it wins over the
-        hub), else the hub's plan. `heading="## Services & order"` checks a mission plan instead
+        hub), else the hub's plan. A child ticket ('> Parent story:') passes
+        `parent_markdown` (the parent story's text): its `[NEW: D<n>]` rows
+        are read from the parent's mission. `heading="## Services & order"` checks a mission plan instead
         (decisions read from the same text). The -code document is read
         from the hub only — no local fallback."""
 
@@ -447,6 +450,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                     hub, r, d, rev, ids
                 ),
                 load_missions=load_missions,
+                load_ticket=lambda _id: parent_markdown,
             )
             note = _hub_mission_note(from_hub)
             return stale_hub_note(hub) + note + report.render("Grounding")

@@ -114,7 +114,7 @@ def parent_pin(text: str) -> tuple[str, int] | None:
     return m.group(1), int(m.group(2)) if m.group(2) else 1
 
 
-def _later_row_lists(text: str, pinned_rev: int, us_id: str) -> bool:
+def later_row_lists(text: str, pinned_rev: int, us_id: str) -> bool:
     return any(
         r.rev > pinned_rev and us_id in r.affected for r in parse_change_log(text)
     )
@@ -141,7 +141,7 @@ def demotions(
             if parent_text is None:
                 continue
             current = parse_revision(parent_text) or 1
-            if story_pin[1] < current and _later_row_lists(
+            if story_pin[1] < current and later_row_lists(
                 parent_text, story_pin[1], us_id
             ):
                 out[us_id] = f"parent story rev {current} affects this ticket"
@@ -151,6 +151,6 @@ def demotions(
             continue
         mission_text = missions[pin[0]]
         current = parse_revision(mission_text) or 1
-        if pin[1] < current and _later_row_lists(mission_text, pin[1], us_id):
+        if pin[1] < current and later_row_lists(mission_text, pin[1], us_id):
             out[us_id] = f"parent mission rev {current} affects this story"
     return out

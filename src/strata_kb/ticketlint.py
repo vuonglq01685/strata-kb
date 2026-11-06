@@ -12,7 +12,7 @@ import re
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from strata_kb import (
     acquality,
@@ -31,8 +31,6 @@ from strata_kb.lintcore import LintReport
 
 if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
-
-# A '- [ ]' / '- [x]' checkbox list item.
 
 # An AC is an observable outcome, never a shell command (docs/ac-quality.md).
 # A backticked span whose first word — after skipping
@@ -106,7 +104,6 @@ _FILL_EXEMPT: frozenset[str] = frozenset(
 _NA_RE = re.compile(r"^\s*n/?a\b", re.I)
 
 _SEQUENCE_HEADING = "## Sequence diagram"
-_DEPENDENCIES_HEADING = "## Dependencies"
 _TRIGGER_SCAN_HEADINGS: tuple[str, ...] = (
     "## Summary",
     "## User Story",
@@ -484,6 +481,7 @@ def check_parent_mission(
     ticket_id: str | None = None,
     load_mission: Callable[[str], str | None] | None = None,
     parent: tuple[str, str] | None = None,
+    blockers_as: Literal["error", "warning"] = "error",
 ) -> tuple[list[Issue], list[str]]:
     """Check 10. Only fires when the OPTIONAL '> Parent mission:' line is
     present — pre-existing tickets carry no such line and are unaffected.
@@ -501,6 +499,10 @@ def check_parent_mission(
     that parent story. The back-link is read from the parent and the backlog
     is checked for the parent id; the child's Blocked by may name its split
     siblings.
+
+    `blockers_as`: level of the "blocked by mission" issues. A parent story
+    passes "warning": the parent publishes, its children are held by their own
+    inherited check.
     """
     mission_src, siblings = text, frozenset[str]()
     if parent is not None:
@@ -550,7 +552,13 @@ def check_parent_mission(
                 )
             ], []
         return _check_backlog_membership(
-            text, ticket_id, mission_id, loaded, f"hub:{mission_id}", siblings
+            text,
+            ticket_id,
+            mission_id,
+            loaded,
+            f"hub:{mission_id}",
+            siblings,
+            blockers_as,
         )
 
     mission_path = missions_dir / f"{mission_id}.md"
@@ -582,7 +590,7 @@ def check_parent_mission(
             )
         ], []
     return _check_backlog_membership(
-        text, us_id, mission_id, mission_text, mission_path, siblings
+        text, us_id, mission_id, mission_text, mission_path, siblings, blockers_as
     )
 
 
@@ -593,6 +601,7 @@ def _check_backlog_membership(
     mission_text: str,
     mission_path: Path | str,
     siblings: frozenset[str] = frozenset(),
+    blockers_as: Literal["error", "warning"] = "error",
 ) -> tuple[list[Issue], list[str]]:
     backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
@@ -629,7 +638,7 @@ def _check_backlog_membership(
     return [
         *(
             Issue(
-                "error",
+                blockers_as,
                 f"'{us_id}' is blocked by mission '{mission_id}': {reason} — "
                 "close it in the mission before drafting this ticket",
             )

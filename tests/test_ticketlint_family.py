@@ -15,6 +15,7 @@ from tests.test_ticketlint import (
     _errors,
     _hub,
     _mission_doc,
+    _warnings,
 )
 
 
@@ -249,3 +250,30 @@ def test_blocked_by_reads_split_ids_exactly(fed_hub: Path, golden_block: str):
     )
     msg = " ".join(_errors(report))
     assert f"names {other}," in msg and API not in msg.split("names ")[1].split(",")[0]
+
+
+def test_mission_blocked_parent_warns_but_its_children_error(
+    fed_hub: Path, golden_block: str
+):
+    texts = family(golden_block, mission=MID)
+    blocked = _mission_doc(MID, [PID]) + (
+        f"\n## Open questions\n- [ ] Q1 — Which layer? — owner: Bob — blocks: {PID}\n"
+    )
+    load = {MID: blocked}.get
+    parent = lint(
+        texts[PID],
+        _hub(fed_hub),
+        ticket_id=PID,
+        load_ticket=texts.get,
+        load_mission=load,
+    )
+    assert parent.passed, _errors(parent)
+    assert any("blocked by mission" in w for w in _warnings(parent))
+    child = lint(
+        texts[API],
+        _hub(fed_hub),
+        ticket_id=API,
+        load_ticket=texts.get,
+        load_mission=load,
+    )
+    assert any("blocked by mission" in e for e in _errors(child))

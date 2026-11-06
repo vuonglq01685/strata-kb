@@ -3612,7 +3612,7 @@ def ticket_check(
     -code document, columns/routes/commands/files match it, `[NEW: D<n>]`
     points at a DECIDED row of the parent mission's Technology decisions,
     and Open decisions is empty. Exit 0 PASS, 1 FAIL."""
-    from strata_kb import ticketcheck, ticketfetch, ticketstale
+    from strata_kb import familyhub, ticketcheck, ticketfetch, ticketstale
 
     path: Path | None = None
     if source == "-":
@@ -3717,6 +3717,7 @@ def ticket_check(
             if missions_root is not None
             else None
         ),
+        load_ticket=familyhub.folder_loader(path) if path else None,
     )
     if json_output:
         typer.echo(json.dumps(report.to_json()))

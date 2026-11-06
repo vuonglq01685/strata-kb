@@ -235,7 +235,7 @@ OPEN_D1 = (
 
 def _family(fed_hub: Path, **overrides):
     """Rows of the parent for a mission with `overrides`, no child written
-    (plan-ingest refuses a blocked parent, so the hub is not involved)."""
+    (a blocked parent still publishes; the hub is not involved here)."""
     mission = mission_text(context_block(fed_hub), overrides=overrides)
     parent = missionnext.StoryStatus(US1, MISSION_ID, "Story", "x", ())
     facts = planparents.Facts(

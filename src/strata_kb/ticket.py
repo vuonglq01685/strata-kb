@@ -212,7 +212,7 @@ KIND_RE = re.compile(r"^>[ \t]*Kind:[ \t]*(.*?)[ \t]*$", re.M)
 
 # '> Parent story: <parent-id> [@ rev <N>]' on a child ticket.
 PARENT_STORY_RE = re.compile(
-    r"^>[ \t]*Parent story:[ \t]*(\S+)(?:[ \t]+@[ \t]*rev[ \t]+(\d+))?[ \t]*$", re.M
+    r"^>[ \t]*Parent story:[ \t]*(\S+)(?:[ \t]+@[ \t]*rev[ \t]*(\d+))?[ \t\r]*$", re.M
 )
 
 # Child id '<parent-id>.<repo-id>', a later child for the same repo

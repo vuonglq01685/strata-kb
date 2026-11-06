@@ -73,18 +73,20 @@ def _mission_next(root: Path, tree: Path, run) -> dict:
 
 def _ba_tasks(data: dict) -> Iterator[Task]:
     stories = data["stories"]
+    rows = (*stories, *data.get("unparented", ()))
+    # An unwritten child is for the BA to write (phase 3 adds auto drafting).
+    unwritten_children = {s["us_id"] for s in rows if s.get("parent")}
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
-    for s in stories:
+    for s in rows:
         if s["status"] == "draft" and not s.get("is_parent"):
             yield Task("ba-ticket-author", f"--amend {s['us_id']}")
-    if data["next"]:
+    if data["next"] and data["next"] not in unwritten_children:
         yield Task("ba-ticket-author", data["next"])
     # past a skipped `next`, the later stories still to draft
-    # loose parents' children sit under `unparented`
-    for s in (*stories, *data.get("unparented", ())):
-        if s["status"] == "to-draft":
+    for s in stories:
+        if s["status"] == "to-draft" and s["us_id"] not in unwritten_children:
             yield Task("ba-ticket-author", s["us_id"])
 
 

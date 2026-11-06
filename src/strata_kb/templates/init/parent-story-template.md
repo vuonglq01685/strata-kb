@@ -17,7 +17,7 @@ Child: the child ticket id. Repo: its target repo id.
 AC: the AC ids the child owns, e.g. `AC1, AC2`. An AC that replaces one in a
 finished child is written `AC7 (replaces AC2)`; the old AC may stay there.
 Blocked by: child ids from this table, comma-separated, or `-`. No cycles.
-Own fix: what the repo's own team fixes or adds, or `-`.
+Own fix: `-` on a parent story (only a parent bug uses it).
 Why: why this slice belongs to this repo. -->
 | Child | Repo | AC | Blocked by | Own fix | Why |
 |---|---|---|---|---|---|

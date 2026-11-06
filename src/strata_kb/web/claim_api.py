@@ -174,14 +174,18 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         try:
             _, ticket = ticketfetch.split_ref(ref)
             repo, doc, l3 = ticketfetch.find(hub, ref)
-            # no git read here: a transient git error must not reject a take
-            section = ticketfetch.read_section(l3, doc, ticket)
         except ticketfetch.TicketNotOnHub as exc:
             return _error(404, "unknown_ticket", str(exc))
         except ticketfetch.TicketFetchError as exc:
             # find() raises one type for several holders and for a bad id
             kind = "ambiguous" if "several repos" in str(exc) else "bad_request"
             return _error(400, kind, str(exc))
+        try:
+            # no git read here: a transient git error must not reject a take
+            section = ticketfetch.read_section(l3, doc, ticket)
+        except ticketfetch.TicketFetchError as exc:
+            # unreadable or missing mid auto-pull: the runner retries
+            return _error(503, "hub_busy", str(exc))
         if planparents.is_parent(planstatus._restore("", section)):
             return _error(
                 400,

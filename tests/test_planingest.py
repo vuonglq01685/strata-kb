@@ -759,3 +759,73 @@ def test_ticket_stem_equal_to_mission_stem_is_an_error(tmp_path: Path, block: st
     assert str(exc.value) == (
         f"duplicate id {MISSION_ID}: missions/{MISSION_ID}.md, tickets/{MISSION_ID}.md"
     )
+
+
+# --- final review fixes ---
+
+
+def test_parent_only_ac_move_fails_closed_and_leaves_doc_untouched(
+    tmp_path: Path, block: str
+):
+    write_repo(tmp_path, *family(block))
+    run_plan(tmp_path)
+    doc_dir = tmp_path / ".kb" / "demo-plan"
+    before = tree(doc_dir)
+    moved = parent_story(
+        split=(
+            f"| {API} | demo | AC1, AC2, AC3 | - | - | data |\n"
+            f"| {WEB} | web | AC4 | - | - | ui |\n"
+        )
+    )
+    (tmp_path / "tickets" / f"{US1}.md").write_text(moved, encoding="utf-8")
+    with pytest.raises(planingest.PlanIngestError, match="AC ids"):
+        run_plan(tmp_path)
+    assert tree(doc_dir) == before
+
+
+def test_kb_ticket_lint_on_parent_reports_the_moved_ac(
+    tmp_path: Path, block: str, fed_hub: Path
+):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    missions, tickets = family(block)
+    tickets[f"{US1}.md"] = parent_story(
+        split=(
+            f"| {API} | demo | AC1, AC2, AC3 | - | - | data |\n"
+            f"| {WEB} | web | AC4 | - | - | ui |\n"
+        )
+    )
+    write_repo(tmp_path, missions, tickets)
+    result = CliRunner().invoke(
+        app,
+        [
+            "ticket",
+            "lint",
+            str(tmp_path / "tickets" / f"{US1}.md"),
+            "--hub",
+            str(fed_hub),
+        ],
+    )
+    assert result.exit_code != 0 and "AC ids" in result.output
+
+
+BLOCKED_BY_Q = {
+    "## Open questions": f"- [ ] Q1 — Which layer? — owner: Bob — blocks: {US1}"
+}
+
+
+def test_mission_blocked_parent_publishes_and_children_stay_off(
+    tmp_path: Path, block: str
+):
+    _, tickets = family(block)
+    missions = {
+        f"{MISSION_ID}.md": mission_text(block, overrides=BLOCKED_BY_Q),
+    }
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    assert US1 in report.published
+    assert API not in report.published and WEB not in report.published
+    assert len(report.skipped) == 2
+    assert all("Q1 open" in reason for _, reason in report.skipped)
