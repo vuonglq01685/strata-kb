@@ -670,6 +670,7 @@ _BA_SPEC_8_PATHS = (
     ".cursor/commands/ba-bug-report.md",
     "docs/tickets/TEMPLATE.md",
     "docs/tickets/BUG-TEMPLATE.md",
+    "docs/tickets/PARENT-TEMPLATE.md",
     "tickets/.gitkeep",
     ".github/workflows/kb-ticket-lint.yml",
     "QUICKSTART-BA.md",
@@ -868,6 +869,7 @@ def test_hub_child_unchanged_by_phase4(tmp_path: Path):
         assert not (repo / ".cursor" / "commands" / "ba-ticket-author.md").exists()
         assert not (repo / "docs" / "tickets" / "TEMPLATE.md").exists()
         assert not (repo / "docs" / "tickets" / "BUG-TEMPLATE.md").exists()
+        assert not (repo / "docs" / "tickets" / "PARENT-TEMPLATE.md").exists()
         assert not (repo / ".claude" / "skills" / "ba-bug-report").exists()
         assert not (repo / ".claude" / "skills" / "dev-fix-bug").exists()
         assert not (repo / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
@@ -1307,6 +1309,14 @@ _GIT_DIFF_BLOCK = (
 )
 
 
+_GIT_TOUCHED_BLOCK = (
+    "git -c core.quotePath=false diff -z --name-only --diff-filter=ACMRD \\\n"
+    '  "origin/${BASE_REF}..." \\\n'
+    "  -- 'tickets/*.md' 'tickets/**/*.md' \\\n"
+    '  > "$RUNNER_TEMP/touched.nul"\n'
+)
+
+
 def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) -> str:
     assert _GIT_DIFF_BLOCK in run_script, (
         "the workflow's git-diff block text changed — update _GIT_DIFF_BLOCK "
@@ -1314,7 +1324,11 @@ def _replace_git_diff_with_synthetic_paths(run_script: str, paths: list[str]) ->
     )
     printf_args = " ".join(f"'{p}'" for p in paths)
     replacement = f"printf '%s\\0' {printf_args} > \"$RUNNER_TEMP/changed.nul\"\n"
-    return run_script.replace(_GIT_DIFF_BLOCK, replacement)
+    assert _GIT_TOUCHED_BLOCK in run_script
+    no_touched = run_script.replace(
+        _GIT_TOUCHED_BLOCK, ': > "$RUNNER_TEMP/touched.nul"\n'
+    )
+    return no_touched.replace(_GIT_DIFF_BLOCK, replacement)
 
 
 _KB_STUB_BODY = (
@@ -1483,6 +1497,58 @@ def test_ci_gate_dispatch_loop_actually_dispatches(tmp_path):
     assert "::error file=tickets/T-new.md::stub configured to fail" in result.stderr
     summary = (tmp_path / "step-summary.md").read_text(encoding="utf-8")
     assert "| `tickets/T-new.md` | FAIL | 1 | 0 |" in summary
+
+
+def test_ticket_lint_workflow_lints_parents_of_deleted_children(tmp_path):
+    script = _extract_lint_dispatch_script(tmp_path)
+    assert "--diff-filter=ACMRD" in script  # folders touched, deletions included
+    assert "--diff-filter=ACMR \\" in script  # the per-file loop is unchanged
+    assert "> Kind: parent story" in script
+
+
+@_needs_bash
+def test_ci_gate_lints_parent_when_only_its_child_is_deleted(tmp_path):
+    script_path = tmp_path / "lint-step.sh"
+    script_path.write_text(_extract_lint_dispatch_script(tmp_path), encoding="utf-8")
+    repo = tmp_path / "repo-parent"
+    (repo / "tickets" / "f").mkdir(parents=True)
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@t.example")
+    _git(repo, "config", "user.name", "t")
+    parent = repo / "tickets" / "f" / "US-12.md"
+    parent.write_text("# P\n> Kind: parent story\n\n## Split\n", encoding="utf-8")
+    (repo / "tickets" / "f" / "US-12.web.md").write_text("# C\n", encoding="utf-8")
+    (repo / "tickets" / "f" / "US-13.md").write_text(
+        "# O\n\n## Split\n", encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "rm", "-q", "tickets/f/US-12.web.md")
+    _git(repo, "commit", "-q", "-m", "pr: delete the child")
+
+    bindir = tmp_path / "bin"
+    write_cli_stub(bindir, "kb", _KB_STUB_BODY)
+    _write_python_shim(bindir)
+    log_path = tmp_path / "kb.log"
+    result = subprocess.run(
+        ["bash", "-e", str(script_path)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "BASE_REF": "main",
+            "STRATA_KB_HUB": "https://example.invalid/hub",
+            "KB_STUB_LOG": str(log_path),
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    linted = [line.split("\t")[2] for line in log_path.read_text().splitlines()]
+    assert linted == ["tickets/f/US-12.md"]  # the parent only: not the child, not US-13
 
 
 @_needs_bash

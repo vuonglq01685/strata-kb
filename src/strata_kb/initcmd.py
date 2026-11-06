@@ -147,6 +147,7 @@ BA_TEMPLATES: dict[str, str] = {
     ".cursor/commands/sa-ticket-ground.md": "cursor-sa-ticket-ground.md",
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
     "docs/tickets/BUG-TEMPLATE.md": "bug-template.md",
+    "docs/tickets/PARENT-TEMPLATE.md": "parent-story-template.md",
     "docs/missions/TEMPLATE.md": "mission-template.md",
     "docs/ac-quality.md": "ac-quality.md",
     "docs/review-rubric.md": "review-rubric.md",

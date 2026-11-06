@@ -229,7 +229,7 @@ khi dòng tiêu đề và một grounding có tiền tố nêu hai repo khác nh
 repo thì mọi ticket đi vào repo đó và không cần gì thêm. Có từ hai dev repo trở lên, ticket
 không có đích bị chặn với lý do `no target repo`, còn đích không phải dev repo trên hub bị
 chặn với `target <x> is not a dev repo on the hub`. Công việc trải trên hai repo là hai
-ticket. Dòng `- Blocked by:` của ticket ngoài mission chỉ chặn theo các id đã publish trong
+ticket, hoặc một parent story tách thành các child (3.10). Dòng `- Blocked by:` của ticket ngoài mission chỉ chặn theo các id đã publish trong
 cùng plan BA; mã tracker hay văn xuôi không bao giờ chặn.
 
 ## 3.3 SA bám nguồn cho nửa kỹ thuật
@@ -458,6 +458,64 @@ thứ đã mới):
 
 Chỉ các section mà file **trích dẫn** mới được so sánh, và không phải dòng nào cũng cần
 amend: nếu yêu cầu vẫn đúng, hãy amend với pin mới và nói rõ điều đó trong dòng change log.
+
+## 3.10 Story trải trên nhiều repo
+
+Một story cần việc ở nhiều dev repo là một **parent story** được tách thành một **child
+ticket** cho mỗi repo. Parent là story nghiệp vụ; mỗi child là một ticket bình thường, được
+xây trong đúng một repo. Chỉ viết parent sau khi hub chạy 1.36 (xem Nâng cấp trong Hướng dẫn
+Hub, 3.8): hub cũ không biết định dạng này.
+
+**Parent.** `kb init` ghi mẫu vào `docs/tickets/PARENT-TEMPLATE.md`. File là
+`tickets/<folder>/<US-id>.md` với `> Kind: parent story` và `> Revision: <N>` trong khối
+tiêu đề, rồi `## User Story`, `## Split` và `## Change log` (cùng sáu cột như của ticket).
+Parent không có `## Acceptance Criteria` và không có `## Definition of Ready`: mỗi AC nằm
+trong đúng một child.
+
+```markdown
+# Pay by card US-12
+> Kind: parent story
+> Revision: 1
+
+## Split
+| Child | Repo | AC | Blocked by | Own fix | Why |
+|---|---|---|---|---|---|
+| US-12.payments-api | payments-api | AC1, AC2 | - | - | charges the card |
+| US-12.web-app | web-app | AC3, AC4 | US-12.payments-api | - | the checkout form |
+```
+
+**Các child.** Id của child là `<parent-id>.<repo-id>` (`US-12.payments-api`,
+`US-12.web-app`); child sau cho cùng một repo là `<parent-id>.<repo-id>.2`, rồi `.3`. Id repo
+có dấu chấm không thể là đích của split. Child lặp lại `## User Story` của parent từng chữ
+một và mang hai dòng tiêu đề: `> Parent story: US-12 @ rev 1` và
+`> Target repo: payments-api`. Child của parent thuộc một mission không có dòng
+`> Parent mission:`; nó kế thừa từ parent. Một AC thay thế AC trong child đã xong được ghi là
+`AC7 (replaces AC2)` trong split. `Blocked by` trong split nêu id child của cùng bảng;
+`- Blocked by:` của chính child chỉ tính các id đúng như vậy.
+
+**Sửa parent.** Tăng `> Revision:` và thêm một dòng `## Change log` (chỉ các trigger hiện có)
+nêu các child bị ảnh hưởng, trong cùng một lần sửa. Child vẫn ghi `@ rev <cũ>` và được nêu
+trong một dòng sau đó bị hạ cấp và rời khỏi hub cho đến khi bạn amend.
+
+**Lint kiểm tra gì.** `kb ticket lint` trên parent kiểm tra split (cột, mỗi AC có đúng một
+chủ, id `Blocked by` có trong split, không có vòng) và revision. Trên child, nó kiểm tra
+tiêu đề so với parent trong cùng thư mục. Với `--hub`, một id đã được repo BA khác publish,
+hoặc parent đã xong trong `-svc` của một dev repo, là lỗi; id ticket trùng ở bất kỳ đâu dưới
+`tickets/` cũng vậy (kể cả id ticket trùng id mission). Cổng CI còn lint từng parent trong
+mọi thư mục mà PR chạm tới, nên xóa một child làm parent thất bại. `kb ticket lint` từ chối
+`> Kind: parent bug` (chưa hỗ trợ).
+
+**Publish thất bại là không publish gì.** `kb plan-ingest` và `kb publish` publish parent mà
+không cần DoR. Khi bất kỳ parent nào không qua lint, không có gì được publish và hub giữ kế
+hoạch tốt gần nhất. Chạy `kb ticket lint` trên parent và sửa lỗi đầu tiên.
+
+**Trạng thái.** Hub hiển thị parent là `in progress`, `blocked` hoặc `done`, kèm `k/N done`
+(cộng các blocker còn mở của mission). Trang của nó liệt kê các child cùng repo và trạng
+thái, và liên kết từng child đã viết; trang của child liên kết tới parent và các child anh
+em. Child chờ các id `Blocked by` trong split; child chưa viết hiển thị `not ready` (hoặc
+`blocked` khi mission chặn nó). **Runner không bao giờ nhận parent**, và claim trên parent
+trả 400 (`parent_story`): runner của Dev làm các child. Auto runner của BA soạn các child còn
+thiếu.
 
 ---
 

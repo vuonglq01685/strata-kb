@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_partials/status.html" import claim_badge as claim_badge_tag %}
+{% from "_partials/status.html" import claim_badge as claim_badge_tag, plan_status %}
 {% block head_scripts %}{% if mermaid %}<script src="/ui/static/mermaid.min.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
 {% block main %}
 <div class="reader">
@@ -32,6 +32,21 @@
     <p class="meta-line">{{ last_closed_line }} · {{ last_closed.closed_at }}</p>
     {% endif %}
   </div>
+  {% if family %}
+  <div class="panel">
+    <div class="panel-head"><h2>{{ 'Children' if family[0].kind == 'Child' else 'Parent story and siblings' }}</h2>
+      {% if family_note %}<span class="note">{{ family_note }}</span>{% endif %}</div>
+    {% for m in family %}
+    <div class="queue-row">
+      {% if m.href %}<a class="cite" href="{{ m.href }}">{{ m.id }}</a>{% else %}<span class="cite">{{ m.id }}</span>{% endif %}
+      <span class="file">{{ m.kind }}</span>
+      {% if m.repo %}<span class="note">{{ m.repo }}</span>{% endif %}
+      {{ plan_status(m.status) }}
+      <span class="note">{{ m.reasons | join('; ') }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   <article class="reader-body md-body">{{ content_html | safe }}</article>
 </div>
 {% endblock %}
