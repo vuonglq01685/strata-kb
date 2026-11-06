@@ -825,6 +825,15 @@ def lint(
             text, path, missions_dir, ticket_id=ticket_id, load_mission=load_mission
         )
         issues += pm_issues
+        repos = ticket.grounded_repos(text)
+        if ticket.ticket_kind(text) is None and len(repos) >= 2:
+            issues.append(
+                Issue(
+                    "warning",
+                    f"grounding touches several repos ({', '.join(repos)}) — "
+                    "split it into a parent story (BA Guide 3.10) or keep one ticket",
+                )
+            )
     notes += pm_notes
 
     return LintReport(issues=issues, notes=notes)

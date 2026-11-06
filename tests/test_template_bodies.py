@@ -856,6 +856,8 @@ _BA_GATES = {
         "Every AC is Given/When/Then",  # the BA-only DoR box
         "Ask the BA for the trigger",  # amend trigger
         "never commits or pushes",  # runner-driven PR
+        'Step 1b: "The BA accepts, edits or rejects"',  # split decision
+        "Child mode: Intake from the parent",  # child ticket
     ],
     "bodies/ba-mission-plan.md": [
         "never auto-pick",
@@ -1936,3 +1938,192 @@ def test_handover_auto_question_uses_the_question_format(name):
     n = _normal(t)
     assert "one decision per question" in n
     assert "a place a reader can open" in n
+
+
+_SA_SCOPE = [
+    "bodies/sa-ticket-ground.md",
+    "claude-skill-sa-ticket-ground.md",
+    "cursor-sa-ticket-ground.md",
+]
+_BA_SPLIT = ["bodies/ba-ticket-author.md", "claude-skill-ba-ticket-author.md"]
+
+
+def _off_path(name: str) -> str:
+    text = read_template(name) if not name.startswith("bodies/") else _raw(name)
+    return _normal(text.split(AUTO_HEADING)[0])
+
+
+@pytest.mark.parametrize("name", _SA_SCOPE)
+def test_sa_scope_mode_returns_the_repo_scope_block(name):
+    t = _off_path(name)
+    for needle in [
+        '## Scope mode — `--scope "<need>"`',
+        "| Repo | Evidence | What the need touches |",
+        "Repos: <n>",
+        'kinds=["dev"]',
+        "no file is written",
+        "Repos: 0",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _SA_SCOPE)
+def test_sa_mission_multi_repo_qualifies_service_ids(name):
+    t = _off_path(name)
+    for needle in [
+        "<repo-id>:svc.<name>",
+        "comma-separated",
+        "in its own repo's document",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_ticket_author_scope_by_repo_step(name):
+    t = _off_path(name)
+    for needle in [
+        "1b. **Scope by repo**",
+        '/sa-ticket-ground --scope "<need>"',
+        "split proposal",
+        "each child gets ≥ 2 ACs",
+        "**Split decision:**",
+        "grounding touches several repos",
+        "> Parent story: <parent-id> @ rev <N>",
+        "> Target repo: <repo-id>",
+        "PARENT-TEMPLATE.md",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_ticket_author_child_mode_fills_the_planned_row(name):
+    t = _off_path(name)
+    for needle in [
+        "## Child mode",
+        "<parent-id>.<repo-id>[.<n>]",
+        "next free",
+        "replacing `-`",
+        "No parent revision bump",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_ticket_author_auto_mode_has_split_and_child_gates(name):
+    gates = _gates(name)
+    for key in ["Step 1b", "Child mode"]:
+        (g,) = [g for g in gates if key in g.split(" → ")[0]]
+        assert " → " in g
+    t = _normal(_auto_section(name))
+    for needle in [
+        "accepted by: agent, reviewer agreed",
+        "auto/<parent-id>",
+        "auto/<child-id>",
+        "every split child reads `ready` or `done`",
+        "never `ready`",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_split_story_note_rejoins_the_normal_steps(name):
+    t = _off_path(name)
+    for needle in [
+        "only decides and records the split",
+        "**Split story**",
+        "never on a child",
+        "Step 3: ground the whole need once",
+        "Step 5: pin per child",
+        "The parent is linted last",
+        "at most 10 ACs per child",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_child_mode_states_headers_file_and_skips_step_2(name):
+    t = _off_path(name)
+    for needle in [
+        "> Parent story: <parent-id> @ rev <the parent's current `> Revision:`>",
+        "> Target repo: <repo-id>",
+        "tickets/<parent's folder>/<child-id>.md",
+        "Step 2 is skipped",
+        "no `> Parent mission:` goes on the child",
+    ]:
+        assert needle in t, needle
+    auto = _normal(_auto_section(name))
+    assert "replaces the Intake gate's `tickets/<mission-id>/<us-id>.md` rule" in auto
+    assert "A non-parent story is finished only when" in auto
+
+
+def test_sa_opening_routes_scope_before_the_workflow():
+    t = _off_path("bodies/sa-ticket-ground.md")
+    assert "takes a need text, not a file" in t
+    assert "no Workflow step runs" in t
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/ba-mission-plan.md", "claude-command-ba-mission-plan.md"]
+)
+def test_mission_plan_repos_per_story_step(name):
+    t = _off_path(name)
+    for needle in [
+        "5c. **Repos per story**",
+        "AC cell `-`",
+        "> Parent mission: <M-id> @ rev <N>",
+        "**Split decision:**",
+        "No child files are written",
+        "<repo-id>:svc.<name>",
+    ]:
+        assert needle in t, needle
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/ba-mission-plan.md", "claude-command-ba-mission-plan.md"]
+)
+def test_mission_plan_5c_parent_file_rules(name):
+    t = _off_path(name)
+    for needle in [
+        "except the parent file step 5c writes",
+        "As a <role>, I want <capability>, so that <value>.",
+        "word for word",
+        "`PARENT-TEMPLATE.md`",
+        "`## Split`",
+        "never re-split or overwritten",
+        "Amend mode runs step 5c",
+        "only the 5c parents exist yet",
+        "`ticket_id` = the parent id and the mission draft's text as `mission_markdown`",
+        "`kb ticket lint <file>` only after the mission file is saved at step 9",
+        "the revision step 6 will set",
+    ]:
+        assert needle in t, needle
+    auto = _normal(_auto_section(name))
+    assert "Step 5c (Repos per story) never runs in auto mode" in auto
+    assert not any(g.startswith("**Step 5c") for g in _gates(name))
+
+
+def test_no_template_names_the_nonexistent_check_mission_flag():
+    for kind_name in [
+        "bodies/ba-mission-plan.md",
+        "bodies/sa-ticket-ground.md",
+        "claude-command-ba-mission-plan.md",
+    ]:
+        text = (
+            _raw(kind_name)
+            if kind_name.startswith("bodies/")
+            else read_template(kind_name)
+        )
+        assert "check --mission" not in text, kind_name
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_ticket_author_names_the_lint_arguments_and_child_intake(name):
+    t = _off_path(name)
+    for needle in [
+        "`ticket_id` = the child id",
+        "`parent_markdown` = the parent's text",
+        "`ticket_id` = the parent id",
+        "`children_markdown`",
+        "is drafted in Child mode",
+    ]:
+        assert needle in t, needle

@@ -1,6 +1,6 @@
 ---
 description: Draft a Dev-ready ticket (story, ACs, use cases, Mermaid diagrams) grounded in the KB with pinned citations, via the ba-ticket-author skill
-argument-hint: "[business need | --amend <ticket>]"
+argument-hint: "[business need | --amend <ticket> | <parent-id>.<repo-id>]"
 ---
 
 Invoke the `ba-ticket-author` skill with the Skill tool and follow its

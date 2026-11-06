@@ -71,10 +71,13 @@ def build(fed_hub: Path, tmp_path: Path):
         done: dict[str, tuple[str, ...]] | None = None,
         mission: str | None = None,
         unticked: tuple[str, ...] = (),
+        unwritten: tuple[str, ...] = (),
         **kw,
     ) -> HubHandle:
         block = context_block(fed_hub)
         missions, tickets = family(block, **kw)
+        for name in unwritten:  # planned child: a split row, no file
+            del tickets[f"{name}.md"]
         if mission:
             missions = {f"{MISSION_ID}.md": mission}
         if kw.get("split") == BLOCKED_SPLIT:  # the child names its blocker too
@@ -267,3 +270,15 @@ def test_unwritten_child_of_an_open_question_is_blocked(fed_hub):
     )
     _, api, _ = _family(fed_hub, **{"## Open questions": question})
     assert api.status == "blocked" and "Q1" in api.reasons[0]
+
+
+def test_planned_child_reads_to_draft(build):
+    split = (
+        f"| {API} | demo | AC1, AC2 | - | - | data |\n"
+        f"| {WEB} | web | - | - | - | ui |\n"
+    )
+    hub = build(split=split, unwritten=(WEB,))
+    rows = _rows(hub)
+    assert rows[WEB].status == "to-draft"
+    assert rows[WEB].reasons == ("child not written yet",)
+    assert (rows[US1].status, rows[US1].reasons) == ("in progress", ("0/2 done",))

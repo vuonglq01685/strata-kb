@@ -253,6 +253,17 @@ def grounded_code_entry(text: str) -> tuple[str | None, str] | None:
     return None
 
 
+def grounded_repos(text: str) -> list[str]:
+    """Distinct repo ids, in order, of the `-code` entries on the first
+    parseable `Grounded on:` line of the visible text."""
+    for line in mdmask._visible_text(text).splitlines():
+        entries = grounded_entries(line)
+        if entries:
+            repos = (e[0] for e in entries if e[1].endswith("-code") and e[0])
+            return list(dict.fromkeys(repos))
+    return []
+
+
 def target_repo(
     text: str, holders: Callable[[str], list[str]] | None = None
 ) -> str | None:

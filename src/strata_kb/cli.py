@@ -3668,7 +3668,7 @@ def ticket_check(
         handle, _ = hub_handle()
         if handle is None:
             return None
-        ids = ticketstale.cited_ids(text)
+        ids = ticketstale.cited_ids(text, repo)
         return ticketstale.drift_refs(handle, repo, doc, rev, ids) if ids else []
 
     def load_at(

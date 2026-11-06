@@ -35,6 +35,12 @@ class SplitRow:
     blocked_by: tuple[str, ...]
     own_fix: str
     why: str
+    ac_cell: str = ""  # the raw AC cell, to tell `-` (planned) from unparsable
+
+
+def is_planned(row: SplitRow) -> bool:
+    """A child planned at mission time: AC cell `-`, its file not written yet."""
+    return row.acs == () and row.ac_cell.strip().lower() in _NO_VALUE
 
 
 def _split_rows(text: str) -> list[list[str]]:
@@ -71,6 +77,7 @@ def parse_split(text: str) -> list[SplitRow]:
                 else tuple(t for t in _TOKEN_SPLIT_RE.split(blocked) if t),
                 own_fix,
                 why,
+                ac,
             )
         )
     return out
@@ -118,6 +125,18 @@ def _check_shape(text: str) -> list[Issue]:
         ]
     else:
         issues += planrev.check_revision(text)
+    log = lintcore.section_body(text, "## Change log") or ""
+    if not any(
+        ln.startswith("**Split decision:**")
+        for ln in lintcore.visible_body(log).splitlines()
+    ):
+        issues.append(
+            Issue(
+                "warning",
+                "no '**Split decision:**' line under '## Change log' — "
+                "record who accepted the split",
+            )
+        )
     return issues
 
 
@@ -241,7 +260,7 @@ def lint_parent(
     issues += [
         _err(f"split child '{r.child}' has no ticket file")
         for r in rows
-        if children.get(r.child) is None
+        if children.get(r.child) is None and not is_planned(r)
     ]
     issues += _check_acs_unique(rows) + _check_blocked_by(rows)
     issues += _check_written_children(rows, children, parent_text, parent_id)

@@ -521,17 +521,56 @@ def picker_dev_tasks(stories, unparented, repo):
     return _dev_tasks(stories, unparented, repo)
 
 
-def test_ba_does_not_draft_unwritten_children():
+def test_unwritten_child_yields_ba_ticket_author_child():
     from strata_kb.autorun.picker import _ba_tasks
 
     data = {
-        "stories": [_row("P1", "in progress", is_parent=True)]
-        + [_row("P1.web", "to-draft", parent="P1")],
-        "unparented": [
-            _row("P2", "in progress", is_parent=True),
-            _row("P2.api", "to-draft", parent="P2"),
+        "stories": [
+            _row("M-x-US1", "in progress", is_parent=True),
+            _row("M-x-US1.web", "to-draft", parent="M-x-US1"),
         ],
-        "next": "P1.web",
+        "unparented": [],
+        "next": "M-x-US1.web",
+    }
+    assert next(_ba_tasks(data)) == Task("ba-ticket-author", "M-x-US1.web")
+
+
+def test_unparented_parent_child_yields_too():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [],
+        "unparented": [
+            _row("US-12", "in progress", is_parent=True),
+            _row("US-12.web", "to-draft", parent="US-12"),
+        ],
+        "next": None,
+    }
+    assert list(_ba_tasks(data)) == [Task("ba-ticket-author", "US-12.web")]
+
+
+def test_blocked_parent_child_waits_for_mission_amend():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [
+            _row("P1", "blocked", ["0/2 done", "D1 OPEN x"], is_parent=True),
+            _row("P1.web", "blocked", ["D1 OPEN x"], parent="P1"),
+            _row("P1.api", "to-draft", parent="P1"),
+        ],
+        "unparented": [],
+        "next": None,
+    }
+    assert next(_ba_tasks(data)) == Task("ba-mission-plan", "--amend M-x")
+
+
+def test_parent_row_is_never_yielded():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [_row("P1", "to-draft", is_parent=True)],
+        "unparented": [_row("P2", "draft", is_parent=True)],
+        "next": None,
     }
     assert list(_ba_tasks(data)) == []
 

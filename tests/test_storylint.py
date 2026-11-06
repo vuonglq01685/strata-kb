@@ -299,3 +299,69 @@ def test_parent_lint_skips_a_demoted_child():
 )
 def test_parent_story_pin_accepts_spacing_and_crlf(line: str):
     assert ticket.parent_story_pin(f"# T\n{line}\n\n## X\n") == ("P-1", 3)
+
+
+def warnings(report) -> list[str]:
+    return [i.message for i in report.issues if i.level == "warning"]
+
+
+def planned_rows(web_ac: str = "-") -> str:
+    return (
+        f"| {API} | api | AC1, AC2 | - | - | data |\n"
+        f"| {WEB} | web | {web_ac} | - | - | ui |\n"
+    )
+
+
+def test_planned_unwritten_child_lints():
+    r = storylint.lint_parent(
+        parent(planned_rows()), {API: kids()[API], WEB: None}, parent_id=PID
+    )
+    assert not errors(r), errors(r)
+    assert [
+        storylint.is_planned(x) for x in storylint.parse_split(parent(planned_rows()))
+    ] == [False, True]
+
+
+def test_deleted_child_with_acs_still_errors():
+    r = storylint.lint_parent(
+        parent(planned_rows("AC3, AC4")), {API: kids()[API], WEB: None}, parent_id=PID
+    )
+    assert f"split child '{WEB}' has no ticket file" in errors(r)
+
+
+def test_written_child_on_planned_row_errors():
+    r = storylint.lint_parent(parent(planned_rows()), kids(), parent_id=PID)
+    assert errors(r)  # existing AC-mismatch rule: file owns AC3, AC4, row says "-"
+
+
+def test_filled_planned_row_reuses_sibling_ac_errors():
+    r = storylint.lint_parent(
+        parent(planned_rows("AC2, AC3")), {API: kids()[API], WEB: None}, parent_id=PID
+    )
+    assert "AC2 is in more than one split child" in errors(r)
+
+
+def test_missing_split_decision_is_a_warning():
+    r = storylint.lint_parent(parent(), kids(), parent_id=PID)
+    assert warnings(r) == [
+        "no '**Split decision:**' line under '## Change log' — record who accepted the split"
+    ]
+
+
+def test_split_decision_line_silences_the_warning():
+    line = f"\n**Split decision:** 2026-11-06 — 2 children: {API}, {WEB} — evidence: x — accepted by: BA\n"
+    r = storylint.lint_parent(parent(extra=line), kids(), parent_id=PID)
+    assert warnings(r) == []
+
+
+def test_shipped_parent_template_warns_until_a_split_decision_is_written():
+    from strata_kb.initcmd import read_template
+
+    text = read_template("parent-story-template.md").replace(
+        "<parent-id>.<repo-id>", API
+    )
+    r = storylint.lint_parent(text, {API: kids()[API]}, parent_id=PID)
+    assert (
+        "no '**Split decision:**' line under '## Change log' — record who accepted the split"
+        in warnings(r)
+    )

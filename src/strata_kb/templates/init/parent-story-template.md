@@ -14,7 +14,9 @@ As a <role>, I want <capability>, so that <value>.
 ## Split
 <!-- One row per child ticket, columns exactly as below.
 Child: the child ticket id. Repo: its target repo id.
-AC: the AC ids the child owns, e.g. `AC1, AC2`. An AC that replaces one in a
+AC: the AC ids the child owns, e.g. `AC1, AC2`; `-` while the child is
+planned and not written yet (a mission-time split); the child's author fills
+it. An AC that replaces one in a
 finished child is written `AC7 (replaces AC2)`; the old AC may stay there.
 Blocked by: child ids from this table, comma-separated, or `-`. No cycles.
 Own fix: `-` on a parent story (only a parent bug uses it).
@@ -27,7 +29,9 @@ Why: why this slice belongs to this repo. -->
 <!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
 the title in the same edit. Trigger is one or more of kb-context,
 architecture, scope, delivery, question (comma-separated). Affected is the
-child ids, or `-`. -->
+child ids, or `-`.
+Below the table, once the BA accepts the split, add one line (not a table row):
+**Split decision:** <date> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name | agent, reviewer agreed> -->
 | Rev | Date | Trigger | What changed | Affected | Review |
 |---|---|---|---|---|---|
 |   |   |   |   |   |   |
