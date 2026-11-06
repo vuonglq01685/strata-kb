@@ -732,3 +732,30 @@ def test_repo_without_parents_publishes_identically(tmp_path: Path, block: str):
 
 def tree_without(path: Path, skip: str) -> dict[str, bytes]:
     return {k: v for k, v in tree(path).items() if k != skip}
+
+
+def test_mission_children_inherit_parent_demotion(tmp_path: Path, block: str):
+    mission = mission_text(block, extra={"## Change log": CHANGE_LOG}).replace(
+        "> Revision: 1", "> Revision: 2", 1
+    )
+    _, tickets = family(block)
+    write_repo(tmp_path, {f"{MISSION_ID}.md": mission}, tickets)
+    report = run_plan(tmp_path)
+    assert US1 in report.published and API not in report.published
+    assert {r for _, r in report.skipped} == {
+        f"parent story {US1}: parent mission rev 2 affects this story"
+    }
+    assert len(report.skipped) == 2
+
+
+def test_ticket_stem_equal_to_mission_stem_is_an_error(tmp_path: Path, block: str):
+    write_repo(
+        tmp_path,
+        {f"{MISSION_ID}.md": mission_text(block)},
+        {f"{MISSION_ID}.md": ticket_text(block, parent=None)},
+    )
+    with pytest.raises(planingest.PlanIngestError) as exc:
+        run_plan(tmp_path)
+    assert str(exc.value) == (
+        f"duplicate id {MISSION_ID}: missions/{MISSION_ID}.md, tickets/{MISSION_ID}.md"
+    )

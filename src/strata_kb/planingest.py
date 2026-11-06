@@ -319,10 +319,10 @@ def _select(
                 f"{_rel(ticket_files[path.stem], root)}, {_rel(path, root)}"
             )
         if path.stem in mission_texts:
-            report.skipped.append(
-                (_rel(path, root), f"duplicate id {path.stem}; kept the first")
+            raise PlanIngestError(
+                f"duplicate id {path.stem}: "
+                f"{_rel(missions_dir / f'{path.stem}.md', root)}, {_rel(path, root)}"
             )
-            continue
         ticket_files[path.stem] = path
         ticket_texts[path.stem] = _read(path)
     parent_texts = {
@@ -374,8 +374,20 @@ def _select(
                 load_ticket=ticket_texts.get,
             )
         )
+        parent_id = (ticket.parent_story_pin(text) or ("",))[0]
+        inherited = (
+            f"parent story {parent_id}: {demoted[parent_id]}"
+            if parent_id in demoted
+            else None
+        )
+        # The demoted parent itself stays published (it is never a task) so
+        # the story stays visible; only its children are held back.
         reason = (
-            reason or _fence_reason(text) or _dor_reason(text) or demoted.get(us_id)
+            reason
+            or _fence_reason(text)
+            or _dor_reason(text)
+            or demoted.get(us_id)
+            or inherited
         )
         if reason:
             report.skipped.append((file, reason))
