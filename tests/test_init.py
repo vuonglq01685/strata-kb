@@ -1519,7 +1519,7 @@ def test_ci_gate_lints_parent_when_only_its_child_is_deleted(tmp_path):
     parent.write_text("# P\n> Kind: Parent Story # x\n\n## Split\n", encoding="utf-8")
     (repo / "tickets" / "f" / "US-12.web.md").write_text("# C\n", encoding="utf-8")
     (repo / "tickets" / "f" / "US-13.md").write_text(
-        "# O\n\n## Split\n", encoding="utf-8"
+        "# O\n<!--\n> Kind: parent story\n-->\n\n## Split\n", encoding="utf-8"
     )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "base")

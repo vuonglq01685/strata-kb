@@ -515,7 +515,7 @@ table; a child's own `- Blocked by:` counts only as those exact ids.
 triggers only) naming the affected children in the same edit. A child that still says
 `@ rev <old>` and is named in a later row is demoted and leaves the hub until you amend it.
 A child also leaves the hub when its parent's mission amends the parent, until you amend
-the child.
+the parent.
 
 **What lint checks.** `kb ticket lint` on a parent checks the split (columns, every AC owned
 once, `Blocked by` ids exist in the split, no cycle) and the revision. On a child it checks

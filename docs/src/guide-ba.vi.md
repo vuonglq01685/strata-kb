@@ -516,7 +516,7 @@ một và mang hai dòng tiêu đề: `> Parent story: US-12 @ rev 1` và
 **Sửa parent.** Tăng `> Revision:` và thêm một dòng `## Change log` (chỉ các trigger hiện có)
 nêu các child bị ảnh hưởng, trong cùng một lần sửa. Child vẫn ghi `@ rev <cũ>` và được nêu
 trong một dòng sau đó bị hạ cấp và rời khỏi hub cho đến khi bạn amend.
-Child cũng rời khỏi hub khi mission của parent amend parent, cho đến khi bạn amend child.
+Child cũng rời khỏi hub khi mission của parent amend parent, cho đến khi bạn amend parent.
 
 **Lint kiểm tra gì.** `kb ticket lint` trên parent kiểm tra split (cột, mỗi AC có đúng một
 chủ, id `Blocked by` có trong split, không có vòng) và revision. Trên child, nó kiểm tra
