@@ -532,16 +532,16 @@ When any parent fails lint, nothing is published and the hub keeps its last good
 **Status.** The hub shows the parent as `in progress`, `blocked` or `done`, with `k/N done`
 (plus its mission's open blockers). Its page lists the children with repo and status and
 links each written one; a child's page links its parent and its siblings. A child waits on
-its split `Blocked by` ids; a child not written yet reads `not ready` (or `blocked` when the
+its split `Blocked by` ids; a child not written yet reads `to-draft` (or `blocked` when the
 mission gates it). **Runners never take a parent**, and a claim on one answers 400
 (`parent_story`): Dev runners work the children. A child not written yet is listed as to-draft on the hub; `/ba-ticket-author <parent-id>.<repo-id>` drafts it.
 
 **How the split is proposed.** You do not decide the split alone. In `/ba-ticket-author`,
 step 1b "Scope by repo" reads which repos the need touches (`sa-ticket-ground --scope "<need>"`)
 and proposes one story or a parent with one child per repo, with the AC of each. Accept it
-and the skill writes the parent and the children. Reject it and the need stays one ticket;
-the skill writes `**Split decision:** <why>` under the parent's `## Change log` (a parent
-without that line gets a lint warning). To draft one child later, run
+and the skill writes the parent and the children, and records who accepted under the
+parent's `## Change log` as `**Split decision:** <why>`. Reject it and the need stays one
+ticket (no parent is written). To draft one child later, run
 `/ba-ticket-author <parent-id>.<repo-id>`: it reads the parent and writes only that child,
 without asking the split again.
 
@@ -552,10 +552,12 @@ drafts them one by one. When you write a child, fill its AC into its split row. 
 mode `/ba-mission-plan` never splits: the split happens when the ticket is drafted, in
 step 1b, and an agent plus a fresh-context reviewer take the accept-or-reject decision.
 
-Two lint warnings help here. A single ticket grounded on two or more repos warns
-`grounding touches several repos (<a>, <b>) — split it into a parent story (BA Guide 3.10)
-or keep one ticket`. A mission whose `## Services & order` names several repos is checked
-against each repo's `-code` document: write the ids as `<repo>:svc.<name>`.
+Two lint warnings help here. `kb ticket lint` warns on a parent without a
+`**Split decision:**` line under its `## Change log`. It also warns on a single ticket
+grounded on two or more repos: `grounding touches several repos (<a>, <b>) — split it into a
+parent story (BA Guide 3.10) or keep one ticket`. A mission whose `## Services & order`
+names several repos is checked against each repo's `-code` document: write the ids as
+`<repo>:svc.<name>`.
 
 ---
 
