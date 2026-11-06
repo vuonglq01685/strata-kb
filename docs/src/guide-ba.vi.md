@@ -477,12 +477,32 @@ trong đúng một child.
 > Kind: parent story
 > Revision: 1
 
+## User Story
+As a shopper, I want to pay by card, so that I can finish my order.
+
 ## Split
 | Child | Repo | AC | Blocked by | Own fix | Why |
 |---|---|---|---|---|---|
 | US-12.payments-api | payments-api | AC1, AC2 | - | - | charges the card |
 | US-12.web-app | web-app | AC3, AC4 | US-12.payments-api | - | the checkout form |
+
+## Change log
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+|   |   |   |   |   |   |
 ```
+
+Khối tiêu đề của child `tickets/<folder>/US-12.web-app.md`:
+
+```markdown
+# Pay by card, checkout form US-12.web-app
+> Revision: 1
+> Parent story: US-12 @ rev 1
+> Target repo: web-app
+```
+
+Phần còn lại của child là một ticket bình thường (AC, DoR và grounding riêng);
+`docs/tickets/PARENT-TEMPLATE.md` có parent đầy đủ.
 
 **Các child.** Id của child là `<parent-id>.<repo-id>` (`US-12.payments-api`,
 `US-12.web-app`); child sau cho cùng một repo là `<parent-id>.<repo-id>.2`, rồi `.3`. Id repo
@@ -496,12 +516,13 @@ một và mang hai dòng tiêu đề: `> Parent story: US-12 @ rev 1` và
 **Sửa parent.** Tăng `> Revision:` và thêm một dòng `## Change log` (chỉ các trigger hiện có)
 nêu các child bị ảnh hưởng, trong cùng một lần sửa. Child vẫn ghi `@ rev <cũ>` và được nêu
 trong một dòng sau đó bị hạ cấp và rời khỏi hub cho đến khi bạn amend.
+Child cũng rời khỏi hub khi mission của parent amend parent, cho đến khi bạn amend child.
 
 **Lint kiểm tra gì.** `kb ticket lint` trên parent kiểm tra split (cột, mỗi AC có đúng một
 chủ, id `Blocked by` có trong split, không có vòng) và revision. Trên child, nó kiểm tra
-tiêu đề so với parent trong cùng thư mục. Với `--hub`, một id đã được repo BA khác publish,
-hoặc parent đã xong trong `-svc` của một dev repo, là lỗi; id ticket trùng ở bất kỳ đâu dưới
-`tickets/` cũng vậy (kể cả id ticket trùng id mission). Cổng CI còn lint từng parent trong
+tiêu đề so với parent trong cùng thư mục. Id ticket trùng ở bất kỳ đâu dưới
+`tickets/`, hoặc id ticket trùng id mission, là lỗi. Với `--hub`, một id đã được repo BA khác
+publish, hoặc parent đã xong trong `-svc` của một dev repo, cũng là lỗi. Cổng CI còn lint từng parent trong
 mọi thư mục mà PR chạm tới, nên xóa một child làm parent thất bại. `kb ticket lint` từ chối
 `> Kind: parent bug` (chưa hỗ trợ).
 

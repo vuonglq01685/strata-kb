@@ -475,12 +475,32 @@ AC lives in exactly one child.
 > Kind: parent story
 > Revision: 1
 
+## User Story
+As a shopper, I want to pay by card, so that I can finish my order.
+
 ## Split
 | Child | Repo | AC | Blocked by | Own fix | Why |
 |---|---|---|---|---|---|
 | US-12.payments-api | payments-api | AC1, AC2 | - | - | charges the card |
 | US-12.web-app | web-app | AC3, AC4 | US-12.payments-api | - | the checkout form |
+
+## Change log
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+|   |   |   |   |   |   |
 ```
+
+The header block of the child `tickets/<folder>/US-12.web-app.md`:
+
+```markdown
+# Pay by card, checkout form US-12.web-app
+> Revision: 1
+> Parent story: US-12 @ rev 1
+> Target repo: web-app
+```
+
+The rest of a child is an ordinary ticket (its own AC, DoR and grounding);
+`docs/tickets/PARENT-TEMPLATE.md` has the parent in full.
 
 **The children.** A child id is `<parent-id>.<repo-id>` (`US-12.payments-api`,
 `US-12.web-app`); a later child for the same repo is `<parent-id>.<repo-id>.2`, then `.3`.
@@ -494,13 +514,15 @@ table; a child's own `- Blocked by:` counts only as those exact ids.
 **Changing a parent.** Raise `> Revision:` and append a `## Change log` row (existing
 triggers only) naming the affected children in the same edit. A child that still says
 `@ rev <old>` and is named in a later row is demoted and leaves the hub until you amend it.
+A child also leaves the hub when its parent's mission amends the parent, until you amend
+the child.
 
 **What lint checks.** `kb ticket lint` on a parent checks the split (columns, every AC owned
 once, `Blocked by` ids exist in the split, no cycle) and the revision. On a child it checks
-the header against the parent in the same folder. With `--hub`, an id already published by
-another BA repo, or a parent already done in a dev repo's `-svc`, is an error; so is a
-duplicate ticket id anywhere under `tickets/` (also a ticket id equal to a mission id). The
-CI gate also lints each parent in any folder a PR touched, so deleting a child fails the
+the header against the parent in the same folder. A duplicate ticket id anywhere under
+`tickets/`, or a ticket id equal to a mission id, is an error. With `--hub`, an id already
+published by another BA repo, or a parent already done in a dev repo's `-svc`, is also an
+error. The CI gate also lints each parent in any folder a PR touched, so deleting a child fails the
 parent. `kb ticket lint` rejects `> Kind: parent bug` (not supported yet).
 
 **Publish fails closed.** `kb plan-ingest` and `kb publish` publish a parent without a DoR.

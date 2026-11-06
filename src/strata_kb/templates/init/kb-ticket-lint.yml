@@ -103,7 +103,7 @@ jobs:
           # A child that changed, or was deleted, can break its parent story's
           # split. Deleted files are not linted themselves (ACMR above), so a
           # second diff that includes them (ACMRD) finds every folder the PR
-          # touched; each `> Kind: parent story` file in those folders joins
+          # touched; each parent story/bug file in those folders joins
           # the list unless the first pass already has it.
           git -c core.quotePath=false diff -z --name-only --diff-filter=ACMRD \
             "origin/${BASE_REF}..." \
@@ -112,7 +112,8 @@ jobs:
           while IFS= read -r -d '' t; do
             for p in "${t%/*}"/*.md; do
               [ -f "$p" ] || continue
-              sed '/^## /q' "$p" | grep -q '^> Kind: parent story[[:space:]]*$' || continue
+              # the code's own rule (case, blanks, '# comment', comments, fences)
+              python -c 'import sys; from strata_kb import ticket; k = ticket.ticket_kind(open(sys.argv[1], encoding="utf-8").read()); sys.exit(not (k or "").startswith("parent"))' "$p" || continue
               grep -qzxF -- "$p" "$RUNNER_TEMP/changed.nul" ||
                 printf '%s\0' "$p" >> "$RUNNER_TEMP/changed.nul"
             done

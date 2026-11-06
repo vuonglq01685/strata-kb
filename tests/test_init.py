@@ -1503,7 +1503,7 @@ def test_ticket_lint_workflow_lints_parents_of_deleted_children(tmp_path):
     script = _extract_lint_dispatch_script(tmp_path)
     assert "--diff-filter=ACMRD" in script  # folders touched, deletions included
     assert "--diff-filter=ACMR \\" in script  # the per-file loop is unchanged
-    assert "> Kind: parent story" in script
+    assert "ticket.ticket_kind" in script  # the code's own detection rule
 
 
 @_needs_bash
@@ -1516,7 +1516,7 @@ def test_ci_gate_lints_parent_when_only_its_child_is_deleted(tmp_path):
     _git(repo, "config", "user.email", "t@t.example")
     _git(repo, "config", "user.name", "t")
     parent = repo / "tickets" / "f" / "US-12.md"
-    parent.write_text("# P\n> Kind: parent story\n\n## Split\n", encoding="utf-8")
+    parent.write_text("# P\n> Kind: Parent Story # x\n\n## Split\n", encoding="utf-8")
     (repo / "tickets" / "f" / "US-12.web.md").write_text("# C\n", encoding="utf-8")
     (repo / "tickets" / "f" / "US-13.md").write_text(
         "# O\n\n## Split\n", encoding="utf-8"
