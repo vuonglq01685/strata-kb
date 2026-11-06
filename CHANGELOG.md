@@ -3,19 +3,6 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.36.0 — 2026-11-06
-
-A story can span dev repos: one parent story splits into one child ticket per repo. Phase 2 of cross-repo stories.
-
-- **Parent stories.** `tickets/<folder>/<US-id>.md` with `> Kind: parent story`, `> Revision:`, `## User Story`, `## Split` (`Child | Repo | AC | Blocked by | Own fix | Why`) and `## Change log`; no AC and no DoR. Children are `<parent>.<repo>` (later `.2`) with `> Parent story: <id> @ rev N` and `> Target repo: <repo>`. `kb init --kind ba` writes `docs/tickets/PARENT-TEMPLATE.md`.
-- **Lint.** `kb ticket lint` checks a parent (split, AC uniqueness, `Blocked by`, no cycle, revision) and a child against its parent, and every written child against its split row (a parent-only edit that moves an AC fails); `kb_ticket_check` takes `parent_markdown` so a child's `[NEW: D<n>]` reads its parent's mission; `kb_ticket_lint` takes `parent_markdown`, `children_markdown` and `repo_id`. With `--hub`, an id published by another BA repo or a parent already done in a dev repo's `-svc` is an error. A duplicate ticket id under `tickets/` (or one equal to a mission id) is an error. `> Kind: parent bug` is rejected.
-- **Publish fails closed.** `kb plan-ingest` and `kb publish` publish a parent without a DoR; if any parent fails lint nothing is published and the hub keeps its last good plan. A child demoted by a later change-log row of its parent, or by an amendment of the parent from its mission, leaves the hub until the parent is amended. A parent whose mission still has an open D-row or question is published (`kb ticket lint` warns); its children stay off the hub until the mission closes it. A take that cannot read the ticket section answers 503 `hub_busy`.
-- **Status.** A parent row is `in progress`, `blocked` or `done` with `k/N done`; children wait on the split's `Blocked by`; unwritten children read `to-draft`. Runners and claims never take a parent (`parent_story`, 400); unwritten children are listed as to-draft on the hub and the BA writes them (auto drafting of children arrives with phase 3).
-- **Hub UI.** A parent's ticket page lists its children with repo and status and links the written ones; a child's page links its parent and siblings.
-- **CI.** The `kb-ticket-lint` workflow also lints every parent story in a folder where a ticket was added, changed or deleted, so deleting a child fails its parent. Run `kb init` to get it.
-- **Guides.** The BA guide (en, vi) has "Stories across repos" (3.10); the Hub guide has the 1.36 upgrade note.
-- **Upgrade.** Upgrade the hub first, then every Dev runner, then the BA repos (run `kb init`). Write parent stories only after the hub is on 1.36. Repos with no parent stories behave as before.
-
 ## 1.35.0 — 2026-11-05
 
 The hub routes each ticket to the dev repo it is built in, and a Dev runner picks only its own tickets. Phase 1 of cross-repo stories: one ticket is still one repo.
@@ -28,6 +15,17 @@ The hub routes each ticket to the dev repo it is built in, and a Dev runner pick
 - **Skills and branch lookups.** `ba-bug-report` asks the BA for the target repo and writes `> Target repo:` (with one dev repo on the hub the line may be left out). `sa-ticket-ground` always writes `<repo-id>:<repo-id>-code` as the first `Grounded on:` entry. `dev-implement-ticket` and `dev-fix-bug` look for a ticket's branch by its exact names, and the BA skills list only `auto/<id>` and `auto/<id>-r<N>`, so `US-1` no longer matches the branches of `US-10`. Run `kb init` to get them.
 - **Guides.** The BA and Dev guides (en, vi) explain the target line, one ticket per target repo, routing by repo and the upgrade order.
 - **Upgrade.** Upgrade the hub first, then every Dev runner (a runner refuses an older hub). Then upgrade the BA repos and run `kb init` everywhere. With one dev repo on the hub nothing else changes; with two or more, give each ticket a target. Add `> Target repo:` or qualified grounding to open tickets before registering a second dev repo: from then on untargeted tickets are blocked.
+
+A story can span dev repos: one parent story splits into one child ticket per repo. Phase 2 of cross-repo stories.
+
+- **Parent stories.** `tickets/<folder>/<US-id>.md` with `> Kind: parent story`, `> Revision:`, `## User Story`, `## Split` (`Child | Repo | AC | Blocked by | Own fix | Why`) and `## Change log`; no AC and no DoR. Children are `<parent>.<repo>` (later `.2`) with `> Parent story: <id> @ rev N` and `> Target repo: <repo>`. `kb init --kind ba` writes `docs/tickets/PARENT-TEMPLATE.md`.
+- **Lint.** `kb ticket lint` checks a parent (split, AC uniqueness, `Blocked by`, no cycle, revision) and a child against its parent, and every written child against its split row (a parent-only edit that moves an AC fails); `kb_ticket_check` takes `parent_markdown` so a child's `[NEW: D<n>]` reads its parent's mission; `kb_ticket_lint` takes `parent_markdown`, `children_markdown` and `repo_id`. With `--hub`, an id published by another BA repo or a parent already done in a dev repo's `-svc` is an error. A duplicate ticket id under `tickets/` (or one equal to a mission id) is an error. `> Kind: parent bug` is rejected.
+- **Publish fails closed.** `kb plan-ingest` and `kb publish` publish a parent without a DoR; if any parent fails lint nothing is published and the hub keeps its last good plan. A child demoted by a later change-log row of its parent, or by an amendment of the parent from its mission, leaves the hub until the parent is amended. A parent whose mission still has an open D-row or question is published (`kb ticket lint` warns); its children stay off the hub until the mission closes it. A take that cannot read the ticket section answers 503 `hub_busy`.
+- **Status.** A parent row is `in progress`, `blocked` or `done` with `k/N done`; children wait on the split's `Blocked by`; unwritten children read `to-draft`. Runners and claims never take a parent (`parent_story`, 400); unwritten children are listed as to-draft on the hub and the BA writes them (auto drafting of children arrives with phase 3).
+- **Hub UI.** A parent's ticket page lists its children with repo and status and links the written ones; a child's page links its parent and siblings.
+- **CI.** The `kb-ticket-lint` workflow also lints every parent story in a folder where a ticket was added, changed or deleted, so deleting a child fails its parent. Run `kb init` to get it.
+- **Guides.** The BA guide (en, vi) has "Stories across repos" (3.10); the Hub guide has the parent-story upgrade note.
+- **Upgrade.** Upgrade the hub first, then every Dev runner, then the BA repos (run `kb init`). Write parent stories only after the hub runs this release. Repos with no parent stories behave as before.
 
 ## 1.34.5 — 2026-11-05
 

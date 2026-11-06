@@ -463,8 +463,8 @@ amend: nếu yêu cầu vẫn đúng, hãy amend với pin mới và nói rõ đ
 
 Một story cần việc ở nhiều dev repo là một **parent story** được tách thành một **child
 ticket** cho mỗi repo. Parent là story nghiệp vụ; mỗi child là một ticket bình thường, được
-xây trong đúng một repo. Chỉ viết parent sau khi hub chạy 1.36 (xem Nâng cấp trong Hướng dẫn
-Hub, 3.8): hub cũ không biết định dạng này.
+xây trong đúng một repo. Chỉ viết parent sau khi hub được nâng lên bản có parent story (xem Nâng cấp trong
+Hướng dẫn Hub, 3.8): hub cũ không biết định dạng này.
 
 **Parent.** `kb init` ghi mẫu vào `docs/tickets/PARENT-TEMPLATE.md`. File là
 `tickets/<folder>/<US-id>.md` với `> Kind: parent story` và `> Revision: <N>` trong khối

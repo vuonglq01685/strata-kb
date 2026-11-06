@@ -437,9 +437,9 @@ Commit what `kb init` changed. Then tell the owners of every child, BA and Dev r
 Add `> Target repo:` or qualified grounding to open tickets before registering a second dev
 repo: from then on untargeted tickets are blocked.
 
-**1.36: parent stories.** Upgrade the hub to 1.36 first, then the runners. Tell BA owners to
-write parent stories (BA Guide, 3.10) only after that: a hub older than 1.36 does not know
-`> Kind: parent story`. The hub's ticket pages show a parent with its children, and a
+**Parent stories.** Upgrade the hub to the release with parent stories first, then the
+runners. Tell BA owners to write parent stories (BA Guide, 3.10) only after that: an older
+hub does not know `> Kind: parent story`. The hub's ticket pages show a parent with its children, and a
 child with its parent and siblings.
 
 ---

@@ -461,8 +461,8 @@ the requirement still holds, amend with the new pin and say so in the change-log
 
 A story that needs work in several dev repos is one **parent story** split into one **child
 ticket** per repo. The parent is the business story; each child is an ordinary ticket built
-in exactly one repo. Write parents only after the hub runs 1.36 (see Upgrade in the Hub
-Guide, 3.8): an older hub does not know the format.
+in exactly one repo. Write parents only after the hub is upgraded to the release with parent stories (see Upgrade
+in the Hub Guide, 3.8): an older hub does not know the format.
 
 **The parent.** `kb init` writes the shape to `docs/tickets/PARENT-TEMPLATE.md`. The file is
 `tickets/<folder>/<US-id>.md` with `> Kind: parent story` and `> Revision: <N>` in the
