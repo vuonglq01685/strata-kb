@@ -516,3 +516,38 @@ def test_ticket_fetch_malformed_config_does_not_block_fetch(
     assert result.exit_code == 0, result.output
     assert result.exception is None
     assert (Path("docs") / "impl" / us1 / "ticket.md").is_file()
+
+
+def test_duplicate_stem_is_error(fed_hub, tmp_path):
+    block = _golden_block(fed_hub)
+    one = tmp_path / "tickets" / "M-x" / "TAL-1.md"
+    two = tmp_path / "tickets" / "TAL-1.md"
+    for p in (one, two):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_build_ticket(block), encoding="utf-8")
+
+    result = runner.invoke(app, ["ticket", "lint", str(one), "--hub", str(fed_hub)])
+
+    assert result.exit_code == 1
+    assert f"duplicate ticket id TAL-1: {one}, {two}" in result.output
+
+
+def test_lint_child_reads_its_parent_from_the_folder(fed_hub, tmp_path):
+    from tests.test_ticketlint_family import API, PID, WEB, family
+
+    texts = family(_golden_block(fed_hub))
+    folder = tmp_path / "tickets"
+    folder.mkdir()
+    for tid, text in texts.items():
+        (folder / f"{tid}.md").write_text(text, encoding="utf-8")
+
+    for tid in (PID, API, WEB):
+        result = runner.invoke(
+            app, ["ticket", "lint", str(folder / f"{tid}.md"), "--hub", str(fed_hub)]
+        )
+        assert result.exit_code == 0, result.output
+    (folder / f"{PID}.md").unlink()
+    result = runner.invoke(
+        app, ["ticket", "lint", str(folder / f"{API}.md"), "--hub", str(fed_hub)]
+    )
+    assert result.exit_code == 1 and "not found" in result.output

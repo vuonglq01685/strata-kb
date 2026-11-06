@@ -17,11 +17,13 @@ from typing import TYPE_CHECKING
 from strata_kb import (
     acquality,
     buglint,
+    familylint,
     lintcore,
     mission,
     missionlint,
     missionnext,
     planrev,
+    storylint,
     ticket,
 )
 from strata_kb.doctor import Issue
@@ -481,6 +483,7 @@ def check_parent_mission(
     *,
     ticket_id: str | None = None,
     load_mission: Callable[[str], str | None] | None = None,
+    parent: tuple[str, str] | None = None,
 ) -> tuple[list[Issue], list[str]]:
     """Check 10. Only fires when the OPTIONAL '> Parent mission:' line is
     present — pre-existing tickets carry no such line and are unaffected.
@@ -493,10 +496,19 @@ def check_parent_mission(
     Without repo paths (MCP), `ticket_id` + `load_mission` stand in for the
     file name and the missions/ directory: the loader returns the mission's
     text (passed by the client, or from the hub's plan) or None.
+
+    `parent=(id, text)`: `text` is a child that inherits its mission from
+    that parent story. The back-link is read from the parent and the backlog
+    is checked for the parent id; the child's Blocked by may name its split
+    siblings.
     """
-    m = ticket.PARENT_MISSION_RE.search(text)
+    mission_src, siblings = text, frozenset[str]()
+    if parent is not None:
+        ticket_id, mission_src = parent
+        siblings = frozenset(r.child for r in storylint.parse_split(parent[1]))
+    m = ticket.PARENT_MISSION_RE.search(mission_src)
     if m is None:
-        if ticket.PARENT_MISSION_LINE_RE.search(text) is not None:
+        if ticket.PARENT_MISSION_LINE_RE.search(mission_src) is not None:
             # The line is present but the value after the colon is blank
             # or whitespace-only — a BA started the back-link and never
             # filled it in. Without this check the line simply fails to
@@ -538,7 +550,7 @@ def check_parent_mission(
                 )
             ], []
         return _check_backlog_membership(
-            text, ticket_id, mission_id, loaded, f"hub:{mission_id}"
+            text, ticket_id, mission_id, loaded, f"hub:{mission_id}", siblings
         )
 
     mission_path = missions_dir / f"{mission_id}.md"
@@ -551,7 +563,7 @@ def check_parent_mission(
             )
         ], []
 
-    us_id = path.stem
+    us_id = ticket_id if parent is not None and ticket_id else path.stem
     try:
         mission_text = mission_path.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError) as exc:
@@ -570,7 +582,7 @@ def check_parent_mission(
             )
         ], []
     return _check_backlog_membership(
-        text, us_id, mission_id, mission_text, mission_path
+        text, us_id, mission_id, mission_text, mission_path, siblings
     )
 
 
@@ -580,6 +592,7 @@ def _check_backlog_membership(
     mission_id: str,
     mission_text: str,
     mission_path: Path | str,
+    siblings: frozenset[str] = frozenset(),
 ) -> tuple[list[Issue], list[str]]:
     backlog_issues, backlog_ids = missionlint.check_backlog(mission_text, mission_id)
     if us_id not in backlog_ids:
@@ -622,7 +635,7 @@ def _check_backlog_membership(
             )
             for reason in missionnext.story_blockers(mission_text, us_id)
         ),
-        *_check_blocked_by_declared(text, us_id, mission_id, mission_text),
+        *_check_blocked_by_declared(text, us_id, mission_id, mission_text, siblings),
     ], []
 
 
@@ -634,7 +647,11 @@ def _blocked_by_ids(text: str, mission_id: str) -> tuple[str, ...]:
 
 
 def _check_blocked_by_declared(
-    text: str, us_id: str, mission_id: str, mission_text: str
+    text: str,
+    us_id: str,
+    mission_id: str,
+    mission_text: str,
+    siblings: frozenset[str] = frozenset(),
 ) -> list[Issue]:
     """Every story the ticket's `Blocked by:` names must be in the mission's
     `Depends on` for it: the Dev auto runner reads only `Depends on`, so a
@@ -642,7 +659,9 @@ def _check_blocked_by_declared(
     _mid, stories, _decisions = missionnext.parse_mission(mission_text)
     declared = next((s.depends_on for s in stories if s.us_id == us_id), ())
     missing = [
-        d for d in _blocked_by_ids(text, mission_id) if d not in declared and d != us_id
+        d
+        for d in _blocked_by_ids(text, mission_id)
+        if d not in declared and d != us_id and d not in siblings
     ]
     if not missing:
         return []
@@ -684,6 +703,7 @@ def lint(
     fail_on_stale: bool = False,
     ticket_id: str | None = None,
     load_mission: Callable[[str], str | None] | None = None,
+    load_ticket: Callable[[str], str | None] | None = None,
 ) -> LintReport:
     # NFC-normalize once, at the one entry point every check reads from:
     # `acquality`'s bilingual regexes (GWT_RE, _WEASEL_RE, _PLACEHOLDER_RE,
@@ -692,6 +712,16 @@ def lint(
     # mark) would otherwise mismatch every one of them — see
     # `searchdb.tokenize`'s identical rationale and its test's NFD fixture.
     text = unicodedata.normalize("NFC", text)
+    if (ticket.ticket_kind(text) or "").startswith("parent"):
+        return familylint.lint_parent(
+            text,
+            path=path,
+            missions_dir=missions_dir,
+            ticket_id=ticket_id,
+            load_mission=load_mission,
+            load_ticket=load_ticket,
+            check_mission=check_parent_mission,
+        )
     kind = ticket.ticket_type(text)
     if kind in ("bug", "hotfix"):
         return buglint.lint(
@@ -752,10 +782,22 @@ def lint(
     issues += planrev.check_revision(text)
     issues += lintcore.check_review_record(text)
 
-    pm_issues, pm_notes = check_parent_mission(
-        text, path, missions_dir, ticket_id=ticket_id, load_mission=load_mission
-    )
-    issues += pm_issues
+    if ticket.parent_story_pin(text) is not None:
+        pm_issues, pm_notes = familylint.child_checks(
+            text,
+            path=path,
+            missions_dir=missions_dir,
+            ticket_id=ticket_id,
+            load_mission=load_mission,
+            load_ticket=load_ticket,
+            check_mission=check_parent_mission,
+        )
+        issues = familylint.dedupe(issues + pm_issues)
+    else:
+        pm_issues, pm_notes = check_parent_mission(
+            text, path, missions_dir, ticket_id=ticket_id, load_mission=load_mission
+        )
+        issues += pm_issues
     notes += pm_notes
 
     return LintReport(issues=issues, notes=notes)

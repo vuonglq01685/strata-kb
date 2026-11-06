@@ -954,3 +954,31 @@ async def test_kb_ticket_fetch_hub_unreachable_returns_guidance(tmp_path, monkey
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_ticket_fetch", {"ticket": "M-a-US1"})
         assert "hub unreachable" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_child_and_parent(fed_hub):
+    from tests.test_ticketlint_family import API, PID, family
+
+    texts = family(_golden_ticket_block(fed_hub))
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+
+        async def lint(**args):
+            return _text(await client.call_tool("kb_ticket_lint", args))
+
+        no_parent = await lint(ticket_markdown=texts[API], ticket_id=API)
+        child = await lint(
+            ticket_markdown=texts[API], ticket_id=API, parent_markdown=texts[PID]
+        )
+        no_kids = await lint(ticket_markdown=texts[PID], ticket_id=PID)
+        parent = await lint(
+            ticket_markdown=texts[PID],
+            ticket_id=PID,
+            children_markdown={k: v for k, v in texts.items() if k != PID},
+        )
+    assert "parent not given — pass parent_markdown" in no_parent
+    assert "not found" not in no_parent
+    assert "[error]" not in child
+    assert f"split child '{API}' has no ticket file" in no_kids
+    assert "[error]" not in parent

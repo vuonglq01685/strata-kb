@@ -3312,7 +3312,8 @@ def ticket_lint(
     ),
 ) -> None:
     """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
-    from strata_kb.ticketlint import lint
+    from strata_kb import config, familyhub
+    from strata_kb.familyhub import lint
 
     path: Path | None = None
     if source == "-":
@@ -3339,7 +3340,11 @@ def ticket_lint(
         path=path,
         missions_dir=resolved_missions,
         fail_on_stale=fail_on_stale,
+        load_ticket=familyhub.folder_loader(path) if path else None,
+        own_repo=config.effective_repo_id("", kb_dir),
     )
+    if path is not None and (dup := familyhub.duplicate_stem(path)) is not None:
+        report.issues.append(dup)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
