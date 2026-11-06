@@ -865,6 +865,7 @@ _BA_GATES = {
         "You never flip a status",  # D-row OPEN -> DECIDED
         "never tick an open-question checkbox",  # open question with blocks:
         "never commits or pushes",
+        'Step 5c: "present the split proposal" / accept',  # per-story split
     ],
     "bodies/ba-answer-questions.md": [
         "never answer a question yourself",
@@ -2060,3 +2061,19 @@ def test_sa_opening_routes_scope_before_the_workflow():
     t = _off_path("bodies/sa-ticket-ground.md")
     assert "takes a need text, not a file" in t
     assert "no Workflow step runs" in t
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/ba-mission-plan.md", "claude-command-ba-mission-plan.md"]
+)
+def test_mission_plan_repos_per_story_step(name):
+    t = _off_path(name)
+    for needle in [
+        "5c. **Repos per story**",
+        "AC cell `-`",
+        "> Parent mission: <M-id> @ rev <N>",
+        "**Split decision:**",
+        "No child files are written",
+        "<repo-id>:svc.<name>",
+    ]:
+        assert needle in t, needle

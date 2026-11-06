@@ -112,12 +112,32 @@ a denial to report. Stop only when the MCP tool fails too.
    the BA's call, in step 5b.
    `kb mission lint` already warns on an ownerless D-row — that warning
    is the BA's to close, never the SA's.
+   When the backlog's stories touch several repos, the SA lists each
+   repo's `<repo-id>:<repo-id>-code @ <revision>` on the one `Grounded on:`
+   line, comma-separated, and qualifies every `svc.*` as
+   `<repo-id>:svc.<name>`; `kb ticket check --mission` checks each id in
+   its own repo's document (sa-ticket-ground's `--mission` rule).
 5b. **Decide** — present the whole `## Technology decisions` table to
    the BA once. The BA flips to `DECIDED` the rows whose citation they
    confirm; a row with no citation keeps `OPEN` and a named owner. You
    never flip a status. A story whose blocking rows are all `DECIDED`
    and whose dependencies are done is what `kb mission next` reports as
    `ready` — the Definition of Ready's decided-rows item is this step.
+5c. **Repos per story** — after 5b, for each backlog story read the
+   repos `## Services & order` attributes to it; when the table does not
+   say, run `/sa-ticket-ground --scope "<story title and goal>"`. When a
+   story touches ≥ 2 repos, present the split proposal with the contents
+   of ba-ticket-author step 1b (child count; each child id
+   `<parent-id>.<repo-id>`, repo and ACs by subject; `Blocked by` order;
+   the evidence rows; ≥ 2 ACs per child). On accept, write the parent file
+   `tickets/<M-id>/<M-id>-US<n>.md` with the headers `> Kind: parent story`,
+   `> Revision: 1`, `> Parent mission: <M-id> @ rev <N>`; the story's
+   `## User Story`; one split row per child with the AC cell `-` (planned)
+   and `Blocked by` as proposed; and the `**Split decision:**` line
+   under `## Change log`. No child files are written:
+   `/ba-ticket-author <child-id>` drafts each child later, when the BA
+   picker yields it. The story's backlog row and `## Sequencing` row stay
+   unchanged and name the parent id.
 6. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those

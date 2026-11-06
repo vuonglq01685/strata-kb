@@ -125,12 +125,32 @@ a denial to report. Stop only when the MCP tool fails too.
    the BA's call, in step 5b.
    `kb mission lint` already warns on an ownerless D-row — that warning
    is the BA's to close, never the SA's.
+   When the backlog's stories touch several repos, the SA lists each
+   repo's `<repo-id>:<repo-id>-code @ <revision>` on the one `Grounded on:`
+   line, comma-separated, and qualifies every `svc.*` as
+   `<repo-id>:svc.<name>`; `kb ticket check --mission` checks each id in
+   its own repo's document (sa-ticket-ground's `--mission` rule).
 5b. **Decide** — present the whole `## Technology decisions` table to
    the BA once. The BA flips to `DECIDED` the rows whose citation they
    confirm; a row with no citation keeps `OPEN` and a named owner. You
    never flip a status. A story whose blocking rows are all `DECIDED`
    and whose dependencies are done is what `kb mission next` reports as
    `ready` — the Definition of Ready's decided-rows item is this step.
+5c. **Repos per story** — after 5b, for each backlog story read the
+   repos `## Services & order` attributes to it; when the table does not
+   say, run `/sa-ticket-ground --scope "<story title and goal>"`. When a
+   story touches ≥ 2 repos, present the split proposal with the contents
+   of ba-ticket-author step 1b (child count; each child id
+   `<parent-id>.<repo-id>`, repo and ACs by subject; `Blocked by` order;
+   the evidence rows; ≥ 2 ACs per child). On accept, write the parent file
+   `tickets/<M-id>/<M-id>-US<n>.md` with the headers `> Kind: parent story`,
+   `> Revision: 1`, `> Parent mission: <M-id> @ rev <N>`; the story's
+   `## User Story`; one split row per child with the AC cell `-` (planned)
+   and `Blocked by` as proposed; and the `**Split decision:**` line
+   under `## Change log`. No child files are written:
+   `/ba-ticket-author <child-id>` drafts each child later, when the BA
+   picker yields it. The story's backlog row and `## Sequencing` row stay
+   unchanged and name the parent id.
 6. **Pin** — once the BA confirms which sections actually apply, call the
    MCP tool `kb_context_new` when available; otherwise fall back to
    `kb context new --refs "<refs>"` (CLI), passing exactly those
@@ -345,6 +365,7 @@ The runner starts this skill only as `/ba-mission-plan --amend <mission-id>`, fo
 - **Amend step 2, "Ask the BA for the trigger(s)"** → the trigger comes from the runner's task. Settling a blocker is trigger `scope`, with `Affected` listing the full ids of the stories it unblocks. When the settlement supersedes a `DECIDED` row, the trigger is `architecture`, as the change rules require. Add `kb-context` when the `kb_ticket_stale` findings call for it.
 - **Ground: "the BA MUST choose — never auto-pick"** (also the Hard rule "let the BA choose") → pick the best-matching refs yourself by the ref rule in ba-ticket-author's Auto mode, and write the choice and the reason in an Auto decision line.
 - **Step 5b, a `Technology decisions` row stays `OPEN` — "You never flip a status"** → decide the row, then flip it to `DECIDED`. Read the row, the architecture section it cites (`kb_get_section`) and the evidence `kb_search` finds (`kinds=["kb","dev"]`). List the options: those the row names, or those the architecture document allows. Drop an option that contradicts a DECIDED row of any mission under `missions/` (auth, session, rendering, caching and data access rows first). Pick the one the evidence supports best; when the evidence does not separate them, pick the smallest and most reversible. Give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the row, the options, the evidence, the DECIDED rows that name the same files or symbols, and your pick; it answers agree or object with a reason. On an objection, decide again once, then go with that decision. Write the decision into the row's Decision cell with its citation, set the status to `DECIDED`, keep the owner, and log the Auto decision line.
+- **Step 5c: "present the split proposal" / accept** → decide the split yourself for each story that touches ≥ 2 repos, then have a fresh-context reviewer check it, as in ba-ticket-author's Auto mode rule for Step 1b (agent decision, reviewer agree or object, one more decision on an objection). Write each parent file's `**Split decision:**` line with `accepted by: agent, reviewer agreed` (or `reviewer objected: <reason>; decided again`) and an `**Auto decision:**` line. The parent files go in the mission's PR.
 - **Open question with `blocks:` — "never tick an open-question checkbox"** → answer it and tick it. Answer from the mission, the KB and the decided rows, with the same fresh-context check as a D-row. Put the answer, its source and the reason in an Auto decision line and in the change-log row's `What changed` (`Q<n>: <answer>`), then tick the box. An open question without `blocks:` stays as written.
 - **Change rules: "the BA re-authors a flagged story with `/ba-ticket-author --amend`"** → do it in this run. After the mission lints, take each story in the new change-log row's `Affected` that already has a ticket file under `tickets/<mission-id>/` and is not `done`. Run ba-ticket-author's Amend mode on it under that skill's Auto mode (trigger from this row, `> Parent mission:` set to the new revision, lint, check and the AC review), but skip its Already-finished check, its branch rule and its result line, and do not amend the mission again: a D-row the ticket still needs stays `OPEN`, the ticket stays out of the PR and is named in an Auto decision line. Commit each ticket on this branch, so the mission and its tickets merge in one PR. A ticket whose amend cannot reach `DoR: PASS` stays out of the PR, untouched: name it in an Auto decision line, and the runner amends it later.
 - **The mission DoR box "Backlog reviewed with the team; no known missing slice" — "never — the BA's judgement"** stays unticked. The mission DoR does not gate publishing.
