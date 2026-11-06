@@ -2100,3 +2100,30 @@ def test_mission_plan_5c_parent_file_rules(name):
     auto = _normal(_auto_section(name))
     assert "Step 5c (Repos per story) never runs in auto mode" in auto
     assert not any(g.startswith("**Step 5c") for g in _gates(name))
+
+
+def test_no_template_names_the_nonexistent_check_mission_flag():
+    for kind_name in [
+        "bodies/ba-mission-plan.md",
+        "bodies/sa-ticket-ground.md",
+        "claude-command-ba-mission-plan.md",
+    ]:
+        text = (
+            _raw(kind_name)
+            if kind_name.startswith("bodies/")
+            else read_template(kind_name)
+        )
+        assert "check --mission" not in text, kind_name
+
+
+@pytest.mark.parametrize("name", _BA_SPLIT)
+def test_ticket_author_names_the_lint_arguments_and_child_intake(name):
+    t = _off_path(name)
+    for needle in [
+        "`ticket_id` = the child id",
+        "`parent_markdown` = the parent's text",
+        "`ticket_id` = the parent id",
+        "`children_markdown`",
+        "is drafted in Child mode",
+    ]:
+        assert needle in t, needle

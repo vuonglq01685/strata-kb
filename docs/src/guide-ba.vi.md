@@ -542,7 +542,8 @@ trả 400 (`parent_story`): runner của Dev làm các child. Child chưa viết
 `/ba-ticket-author`, bước 1b "Scope by repo" đọc xem nhu cầu chạm những repo nào
 (`sa-ticket-ground --scope "<need>"`) rồi đề xuất một story hoặc một parent với một child
 cho mỗi repo, kèm AC của từng child. Chấp nhận thì skill viết parent và các child, và ghi người chấp nhận dưới `## Change log`
-của parent bằng `**Split decision:** <lý do>`. Từ chối thì nhu cầu vẫn là một ticket (không
+của parent bằng
+`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <who>`. Từ chối thì nhu cầu vẫn là một ticket (không
 có parent nào được viết). Muốn soạn một child sau, chạy
 `/ba-ticket-author <parent-id>.<repo-id>`: skill đọc parent và chỉ viết child đó, không hỏi
 lại split.

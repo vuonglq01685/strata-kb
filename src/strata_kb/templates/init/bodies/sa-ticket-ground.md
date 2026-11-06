@@ -132,7 +132,7 @@ a denial to report. Stop only when the MCP tool fails too.
 
    Then fill the section field by field:
    - `Grounded on: <repo-id>:<repo-id>-code @ <revision>` — first line. The first entry is always this qualified `<repo-id>:<repo-id>-code` of the repo the ticket is built in: the hub routes the ticket to that repo when it has no `> Target repo:` header. A later entry may ground on another repo's document, but never first.
-     With `--mission`, when the mission's stories touch several repos, list each repo's `<repo-id>:<repo-id>-code @ <revision>` on this one line, comma-separated. Qualify every `svc.*` in the table as `<repo-id>:svc.<name>`. `kb ticket check --mission` checks each id in its own repo's document.
+     With `--mission`, when the mission's stories touch several repos, list each repo's `<repo-id>:<repo-id>-code @ <revision>` on this one line, comma-separated. Qualify every `svc.*` in the table as `<repo-id>:svc.<name>`. `kb ticket check <file> --heading "## Services & order"` (MCP: `kb_ticket_check` with `heading`) checks each id in its own repo's document.
    - `Service:` — `svc.<name>` ids as the document spells them (a name
      over 40 characters carries an opaque 6-hex-character suffix; copy
      it, never retype it). The record has no directory field — a

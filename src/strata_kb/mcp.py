@@ -422,7 +422,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 return ticketcheck.load_from_hub(hub.federation_dir, repo, doc)
 
             def load_drift(repo, doc, rev):
-                ids = ticketstale.cited_ids(ticket_markdown)
+                ids = ticketstale.cited_ids(ticket_markdown, repo)
                 return ticketstale.drift_refs(hub, repo, doc, rev, ids) if ids else []
 
             def load_decisions(mission_id):

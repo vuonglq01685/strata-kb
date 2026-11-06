@@ -486,3 +486,69 @@ def test_cited_ids_include_route_page_job_sym():
         "job.apps-api-m-073d57",
         "sym.apps-api",
     ]
+
+
+# --- multi-repo mission: each `<repo>:svc.*` id checks against its own repo ---
+
+
+def _publish_web(hub: Path, run_git, revision: str) -> None:
+    from strata_kb import models
+    from tests.conftest import make_fed_entry
+
+    entry = make_fed_entry(hub / "federation", "web", "web-code", sec_id="svc.webonly")
+    manifest = models.load_yaml_model(
+        entry / "web-code" / "_manifest.yaml", models.Manifest
+    )
+    manifest.revision = revision
+    models.save_yaml_model(entry / "web-code" / "_manifest.yaml", manifest)
+    run_git(hub, "add", "-A")
+    run_git(hub, "commit", "-m", "publish web")
+
+
+def _two_repo_mission(root: Path, rows: str) -> Path:
+    path = root / "missions" / "M-x.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# M\n\n## Services & order\n"
+        "- Grounded on: demo:demo-code @ aaaaaaa, web:web-code @ ccccccc\n\n"
+        f"| Order | Service | Depends on | Why |\n|---|---|---|---|\n{rows}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_multi_repo_mission_ids_check_against_their_own_repo(
+    tmp_path, fed_hub, run_git
+):
+    _publish(fed_hub, run_git, "aaaaaaa", svc_a="A1")
+    _publish_web(fed_hub, run_git, "ccccccc")
+    mission = _two_repo_mission(
+        tmp_path,
+        "| 1 | demo:svc.a | — | base |\n| 2 | web:svc.webonly | demo:svc.a | x |",
+    )
+    assert ticketstale.scan([mission], HubHandle(root=fed_hub)) == []
+
+
+def test_multi_repo_mission_missing_id_is_broken_against_its_own_repo(
+    tmp_path, fed_hub, run_git
+):
+    _publish(fed_hub, run_git, "aaaaaaa", svc_a="A1")
+    _publish_web(fed_hub, run_git, "ccccccc")
+    mission = _two_repo_mission(
+        tmp_path, "| 1 | demo:svc.a | — | base |\n| 2 | web:svc.gone | demo:svc.a | x |"
+    )
+    [f] = ticketstale.scan([mission], HubHandle(root=fed_hub))
+    assert [(r.citation, r.status) for r in f.refs] == [
+        ("web:web-code §svc.gone", "broken")
+    ]
+
+
+def test_cited_ids_for_a_repo_keeps_only_its_own():
+    text = (
+        "## Services & order\n- Grounded on: demo:demo-code @ aaaaaaa, "
+        "web:web-code @ ccccccc\n\n| O | S | D | W |\n|---|---|---|---|\n"
+        "| 1 | svc.a | — | b |\n| 2 | web:svc.w | demo:svc.a | x |\n"
+    )
+    assert ticketstale.cited_ids(text, "demo") == ["svc.a"]
+    assert ticketstale.cited_ids(text, "web") == ["svc.w"]
+    assert ticketstale.cited_ids(text) == ["svc.a", "svc.w"]

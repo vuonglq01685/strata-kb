@@ -29,9 +29,9 @@ Why: why this slice belongs to this repo. -->
 <!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
 the title in the same edit. Trigger is one or more of kb-context,
 architecture, scope, delivery, question (comma-separated). Affected is the
-child ids, or `-`. -->
+child ids, or `-`.
+Below the table, once the BA accepts the split, add one line (not a table row):
+**Split decision:** <date> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name | agent, reviewer agreed> -->
 | Rev | Date | Trigger | What changed | Affected | Review |
 |---|---|---|---|---|---|
 |   |   |   |   |   |   |
-
-**Split decision:** <date> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name | agent, reviewer agreed>

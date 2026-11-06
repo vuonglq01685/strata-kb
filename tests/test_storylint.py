@@ -352,3 +352,16 @@ def test_split_decision_line_silences_the_warning():
     line = f"\n**Split decision:** 2026-11-06 — 2 children: {API}, {WEB} — evidence: x — accepted by: BA\n"
     r = storylint.lint_parent(parent(extra=line), kids(), parent_id=PID)
     assert warnings(r) == []
+
+
+def test_shipped_parent_template_warns_until_a_split_decision_is_written():
+    from strata_kb.initcmd import read_template
+
+    text = read_template("parent-story-template.md").replace(
+        "<parent-id>.<repo-id>", API
+    )
+    r = storylint.lint_parent(text, {API: kids()[API]}, parent_id=PID)
+    assert (
+        "no '**Split decision:**' line under '## Change log' — record who accepted the split"
+        in warnings(r)
+    )

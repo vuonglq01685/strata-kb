@@ -540,7 +540,8 @@ mission gates it). **Runners never take a parent**, and a claim on one answers 4
 step 1b "Scope by repo" reads which repos the need touches (`sa-ticket-ground --scope "<need>"`)
 and proposes one story or a parent with one child per repo, with the AC of each. Accept it
 and the skill writes the parent and the children, and records who accepted under the
-parent's `## Change log` as `**Split decision:** <why>`. Reject it and the need stays one
+parent's `## Change log` as
+`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <who>`. Reject it and the need stays one
 ticket (no parent is written). To draft one child later, run
 `/ba-ticket-author <parent-id>.<repo-id>`: it reads the parent and writes only that child,
 without asking the split again.

@@ -24,6 +24,7 @@ from strata_kb.resolve import ResolvedRef, resolve_refs
 # `_parse_section` / `_id_lines` are private to ticketcheck: reusing them keeps
 # the id-reading rules in one place instead of copying the skip rules here.
 from strata_kb.ticketcheck import (
+    _QUALIFIED_RE,
     GUARDED_KINDS,
     HEADING,
     ID_TAIL,
@@ -128,29 +129,59 @@ def _grounded_code_entry(text: str) -> tuple[str | None, str, str] | None:
     return None
 
 
-def cited_ids(text: str) -> list[str]:
+def _cited_by_repo(text: str) -> dict[str | None, list[str]]:
+    """The ids `cited_ids` reads, bucketed by their `<repo>:` qualifier
+    (`None` for unqualified). A multi-repo mission qualifies `svc.*` ids; each
+    bucket belongs to that repo's `-code` document."""
+    mission_section = _parse_section(text, SERVICES_HEADING)
+    section = mission_section or _parse_section(text, HEADING)
+    out: dict[str | None, dict[str, None]] = {}
+    if section is None:
+        return {}
+    for _, line in _id_lines(section):
+        if NEW_RE.search(line):
+            continue
+        found = [
+            (q.start(), q.group("repo"), q.group("id"))
+            for q in _QUALIFIED_RE.finditer(line)
+        ]
+        rest = _QUALIFIED_RE.sub(lambda q: " " * len(q.group(0)), line)
+        found += [(m.start(), None, m.group(0)) for m in _ARCH_ID_RE.finditer(rest)]
+        for _, repo, raw in sorted(found, key=lambda f: f[0]):
+            sid = raw.rstrip(".")
+            if sid.startswith("db.") and sid.count(".") >= 2:
+                sid = sid.rsplit(".", 1)[0]
+            if mission_section is None or sid.startswith("svc."):
+                out.setdefault(repo, {})[sid] = None
+    return {repo: list(ids) for repo, ids in out.items()}
+
+
+def cited_ids(text: str, repo: str | None = None) -> list[str]:
     """Architecture section ids the file cites, in order, once each. A
     mission cites `svc.*` in `## Services & order`; a ticket cites every kind
     in `## Technical grounding`. Lines are read the way `kb ticket check`
     reads them (`_id_lines` skips `Files:` / `Grounded on:` and blanks
     healthcheck values); a `db.<table>.<column>` cites the `db.<table>`
     section. A line carrying `[NEW]` / `[NEW: …]` proposes the id, so it has
-    nothing to drift from."""
-    mission_section = _parse_section(text, SERVICES_HEADING)
-    section = mission_section or _parse_section(text, HEADING)
-    ids: dict[str, None] = {}
-    if section is None:
-        return []
-    for _, line in _id_lines(section):
-        if NEW_RE.search(line):
-            continue
-        for raw in _ARCH_ID_RE.findall(line):
-            sid = raw.rstrip(".")
-            if sid.startswith("db.") and sid.count(".") >= 2:
-                sid = sid.rsplit(".", 1)[0]
-            if mission_section is None or sid.startswith("svc."):
-                ids[sid] = None
-    return list(ids)
+    nothing to drift from. With `repo`, only that repo's ids: those qualified
+    `<repo>:`, plus unqualified ones when it is the first `-code` entry."""
+    buckets = _cited_by_repo(text)
+    if repo is None:
+        return list(dict.fromkeys(i for ids in buckets.values() for i in ids))
+    first = _code_entries_of(text)
+    own = buckets.get(repo, [])
+    if not first or first[0][0] == repo:
+        own = list(dict.fromkeys([*own, *buckets.get(None, [])]))
+    return own
+
+
+def _code_entries_of(text: str) -> list[tuple[str | None, str, str]]:
+    """The distinct `-code` entries of the first parseable `Grounded on:` line."""
+    for line in text.splitlines():
+        entries = grounded_entries(line)
+        if entries:
+            return list(dict.fromkeys(e for e in entries if e[1].endswith("-code")))
+    return []
 
 
 def _same_revision(pinned: str, published: str) -> bool:
@@ -245,12 +276,27 @@ def architecture_refs(path: Path, text: str, hub: HubHandle) -> list[StaleRef]:
     """Cited architecture sections that changed (`stale`) or vanished
     (`broken`) in the `-code` document since the revision the file is
     grounded on. Only cited sections are compared, so a dev merge touching
-    nothing the file used yields nothing. `path` is unused today; it keeps the
-    signature parallel to the other per-file checks."""
+    nothing the file used yields nothing. A mission grounded on several
+    `-code` documents checks each repo's `<repo>:svc.*` ids against its own.
+    `path` is unused today; it keeps the signature parallel to the other
+    per-file checks."""
     entry = _grounded_code_entry(text)
-    ids = cited_ids(text) if entry else []
-    if entry is None or not ids:
+    if entry is None:
         return []
+    entries = _code_entries_of(text)
+    if _parse_section(text, SERVICES_HEADING) is None or len(entries) < 2:
+        entries = [entry]
+    refs: list[StaleRef] = []
+    for e in entries:
+        ids = cited_ids(text, e[0]) if len(entries) > 1 else cited_ids(text)
+        if ids:
+            refs += _entry_refs(path, text, hub, e, ids)
+    return refs
+
+
+def _entry_refs(
+    path: Path, text: str, hub: HubHandle, entry: tuple[str | None, str, str], ids
+) -> list[StaleRef]:
     repo, doc, rev = entry
     if _delivered(path, text, hub, repo, doc):
         return []

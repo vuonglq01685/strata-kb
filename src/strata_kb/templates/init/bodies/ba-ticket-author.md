@@ -43,7 +43,8 @@ a denial to report. Stop only when the MCP tool fails too.
    summarise it away. A
    `done: unknown` note means a `draft` or `ready` row may be a merged
    story — say so. Then show the table: propose the first `to-draft`
-   story; the BA may pick another. A `draft` or `ready` story points at
+   story; the BA may pick another. A `to-draft` row whose id is a split child
+   (`<parent-id>.<repo-id>`) is drafted in Child mode. A `draft` or `ready` story points at
    its existing file. A `blocked` story whose reason is a
    Technology-decisions row (`D<n> OPEN`) or an unticked open question
    (`Q<n> open`) is NOT drafted: `kb ticket lint` fails a ticket its parent
@@ -258,7 +259,11 @@ whole need, with these rules.
   `> Revision:`; 1 for a new parent), `> Target repo: <repo-id>` and the
   parent's `## User Story` copied word for word.
 - Steps 6–8 run per child: lint with `parent_markdown`, ground on the
-  child's own repo, maturity review. The parent is linted last.
+  child's own repo, maturity review. The parent is linted last. Over MCP,
+  lint a child with `ticket_id` = the child id and `parent_markdown` = the
+  parent's text; lint the parent with `ticket_id` = the parent id and
+  `children_markdown` = {child id: text} for the children written. CLI
+  `kb ticket lint <file>` loads them from disk.
 
 ## Amend mode — `--amend <ticket>`
 

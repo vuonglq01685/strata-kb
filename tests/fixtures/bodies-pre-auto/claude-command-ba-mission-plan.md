@@ -128,7 +128,7 @@ a denial to report. Stop only when the MCP tool fails too.
    When the backlog's stories touch several repos, the SA lists each
    repo's `<repo-id>:<repo-id>-code @ <revision>` on the one `Grounded on:`
    line, comma-separated, and qualifies every `svc.*` as
-   `<repo-id>:svc.<name>`; `kb ticket check --mission` checks each id in
+   `<repo-id>:svc.<name>`; `kb ticket check <file> --heading "## Services & order"` (MCP: `kb_ticket_check` with `heading`) checks each id in
    its own repo's document (sa-ticket-ground's `--mission` rule).
 5b. **Decide** — present the whole `## Technology decisions` table to
    the BA once. The BA flips to `DECIDED` the rows whose citation they
