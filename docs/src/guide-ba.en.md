@@ -227,7 +227,7 @@ resolves by its unique holder on the hub). `kb ticket lint` errors when the head
 qualified grounding name different repos. With one dev repo on the hub every ticket goes to
 it and none of this is needed. With two or more, a ticket with no target is blocked as
 `no target repo`, and a target that is not a dev repo on the hub is blocked as `target <x>
-is not a dev repo on the hub`. Work that spans two repos is two tickets. A `- Blocked by:`
+is not a dev repo on the hub`. Work that spans two repos is two tickets, or a parent story split into children (3.10). A `- Blocked by:`
 line in a ticket outside a mission blocks only on ids published in the same BA plan;
 tracker keys and prose never block.
 
@@ -456,6 +456,85 @@ sweeps daily and, while anything is stale or broken, keeps **one** open issue la
 
 Only the sections a file **cites** are compared, and not every row needs an amendment: if
 the requirement still holds, amend with the new pin and say so in the change-log row.
+
+## 3.10 Stories across repos
+
+A story that needs work in several dev repos is one **parent story** split into one **child
+ticket** per repo. The parent is the business story; each child is an ordinary ticket built
+in exactly one repo. Write parents only after the hub is upgraded to the release with parent stories (see Upgrade
+in the Hub Guide, 3.8): an older hub does not know the format.
+
+**The parent.** `kb init` writes the shape to `docs/tickets/PARENT-TEMPLATE.md`. The file is
+`tickets/<folder>/<US-id>.md` with `> Kind: parent story` and `> Revision: <N>` in the
+header block, then `## User Story`, `## Split` and `## Change log` (the same six columns as a
+ticket's). A parent has no `## Acceptance Criteria` and no `## Definition of Ready`: every
+AC lives in exactly one child.
+
+```markdown
+# Pay by card US-12
+> Kind: parent story
+> Revision: 1
+
+## User Story
+As a shopper, I want to pay by card, so that I can finish my order.
+
+## Split
+| Child | Repo | AC | Blocked by | Own fix | Why |
+|---|---|---|---|---|---|
+| US-12.payments-api | payments-api | AC1, AC2 | - | - | charges the card |
+| US-12.web-app | web-app | AC3, AC4 | US-12.payments-api | - | the checkout form |
+
+## Change log
+| Rev | Date | Trigger | What changed | Affected | Review |
+|---|---|---|---|---|---|
+|   |   |   |   |   |   |
+```
+
+The header block of the child `tickets/<folder>/US-12.web-app.md`:
+
+```markdown
+# Pay by card, checkout form US-12.web-app
+> Revision: 1
+> Parent story: US-12 @ rev 1
+> Target repo: web-app
+```
+
+The rest of a child is an ordinary ticket (its own AC, DoR and grounding);
+`docs/tickets/PARENT-TEMPLATE.md` has the parent in full.
+
+**The children.** A child id is `<parent-id>.<repo-id>` (`US-12.payments-api`,
+`US-12.web-app`); a later child for the same repo is `<parent-id>.<repo-id>.2`, then `.3`.
+A repo id that contains a dot cannot be a split target. A child repeats the parent's
+`## User Story` word for word and carries two header lines: `> Parent story: US-12 @ rev 1`
+and `> Target repo: payments-api`. A child of a mission's parent has no `> Parent mission:`
+line; it inherits the parent's. An AC that replaces one in a finished child is written
+`AC7 (replaces AC2)` in the split. `Blocked by` in the split names child ids from the same
+table; a child's own `- Blocked by:` counts only as those exact ids.
+
+**Changing a parent.** Raise `> Revision:` and append a `## Change log` row (existing
+triggers only) naming the affected children in the same edit. A child that still says
+`@ rev <old>` and is named in a later row is demoted and leaves the hub until you amend it.
+A child also leaves the hub when its parent's mission amends the parent, until you amend
+the parent.
+
+**What lint checks.** `kb ticket lint` on a parent checks the split (columns, every AC owned
+once, `Blocked by` ids exist in the split, no cycle) and the revision. On a child it checks
+the header against the parent in the same folder. A duplicate ticket id anywhere under
+`tickets/`, or a ticket id equal to a mission id, is an error. With `--hub`, an id already
+published by another BA repo, or a parent already done in a dev repo's `-svc`, is also an
+error. The CI gate also lints each parent in any folder a PR touched, so deleting a child fails the
+parent. `kb ticket lint` rejects `> Kind: parent bug` (not supported yet).
+
+**Publish fails closed.** `kb plan-ingest` and `kb publish` publish a parent without a DoR.
+When any parent fails lint, nothing is published and the hub keeps its last good plan. Run
+`kb ticket lint` on the parent and fix the first error.
+
+**Status.** The hub shows the parent as `in progress`, `blocked` or `done`, with `k/N done`
+(plus its mission's open blockers). Its page lists the children with repo and status and
+links each written one; a child's page links its parent and its siblings. A child waits on
+its split `Blocked by` ids; a child not written yet reads `not ready` (or `blocked` when the
+mission gates it). **Runners never take a parent**, and a claim on one answers 400
+(`parent_story`): Dev runners work the children. A child not written yet is listed as to-draft on the hub; you write it (auto drafting of children arrives with phase 3).
 
 ---
 

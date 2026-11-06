@@ -23,7 +23,16 @@ from urllib.parse import quote
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import mdmask, missionnext, models, query, ticket, ticketcheck
+from strata_kb import (
+    mdmask,
+    missionnext,
+    models,
+    planparents,
+    query,
+    storylint,
+    ticket,
+    ticketcheck,
+)
 from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.kinds import is_plan
@@ -356,6 +365,7 @@ def _plan_repo(
         tuple[str, str]
     ] = []  # (section id, title) of tickets without a mission
     ticket_l3: dict[str, str] = {}  # ticket id -> its source markdown
+    ticket_titles: dict[str, str] = {}
     for s in manifest.sections:
         if s.id == s.file:  # the mission is the section named like its group file
             section = _l3_section(fed, manifest.id, s)
@@ -366,6 +376,7 @@ def _plan_repo(
         drafted[s.id] = _PUBLISHED
         section = _l3_section(fed, manifest.id, s)
         ticket_l3[s.id] = _restore(s.title, section) if section is not None else ""
+        ticket_titles[s.id] = s.title
         if s.file == TICKETS_GROUP:
             loose.append((s.id, s.title))
         else:
@@ -402,30 +413,65 @@ def _plan_repo(
                 merged.add(tid)
             answered = True
         done_of[tid] = tid in merged
+    parents = {t: x for t, x in ticket_l3.items() if planparents.is_parent(x)}
+    splits = {pid: storylint.parse_split(x) for pid, x in parents.items()}
+    child_ids = {r.child for rows in splits.values() for r in rows}
+    for rows in splits.values():
+        for r in rows:
+            # an unpublished child may still be done in its repo's `-svc`
+            ds = routing.done(r.repo) if r.child not in ticket_l3 else None
+            if ds is not None:
+                answered = True
+                if r.child in ds:
+                    merged.add(r.child)
+    merged |= planparents.done_parents(parents, merged)
+    done_of.update({pid: pid in merged for pid in parents})
     results = missionnext.statuses(parsed, drafted, merged if answered else None)
     results = [
         _routed_story(r, targets.get(r.us_id), routing, r.us_id in targets)
         for r in results
     ]
-    unparented = _loose_rows(
-        [
-            _Loose(
-                tid,
-                title,
-                targets[tid],
-                done_of[tid],
-                tid in unknown,
-                tuple(
-                    d
-                    for d in _blocked_by_tokens(ticket_l3[tid])
-                    if d in drafted and d != tid
-                ),
-                routing.refusal(targets[tid]),
-            )
-            for tid, title in loose
-        ],
-        done_of,
+    facts = planparents.Facts(
+        written=frozenset(drafted),
+        dor=drafted,
+        done=frozenset(merged),
+        mission_texts=texts,
+        titles=ticket_titles,
+        targets=targets,
+        unknown=frozenset(unknown),
+        refusal=routing.refusal,
     )
+    results = planparents.expand(results, parents, facts)
+    rows = {
+        u.us_id: u
+        for u in _loose_rows(
+            [
+                _Loose(
+                    tid,
+                    title,
+                    targets[tid],
+                    done_of[tid],
+                    tid in unknown,
+                    tuple(
+                        d
+                        for d in _blocked_by_tokens(ticket_l3[tid])
+                        if d in drafted and d != tid
+                    ),
+                    routing.refusal(targets[tid]),
+                )
+                for tid, title in loose
+                if tid not in parents and tid not in child_ids
+            ],
+            done_of,
+        )
+    }
+    unparented: list[missionnext.StoryStatus] = []
+    for tid, title in loose:  # a parent's family sits where the parent is
+        if tid in parents:
+            base = missionnext.StoryStatus(tid, "", title, "", ())
+            unparented += planparents.family_rows(base, parents[tid], facts)
+        elif tid in rows:
+            unparented.append(rows[tid])
     missions = [
         PlanMission(
             repo=fed.meta.repo_id,
@@ -455,7 +501,10 @@ def hub_plans(
 
 # `kb mission next --from-hub` and MCP kb_mission_next: a story with no
 # published ticket is not "to draft" from the reader's side.
-FROM_HUB_LABELS = {"to-draft": "not ready (no published ticket)"}
+FROM_HUB_LABELS = {
+    "to-draft": "not ready (no published ticket)",
+    planparents.IN_PROGRESS: planparents.IN_PROGRESS,
+}
 
 
 def next_from_hub(

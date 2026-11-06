@@ -460,7 +460,7 @@
     }
   },
   "kb_ticket_check": {
-    "description": "SA grounding gate, the `kb ticket check` report: every id in\n'## Technical grounding' exists in the hub's -code document,\ncolumns/routes/commands/files match it, a moved `Grounded on:`\nrevision is judged by its cited facts, `[NEW: D<n>]` points at a\nDECIDED row of the parent mission's Technology decisions, and Open\ndecisions is empty. The mission is `mission_markdown` (pass the\nmission file's text whenever it exists locally \u2014 it wins over the\nhub), else the hub's plan. `heading=\"## Services & order\"` checks a mission plan instead\n(decisions read from the same text). The -code document is read\nfrom the hub only \u2014 no local fallback.",
+    "description": "SA grounding gate, the `kb ticket check` report: every id in\n'## Technical grounding' exists in the hub's -code document,\ncolumns/routes/commands/files match it, a moved `Grounded on:`\nrevision is judged by its cited facts, `[NEW: D<n>]` points at a\nDECIDED row of the parent mission's Technology decisions, and Open\ndecisions is empty. The mission is `mission_markdown` (pass the\nmission file's text whenever it exists locally \u2014 it wins over the\nhub), else the hub's plan. A child ticket ('> Parent story:') passes\n`parent_markdown` (the parent story's text): its `[NEW: D<n>]` rows\nare read from the parent's mission. `heading=\"## Services & order\"` checks a mission plan instead\n(decisions read from the same text). The -code document is read\nfrom the hub only \u2014 no local fallback.",
     "inputSchema": {
       "properties": {
         "heading": {
@@ -479,6 +479,18 @@
           ],
           "default": null,
           "title": "Mission Markdown"
+        },
+        "parent_markdown": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Markdown"
         },
         "ticket_markdown": {
           "title": "Ticket Markdown",
@@ -535,9 +547,24 @@
     }
   },
   "kb_ticket_lint": {
-    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link. For the back-link's existence and\nbacklog-membership checks pass `ticket_id` (the ticket file name\nwithout .md, e.g. M-checkout-US1) and, whenever the mission file\nexists locally, `mission_markdown` (its text; it wins over the hub's\nplan). Without `ticket_id` they are skipped with a note; with it, a\nmission neither passed nor on the hub is an error. Run this before handing the ticket to\nthe BA; fix errors and re-run until PASS.",
+    "description": "Lint a draft ticket against the Definition of Ready: required\nstructure, story format, ACs, Mermaid diagrams, kb-context refs\nresolving at their pinned version, and the optional\n'> Parent mission:' back-link. For the back-link's existence and\nbacklog-membership checks pass `ticket_id` (the ticket file name\nwithout .md, e.g. M-checkout-US1) and, whenever the mission file\nexists locally, `mission_markdown` (its text; it wins over the hub's\nplan). Without `ticket_id` they are skipped with a note; with it, a\nmission neither passed nor on the hub is an error. A child ticket\n('> Parent story:') needs `ticket_id` and `parent_markdown` (the\nparent story's text) and is checked against the parent's split row;\na parent story ('> Kind: parent story') needs `ticket_id` and\n`children_markdown` (child id to text) for its per-child checks.\n`repo_id` is your BA repo's id: with it, a child or parent id\nalready published by another BA repo is an error; without it that\ncheck is skipped with a note.\nRun this before handing the ticket to the BA; fix errors and re-run\nuntil PASS.",
     "inputSchema": {
       "properties": {
+        "children_markdown": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Children Markdown"
+        },
         "mission_markdown": {
           "anyOf": [
             {
@@ -549,6 +576,30 @@
           ],
           "default": null,
           "title": "Mission Markdown"
+        },
+        "parent_markdown": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Markdown"
+        },
+        "repo_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo Id"
         },
         "ticket_id": {
           "anyOf": [

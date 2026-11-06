@@ -100,6 +100,24 @@ jobs:
             "origin/${BASE_REF}..." \
             -- 'tickets/*.md' 'tickets/**/*.md' 'missions/*.md' 'missions/**/*.md' \
             > "$RUNNER_TEMP/changed.nul"
+          # A child that changed, or was deleted, can break its parent story's
+          # split. Deleted files are not linted themselves (ACMR above), so a
+          # second diff that includes them (ACMRD) finds every folder the PR
+          # touched; each parent story/bug file in those folders joins
+          # the list unless the first pass already has it.
+          git -c core.quotePath=false diff -z --name-only --diff-filter=ACMRD \
+            "origin/${BASE_REF}..." \
+            -- 'tickets/*.md' 'tickets/**/*.md' \
+            > "$RUNNER_TEMP/touched.nul"
+          while IFS= read -r -d '' t; do
+            for p in "${t%/*}"/*.md; do
+              [ -f "$p" ] || continue
+              # the code's own rule (case, blanks, '# comment', comments, fences)
+              python -c 'import sys; from strata_kb import ticket; k = ticket.ticket_kind(open(sys.argv[1], encoding="utf-8").read()); sys.exit(not (k or "").startswith("parent"))' "$p" || continue
+              grep -qzxF -- "$p" "$RUNNER_TEMP/changed.nul" ||
+                printf '%s\0' "$p" >> "$RUNNER_TEMP/changed.nul"
+            done
+          done < "$RUNNER_TEMP/touched.nul"
           # Table header printed once, before any row — the per-file rows
           # below each append one line, so a rewritten header per iteration
           # would either repeat or need its own conditional.

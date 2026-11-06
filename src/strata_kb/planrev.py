@@ -114,23 +114,43 @@ def parent_pin(text: str) -> tuple[str, int] | None:
     return m.group(1), int(m.group(2)) if m.group(2) else 1
 
 
-def demotions(missions: dict[str, str], tickets: dict[str, str]) -> dict[str, str]:
+def later_row_lists(text: str, pinned_rev: int, us_id: str) -> bool:
+    return any(
+        r.rev > pinned_rev and us_id in r.affected for r in parse_change_log(text)
+    )
+
+
+def demotions(
+    missions: dict[str, str],
+    tickets: dict[str, str],
+    parents: dict[str, str] | None = None,
+) -> dict[str, str]:
     """US id → reason, for each ticket whose pinned mission revision is behind
     the mission's and whose id a later change-log row lists as affected.
     `missions` maps mission id → text, `tickets` US id → text. A ticket with
-    no parent-mission line, or naming an unknown mission, is skipped."""
+    no parent-mission line, or naming an unknown mission, is skipped.
+
+    `parents` maps parent-story id → text. A child pinned (`> Parent story:`)
+    to an older revision of a known parent is demoted the same way. Whether
+    the child's target `-svc` already lists it as done needs the hub, so it
+    is not checked here."""
     out: dict[str, str] = {}
     for us_id, text in tickets.items():
+        if (story_pin := ticket.parent_story_pin(text)) is not None:
+            parent_text = (parents or {}).get(story_pin[0])
+            if parent_text is None:
+                continue
+            current = parse_revision(parent_text) or 1
+            if story_pin[1] < current and later_row_lists(
+                parent_text, story_pin[1], us_id
+            ):
+                out[us_id] = f"parent story rev {current} affects this ticket"
+            continue
         pin = parent_pin(text)
         if pin is None or pin[0] not in missions:
             continue
         mission_text = missions[pin[0]]
         current = parse_revision(mission_text) or 1
-        if pin[1] >= current:
-            continue
-        if any(
-            r.rev > pin[1] and us_id in r.affected
-            for r in parse_change_log(mission_text)
-        ):
+        if pin[1] < current and later_row_lists(mission_text, pin[1], us_id):
             out[us_id] = f"parent mission rev {current} affects this story"
     return out

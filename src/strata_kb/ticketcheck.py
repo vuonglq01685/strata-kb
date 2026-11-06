@@ -408,14 +408,21 @@ class _Decisions:
 
 
 def _resolve_decisions(
-    text: str, heading: str, load_decisions: LoadDecisions | None
+    text: str,
+    heading: str,
+    load_decisions: LoadDecisions | None,
+    load_ticket: Callable[[str], str | None] | None = None,
 ) -> _Decisions:
     """Mission heading: the table is in the checked text itself. Ticket
-    heading: via the back-link; `table is None` with a `mission_id` means
-    the mission file could not be loaded."""
+    heading: via the back-link, or for a child ticket (`> Parent story:`) via
+    its parent story's; `table is None` with a `mission_id` means the mission
+    file could not be loaded."""
     if heading == SERVICES_HEADING:
         return _Decisions(parse_decisions(text, "this mission"), None)
-    m = ticket.PARENT_MISSION_RE.search(text)
+    source = text
+    if (pin := ticket.parent_story_pin(text)) is not None and load_ticket is not None:
+        source = load_ticket(pin[0]) or ""
+    m = ticket.PARENT_MISSION_RE.search(source)
     if m is None:
         return _Decisions(None, None)
     mission_id = m.group(1)
@@ -535,6 +542,7 @@ def check(
     load_drift: LoadDrift | None = None,
     load_at: LoadAt | None = None,
     load_missions: LoadMissions | None = None,
+    load_ticket: Callable[[str], str | None] | None = None,
 ) -> LintReport:
     issues: list[Issue] = []
     notes: list[str] = []
@@ -570,7 +578,7 @@ def check(
         )
         return LintReport(issues, notes)
     notes.append(f"{doc_id} read from {doc.source}")
-    decisions = _resolve_decisions(text, heading, load_decisions)
+    decisions = _resolve_decisions(text, heading, load_decisions, load_ticket)
 
     have = (doc.manifest.revision or "").lower()
     moved = bool(have) and not (have.startswith(rev) or rev.startswith(have))

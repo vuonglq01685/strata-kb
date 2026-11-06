@@ -1,0 +1,29 @@
+id: demo-plan
+title: demo — plan
+revision: ''
+source_sha256: ''
+sections:
+- id: M-airspace-filter
+  title: Filter and display controlled airspace
+  summary: Dispatchers need controlled airspace shown on the planning map.
+  status: summarized
+  file: M-airspace-filter
+  tokens:
+    l2: 0
+    l3: 0
+- id: M-airspace-filter-US1
+  title: TAL-1580 — Show restrictive airspace details
+  summary: Dispatchers need restrictive airspace details while planning a route.
+  status: summarized
+  file: M-airspace-filter
+  tokens:
+    l2: 0
+    l3: 0
+- id: T-free
+  title: TAL-1580 — Show restrictive airspace details
+  summary: Dispatchers need restrictive airspace details while planning a route.
+  status: summarized
+  file: tickets
+  tokens:
+    l2: 0
+    l3: 0

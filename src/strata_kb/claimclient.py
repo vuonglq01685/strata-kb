@@ -45,6 +45,10 @@ class ClaimRejectedError(KbError):
     """The hub answered 400: the request itself is wrong, so retrying cannot help."""
 
 
+class ParentStoryError(ClaimRejectedError):
+    """The ticket is a parent story: claim one of its children instead."""
+
+
 class ClaimRouteMissing(KbError):
     def __init__(self) -> None:
         super().__init__(
@@ -131,7 +135,11 @@ class ClaimClient:
             )
         if not 200 <= code < 300:
             detail = data.get("detail")
-            raise (ClaimRejectedError if code == 400 else KbError)(
+            if code == 400 and reason == "parent_story":
+                cls: type[KbError] = ParentStoryError
+            else:
+                cls = ClaimRejectedError if code == 400 else KbError
+            raise cls(
                 f"hub {ROUTE} returned {code}"
                 + (f": {reason}" if reason else "")
                 + (f" — {detail}" if detail and isinstance(detail, str) else "")

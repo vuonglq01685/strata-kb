@@ -103,6 +103,11 @@ def effective_repo_id(cli_value: str, kb_dir: Path) -> str | None:
     return cli_value or load_config(kb_dir).repo_id or None
 
 
+def repo_id_or_root(cli_value: str, kb_dir: Path, root: Path) -> str:
+    """The id a repo publishes under: configured, else its folder name."""
+    return effective_repo_id(cli_value, kb_dir) or root.name
+
+
 _NEXT_TOP_KEY = re.compile(r"^[^\s#]", re.MULTILINE)
 _ENABLED_LINE = re.compile(
     r"^([ \t]+)enabled:[ \t]*[^\s#]*([ \t]+#.*)?[ \t]*$", re.MULTILINE

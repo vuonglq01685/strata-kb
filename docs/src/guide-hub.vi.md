@@ -427,6 +427,11 @@ Commit những gì `kb init` đã đổi. Rồi báo chủ của mọi repo chil
 Hãy thêm `> Target repo:` hoặc grounding có repo ở đầu cho các ticket đang mở trước khi đăng ký
 repo dev thứ hai: từ lúc đó ticket không có target bị chặn.
 
+**Parent story.** Nâng hub lên bản có parent story trước, rồi đến các runner. Báo chủ repo BA
+chỉ viết parent story (Hướng dẫn BA, 3.10) sau đó: hub cũ không biết `> Kind: parent story`.
+Trang ticket của hub hiển thị parent cùng các child của nó, và child cùng parent và các child
+anh em.
+
 ---
 
 # 4. Các chế độ tự động

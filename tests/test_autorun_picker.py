@@ -499,3 +499,74 @@ def test_dev_candidates_untargeted_ready_ticket_when_hub_has_no_routing(
     assert dev_candidates(None, tmp_path, "web-app") == [  # type: ignore[arg-type]
         Task("dev-implement-ticket", "TAL-1")
     ]
+
+
+def _row(us_id: str, status: str, reasons=(), **extra) -> dict:
+    return {**_story(us_id, status, reasons), "is_parent": False, "parent": "", **extra}
+
+
+def test_parent_never_a_dev_task():
+    parent = StoryStatus(
+        "P1", "M-x", "t", "ready", (), (), REPO, is_parent=True
+    )  # even a mislabelled ready parent
+    child = StoryStatus("P1.web-app", "M-x", "t", "ready", (), (), REPO, parent="P1")
+    loose = StoryStatus("P2", "", "t", "ready", (), (), REPO, is_parent=True)
+    tasks = list(picker_dev_tasks([parent, child], [loose], REPO))
+    assert tasks == [Task("dev-implement-ticket", "P1.web-app")]
+
+
+def picker_dev_tasks(stories, unparented, repo):
+    from strata_kb.autorun.picker import _dev_tasks
+
+    return _dev_tasks(stories, unparented, repo)
+
+
+def test_ba_does_not_draft_unwritten_children():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [_row("P1", "in progress", is_parent=True)]
+        + [_row("P1.web", "to-draft", parent="P1")],
+        "unparented": [
+            _row("P2", "in progress", is_parent=True),
+            _row("P2.api", "to-draft", parent="P2"),
+        ],
+        "next": "P1.web",
+    }
+    assert list(_ba_tasks(data)) == []
+
+
+def test_ba_amends_a_draft_child_of_any_parent():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [_row("P1.web", "draft", ["DoR 1/3 ticked"], parent="P1")],
+        "unparented": [_row("P2.api", "draft", ["DoR 0/3 ticked"], parent="P2")],
+        "next": None,
+    }
+    assert list(_ba_tasks(data)) == [
+        Task("ba-ticket-author", "--amend P1.web"),
+        Task("ba-ticket-author", "--amend P2.api"),
+    ]
+
+
+def test_ba_never_amends_parent():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [_row("P1", "draft", is_parent=True)],
+        "unparented": [_row("P2", "draft", is_parent=True)],
+        "next": None,
+    }
+    assert list(_ba_tasks(data)) == []
+
+
+def test_ba_parent_mission_blocker_still_plans_the_mission():
+    from strata_kb.autorun.picker import _ba_tasks
+
+    data = {
+        "stories": [_row("P1", "blocked", ["0/2 done", "D1 OPEN x"], is_parent=True)],
+        "unparented": [],
+        "next": None,
+    }
+    assert list(_ba_tasks(data)) == [Task("ba-mission-plan", "--amend M-x")]

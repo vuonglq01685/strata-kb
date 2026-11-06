@@ -53,10 +53,12 @@ class StoryStatus:
     us_id: str
     mission_id: str
     title: str
-    status: str  # done | ready | draft | to-draft | blocked
+    status: str  # done | ready | draft | to-draft | blocked | in progress (parent)
     reasons: tuple[str, ...]  # blocked / draft
     depends_on: tuple[str, ...] = ()  # full US ids; empty for unparented items
     target_repo: str | None = None  # Dev repo the ticket is built in; None = unknown
+    is_parent: bool = False  # a parent story: rolled-up status, never worked on itself
+    parent: str = ""  # a child ticket's parent story id
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]
@@ -382,11 +384,12 @@ def _next_line(results: list[StoryStatus]) -> str:
         return f"Next: {nxt.us_id} — {nxt.title}"
     count = {
         k: sum(1 for r in results if r.status == k)
-        for k in ("blocked", "draft", "ready", "done")
+        for k in ("blocked", "draft", "ready", "done", "in progress")
     }
+    progress = f", {count['in progress']} in progress" if count["in progress"] else ""
     return (
         f"Next: none to draft — {count['blocked']} blocked, {count['draft']} draft, "
-        f"{count['ready']} ready, {count['done']} done"
+        f"{count['ready']} ready, {count['done']} done{progress}"
     )
 
 

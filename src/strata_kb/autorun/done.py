@@ -25,6 +25,8 @@ def all_done(
     tickets at all is not done: an empty hub is a hub the plan has not reached
     yet. A Dev (`repo_id` given) counts only rows routed to its repo or not routed yet."""
     tickets = [*stories, *unparented]
+    if not ba:  # a parent is rolled up from its children: no Dev work of its own
+        tickets = [t for t in tickets if not t.is_parent]
     if repo_id and not ba:
         tickets = [t for t in tickets if t.target_repo in (repo_id, None)]
     if not tickets:

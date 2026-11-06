@@ -30,6 +30,7 @@ import anyio.to_thread
 from mcp.server.fastmcp import FastMCP as MCPServer
 
 from strata_kb import gitio, kbcontext
+from strata_kb.familyhub import lint as lint_ticket
 from strata_kb.kinds import UnknownKindError
 from strata_kb.query import get_section, search_detailed, stale_hub_note
 from strata_kb.resolve import render_resolved, resolve_refs
@@ -37,7 +38,6 @@ from strata_kb.serving.auth import (
     TokenAuthMiddleware as BearerAuthMiddleware,  # noqa: F401 — re-export
 )
 from strata_kb.serving.config import ServerConfig, hub_serves_own_checkout
-from strata_kb.ticketlint import lint as lint_ticket
 
 logger = logging.getLogger("strata_kb.mcp")
 
@@ -331,6 +331,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         ticket_markdown: str,
         ticket_id: str | None = None,
         mission_markdown: str | None = None,
+        parent_markdown: str | None = None,
+        children_markdown: dict[str, str] | None = None,
+        repo_id: str | None = None,
     ) -> str:
         """Lint a draft ticket against the Definition of Ready: required
         structure, story format, ACs, Mermaid diagrams, kb-context refs
@@ -340,20 +343,47 @@ def create_server(config: ServerConfig) -> MCPServer:
         without .md, e.g. M-checkout-US1) and, whenever the mission file
         exists locally, `mission_markdown` (its text; it wins over the hub's
         plan). Without `ticket_id` they are skipped with a note; with it, a
-        mission neither passed nor on the hub is an error. Run this before handing the ticket to
-        the BA; fix errors and re-run until PASS."""
+        mission neither passed nor on the hub is an error. A child ticket
+        ('> Parent story:') needs `ticket_id` and `parent_markdown` (the
+        parent story's text) and is checked against the parent's split row;
+        a parent story ('> Kind: parent story') needs `ticket_id` and
+        `children_markdown` (child id to text) for its per-child checks.
+        `repo_id` is your BA repo's id: with it, a child or parent id
+        already published by another BA repo is an error; without it that
+        check is skipped with a note.
+        Run this before handing the ticket to the BA; fix errors and re-run
+        until PASS."""
 
         def _run() -> str:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
+            from strata_kb import ticket
+            from strata_kb.doctor import Issue
+
             from_hub: list[str] = []
+            siblings = {**(children_markdown or {})}
+            pin = ticket.parent_story_pin(ticket_markdown)
+            if pin is not None and parent_markdown:
+                siblings[pin[0]] = parent_markdown
             report = lint_ticket(
                 ticket_markdown,
                 hub,
                 ticket_id=ticket_id or None,
                 load_mission=_mission_loader(hub, mission_markdown, from_hub),
+                load_ticket=siblings.get,
+                own_repo=(lambda: repo_id) if repo_id else None,
             )
+            if pin is not None and not parent_markdown:
+                # lint_child_against_parent says "not found"; MCP names the arg
+                report.issues[:] = [
+                    i
+                    for i in report.issues
+                    if f"parent story {pin[0]} not found" not in i.message
+                ]
+                report.issues.append(
+                    Issue("error", "parent not given — pass parent_markdown")
+                )
             return stale_hub_note(hub) + _hub_mission_note(from_hub) + report.render()
 
         return await anyio.to_thread.run_sync(_run)
@@ -364,6 +394,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         ticket_markdown: str,
         mission_markdown: str | None = None,
         heading: str = "## Technical grounding",
+        parent_markdown: str | None = None,
     ) -> str:
         """SA grounding gate, the `kb ticket check` report: every id in
         '## Technical grounding' exists in the hub's -code document,
@@ -372,7 +403,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         DECIDED row of the parent mission's Technology decisions, and Open
         decisions is empty. The mission is `mission_markdown` (pass the
         mission file's text whenever it exists locally — it wins over the
-        hub), else the hub's plan. `heading="## Services & order"` checks a mission plan instead
+        hub), else the hub's plan. A child ticket ('> Parent story:') passes
+        `parent_markdown` (the parent story's text): its `[NEW: D<n>]` rows
+        are read from the parent's mission. `heading="## Services & order"` checks a mission plan instead
         (decisions read from the same text). The -code document is read
         from the hub only — no local fallback."""
 
@@ -417,6 +450,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                     hub, r, d, rev, ids
                 ),
                 load_missions=load_missions,
+                load_ticket=lambda _id: parent_markdown,
             )
             note = _hub_mission_note(from_hub)
             return stale_hub_note(hub) + note + report.render("Grounding")

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import unicodedata
 from pathlib import Path
 
@@ -531,3 +534,298 @@ def test_attach_checks_the_bug_folder_itself(tmp_path: Path):
     (tmp_path / "BUG-13" / "x.png").write_bytes(_PNG)
     got = planingest._attach(_bug_text(images=("BUG-13/x.png",)), "BUG-12", tmp_path)
     assert isinstance(got, str) and "not under 'BUG-12/'" in got
+
+
+# --- parent stories ---
+
+API = f"{US1}.demo"
+WEB = f"{US1}.web"
+STORY = (
+    "As a dispatcher, I want to see restrictive airspace details, "
+    "so that I can brief the flight crew accurately."
+)
+GOLDEN_DIR = Path(__file__).parent / "data" / "planingest_golden"
+
+
+def parent_story(extra_log: str = "", rev: int = 1, split: str | None = None) -> str:
+    rows = split or (
+        f"| {API} | demo | AC1, AC2 | - | - | data |\n"
+        f"| {WEB} | web | AC3, AC4 | - | - | ui |\n"
+    )
+    return (
+        f"# Show details {US1}\n> Kind: parent story\n> Revision: {rev}\n"
+        f"> Parent mission: {MISSION_ID} @ rev 1\n\n"
+        f"## User Story\n{STORY}\n\n"
+        "## Split\n| Child | Repo | AC | Blocked by | Own fix | Why |\n"
+        f"|---|---|---|---|---|---|\n{rows}\n"
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        f"|---|---|---|---|---|---|\n{extra_log}"
+    )
+
+
+def child_story(
+    block: str, cid: str, repo: str, first_ac: int, *, rev: int = 1, ticked=True
+) -> str:
+    text = ticket_text(block, ticked=ticked, parent=None)
+    text = text.replace("AC1:", f"AC{first_ac}:").replace("AC2:", f"AC{first_ac + 1}:")
+    text = text.replace("# TAL-1580 — Show restrictive airspace details", f"# {cid}")
+    text = text.replace("demo:demo-code", f"{repo}:{repo}-code")
+    return text.replace(
+        "> Revision: 1\n",
+        f"> Revision: 1\n> Parent story: {US1} @ rev {rev}\n> Target repo: {repo}\n",
+        1,
+    )
+
+
+def family(block: str, **kw) -> tuple[dict[str, str], dict[str, str]]:
+    missions = {f"{MISSION_ID}.md": mission_text(block)}
+    tickets = {
+        f"{US1}.md": parent_story(**kw),
+        f"{API}.md": child_story(block, API, "demo", 1),
+        f"{WEB}.md": child_story(block, WEB, "web", 3),
+    }
+    return missions, tickets
+
+
+def tree(path: Path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in sorted(path.rglob("*")) if p.is_file()}
+
+
+def stable(files: dict[str, bytes]) -> dict[str, bytes]:
+    """The fed_hub fixture pins a fresh commit sha on every run."""
+    return {
+        k: re.sub(rb'version: "[0-9a-f]{7}"', b'version: "HUB"', v)
+        for k, v in files.items()
+    }
+
+
+def test_parent_and_children_published(tmp_path: Path, block: str):
+    write_repo(tmp_path, *family(block))
+    report = run_plan(tmp_path)
+    assert report.skipped == []
+    assert sorted(report.published) == sorted([MISSION_ID, US1, API, WEB])
+    raw = doc_file(tmp_path, f"{MISSION_ID}.raw.md")
+    assert all(f"## {i} " in raw for i in (US1, API, WEB))
+    assert not (tmp_path / ".kb/demo-plan" / "tickets.raw.md").exists()
+
+
+def test_children_of_unpublished_mission_go_to_tickets_group(
+    tmp_path: Path, block: str
+):
+    _, tickets = family(block)
+    missions = {f"{MISSION_ID}.md": mission_text(block, skip="## Scope")}
+    write_repo(tmp_path, missions, tickets)
+    run_plan(tmp_path)
+    raw = doc_file(tmp_path, "tickets.raw.md")
+    assert all(f"## {i} " in raw for i in (US1, API, WEB))
+
+
+def test_child_with_unticked_dor_is_skipped_but_parent_published(
+    tmp_path: Path, block: str
+):
+    missions, tickets = family(block)
+    tickets[f"{WEB}.md"] = child_story(block, WEB, "web", 3, ticked=False)
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    assert US1 in report.published and WEB not in report.published
+    ((file, reason),) = report.skipped
+    assert file == f"tickets/{WEB}.md" and "Definition of Ready" in reason
+
+
+def snapshot_after_parent_failure(tmp_path: Path, block: str) -> None:
+    write_repo(tmp_path, *family(block))
+    run_plan(tmp_path)
+    doc_dir = tmp_path / ".kb" / "demo-plan"
+    before = tree(doc_dir)
+    # AC3 now sits in two children: the parent no longer lints
+    bad = parent_story(
+        split=(
+            f"| {API} | demo | AC1, AC2 | - | - | data |\n"
+            f"| {WEB} | web | AC2, AC3, AC4 | - | - | ui |\n"
+        )
+    )
+    (tmp_path / "tickets" / f"{US1}.md").write_text(bad, encoding="utf-8")
+    with pytest.raises(planingest.PlanIngestError) as exc:
+        run_plan(tmp_path)
+    assert str(exc.value).startswith(f"parent story {US1} fails lint: ")
+    assert str(exc.value).endswith(" — nothing published")
+    assert tree(doc_dir) == before
+
+
+def test_parent_lint_failure_publishes_nothing(tmp_path: Path, block: str):
+    snapshot_after_parent_failure(tmp_path, block)
+
+
+def test_parent_failure_with_no_existing_doc_writes_nothing(tmp_path: Path, block: str):
+    missions, tickets = family(block)
+    tickets[f"{US1}.md"] = parent_story(rev=2)  # no change-log row for rev 2
+    write_repo(tmp_path, missions, tickets)
+    with pytest.raises(planingest.PlanIngestError, match="nothing published"):
+        run_plan(tmp_path)
+    assert not (tmp_path / ".kb").exists()
+
+
+def test_duplicate_stem_is_an_error(tmp_path: Path, block: str):
+    write_repo(
+        tmp_path,
+        {},
+        {
+            "a/T-1.md": ticket_text(block, parent=None),
+            "b/T-1.md": ticket_text(block, parent=None),
+        },
+    )
+    with pytest.raises(planingest.PlanIngestError) as exc:
+        run_plan(tmp_path)
+    assert str(exc.value) == (
+        "duplicate ticket id T-1: tickets/a/T-1.md, tickets/b/T-1.md"
+    )
+
+
+LATER_ROW = "| 2 | 2026-10-11 | scope | AC changed | {aff} | B4 D4 (agent) |\n"
+
+
+def test_child_demoted_by_later_parent_row(tmp_path: Path, block: str):
+    missions, tickets = family(block, rev=2, extra_log=LATER_ROW.format(aff=WEB))
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    assert WEB not in report.published and API in report.published
+    ((file, reason),) = report.skipped
+    assert file == f"tickets/{WEB}.md"
+    assert reason == "parent story rev 2 affects this ticket"
+
+
+def test_child_not_in_affected_not_demoted(tmp_path: Path, block: str):
+    missions, tickets = family(block, rev=2, extra_log=LATER_ROW.format(aff=WEB))
+    write_repo(tmp_path, missions, tickets)
+    assert API in run_plan(tmp_path).published
+
+
+def test_child_at_current_parent_rev_not_demoted(tmp_path: Path, block: str):
+    missions, tickets = family(block, rev=2, extra_log=LATER_ROW.format(aff=WEB))
+    tickets[f"{WEB}.md"] = child_story(block, WEB, "web", 3, rev=2)
+    write_repo(tmp_path, missions, tickets)
+    assert WEB in run_plan(tmp_path).published
+
+
+def test_repo_without_parents_publishes_identically(tmp_path: Path, block: str):
+    missions = {f"{MISSION_ID}.md": mission_text(block)}
+    tickets = {
+        f"{US1}.md": ticket_text(block),
+        "T-free.md": ticket_text(block, parent=None),
+        "T-draft.md": ticket_text(block, ticked=False, parent=None),
+    }
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    actual = stable(tree(tmp_path / ".kb" / "demo-plan"))
+    summary = {
+        "published": report.published,
+        "skipped": [list(s) for s in report.skipped],
+    }
+    if os.environ.get("UPDATE_GOLDEN"):  # regenerate from the pre-change code only
+        GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        for name, data in actual.items():
+            (GOLDEN_DIR / name).write_bytes(data)
+        (GOLDEN_DIR / "report.json").write_text(json.dumps(summary), encoding="utf-8")
+    assert actual == tree_without(GOLDEN_DIR, "report.json")
+    assert summary == json.loads((GOLDEN_DIR / "report.json").read_text("utf-8"))
+
+
+def tree_without(path: Path, skip: str) -> dict[str, bytes]:
+    return {k: v for k, v in tree(path).items() if k != skip}
+
+
+def test_mission_children_inherit_parent_demotion(tmp_path: Path, block: str):
+    mission = mission_text(block, extra={"## Change log": CHANGE_LOG}).replace(
+        "> Revision: 1", "> Revision: 2", 1
+    )
+    _, tickets = family(block)
+    write_repo(tmp_path, {f"{MISSION_ID}.md": mission}, tickets)
+    report = run_plan(tmp_path)
+    assert US1 in report.published and API not in report.published
+    assert {r for _, r in report.skipped} == {
+        f"parent story {US1}: parent mission rev 2 affects this story"
+    }
+    assert len(report.skipped) == 2
+
+
+def test_ticket_stem_equal_to_mission_stem_is_an_error(tmp_path: Path, block: str):
+    write_repo(
+        tmp_path,
+        {f"{MISSION_ID}.md": mission_text(block)},
+        {f"{MISSION_ID}.md": ticket_text(block, parent=None)},
+    )
+    with pytest.raises(planingest.PlanIngestError) as exc:
+        run_plan(tmp_path)
+    assert str(exc.value) == (
+        f"duplicate id {MISSION_ID}: missions/{MISSION_ID}.md, tickets/{MISSION_ID}.md"
+    )
+
+
+# --- final review fixes ---
+
+
+def test_parent_only_ac_move_fails_closed_and_leaves_doc_untouched(
+    tmp_path: Path, block: str
+):
+    write_repo(tmp_path, *family(block))
+    run_plan(tmp_path)
+    doc_dir = tmp_path / ".kb" / "demo-plan"
+    before = tree(doc_dir)
+    moved = parent_story(
+        split=(
+            f"| {API} | demo | AC1, AC2, AC3 | - | - | data |\n"
+            f"| {WEB} | web | AC4 | - | - | ui |\n"
+        )
+    )
+    (tmp_path / "tickets" / f"{US1}.md").write_text(moved, encoding="utf-8")
+    with pytest.raises(planingest.PlanIngestError, match="AC ids"):
+        run_plan(tmp_path)
+    assert tree(doc_dir) == before
+
+
+def test_kb_ticket_lint_on_parent_reports_the_moved_ac(
+    tmp_path: Path, block: str, fed_hub: Path
+):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    missions, tickets = family(block)
+    tickets[f"{US1}.md"] = parent_story(
+        split=(
+            f"| {API} | demo | AC1, AC2, AC3 | - | - | data |\n"
+            f"| {WEB} | web | AC4 | - | - | ui |\n"
+        )
+    )
+    write_repo(tmp_path, missions, tickets)
+    result = CliRunner().invoke(
+        app,
+        [
+            "ticket",
+            "lint",
+            str(tmp_path / "tickets" / f"{US1}.md"),
+            "--hub",
+            str(fed_hub),
+        ],
+    )
+    assert result.exit_code != 0 and "AC ids" in result.output
+
+
+BLOCKED_BY_Q = {
+    "## Open questions": f"- [ ] Q1 — Which layer? — owner: Bob — blocks: {US1}"
+}
+
+
+def test_mission_blocked_parent_publishes_and_children_stay_off(
+    tmp_path: Path, block: str
+):
+    _, tickets = family(block)
+    missions = {
+        f"{MISSION_ID}.md": mission_text(block, overrides=BLOCKED_BY_Q),
+    }
+    write_repo(tmp_path, missions, tickets)
+    report = run_plan(tmp_path)
+    assert US1 in report.published
+    assert API not in report.published and WEB not in report.published
+    assert len(report.skipped) == 2
+    assert all("Q1 open" in reason for _, reason in report.skipped)

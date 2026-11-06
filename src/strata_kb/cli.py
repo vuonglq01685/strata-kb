@@ -826,7 +826,7 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
-    rid = config.effective_repo_id("", resolved_kb_dir) or root.name
+    rid = config.repo_id_or_root("", resolved_kb_dir, root)
     try:
         plan_report = planingest.run(
             root, resolved_kb_dir, rid, root / "missions", root / "tickets"
@@ -1997,7 +1997,7 @@ def plan_ingest(
 
     resolved_root = repo_root.resolve()
     resolved_kb_dir = kb_dir.resolve()
-    rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
+    rid = config.repo_id_or_root(repo_id, resolved_kb_dir, resolved_root)
     try:
         report = planingest.run(
             resolved_root, resolved_kb_dir, rid, missions_dir, tickets_dir
@@ -3312,7 +3312,8 @@ def ticket_lint(
     ),
 ) -> None:
     """Definition-of-Ready gate: lint a ticket against the DoR checklist."""
-    from strata_kb.ticketlint import lint
+    from strata_kb import config, familyhub
+    from strata_kb.familyhub import lint
 
     path: Path | None = None
     if source == "-":
@@ -3339,7 +3340,13 @@ def ticket_lint(
         path=path,
         missions_dir=resolved_missions,
         fail_on_stale=fail_on_stale,
+        load_ticket=familyhub.folder_loader(path) if path else None,
+        own_repo=lambda: config.repo_id_or_root(
+            "", kb_dir.resolve(), kb_dir.resolve().parent
+        ),
     )
+    if path is not None and (dup := familyhub.duplicate_stem(path)) is not None:
+        report.issues.append(dup)
     if json_output:
         typer.echo(json.dumps(report.to_json()))
     else:
@@ -3605,7 +3612,7 @@ def ticket_check(
     -code document, columns/routes/commands/files match it, `[NEW: D<n>]`
     points at a DECIDED row of the parent mission's Technology decisions,
     and Open decisions is empty. Exit 0 PASS, 1 FAIL."""
-    from strata_kb import ticketcheck, ticketfetch, ticketstale
+    from strata_kb import familyhub, ticketcheck, ticketfetch, ticketstale
 
     path: Path | None = None
     if source == "-":
@@ -3710,6 +3717,7 @@ def ticket_check(
             if missions_root is not None
             else None
         ),
+        load_ticket=familyhub.folder_loader(path) if path else None,
     )
     if json_output:
         typer.echo(json.dumps(report.to_json()))
@@ -4104,6 +4112,7 @@ def mission_next(
         cloud,
         hubapi,
         missionnext,
+        planparents,
         planrev,
         planstatus,
         ticket,
@@ -4260,12 +4269,31 @@ def mission_next(
         notes.extend(n for n in target_notes if n not in notes)
 
     mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
-    demoted = planrev.demotions(mission_texts, ticket_texts)
+    parents = {t: x for t, x in ticket_texts.items() if planparents.is_parent(x)}
+    demoted = planrev.demotions(mission_texts, ticket_texts, parents=parents)
+    if done is not None:  # a parent is done when its children are
+        done = done | planparents.done_parents(parents, done)
     results = missionnext.statuses(parsed, drafted, done, demoted)
+    unparented: list[missionnext.StoryStatus] = []
+    if parents:
+        facts = planparents.Facts(
+            written=frozenset(drafted),
+            dor=drafted,
+            done=frozenset(done or ()),
+            mission_texts=mission_texts,
+            titles={t: planparents.title_of(x) for t, x in ticket_texts.items()},
+            demoted=demoted,
+        )
+        in_mission = {r.us_id for r in results}
+        results = planparents.expand(results, parents, facts)
+        for pid, ptext in parents.items():  # a parent no mission lists
+            if pid not in in_mission:
+                base = missionnext.StoryStatus(pid, "", facts.titles[pid], "", ())
+                unparented += planparents.family_rows(base, ptext, facts)
     if json_output:
-        typer.echo(json.dumps(missionnext.to_json(results, notes)))
+        typer.echo(json.dumps(missionnext.to_json(results, notes, unparented)))
     else:
-        typer.echo(missionnext.render(results, notes))
+        typer.echo(missionnext.render(results, notes, unparented=unparented))
 
 
 @app.command()

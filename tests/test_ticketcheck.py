@@ -103,6 +103,7 @@ def run(
     heading: str = "## Technical grounding",
     load_decisions=None,
     load_drift=None,
+    load_ticket=None,
 ) -> LintReport:
     def load_doc(repo, doc):
         d = kb_dir / doc
@@ -116,6 +117,7 @@ def run(
         heading=heading,
         load_decisions=load_decisions,
         load_drift=load_drift,
+        load_ticket=load_ticket,
     )
 
 
@@ -2532,3 +2534,29 @@ def test_decision_anchors_keep_paths_and_symbols_only():
         "GenrePage",
         "titles.type",
     }
+
+
+def test_child_resolves_new_decision_through_its_parents_mission(code_doc):
+    kb_dir, rev = code_doc
+    child = ticket(grounding(rev, Externals="int.stripe [NEW: D1]")).replace(
+        "# T-1 — Show airspace\n",
+        "# M-demo-US1.api\n> Parent story: M-demo-US1 @ rev 1\n",
+    )
+    parent = "# M-demo-US1\n> Kind: parent story\n> Parent mission: M-demo\n"
+    seen: list[str] = []
+
+    def load_decisions(mission_id):
+        seen.append(mission_id)
+        return decisions_of(MISSION)(mission_id)
+
+    report = run(
+        child,
+        kb_dir,
+        load_decisions=load_decisions,
+        load_ticket={"M-demo-US1": parent}.get,
+    )
+    assert not [e for e in errors(report) if "D1" in e or "parent mission" in e]
+    assert seen == ["M-demo"]
+    # parent text not available: still the "needs a parent mission" error
+    bare = run(child, kb_dir, load_decisions=load_decisions, load_ticket={}.get)
+    assert any("[NEW: D1] needs a parent mission" in e for e in errors(bare))

@@ -42,6 +42,8 @@ def _story(row: dict) -> StoryStatus:
         reasons=tuple(row["reasons"]),
         depends_on=tuple(row["depends_on"]),
         target_repo=row.get("target_repo"),
+        is_parent=row.get("is_parent", False),
+        parent=row.get("parent", ""),
     )
 
 

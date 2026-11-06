@@ -954,3 +954,58 @@ async def test_kb_ticket_fetch_hub_unreachable_returns_guidance(tmp_path, monkey
     async with connect_client(server, raise_exceptions=True) as client:
         result = await client.call_tool("kb_ticket_fetch", {"ticket": "M-a-US1"})
         assert "hub unreachable" in _text(result)
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_child_and_parent(fed_hub):
+    from tests.test_ticketlint_family import API, PID, family
+
+    texts = family(_golden_ticket_block(fed_hub))
+    server = create_server(_config(fed_hub))
+    async with connect_client(server, raise_exceptions=True) as client:
+
+        async def lint(**args):
+            return _text(await client.call_tool("kb_ticket_lint", args))
+
+        no_parent = await lint(ticket_markdown=texts[API], ticket_id=API)
+        child = await lint(
+            ticket_markdown=texts[API], ticket_id=API, parent_markdown=texts[PID]
+        )
+        no_kids = await lint(ticket_markdown=texts[PID], ticket_id=PID)
+        parent = await lint(
+            ticket_markdown=texts[PID],
+            ticket_id=PID,
+            children_markdown={k: v for k, v in texts.items() if k != PID},
+        )
+    assert "parent not given — pass parent_markdown" in no_parent
+    assert "not found" not in no_parent
+    assert "[error]" not in child
+    assert f"split child '{API}' has no ticket file" in no_kids
+    assert "[error]" not in parent
+
+
+@pytest.mark.anyio
+async def test_kb_ticket_lint_cross_repo_id_check_needs_repo_id(plan_hub):
+    from tests.test_planstatus import US
+    from tests.test_ticketlint_family import family
+
+    texts = family(_golden_ticket_block(plan_hub.root), pid=US[1])
+    server = create_server(_config(plan_hub.root))
+    async with connect_client(server, raise_exceptions=True) as client:
+
+        async def lint(**extra):
+            args = {
+                "ticket_markdown": texts[US[1]],
+                "ticket_id": US[1],
+                "children_markdown": {k: v for k, v in texts.items() if k != US[1]},
+                **extra,
+            }
+            return _text(await client.call_tool("kb_ticket_lint", args))
+
+        unknown = await lint()
+        own = await lint(repo_id="ba-one")
+        other = await lint(repo_id="ba-two")
+    assert "cross-repo id check skipped — pass repo_id" in unknown
+    assert "already published" not in unknown and "already published" not in own
+    assert "cross-repo id check skipped" not in own
+    assert f"ticket id {US[1]} is already published by ba-one" in other

@@ -86,15 +86,52 @@ def _held_by_ticket(
         return {}, CLAIMS_UNAVAILABLE
 
 
+def _plan_rows(hub: HubHandle, repo: str) -> list:
+    plans, _notes = planstatus.hub_plans(hub, repo)
+    return [
+        item
+        for plan in plans
+        for item in (*(s for m in plan.missions for s in m.stories), *plan.unparented)
+    ]
+
+
 def _story_status(hub: HubHandle, repo: str, story: str) -> tuple[str, tuple[str, ...]]:
     """(derived status, reasons) of a story or unparented ticket; ("", ())
     when unknown."""
-    plans, _notes = planstatus.hub_plans(hub, repo)
-    for plan in plans:
-        for item in (*(s for m in plan.missions for s in m.stories), *plan.unparented):
-            if item.us_id == story:
-                return item.status, item.reasons
-    return "", ()
+    item = next((r for r in _plan_rows(hub, repo) if r.us_id == story), None)
+    return (item.status, item.reasons) if item else ("", ())
+
+
+def _family(hub: HubHandle, repo: str, group: str, story: str) -> list[dict]:
+    """Rows of the family table on a ticket page: a parent lists its
+    children; a child lists its parent, then its siblings. A row links only
+    when the hub holds that ticket."""
+    rows = _plan_rows(hub, repo)
+    me = next((r for r in rows if r.us_id == story), None)
+    if me is None or not (me.is_parent or me.parent):
+        return []
+    parent_id = story if me.is_parent else me.parent
+    picked = [
+        ("Child" if me.is_parent else "Sibling", r)
+        for r in rows
+        if r.parent == parent_id and r.us_id != story
+    ]
+    head = next((r for r in rows if r.us_id == parent_id), None)
+    if head is not None and not me.is_parent:
+        picked.insert(0, ("Parent story", head))
+    return [_link(hub, repo, group, kind, r) for kind, r in picked]
+
+
+def _link(hub: HubHandle, repo: str, group: str, kind: str, row) -> dict:
+    held = planstatus.ticket_holders(hub, group, row.us_id, repo)
+    return {
+        "kind": kind,
+        "id": row.us_id,
+        "repo": row.target_repo or "",
+        "status": row.status,
+        "reasons": row.reasons,
+        "href": planstatus.plan_href(repo, group, row.us_id) if held else "",
+    }
 
 
 def plan_routes(
@@ -217,6 +254,7 @@ def plan_routes(
                 ClaimStore(db, ttl=ttl).close_done({(found_repo, story)})
             except (sqlite3.Error, KbError, OSError):
                 logger.warning("claim store unwritable for %s", story, exc_info=True)
+        family = _family(hub, found_repo, group, story)
         ctx = claim_ctx(hub, found_repo)
         # a draft or blocked ticket shows its status, not a claim
         shows_claim = ticket_status not in ("draft", "blocked")
@@ -259,6 +297,12 @@ def plan_routes(
             error=error,
             claim_notice=ctx["claim_notice"],
             waiting_on=reasons if ticket_status == "ready" else (),
+            family=family,
+            family_note=(
+                "; ".join((ticket_status, *reasons))
+                if family and family[0]["kind"] == "Child"
+                else ""
+            ),
         )
         if can_release:
             resp.headers.update(NO_STORE)

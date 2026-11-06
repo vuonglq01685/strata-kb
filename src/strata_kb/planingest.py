@@ -313,26 +313,81 @@ def _select(
     ticket_texts: dict[str, str] = {}
     ticket_files: dict[str, Path] = {}
     for path in sorted(tickets_dir.rglob("*.md")):
-        if path.stem in ticket_files or path.stem in mission_texts:
-            report.skipped.append(
-                (_rel(path, root), f"duplicate id {path.stem}; kept the first")
+        if path.stem in ticket_files:
+            raise PlanIngestError(
+                f"duplicate ticket id {path.stem}: "
+                f"{_rel(ticket_files[path.stem], root)}, {_rel(path, root)}"
             )
-            continue
+        if path.stem in mission_texts:
+            raise PlanIngestError(
+                f"duplicate id {path.stem}: "
+                f"{_rel(missions_dir / f'{path.stem}.md', root)}, {_rel(path, root)}"
+            )
         ticket_files[path.stem] = path
         ticket_texts[path.stem] = _read(path)
-    demoted = planrev.demotions(mission_texts, ticket_texts)
+    parent_texts = {
+        i: t
+        for i, t in ticket_texts.items()
+        if (ticket.ticket_kind(t) or "").startswith("parent")
+    }
+    demoted = planrev.demotions(mission_texts, ticket_texts, parent_texts)
 
     live = {m.id for m in published}
+    group_of: dict[
+        str, str
+    ] = {}  # parent story id -> the group it and its children use
+    for us_id, text in parent_texts.items():
+        # Fail closed: a parent that does not lint stops the whole publish, so
+        # its children never appear without it and the old document stays.
+        path = ticket_files[us_id]
+        reason = _lint_reason(
+            ticketlint.lint(
+                text,
+                None,
+                path=path,
+                missions_dir=missions_dir,
+                load_ticket=ticket_texts.get,
+            )
+        ) or _fence_reason(text)
+        if reason:
+            raise PlanIngestError(
+                f"parent story {us_id} fails lint: "
+                f"{reason.removeprefix('lint error: ')} — nothing published"
+            )
+        pin = planrev.parent_pin(text)
+        group_of[us_id] = pin[0] if pin and pin[0] in live else TICKETS_GROUP
+        published.append(_Item(us_id, _rel(path, root), text, False, group_of[us_id]))
+
     for us_id, path in ticket_files.items():
+        if us_id in parent_texts:
+            continue
         text = ticket_texts[us_id]
         file = _rel(path, root)
         reason = (
             "id contains whitespace" if re.search(r"\s", us_id) else None
         ) or _lint_reason(
-            ticketlint.lint(text, None, path=path, missions_dir=missions_dir)
+            ticketlint.lint(
+                text,
+                None,
+                path=path,
+                missions_dir=missions_dir,
+                load_ticket=ticket_texts.get,
+            )
         )
+        parent_id = (ticket.parent_story_pin(text) or ("",))[0]
+        inherited = (
+            f"parent story {parent_id}: {demoted[parent_id]}"
+            if parent_id in demoted
+            else None
+        )
+        # The demoted parent itself stays published (it is never a task) so
+        # the story stays visible; only its children are held back.
         reason = (
-            reason or _fence_reason(text) or _dor_reason(text) or demoted.get(us_id)
+            reason
+            or _fence_reason(text)
+            or _dor_reason(text)
+            or demoted.get(us_id)
+            or inherited
         )
         if reason:
             report.skipped.append((file, reason))
@@ -345,8 +400,12 @@ def _select(
                 report.skipped.append((file, attached))
                 continue
             text, assets = attached
+        story_pin = ticket.parent_story_pin(text)
         pin = planrev.parent_pin(text)
-        group = pin[0] if pin and pin[0] in live else TICKETS_GROUP
+        if story_pin is not None:
+            group = group_of.get(story_pin[0], TICKETS_GROUP)
+        else:
+            group = pin[0] if pin and pin[0] in live else TICKETS_GROUP
         published.append(_Item(us_id, file, text, False, group, is_bug, assets))
     return published
 

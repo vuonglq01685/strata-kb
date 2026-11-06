@@ -22,6 +22,8 @@ def test_to_json_carries_unparented():
             "reasons": [],
             "depends_on": [],
             "target_repo": None,
+            "is_parent": False,
+            "parent": "",
         }
     ]
     assert to_json([], [])["unparented"] == []
@@ -107,4 +109,19 @@ def test_all_done_dev_keeps_untargeted_rows():
     assert all_done([mine, draft], [], ba=False, repo_id="web-app") == (
         False,
         "US2 to-draft",
+    )
+
+
+def test_all_done_dev_ignores_parent():
+    parent = StoryStatus("P1", "M-x", "t", "in progress", (), (), None, is_parent=True)
+    child = S("P1.web", "done")
+    assert all_done([parent, child], [], ba=False) == (True, "all 1 tickets done")
+    assert all_done([parent], [], ba=False) == (False, "no tickets")
+
+
+def test_all_done_ba_counts_parent():
+    parent = StoryStatus("P1", "M-x", "t", "in progress", (), (), None, is_parent=True)
+    assert all_done([parent, S("P1.web", "done")], [], ba=True) == (
+        False,
+        "P1 in progress",
     )
