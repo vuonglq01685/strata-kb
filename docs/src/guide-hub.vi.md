@@ -424,6 +424,9 @@ kb doctor
 Commit những gì `kb init` đã đổi. Rồi báo chủ của mọi repo child, BA và Dev chạy `kb doctor`.
 `kb doctor` không đồng bộ chính repo hub: `kb init` mới là cách nó được nâng.
 
+Hãy thêm `> Target repo:` hoặc grounding có repo ở đầu cho các ticket đang mở trước khi đăng ký
+repo dev thứ hai: từ lúc đó ticket không có target bị chặn.
+
 ---
 
 # 4. Các chế độ tự động

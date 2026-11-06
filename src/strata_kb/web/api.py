@@ -357,7 +357,9 @@ def build_routes(config: ServerConfig) -> list[Route]:
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
         stories, unparented, notes = planstatus.next_from_hub(
-            hub, request.query_params.get("repo") or None
+            hub,
+            request.query_params.get("repo") or None,
+            request.query_params.get("for_repo") or None,
         )
         return JSONResponse(
             {

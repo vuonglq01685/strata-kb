@@ -26,6 +26,11 @@ PLAN_ROUTE = "/api/plan/next"
 REGISTRY_ROUTE = "/api/registry/entry"
 RESOLVE_ROUTE = "/api/resolve"
 NOT_REGISTERED = "repo_not_registered"
+OLD_HUB = "hub is older than 1.35 — upgrade the hub first"
+
+
+class OldHubError(KbError):
+    """The hub's plan rows carry no `target_repo`: it cannot route by repo."""
 
 
 def _story(row: dict) -> StoryStatus:
@@ -36,6 +41,7 @@ def _story(row: dict) -> StoryStatus:
         status=row["status"],
         reasons=tuple(row["reasons"]),
         depends_on=tuple(row["depends_on"]),
+        target_repo=row.get("target_repo"),
     )
 
 
@@ -64,12 +70,24 @@ class HubApi:
         self._http = http
 
     def plan_next(
-        self, repo: str | None = None
+        self,
+        repo: str | None = None,
+        for_repo: str | None = None,
+        require_target: bool = False,
     ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
-        """Same triple as `planstatus.next_from_hub`."""
-        query = f"?{urlencode({'repo': repo})}" if repo else ""
+        """Same triple as `planstatus.next_from_hub`. `require_target` (Dev
+        runner, publish check) raises `OldHubError` for rows without the key."""
+        params = {k: v for k, v in (("repo", repo), ("for_repo", for_repo)) if v}
+        query = f"?{urlencode(params)}" if params else ""
         data = self._json("GET", PLAN_ROUTE + query, PLAN_ROUTE)
         try:
+            # the 1.35 server always sends the key (null allowed)
+            if require_target and any(
+                "target_repo" not in r
+                for k in ("stories", "unparented")
+                for r in data[k]
+            ):
+                raise OldHubError(OLD_HUB)
             return (
                 [_story(s) for s in data["stories"]],
                 [_story(s) for s in data["unparented"]],

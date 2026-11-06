@@ -56,6 +56,7 @@ class StoryStatus:
     status: str  # done | ready | draft | to-draft | blocked
     reasons: tuple[str, ...]  # blocked / draft
     depends_on: tuple[str, ...] = ()  # full US ids; empty for unparented items
+    target_repo: str | None = None  # Dev repo the ticket is built in; None = unknown
 
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]

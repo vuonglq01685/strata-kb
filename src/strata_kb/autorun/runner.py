@@ -20,7 +20,7 @@ from strata_kb.autorun import claude, picker, publishwatch
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
-from strata_kb.autorun.claims import RunnerClaims
+from strata_kb.autorun.claims import RunnerClaims, UnknownTicketError
 from strata_kb.autorun.done import all_done
 from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run_lock
 from strata_kb.autorun.picker import Task
@@ -123,7 +123,7 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
             "so intake would not merge its publish PRs"
         )
-    return reasons
+    return reasons + _old_hub_refusal(cfg)
 
 
 def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, str]:
@@ -143,6 +143,20 @@ def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, 
         None,
     )
     return entry is not None, bool(entry and entry.auto_merge), ""
+
+
+def _old_hub_refusal(cfg: KBConfig) -> list[str]:
+    """Cloud Dev only: the hub's plan rows must carry `target_repo`. Any other
+    plan error is transient and left to the loop."""
+    if cfg.kind != "dev" or not cloud.is_cloud():
+        return []
+    try:
+        hubapi.from_env().plan_next(require_target=True)
+    except hubapi.OldHubError as exc:
+        return [str(exc)]
+    except KbError:
+        return []
+    return []
 
 
 def _ticket_of(task_key: str | None) -> str | None:
@@ -174,7 +188,9 @@ def _check_done(
     """`done` when every ticket is; `idle`/`waiting` when the hub or Q&A cannot
     answer yet (transient, never a task failure); None to carry on."""
     try:
-        stories, unparented, _notes = picker.plan_next(hub)
+        stories, unparented, _notes = picker.plan_next(
+            hub, require_target=cfg.kind == "dev"
+        )
     except KbError as exc:
         logger.warning("hub plan not read: %s", exc)
         return "idle"
@@ -184,7 +200,13 @@ def _check_done(
     except KbError as exc:
         logger.warning("open questions not read: %s", exc)
         return "waiting"
-    finished, why = all_done(stories, unparented, ba=ba, open_questions=open_questions)
+    finished, why = all_done(
+        stories,
+        unparented,
+        ba=ba,
+        open_questions=open_questions,
+        repo_id=cfg.repo_id,
+    )
     if finished:
         logger.info("auto mode finished: %s", why)
         return "done"
@@ -221,18 +243,36 @@ def _claim_pick(
     hub: HubHandle | hubapi.HubApi,
     state: autostate.AutoState,
     claims: RunnerClaims,
+    repo_id: str,
 ) -> Task | None:
     """The first candidate this Dev wins the claim on; raises `_Early("idle")`
     when other Devs hold every ready ticket."""
     held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
-    candidates = picker.dev_candidates(hub, root, skip=state.skipped, held=held)
+    candidates = picker.dev_candidates(
+        hub, root, repo_id, skip=state.skipped, held=held
+    )
     for task in candidates:
-        if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
-            return task
+        try:
+            if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
+                return task
+        except UnknownTicketError as exc:  # unpublished under us: like a lost race
+            logger.info("%s; trying the next ticket", exc)
     if candidates:
-        logger.info("every ready ticket is held by another Dev")
+        logger.info("every ready ticket is held by another Dev or unknown to the hub")
         raise _Early("idle")
     return None
+
+
+def _still_ready_here(
+    hub: HubHandle | hubapi.HubApi, repo_id: str, ticket: str
+) -> bool:
+    """The plan still lists `ticket` as ready and routed to `repo_id`. Reads the
+    whole plan: the same client-side routing test as the pick."""
+    stories, unparented, _notes = picker.plan_next(hub, require_target=True)
+    return any(
+        t.us_id == ticket and t.status == "ready" and t.target_repo in (None, repo_id)
+        for t in (*stories, *unparented)
+    )
 
 
 def _task_for(
@@ -248,6 +288,15 @@ def _task_for(
     the pick fails, `_Early` when another Dev holds the ticket(s)."""
     if state.task:
         skill, _, arg = state.task.partition(":")
+        if skill in CLAIMED_SKILLS and not _still_ready_here(hub, cfg.repo_id, arg):
+            autostate.save(kb_dir, replace(state, task=None, attempts=0))
+            if claims is not None:  # free the hub claim: its token dies with the forget
+                claims.release_if_working(
+                    arg, f"{arg} no longer ready for {cfg.repo_id}"
+                )
+                claims.forget(arg)
+            logger.info("%s is no longer ready for %s; picking again", arg, cfg.repo_id)
+            raise _Early("ran")
         if claims is not None and skill in CLAIMED_SKILLS and not claims.claim(arg):
             autostate.save(kb_dir, replace(state, task=None, attempts=0))
             logger.info("%s is now held by another Dev; picking again", arg)
@@ -256,8 +305,8 @@ def _task_for(
     if cfg.kind == "ba":
         return picker.pick_ba(root, kb_dir, skip=state.skipped)
     if claims is None:
-        return picker.pick_dev(hub, root, skip=state.skipped)
-    return _claim_pick(root, hub, state, claims)
+        return picker.pick_dev(hub, root, cfg.repo_id, skip=state.skipped)
+    return _claim_pick(root, hub, state, claims, cfg.repo_id)
 
 
 def _settle(
@@ -402,6 +451,10 @@ def run_once(
         task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
+    except UnknownTicketError as exc:  # the hub dropped the ticket under us
+        logger.info("%s; picking again", exc)
+        autostate.save(kb_dir, replace(state, task=None, attempts=0))
+        return "ran"
     except (ClaimRouteMissing, ClaimRejectedError) as exc:
         return _stop(kb_dir, state, str(exc))  # no retry can fix either
     except KbError as exc:

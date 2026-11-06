@@ -12,17 +12,18 @@ Feeds `kb mission next --from-hub` and the web UI's Ticket menu.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import missionnext, models, query, ticketcheck
+from strata_kb import mdmask, missionnext, models, query, ticket, ticketcheck
 from strata_kb.federation import FederatedRepo, load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.kinds import is_plan
@@ -147,8 +148,205 @@ def _done_ids(
     return missionnext.done_ids_from_history(doc.read_group("history")), None
 
 
+def dev_repos(hub: HubHandle) -> list[str]:
+    """Repo ids of the federation's Dev (`kind == "dev"`) entries, sorted."""
+    return _dev_ids(load_federation(hub.federation_dir))
+
+
+def _dev_ids(repos: list[FederatedRepo]) -> list[str]:
+    return sorted(r.meta.repo_id for r in repos if r.kind == "dev")
+
+
+def done_for(
+    hub: HubHandle, target: str, cache: dict[str, set[str] | None]
+) -> set[str] | None:
+    """Ticket ids in `<target>-svc`'s history; None when that document is
+    not published or cannot be loaded. Memoised in `cache`."""
+    if target not in cache:
+        # the doc is named after the leaf: a nested id `mid/repo-x` is a path
+        svc = f"{target.rpartition('/')[2]}-svc"
+        try:
+            doc = ticketcheck.load_from_hub(hub.federation_dir, target, svc)
+        except ticketcheck.DocLoadError:
+            doc = None
+        cache[target] = (
+            None
+            if doc is None
+            else missionnext.done_ids_from_history(doc.read_group("history"))
+        )
+    return cache[target]
+
+
+def done_per_target(
+    hub: HubHandle | None,
+    ticket_texts: dict[str, str],
+    base: set[str] | None,
+    answered: str | None = None,
+) -> tuple[set[str] | None, list[str]]:
+    """Local `kb mission next`: a story whose local ticket names a target repo
+    is done by that repo's `<target>-svc` history; others keep `base`. An
+    unpublished `<target>-svc` leaves the story not done (never another repo's
+    history) and adds a note. With no hub, only a ticket targeting `answered`
+    (the repo whose local -svc produced `base`) keeps its `base` verdict."""
+    routing = _Routing.load(hub) if hub is not None else None
+    targets = {
+        tid: found
+        for tid, text in ticket_texts.items()
+        if (found := ticket.target_repo(text, routing.holders if routing else None))
+    }
+    if not targets:
+        return base, []
+    done = {d for d in base or () if d not in targets}
+    notes: list[str] = []
+    for tid, target in targets.items():
+        if routing is None:
+            ids = base if target == answered else None
+        else:
+            ids = done_for(routing.hub, target, routing.cache)
+        if ids is None:
+            note = f"done: unknown ({target}-svc not published)"
+            if note not in notes:
+                notes.append(note)
+        elif tid in ids:
+            done.add(tid)
+    return done, notes
+
+
+@dataclass
+class _Routing:
+    """What routing a ticket to its Dev repo needs, loaded once per
+    `hub_plans` call."""
+
+    hub: HubHandle
+    devs: list[str]
+    holders: Callable[[str], list[str]]
+    cache: dict[str, set[str] | None] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, hub: HubHandle) -> _Routing:
+        repos = load_federation(hub.federation_dir)
+
+        def holders(doc: str) -> list[str]:
+            return [
+                r.meta.repo_id for r in repos if any(d.id == doc for d in r.index.docs)
+            ]
+
+        return cls(hub, _dev_ids(repos), holders)
+
+    def target(self, text: str) -> tuple[str | None, bool]:
+        """(target repo, explicit): the header / grounding repo, else the only
+        Dev repo when there is just one (not explicit), else None."""
+        found = ticket.target_repo(text, self.holders)
+        if found:
+            return found, True
+        return (self.devs[0], False) if len(self.devs) == 1 else (None, False)
+
+    def refusal(self, target: str | None) -> str | None:
+        """Why a ticket cannot be routed; None when it can (or the hub has
+        no Dev repo, so nothing is routed)."""
+        if not self.devs or target in self.devs:
+            return None
+        if target is None:
+            return "no target repo"
+        return f"target {target} is not a dev repo on the hub"
+
+    def done(self, target: str | None) -> set[str] | None:
+        return done_for(self.hub, target, self.cache) if target in self.devs else None
+
+
+_BLOCKED_BY_LINE_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$", re.M)
+
+
+def _blocked_by_tokens(text: str) -> list[str]:
+    """Every word before ` — ` of each `- Blocked by:` line and of its indented
+    sub-bullets (the form `ticketlint` accepts), split on commas and spaces."""
+    out: list[str] = []
+    inside = False
+    for line in mdmask._visible_text(text).splitlines():
+        m = _BLOCKED_BY_LINE_RE.match(line)
+        if m:
+            inside, rest = True, m.group("rest")
+        elif inside and line[:1].isspace() and line.strip():
+            rest = line.strip().removeprefix("-")
+        else:
+            inside = False
+            continue
+        out += [w for w in re.split(r"[,\s]+", rest.partition(" — ")[0]) if w]
+    return out
+
+
+def _cycle_through(start: str, graph: dict[str, list[str]]) -> list[str] | None:
+    """A dependency path `start → … → start`, or None."""
+    stack, seen = [(start, [start])], set()
+    while stack:
+        node, path = stack.pop()
+        for nxt in graph.get(node, ()):
+            if nxt == start:
+                return [*path, start]
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append((nxt, [*path, nxt]))
+    return None
+
+
+@dataclass
+class _Loose:
+    tid: str
+    title: str
+    target: str | None
+    done: bool
+    unknown: bool  # no done answer at all
+    deps: tuple[str, ...]
+    refusal: str | None  # why routing blocks it
+
+
+def _loose_rows(
+    loose: list[_Loose], done_of: dict[str, bool]
+) -> list[missionnext.StoryStatus]:
+    """Status of every ticket without a mission: routing refusal, else
+    dependency cycle, else a `Blocked by` sibling not done, else ready."""
+    graph = {t.tid: [d for d in t.deps if not done_of[d]] for t in loose if not t.done}
+    rows = []
+    for t in loose:
+        cycle = None if t.done else _cycle_through(t.tid, graph)
+        pending = [d for d in t.deps if not done_of[d]]
+        if t.done:
+            status, reasons = "done", ()
+        elif t.refusal:
+            status, reasons = "blocked", (t.refusal,)
+        elif cycle:
+            status, reasons = "blocked", (f"dependency cycle: {' → '.join(cycle)}",)
+        elif pending:
+            status = "blocked"
+            reasons = tuple(f"blocked by {d} (not done)" for d in pending)
+        else:
+            status, reasons = "ready", (("done: unknown",) if t.unknown else ())
+        rows.append(
+            missionnext.StoryStatus(
+                t.tid, "", t.title, status, reasons, t.deps, t.target
+            )
+        )
+    return rows
+
+
+def _routed_story(
+    row: missionnext.StoryStatus, target: str | None, routing: _Routing, published: bool
+) -> missionnext.StoryStatus:
+    """`row` with its target; a ready story whose published ticket cannot be
+    routed is blocked, like a loose ticket."""
+    row = dataclasses.replace(row, target_repo=target)
+    reason = routing.refusal(target) if published and row.status == "ready" else None
+    if reason:
+        return dataclasses.replace(row, status="blocked", reasons=(reason,))
+    return row
+
+
 def _plan_repo(
-    hub: HubHandle, fed: FederatedRepo, manifest: models.Manifest, notes: list[str]
+    hub: HubHandle,
+    fed: FederatedRepo,
+    manifest: models.Manifest,
+    notes: list[str],
+    routing: _Routing,
 ) -> PlanRepo:
     texts: dict[str, str] = {}  # mission id -> restored markdown
     titles: dict[str, tuple[str, str]] = {}  # mission id -> (title, summary)
@@ -157,6 +355,7 @@ def _plan_repo(
     loose: list[
         tuple[str, str]
     ] = []  # (section id, title) of tickets without a mission
+    ticket_l3: dict[str, str] = {}  # ticket id -> its source markdown
     for s in manifest.sections:
         if s.id == s.file:  # the mission is the section named like its group file
             section = _l3_section(fed, manifest.id, s)
@@ -165,6 +364,8 @@ def _plan_repo(
                 titles[s.id] = (s.title, s.summary)
             continue
         drafted[s.id] = _PUBLISHED
+        section = _l3_section(fed, manifest.id, s)
+        ticket_l3[s.id] = _restore(s.title, section) if section is not None else ""
         if s.file == TICKETS_GROUP:
             loose.append((s.id, s.title))
         else:
@@ -178,17 +379,53 @@ def _plan_repo(
     )
     if note:
         notes.append(note)
-    results = missionnext.statuses(parsed, drafted, done)
-    unparented = [
-        missionnext.StoryStatus(
-            tid,
-            "",
-            title,
-            "done" if done and tid in done else "ready",
-            ("done: unknown",) if done is None else (),
-        )
-        for tid, title in loose
+    routed = {tid: routing.target(text) for tid, text in ticket_l3.items()}
+    targets = {tid: t for tid, (t, _) in routed.items()}
+    # a story's done comes from its target's `-svc` when that is published
+    merged, answered = set(done or ()), done is not None
+    done_of: dict[str, bool] = {}
+    unknown: set[str] = set()  # tickets whose done nothing could answer
+    for tid, (target, explicit) in routed.items():
+        ds = routing.done(target)
+        if ds is None and explicit and target in routing.devs:
+            # the mission-level answer may belong to another repo
+            merged.discard(tid)
+            unknown.add(tid)
+            note = f"{manifest.id}: done: unknown ({target}-svc not published)"
+            if note not in notes:
+                notes.append(note)
+        elif ds is None and done is None:
+            unknown.add(tid)
+        if ds is not None:
+            merged.discard(tid)
+            if tid in ds:
+                merged.add(tid)
+            answered = True
+        done_of[tid] = tid in merged
+    results = missionnext.statuses(parsed, drafted, merged if answered else None)
+    results = [
+        _routed_story(r, targets.get(r.us_id), routing, r.us_id in targets)
+        for r in results
     ]
+    unparented = _loose_rows(
+        [
+            _Loose(
+                tid,
+                title,
+                targets[tid],
+                done_of[tid],
+                tid in unknown,
+                tuple(
+                    d
+                    for d in _blocked_by_tokens(ticket_l3[tid])
+                    if d in drafted and d != tid
+                ),
+                routing.refusal(targets[tid]),
+            )
+            for tid, title in loose
+        ],
+        done_of,
+    )
     missions = [
         PlanMission(
             repo=fed.meta.repo_id,
@@ -211,7 +448,8 @@ def hub_plans(
     """Every BA repo's plan with per-story status, and the notes explaining
     anything the hub could not answer (never an exception for that)."""
     notes: list[str] = []
-    plans = [_plan_repo(hub, fed, m, notes) for fed, m in plan_docs(hub, repo)]
+    routing = _Routing.load(hub)
+    plans = [_plan_repo(hub, fed, m, notes, routing) for fed, m in plan_docs(hub, repo)]
     return plans, notes
 
 
@@ -221,11 +459,12 @@ FROM_HUB_LABELS = {"to-draft": "not ready (no published ticket)"}
 
 
 def next_from_hub(
-    hub: HubHandle, repo: str | None = None
+    hub: HubHandle, repo: str | None = None, for_repo: str | None = None
 ) -> tuple[list[missionnext.StoryStatus], list[missionnext.StoryStatus], list[str]]:
     """(stories, unparented tickets, notes) of the plans published on the hub
-    (of `repo`, when given); `kb mission next --from-hub`, MCP
-    kb_mission_next and the auto runner."""
+    (of `repo`, when given; only the items targeting Dev repo `for_repo`,
+    when given); `kb mission next --from-hub`, MCP kb_mission_next and the
+    auto runner."""
     plans, notes = hub_plans(hub, repo)
     if not plans:
         notes.append(
@@ -233,9 +472,16 @@ def next_from_hub(
             if repo
             else "no <repo>-plan document on the hub"
         )
+    keep = for_repo is None
     return (
-        [s for r in plans for m in r.missions for s in m.stories],
-        [u for r in plans for u in r.unparented],
+        [
+            s
+            for r in plans
+            for m in r.missions
+            for s in m.stories
+            if keep or s.target_repo == for_repo
+        ],
+        [u for r in plans for u in r.unparented if keep or u.target_repo == for_repo],
         notes,
     )
 

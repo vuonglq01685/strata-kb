@@ -462,3 +462,57 @@ def test_fetch_warns_per_asset_missing_from_the_hub_clone(
     assert f"warning: assets/{name} is not in the hub clone" in result.output
     assert f"/assets/{name}" in result.output
     assert not (work / "docs" / "impl" / "BUG-12" / "assets").exists()
+
+
+def _fetch_in_dev_repo(fed_hub, tmp_path, run_git, monkeypatch, target, repo_id):
+    us1, _ = _plan_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    (work / ".kb").mkdir(parents=True)
+    (work / ".kb" / "config.yaml").write_text(f"repo_id: {repo_id}\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+    # a ticket targeting `target`
+    plan = fed_hub / "federation" / "ba-one" / "ba-one-plan"
+    for f in plan.rglob("*.raw.md"):
+        f.write_text(
+            f.read_text(encoding="utf-8").replace(
+                "> Parent mission:", f"> Target repo: {target}\n> Parent mission:", 1
+            ),
+            encoding="utf-8",
+        )
+    result = runner.invoke(app, ["ticket", "fetch", us1, "--hub", str(fed_hub)])
+    return us1, result
+
+
+def test_ticket_fetch_warns_on_other_target(fed_hub, tmp_path, run_git, monkeypatch):
+    us1, result = _fetch_in_dev_repo(
+        fed_hub, tmp_path, run_git, monkeypatch, "other-api", "this-repo"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"{us1} targets other-api, this repo is this-repo" in result.output
+    assert (Path("docs") / "impl" / us1 / "ticket.md").is_file()
+
+
+def test_ticket_fetch_no_warning_same_target(fed_hub, tmp_path, run_git, monkeypatch):
+    us1, result = _fetch_in_dev_repo(
+        fed_hub, tmp_path, run_git, monkeypatch, "this-repo", "this-repo"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "targets" not in result.output
+
+
+def test_ticket_fetch_malformed_config_does_not_block_fetch(
+    fed_hub, tmp_path, run_git, monkeypatch
+):
+    us1, _ = _plan_hub(fed_hub, tmp_path, run_git)
+    work = tmp_path / "dev-repo"
+    (work / ".kb").mkdir(parents=True)
+    (work / ".kb" / "config.yaml").write_text("repo_id: [unclosed\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+
+    result = runner.invoke(app, ["ticket", "fetch", us1, "--hub", str(fed_hub)])
+
+    assert result.exit_code == 0, result.output
+    assert result.exception is None
+    assert (Path("docs") / "impl" / us1 / "ticket.md").is_file()

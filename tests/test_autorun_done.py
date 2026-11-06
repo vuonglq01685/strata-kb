@@ -21,6 +21,7 @@ def test_to_json_carries_unparented():
             "status": "ready",
             "reasons": [],
             "depends_on": [],
+            "target_repo": None,
         }
     ]
     assert to_json([], [])["unparented"] == []
@@ -84,3 +85,26 @@ def test_all_done_ba_waits_for_dev_work():
 def test_all_done_ba_true_when_everything_done_and_no_questions():
     ok, why = all_done([S("US1", "done")], [S("BUG-1", "done")], ba=True)
     assert (ok, why) == (True, "all 2 tickets done")
+
+
+def test_all_done_scoped_to_repo():
+    mine = StoryStatus("TAL-1", "", "t", "done", (), (), "web-app")
+    other = StoryStatus("TAL-2", "", "t", "ready", (), (), "payments-api")
+    assert all_done([], [mine, other], ba=False, repo_id="web-app") == (
+        True,
+        "all 1 tickets done",
+    )
+    assert all_done([], [other], ba=False, repo_id="web-app") == (False, "no tickets")
+    assert all_done([], [mine, other], ba=True, repo_id="web-app") == (
+        False,
+        "TAL-2 ready",
+    )
+
+
+def test_all_done_dev_keeps_untargeted_rows():
+    mine = StoryStatus("US1", "M-x", "t", "done", (), (), "web-app")
+    draft = StoryStatus("US2", "M-x", "t", "to-draft", (), (), None)
+    assert all_done([mine, draft], [], ba=False, repo_id="web-app") == (
+        False,
+        "US2 to-draft",
+    )

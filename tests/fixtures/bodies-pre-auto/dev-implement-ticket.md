@@ -183,7 +183,7 @@ edit above it.
     flow done; `--state closed` non-empty → `PR ❌ closed`, next step is
     re-handover or reopen — never end the flow silently; `gh` absent →
     `PR ? unknown (gh not installed)`.
-  - no branch matches `git branch --list "*<ticket-id>*"` and HEAD is the
+  - none of the branches `<ticket-id>`, `auto/<ticket-id>` and `auto/<ticket-id>-r<N>` exists (`git branch --list "<ticket-id>" "auto/<ticket-id>" "auto/<ticket-id>-r*"` prints nothing) and HEAD is the
     default branch → offer `git switch -c <ticket-id>`.
   - the current branch names a *different* `ABC-12` ticket id → STOP:
     "two tickets in flight; switch branches first".

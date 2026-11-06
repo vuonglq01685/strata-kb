@@ -470,3 +470,12 @@ def test_filled_template_passes():
     report = _lint(filled, ticket_id="BUG-12")
     assert _errors(report) == [], filled
     assert report.render().splitlines()[-1] == "DoR: PASS"
+
+
+def test_bug_with_a_target_repo_header_lints_clean():
+    text = _bug().replace(
+        "> Related ticket: none\n", "> Related ticket: none\n> Target repo: api\n"
+    )
+    assert "> Target repo: api" in text
+    report = _lint(text)
+    assert _errors(report) == []

@@ -3,6 +3,8 @@
 > Severity: S2
 > Revision: 1
 > Related ticket: none
+<!-- Optional header line `> Target repo: <repo-id>`: the dev repo the fix
+lands in. -->
 
 <!-- Header lines. `> Type:` is `bug`, or `hotfix` for a fix that ships
 ahead of the next planned release, from the production line. `> Severity:`

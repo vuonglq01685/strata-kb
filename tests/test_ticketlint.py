@@ -1753,3 +1753,36 @@ def test_story_without_type_line_keeps_story_contract():
     report = ticketlint.lint("# TAL-1 — x\n> Revision: 1\n", None)
     errors = [i.message for i in report.issues if i.level == "error"]
     assert "missing required heading: '## User Story'" in errors
+
+
+def test_target_header_disagrees_with_grounded_on_is_error(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(golden_block).replace(
+        "> Revision: 1\n", "> Revision: 1\n> Target repo: other\n", 1
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert any("Target repo" in e for e in _errors(report))
+
+
+def test_target_header_alone_is_fine(fed_hub: Path, golden_block: str):
+    text = _build_ticket(golden_block).replace(
+        "> Revision: 1\n", "> Revision: 1\n> Target repo: demo\n", 1
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("Target repo" in e for e in _errors(report))
+
+
+def test_target_lint_ignores_fenced_grounded_on_before_the_real_one(
+    fed_hub: Path, golden_block: str
+):
+    text = _build_ticket(golden_block).replace(
+        "> Revision: 1\n", "> Revision: 1\n> Target repo: demo\n", 1
+    )
+    text = text.replace(
+        "## Technical grounding\n",
+        "## Technical grounding\n```\n- Grounded on: old:old-code @ abc1234\n```\n",
+        1,
+    )
+    report = ticketlint.lint(text, _hub(fed_hub))
+    assert not any("Target repo" in e for e in _errors(report))

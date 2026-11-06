@@ -676,6 +676,23 @@ def _check_blocked_by_declared(
     ]
 
 
+def _check_target_repo(text: str) -> list[Issue]:
+    """The header and a qualified `-code` Grounded-on entry must agree."""
+    header = ticket.target_header(text)
+    if not header:
+        return []
+    code = ticket.grounded_code_entry(text)
+    if code and code[0] and code[0] != header:
+        return [
+            Issue(
+                "error",
+                f"Target repo '{header}' disagrees with Grounded on "
+                f"'{code[0]}:{code[1]}' — fix one of them",
+            )
+        ]
+    return []
+
+
 def lint(
     text: str,
     hub: HubHandle | None,
@@ -722,6 +739,7 @@ def lint(
     issues += lintcore.check_required_filled(
         text, ticket.REQUIRED_HEADINGS, _FILL_EXEMPT
     )
+    issues += _check_target_repo(text)
     issues += _check_story(text)
     issues += _check_story_count(text)
 

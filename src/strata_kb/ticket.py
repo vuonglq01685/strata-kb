@@ -13,6 +13,7 @@ the BA's working language.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from strata_kb import mdmask
 
@@ -162,6 +163,77 @@ def ticket_type(text: str) -> str:
     if m is None:
         return "story"
     return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
+
+
+# `- Grounded on: [<repo>:]<doc> @ <rev>` — repo/doc classes as in
+# kbcontext._REF_RE; rev is a 7..40 hex commit (core.run() writes 7).
+GROUNDED_ON_RE = re.compile(
+    r"^-\s*Grounded on:\s*"
+    r"(?:(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*):)?"
+    r"(?P<doc>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<rev>[0-9a-fA-F]{7,40})\s*$"
+)
+
+_GROUNDED_PREFIX_RE = re.compile(r"^-\s*Grounded on:\s*(?P<rest>.*)$")
+
+
+def grounded_entries(line: str) -> list[tuple[str | None, str, str]]:
+    """`(repo, doc, rev)` per comma-separated entry of a `- Grounded on:`
+    line. The mission template shows one entry; the SA writes the `-code`
+    and `-svc` docs on one line, so the list is accepted here. Any entry
+    that is not `[<repo>:]<doc> @ <rev>` makes the whole line unparseable
+    (`[]`) — a half-read line would silently ground on the wrong doc."""
+    m = _GROUNDED_PREFIX_RE.match(line.strip())
+    if m is None:
+        return []
+    out: list[tuple[str | None, str, str]] = []
+    for part in m.group("rest").split(","):
+        em = GROUNDED_ON_RE.match(f"- Grounded on: {part.strip()}")
+        if em is None:
+            return []
+        out.append((em.group("repo"), em.group("doc"), em.group("rev").lower()))
+    return out
+
+
+# '> Target repo: <repo-id>' in the header block names the dev repo a ticket
+# is built in; absent, the repo qualifier of the `-code` Grounded-on entry.
+TARGET_REPO_RE = re.compile(r"^>[ \t]*Target repo:[ \t]*(.*?)[ \t]*$", re.M)
+
+
+def target_header(text: str) -> str | None:
+    """The `> Target repo:` value from the header block, or None when the
+    line is absent or blank."""
+    m = TARGET_REPO_RE.search(header_block(text))
+    return (m.group(1) or None) if m else None
+
+
+def grounded_code_entry(text: str) -> tuple[str | None, str] | None:
+    """`(repo qualifier, doc)` of the first `-code` entry on the first
+    parseable `Grounded on:` line of the visible text, or None."""
+    for line in mdmask._visible_text(text).splitlines():
+        entries = grounded_entries(line)
+        if entries:
+            code = next((e for e in entries if e[1].endswith("-code")), None)
+            return (code[0], code[1]) if code else None
+    return None
+
+
+def target_repo(
+    text: str, holders: Callable[[str], list[str]] | None = None
+) -> str | None:
+    """The ticket's target repo: the header value, else the repo of the
+    first `-code` entry of the first parseable `Grounded on:` line. An
+    unqualified entry resolves through `holders(doc_id)` (repo ids that
+    publish the doc) only when exactly one holder exists."""
+    header = target_header(text)
+    if header:
+        return header
+    code = grounded_code_entry(text)
+    if code is None:
+        return None
+    if code[0]:
+        return code[0]
+    found = holders(code[1]) if holders else []
+    return found[0] if len(found) == 1 else None
 
 
 # Bug / hotfix contract (`buglint.py`). Like REQUIRED_HEADINGS this is a

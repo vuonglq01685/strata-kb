@@ -24,9 +24,10 @@ from tests.test_autorun_runner import (  # noqa: F401
     no_switch_check,
 )
 
+REPO = "svc"
 STORY = {
     "us_id": "M-x-US3", "mission_id": "M-x", "title": "t", "status": "ready",
-    "reasons": [], "depends_on": [],
+    "reasons": [], "depends_on": [], "target_repo": "svc",
 }  # fmt: skip
 
 
@@ -90,7 +91,7 @@ def test_picker_reads_the_plan_through_the_api(tmp_path: Path):
     http = FakeHub(**{"/api/plan/next": plan()})
     hub = hubapi.HubApi("http://hub", "tok", http=http)
 
-    assert pick_dev(hub, tmp_path) == Task("dev-implement-ticket", "M-x-US3")  # type: ignore[arg-type]
+    assert pick_dev(hub, tmp_path, REPO) == Task("dev-implement-ticket", "M-x-US3")  # type: ignore[arg-type]
     assert http.calls == ["/api/plan/next"]
 
 
@@ -98,9 +99,9 @@ def test_picker_still_calls_next_from_hub_by_module_attribute(tmp_path, monkeypa
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / ".github" / "workflows" / "kb-test.yml").write_text("name: kb-test\n")
     monkeypatch.setattr(
-        planstatus, "next_from_hub", lambda hub, repo=None: ([], [], [])
+        planstatus, "next_from_hub", lambda hub, repo=None, for_repo=None: ([], [], [])
     )
-    assert pick_dev(HubHandle(root=tmp_path), tmp_path) is None
+    assert pick_dev(HubHandle(root=tmp_path), tmp_path, REPO) is None
 
 
 def test_cloud_runner_idles_when_hub_unreachable(tmp_path, kb_dir):
@@ -171,7 +172,9 @@ def test_cloud_preflight_refuses_without_auto_merge(
         runner_mod, "registry_or_reason", lambda *a: pytest.fail("cloud reads the API")
     )
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": entry(auto_merge=False)})
+    hub_api(
+        **{"/api/registry/entry": entry(auto_merge=False), "/api/plan/next": plan()}
+    )
 
     (reason,) = preflight(tmp_path, kb_dir)
 
@@ -184,14 +187,19 @@ def test_cloud_preflight_refuses_without_auto_merge(
 @pytest.mark.usefixtures("no_switch_check")
 def test_cloud_preflight_passes_with_auto_merge(tmp_path, kb_dir, hub_api):
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": entry()})
+    hub_api(**{"/api/registry/entry": entry(), "/api/plan/next": plan()})
     assert preflight(tmp_path, kb_dir) == []
 
 
 @pytest.mark.usefixtures("no_switch_check")
 def test_cloud_preflight_unregistered_repo(tmp_path, kb_dir, hub_api):
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
-    hub_api(**{"/api/registry/entry": (404, {"error": "repo_not_registered"})})
+    hub_api(
+        **{
+            "/api/registry/entry": (404, {"error": "repo_not_registered"}),
+            "/api/plan/next": plan(),
+        }
+    )
     assert preflight(tmp_path, kb_dir) == ["repo_id 'svc' is not in the hub registry"]
 
 
@@ -259,3 +267,29 @@ def test_local_mode_unchanged(tmp_path, kb_dir, monkeypatch):
 
 def test_picker_module_exposes_plan_next():
     assert picker.plan_next
+
+
+OLD_ROW = {k: v for k, v in STORY.items() if k != "target_repo"}
+
+
+@pytest.mark.usefixtures("no_switch_check")
+def test_runner_refuses_old_hub(tmp_path, kb_dir, hub_api):
+    (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
+    hub_api(**{"/api/registry/entry": entry(), "/api/plan/next": plan([OLD_ROW])})
+    (reason,) = preflight(tmp_path, kb_dir)
+    assert "hub is older than 1.35" in reason
+
+
+def test_plan_next_accepts_null_target_repo():
+    http = FakeHub(**{"/api/plan/next": plan([STORY | {"target_repo": None}])})
+    (story,), _, _ = hubapi.HubApi("http://hub", "tok", http=http).plan_next()
+    assert story.target_repo is None
+
+
+def test_plan_next_old_rows_pass_unless_target_required():
+    http = FakeHub(**{"/api/plan/next": plan([OLD_ROW])})
+    api = hubapi.HubApi("http://hub", "tok", http=http)
+    (story,), _, _ = api.plan_next()  # BA / CLI reads stay as before
+    assert story.target_repo is None
+    with pytest.raises(hubapi.OldHubError, match="older than 1.35"):
+        api.plan_next(require_target=True)

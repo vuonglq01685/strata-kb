@@ -11,6 +11,7 @@ from strata_kb.autorun import lock as lock_mod
 from strata_kb.autorun import picker
 from strata_kb.autorun import runner as runner_mod
 from strata_kb.autorun import state as autostate
+from strata_kb.autorun.claims import UnknownTicketError
 from strata_kb.autorun.claude import TaskResult
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
@@ -25,7 +26,7 @@ TASK = Task("dev-implement-ticket", "M-x-US3")
 
 
 def S(us_id: str, status: str) -> StoryStatus:
-    return StoryStatus(us_id, "M-x", "t", status, ())
+    return StoryStatus(us_id, "M-x", "t", status, (), (), "svc")
 
 
 def cfg_of(kind: str = "dev", **auto) -> KBConfig:
@@ -68,11 +69,13 @@ def env(tmp_path: Path, monkeypatch):
     kb_dir = tmp_path / ".kb"
     kb_dir.mkdir()
     hub = HubHandle(root=tmp_path)
-    tickets = {"stories": [S("US3", "ready")]}
+    tickets = {"stories": [S("M-x-US3", "ready")]}
     monkeypatch.setattr(
-        planstatus, "next_from_hub", lambda h, repo=None: (tickets["stories"], [], [])
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: (tickets["stories"], [], []),
     )
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): TASK)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): TASK)
     monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): TASK)
     return tmp_path, kb_dir, hub, tickets
 
@@ -193,12 +196,12 @@ def test_ba_open_question_blocks_done(env):
 
 
 def test_idle_when_nothing_to_pick(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): None)
     assert once(env, Script()) == "idle"
     monkeypatch.setattr(
         picker,
         "pick_dev",
-        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
+        lambda h, root, repo_id, skip=(): (_ for _ in ()).throw(KbError("boom")),
     )
     assert once(env, Script()) == "idle"
 
@@ -230,7 +233,7 @@ def test_fifth_repick_of_done_task_skips_it_and_moves_on(env, monkeypatch, caplo
     other = Task("dev-implement-ticket", "M-x-US4")
     seen: list = []
 
-    def pick(h, root, skip=()):
+    def pick(h, root, repo_id, skip=()):
         seen.append(tuple(skip))
         return other if TASK.key in skip else TASK
 
@@ -255,7 +258,7 @@ def test_every_task_left_skipped_stops(env, monkeypatch):
     autostate.save(
         env[1], autostate.AutoState(None, 0, (), None, "", skipped=(TASK.key,))
     )
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): None)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): None)
     assert once(env, Script()) == "stopped"
     assert (
         autostate.load(env[1]).stop_reason == f"every task left was skipped: {TASK.key}"
@@ -269,7 +272,7 @@ def test_pick_error_with_skipped_tasks_idles(env, monkeypatch):
     monkeypatch.setattr(
         picker,
         "pick_dev",
-        lambda h, root, skip=(): (_ for _ in ()).throw(KbError("boom")),
+        lambda h, root, repo_id, skip=(): (_ for _ in ()).throw(KbError("boom")),
     )
     assert once(env, Script()) == "idle"
     assert autostate.load(env[1]).stop_reason is None
@@ -280,7 +283,7 @@ def test_different_pick_resets_the_repick_guard(env, monkeypatch):
     once(env, script)
     assert once(env, script) == "idle"
     other = Task("dev-implement-ticket", "M-x-US4")
-    monkeypatch.setattr(picker, "pick_dev", lambda h, root, skip=(): other)
+    monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): other)
 
     assert once(env, script) == "ran"
 
@@ -300,6 +303,7 @@ def test_resume_resets_repick_count_but_keeps_last_done(env):
 
 
 def test_crash_resumes_stored_task(env, monkeypatch):
+    env[3]["stories"] = [S("BUG-2", "ready")]
     autostate.save(env[1], autostate.AutoState("dev-fix-bug:BUG-2", 1, (), None, ""))
     script = Script(TaskResult("done"))
     assert once(env, script) == "ran"
@@ -365,7 +369,7 @@ def test_run_loop_sleeps_per_outcome_and_survives_errors(env, monkeypatch):
     sleeps: list[float] = []
     picks = iter([None, KbError("x"), RuntimeError("boom"), TASK])
 
-    def pick(hub, root, skip=()):
+    def pick(hub, root, repo_id, skip=()):
         item = next(picks)
         if isinstance(item, Exception):
             raise item
@@ -890,6 +894,9 @@ class FakeClaims:
     def release_if_working(self, ticket, reason):
         self.calls.append(("release", ticket, reason))
 
+    def forget(self, ticket):
+        self.calls.append(("forget", ticket))
+
     def lost_reason(self, ticket):
         return "expired by hub"
 
@@ -951,6 +958,7 @@ def test_all_candidates_taken_is_idle(cenv):
 
 
 def test_stored_task_taken_by_other_drops_task(cenv, caplog):
+    cenv[3]["stories"].append(S("M-x-US3", "ready"))
     autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
     claims, script = FakeClaims(taken={"M-x-US3"}), Script()
     with caplog.at_level(logging.INFO):
@@ -960,6 +968,7 @@ def test_stored_task_taken_by_other_drops_task(cenv, caplog):
 
 
 def test_stored_task_is_reclaimed_and_mine_is_not_held(cenv):
+    cenv[3]["stories"].append(S("M-x-US3", "ready"))
     autostate.save(cenv[1], autostate.AutoState(TASK.key, 1, (), None, ""))
     claims = FakeClaims()
     once(cenv, Script(TaskResult("done")), claims=claims)
@@ -1150,3 +1159,85 @@ def test_transient_waiting_qa_error_still_saves_waiting_on(cenv):
         cenv, Script(TaskResult("blocked-qa", (12,))), claims=FlakyPhase("waiting-qa")
     )
     assert out == "waiting" and autostate.load(cenv[1]).waiting_on == (12,)
+
+
+def _stored(env, ticket="US1"):
+    autostate.save(
+        env[1], autostate.AutoState(f"dev-implement-ticket:{ticket}", 1, (), None, "")
+    )
+
+
+@pytest.mark.parametrize(
+    "stories",
+    [
+        [S("US2", "ready")],  # unpublished: the ticket left the plan
+        [StoryStatus("US1", "M-x", "t", "ready", (), (), "other")],  # routed elsewhere
+        [S("US1", "blocked"), S("US2", "ready")],  # not ready
+    ],
+    ids=["unpublished", "routed-elsewhere", "not-ready"],
+)
+def test_stored_task_no_longer_ready_here_is_dropped(cenv, stories, caplog):
+    cenv[3]["stories"] = stories
+    _stored(cenv)
+    claims, script = FakeClaims(), Script()
+    with caplog.at_level(logging.INFO):
+        assert once(cenv, script, claims=claims) == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.task, state.attempts) == (None, 0)
+    assert script.prompts == [] and claims.of("claim") == []
+    assert claims.of("release") == [("release", "US1", "US1 no longer ready for svc")]
+    assert claims.of("forget") == [("forget", "US1")]
+    assert "US1 is no longer ready for svc; picking again" in caplog.text
+
+
+def test_stored_untargeted_task_is_kept_like_the_pick(cenv):
+    # Same routing test as the pick: an untargeted ready row (hub with no dev repos)
+    # stays this runner's task, so attempts keep counting toward MAX_ATTEMPTS.
+    cenv[3]["stories"] = [StoryStatus("US1", "M-x", "t", "ready", (), (), None)]
+    _stored(cenv)
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US1")
+    assert claims.of("release") == [] and claims.of("forget") == []
+
+
+def test_stored_task_unpublished_is_dropped_and_repicked(cenv):
+    cenv[3]["stories"] = [S("US2", "ready")]
+    _stored(cenv)
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+
+
+def test_claim_unknown_ticket_recovers(cenv, caplog):
+    claims = FakeClaims()
+    claims.claim_error = UnknownTicketError(
+        "hub /api/claims returned 404: unknown_ticket"
+    )
+    _stored(cenv)
+    with caplog.at_level(logging.INFO):
+        assert once(cenv, Script(), claims=claims) == "ran"
+    state = autostate.load(cenv[1])
+    assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
+    assert "unknown_ticket; picking again" in caplog.text
+
+
+class _UnknownFirst(FakeClaims):
+    def claim(self, ticket):
+        if ticket == "US1":
+            raise UnknownTicketError("hub /api/claims returned 404: unknown_ticket")
+        return super().claim(ticket)
+
+
+def test_pick_unknown_ticket_moves_on_to_next_candidate(cenv):
+    claims, script = _UnknownFirst(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+
+
+def test_pick_only_unknown_tickets_is_idle(cenv):
+    cenv[3]["stories"] = [S("US1", "ready")]
+    claims, script = _UnknownFirst(), Script()
+    assert once(cenv, script, claims=claims) == "idle"
+    assert script.prompts == []
