@@ -77,12 +77,13 @@ def _ba_tasks(data: dict) -> Iterator[Task]:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
     for s in stories:
-        if s["status"] == "draft":
+        if s["status"] == "draft" and not s.get("is_parent"):
             yield Task("ba-ticket-author", f"--amend {s['us_id']}")
     if data["next"]:
         yield Task("ba-ticket-author", data["next"])
     # past a skipped `next`, the later stories still to draft
-    for s in stories:
+    # loose parents' children sit under `unparented`
+    for s in (*stories, *data.get("unparented", ())):
         if s["status"] == "to-draft":
             yield Task("ba-ticket-author", s["us_id"])
 
@@ -144,7 +145,8 @@ def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
 
     def ready(t: StoryStatus) -> bool:
         return (
-            t.status == "ready"
+            not t.is_parent
+            and t.status == "ready"
             and t.target_repo in (None, repo_id)
             and all(d in done for d in t.depends_on)
         )

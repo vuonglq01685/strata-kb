@@ -184,3 +184,13 @@ def test_400_is_a_rejection_other_errors_are_not():
         with pytest.raises(KbError) as exc:
             client(FakeHttp(code, {"error": "x"})).take("US1", "a")
         assert not isinstance(exc.value, ClaimRejectedError)
+
+
+def test_parent_story_400_is_its_own_rejection():
+    from strata_kb.claimclient import ClaimRejectedError, ParentStoryError
+
+    with pytest.raises(ParentStoryError) as exc:
+        client(
+            FakeHttp(400, {"error": "parent_story", "detail": "P1 is a parent"})
+        ).take("P1", "a")
+    assert isinstance(exc.value, ClaimRejectedError)

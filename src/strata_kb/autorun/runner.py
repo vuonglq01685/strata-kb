@@ -26,7 +26,11 @@ from strata_kb.autorun.lock import run_lock  # noqa: F401 -- cli uses runner.run
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
-from strata_kb.claimclient import ClaimRejectedError, ClaimRouteMissing
+from strata_kb.claimclient import (
+    ClaimRejectedError,
+    ClaimRouteMissing,
+    ParentStoryError,
+)
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
@@ -256,6 +260,8 @@ def _claim_pick(
             if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
                 return task
         except UnknownTicketError as exc:  # unpublished under us: like a lost race
+            logger.info("%s; trying the next ticket", exc)
+        except ParentStoryError as exc:  # a parent is never a task
             logger.info("%s; trying the next ticket", exc)
     if candidates:
         logger.info("every ready ticket is held by another Dev or unknown to the hub")

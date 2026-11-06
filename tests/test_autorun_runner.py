@@ -15,7 +15,11 @@ from strata_kb.autorun.claims import UnknownTicketError
 from strata_kb.autorun.claude import TaskResult
 from strata_kb.autorun.picker import Task
 from strata_kb.autorun.runner import Backoff, preflight, run_loop, run_once
-from strata_kb.claimclient import ClaimRejectedError, ClaimRouteMissing
+from strata_kb.claimclient import (
+    ClaimRejectedError,
+    ClaimRouteMissing,
+    ParentStoryError,
+)
 from strata_kb.config import AutoConfig, KBConfig
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
@@ -1241,3 +1245,19 @@ def test_pick_only_unknown_tickets_is_idle(cenv):
     claims, script = _UnknownFirst(), Script()
     assert once(cenv, script, claims=claims) == "idle"
     assert script.prompts == []
+
+
+class _ParentFirst(FakeClaims):
+    def claim(self, ticket):
+        if ticket == "US1":
+            raise ParentStoryError(
+                "hub /api/claims returned 400: parent_story — US1 is a parent story"
+            )
+        return super().claim(ticket)
+
+
+def test_runner_skips_parent_claim_refusal(cenv):
+    claims, script = _ParentFirst(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US2")
+    assert autostate.load(cenv[1]).stop_reason is None

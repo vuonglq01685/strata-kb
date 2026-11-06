@@ -314,3 +314,25 @@ def test_ttl_env_used(monkeypatch):
     assert claim_api.claim_ttl_from_env() == 60
     monkeypatch.delenv("STRATA_KB_CLAIM_TTL")
     assert claim_api.claim_ttl_from_env() == 14400
+
+
+def test_claim_take_parent_refused(web_client, hub_with_ticket, auth):
+    from strata_kb import ticketfetch
+
+    hub = hub_with_ticket(rev=1)
+    l3 = ticketfetch.find(hub, US1)[2]
+    text = l3.read_text(encoding="utf-8")
+    head, sep, tail = text.partition(f"\n## {US1} ")
+    title, _, rest = tail.partition("\n")
+    l3.write_text(
+        f"{head}{sep}{title}\n> Kind: parent story\n{rest}",
+        encoding="utf-8",
+        newline="\n",
+    )
+    r = _take(web_client, auth)
+    assert r.status_code == 400
+    assert r.json() == {
+        "error": "parent_story",
+        "detail": f"{US1} is a parent story — claim one of its children",
+    }
+    assert web_client.get("/api/claims", headers=auth).json()["claims"] == []

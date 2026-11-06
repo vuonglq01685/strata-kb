@@ -110,3 +110,18 @@ def test_all_done_dev_keeps_untargeted_rows():
         False,
         "US2 to-draft",
     )
+
+
+def test_all_done_dev_ignores_parent():
+    parent = StoryStatus("P1", "M-x", "t", "in progress", (), (), None, is_parent=True)
+    child = S("P1.web", "done")
+    assert all_done([parent, child], [], ba=False) == (True, "all 1 tickets done")
+    assert all_done([parent], [], ba=False) == (False, "no tickets")
+
+
+def test_all_done_ba_counts_parent():
+    parent = StoryStatus("P1", "M-x", "t", "in progress", (), (), None, is_parent=True)
+    assert all_done([parent, S("P1.web", "done")], [], ba=True) == (
+        False,
+        "P1 in progress",
+    )
