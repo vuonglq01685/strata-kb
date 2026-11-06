@@ -639,11 +639,29 @@ def _check_backlog_membership(
     ], []
 
 
-def _blocked_by_ids(text: str, mission_id: str) -> tuple[str, ...]:
+_WORD_RE = re.compile(r"[^\s,;()—–]+")
+
+
+def _blocked_by_ids(
+    text: str, mission_id: str, siblings: frozenset[str], parent_id: str
+) -> tuple[str, ...]:
     """US ids on the `- Blocked by:` bullet of `## Dependencies` and its
-    indented sub-bullets, read like a `Depends on` cell."""
-    cells = lintcore.blocked_by_cells(text)
-    return missionnext.dep_ids(" ".join(cells), mission_id)
+    indented sub-bullets, read like a `Depends on` cell. A child's split
+    sibling ids, and anything shaped `<parent-id>.…`, are blanked first: they
+    count only as exact split ids, never through the US-id regex (which would
+    read `M-x-US1.api` as the parent `M-x-US1`)."""
+    cells = " ".join(lintcore.blocked_by_cells(text))
+    if siblings:
+        cells = _WORD_RE.sub(
+            lambda m: (
+                " "
+                if m.group().rstrip(".:") in siblings
+                or m.group().startswith(f"{parent_id}.")
+                else m.group()
+            ),
+            cells,
+        )
+    return missionnext.dep_ids(cells, mission_id)
 
 
 def _check_blocked_by_declared(
@@ -660,8 +678,8 @@ def _check_blocked_by_declared(
     declared = next((s.depends_on for s in stories if s.us_id == us_id), ())
     missing = [
         d
-        for d in _blocked_by_ids(text, mission_id)
-        if d not in declared and d != us_id and d not in siblings
+        for d in _blocked_by_ids(text, mission_id, siblings, us_id)
+        if d not in declared and d != us_id
     ]
     if not missing:
         return []

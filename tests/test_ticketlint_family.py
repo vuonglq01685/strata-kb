@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import kbcontext
+from strata_kb import kbcontext, ticketlint
 from strata_kb.familyhub import lint
 from tests.test_ticketlint import (
     REFS,
@@ -198,9 +198,9 @@ def test_id_published_by_other_ba_repo_is_error(plan_hub, golden_block: str):
 
     texts = family(golden_block, pid=US[1])
     args = {"ticket_id": US[1], "load_ticket": texts.get}
-    other = lint(texts[US[1]], plan_hub, own_repo="ba-two", **args)
+    other = lint(texts[US[1]], plan_hub, own_repo=lambda: "ba-two", **args)
     assert f"ticket id {US[1]} is already published by ba-one" in _errors(other)
-    own = lint(texts[US[1]], plan_hub, own_repo="ba-one", **args)
+    own = lint(texts[US[1]], plan_hub, own_repo=lambda: "ba-one", **args)
     assert not any("already published" in e for e in _errors(own))
 
 
@@ -229,3 +229,23 @@ def test_plain_ticket_lint_unchanged(fed_hub: Path, golden_block: str, with_load
         text, _hub(fed_hub), load_ticket=(lambda _i: None) if with_loader else None
     )
     assert got.passed and got.issues == base.issues and got.notes == base.notes == []
+
+
+def test_blocked_by_reads_split_ids_exactly(fed_hub: Path, golden_block: str):
+    other = f"{MID}-US2"
+    texts = family(golden_block, mission=MID)
+    web = child_text(
+        golden_block, WEB, "web", ("AC3", "AC4"), blocked=f"{API}, {PID}.typo, {other}"
+    )
+    siblings = frozenset({API, WEB})
+    got = ticketlint._blocked_by_ids(web, MID, siblings, PID)
+    assert got == (other,)
+    report = lint(
+        web,
+        _hub(fed_hub),
+        ticket_id=WEB,
+        load_ticket=texts.get,
+        load_mission={MID: _mission_doc(MID, [PID, other])}.get,
+    )
+    msg = " ".join(_errors(report))
+    assert f"names {other}," in msg and API not in msg.split("names ")[1].split(",")[0]

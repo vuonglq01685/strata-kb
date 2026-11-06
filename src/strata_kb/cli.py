@@ -826,7 +826,7 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
-    rid = config.effective_repo_id("", resolved_kb_dir) or root.name
+    rid = config.repo_id_or_root("", resolved_kb_dir, root)
     try:
         plan_report = planingest.run(
             root, resolved_kb_dir, rid, root / "missions", root / "tickets"
@@ -1997,7 +1997,7 @@ def plan_ingest(
 
     resolved_root = repo_root.resolve()
     resolved_kb_dir = kb_dir.resolve()
-    rid = config.effective_repo_id(repo_id, resolved_kb_dir) or resolved_root.name
+    rid = config.repo_id_or_root(repo_id, resolved_kb_dir, resolved_root)
     try:
         report = planingest.run(
             resolved_root, resolved_kb_dir, rid, missions_dir, tickets_dir
@@ -3341,7 +3341,9 @@ def ticket_lint(
         missions_dir=resolved_missions,
         fail_on_stale=fail_on_stale,
         load_ticket=familyhub.folder_loader(path) if path else None,
-        own_repo=config.effective_repo_id("", kb_dir),
+        own_repo=lambda: config.repo_id_or_root(
+            "", kb_dir.resolve(), kb_dir.resolve().parent
+        ),
     )
     if path is not None and (dup := familyhub.duplicate_stem(path)) is not None:
         report.issues.append(dup)

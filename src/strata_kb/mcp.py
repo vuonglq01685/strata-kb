@@ -333,6 +333,7 @@ def create_server(config: ServerConfig) -> MCPServer:
         mission_markdown: str | None = None,
         parent_markdown: str | None = None,
         children_markdown: dict[str, str] | None = None,
+        repo_id: str | None = None,
     ) -> str:
         """Lint a draft ticket against the Definition of Ready: required
         structure, story format, ACs, Mermaid diagrams, kb-context refs
@@ -347,6 +348,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         parent story's text) and is checked against the parent's split row;
         a parent story ('> Kind: parent story') needs `ticket_id` and
         `children_markdown` (child id to text) for its per-child checks.
+        `repo_id` is your BA repo's id: with it, a child or parent id
+        already published by another BA repo is an error; without it that
+        check is skipped with a note.
         Run this before handing the ticket to the BA; fix errors and re-run
         until PASS."""
 
@@ -354,7 +358,6 @@ def create_server(config: ServerConfig) -> MCPServer:
             hub = _hub()
             if hub is None:
                 return HUB_DOWN
-            from strata_kb import config as kbconfig
             from strata_kb import ticket
             from strata_kb.doctor import Issue
 
@@ -369,7 +372,7 @@ def create_server(config: ServerConfig) -> MCPServer:
                 ticket_id=ticket_id or None,
                 load_mission=_mission_loader(hub, mission_markdown, from_hub),
                 load_ticket=siblings.get,
-                own_repo=kbconfig.effective_repo_id("", config.kb_dir),
+                own_repo=(lambda: repo_id) if repo_id else None,
             )
             if pin is not None and not parent_markdown:
                 # lint_child_against_parent says "not found"; MCP names the arg

@@ -551,3 +551,48 @@ def test_lint_child_reads_its_parent_from_the_folder(fed_hub, tmp_path):
         app, ["ticket", "lint", str(folder / f"{API}.md"), "--hub", str(fed_hub)]
     )
     assert result.exit_code == 1 and "not found" in result.output
+
+
+def _write_family(folder, texts):
+    folder.mkdir(parents=True)
+    for tid, text in texts.items():
+        (folder / f"{tid}.md").write_text(text, encoding="utf-8")
+
+
+def test_unconfigured_ba_repo_relints_its_own_published_ticket(plan_hub, tmp_path):
+    from tests.test_planstatus import US
+    from tests.test_ticketlint_family import family
+
+    texts = family(_golden_block(plan_hub.root), pid=US[1])
+    for name, expect in (("ba-one", False), ("ba-two", True)):
+        repo = tmp_path / "work" / name
+        _write_family(repo / "tickets", texts)
+        result = runner.invoke(
+            app,
+            [
+                "ticket", "lint", str(repo / "tickets" / f"{US[1]}.md"),
+                "--hub", str(plan_hub.root), "--kb-dir", str(repo / ".kb"),
+            ],
+        )  # fmt: skip
+        assert ("already published by ba-one" in result.output) is expect, result.output
+
+
+def test_malformed_config_never_breaks_lint(fed_hub, tmp_path):
+    from tests.test_ticketlint_family import PID, family
+
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "config.yaml").write_text("repo_id: [unclosed\n", encoding="utf-8")
+    plain = tmp_path / "tickets" / "TAL-1.md"
+    plain.parent.mkdir()
+    plain.write_text(_build_ticket(_golden_block(fed_hub)), encoding="utf-8")
+    args = ["--hub", str(fed_hub), "--kb-dir", str(kb)]
+    ok = runner.invoke(app, ["ticket", "lint", str(plain), *args])
+    assert ok.exit_code == 0, ok.output
+
+    texts = family(_golden_block(fed_hub))
+    _write_family(tmp_path / "fam", texts)
+    fam = runner.invoke(
+        app, ["ticket", "lint", str(tmp_path / "fam" / f"{PID}.md"), *args]
+    )
+    assert fam.exit_code == 0 and "config unreadable" in fam.output, fam.output

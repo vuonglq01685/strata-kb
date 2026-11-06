@@ -9,12 +9,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+from pydantic import ValidationError
+
 from strata_kb import planstatus, ticket, ticketlint
 from strata_kb.doctor import Issue
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.lintcore import LintReport
 
+SKIP_NOTE = "cross-repo id check skipped — pass repo_id"
+_CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError, OSError)
 CLAIM_NOTE = "claim check skipped (needs the hub API)"
 
 
@@ -25,15 +30,20 @@ def _err(message: str) -> Issue:
 def hub_issues(
     hub: HubHandle, ticket_id: str, own_repo: str | None, *, parent: bool
 ) -> list[Issue]:
-    """Hub-backed checks: the id is not published by another BA repo; a
-    parent's id is not already done in a dev repo."""
-    holders = sorted(
-        {
-            fed.meta.repo_id
-            for fed, manifest in planstatus.plan_docs(hub)
-            if fed.meta.repo_id != own_repo
-            and any(s.id == ticket_id for s in manifest.sections)
-        }
+    """Hub-backed checks: the id is not published by another BA repo
+    (skipped when `own_repo` is None); a parent's id is not already done in
+    a dev repo."""
+    holders = (
+        sorted(
+            {
+                fed.meta.repo_id
+                for fed, manifest in planstatus.plan_docs(hub)
+                if fed.meta.repo_id != own_repo
+                and any(s.id == ticket_id for s in manifest.sections)
+            }
+        )
+        if own_repo is not None
+        else []
     )
     issues = [
         _err(f"ticket id {ticket_id} is already published by {r}") for r in holders
@@ -59,7 +69,7 @@ def lint(
     *,
     ticket_id: str | None = None,
     path: Path | None = None,
-    own_repo: str | None = None,
+    own_repo: Callable[[], str | None] | None = None,
     **kwargs,
 ) -> LintReport:
     """`ticketlint.lint`, plus for a parent story or a child ticket: the id is
@@ -73,7 +83,17 @@ def lint(
         or not (is_parent or ticket.parent_story_pin(text) is not None)
     ):
         return report
-    report.issues += hub_issues(hub, tid, own_repo, parent=is_parent)
+    repo: str | None = None
+    if own_repo is not None:
+        try:
+            repo = own_repo()
+        except _CONFIG_READ_ERRORS as exc:
+            report.notes.append(
+                f"cross-repo id check skipped — config unreadable: {exc}"
+            )
+    if repo is None and own_repo is None:
+        report.notes.append(SKIP_NOTE)
+    report.issues += hub_issues(hub, tid, repo, parent=is_parent)
     if is_parent:
         report.notes.append(CLAIM_NOTE)
     return report
