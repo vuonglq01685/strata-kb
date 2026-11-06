@@ -206,6 +206,42 @@ def target_header(text: str) -> str | None:
     return (m.group(1) or None) if m else None
 
 
+# '> Kind: parent story' in the header block marks a parent story (split into
+# one child ticket per repo); absent -> an ordinary ticket.
+KIND_RE = re.compile(r"^>[ \t]*Kind:[ \t]*(.*?)[ \t]*$", re.M)
+
+# '> Parent story: <parent-id> [@ rev <N>]' on a child ticket.
+PARENT_STORY_RE = re.compile(
+    r"^>[ \t]*Parent story:[ \t]*(\S+)(?:[ \t]+@[ \t]*rev[ \t]+(\d+))?[ \t]*$", re.M
+)
+
+# Child id '<parent-id>.<repo-id>', a later child for the same repo
+# '<parent-id>.<repo-id>.<n>' (n >= 2). Neither part holds a dot, so the split
+# is unambiguous.
+CHILD_ID_RE = re.compile(
+    r"^(?P<parent>[A-Za-z0-9][A-Za-z0-9_-]*)\.(?P<repo>[A-Za-z0-9][A-Za-z0-9_-]*)"
+    r"(?:\.(?P<n>[2-9]|[1-9]\d+))?$"
+)
+
+
+def ticket_kind(text: str) -> str | None:
+    """The `> Kind:` value from the header block, lower-cased minus a trailing
+    '# comment', or None when the line is absent."""
+    m = KIND_RE.search(header_block(text))
+    if m is None:
+        return None
+    return re.sub(r"[ \t]*#.*$", "", m.group(1)).strip().lower()
+
+
+def parent_story_pin(text: str) -> tuple[str, int] | None:
+    """`(parent_id, rev)` from `> Parent story: X @ rev N` in the header
+    block; rev is 1 when the suffix is absent. None without the line."""
+    m = PARENT_STORY_RE.search(header_block(text))
+    if m is None:
+        return None
+    return m.group(1), int(m.group(2)) if m.group(2) else 1
+
+
 def grounded_code_entry(text: str) -> tuple[str | None, str] | None:
     """`(repo qualifier, doc)` of the first `-code` entry on the first
     parseable `Grounded on:` line of the visible text, or None."""
