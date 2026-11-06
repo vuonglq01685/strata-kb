@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import hubapi, missionnext, planingest, planstatus
+from strata_kb import hubapi, missionnext, planingest, planparents, planstatus
 from strata_kb.hub import HubHandle
 from tests.test_missionlint import MISSION_ID
 from tests.test_planingest import (
@@ -20,6 +20,7 @@ from tests.test_planingest import (
     context_block,
     family,
     mission_text,
+    parent_story,
     write_repo,
 )
 from tests.test_planstatus import _mirror
@@ -222,3 +223,47 @@ def test_hubapi_story_tolerates_missing_parent_keys():
     assert (row.is_parent, row.parent) == (False, "")
     new = hubapi._story({**old, "is_parent": True, "parent": "P"})
     assert (new.is_parent, new.parent) == (True, "P")
+
+
+# --- mission blockers reach the family ---
+
+OPEN_D1 = (
+    "| # | Decision | Status | Owner | Blocks |\n|---|---|---|---|---|\n"
+    f"| D1 | Map rendering library | OPEN | tech-lead | {US1} |"
+)
+
+
+def _family(fed_hub: Path, **overrides):
+    """Rows of the parent for a mission with `overrides`, no child written
+    (plan-ingest refuses a blocked parent, so the hub is not involved)."""
+    mission = mission_text(context_block(fed_hub), overrides=overrides)
+    parent = missionnext.StoryStatus(US1, MISSION_ID, "Story", "x", ())
+    facts = planparents.Facts(
+        written=frozenset(),
+        dor={},
+        done=frozenset(),
+        mission_texts={MISSION_ID: mission},
+    )
+    return planparents.family_rows(parent, parent_story(), facts)
+
+
+def test_unwritten_child_of_a_blocked_mission_parent_is_blocked(fed_hub):
+    head, api, web = _family(fed_hub, **{"## Technology decisions": OPEN_D1})
+    assert api.status == web.status == "blocked"
+    assert api.reasons[0].startswith("D1 OPEN")
+    assert head.reasons[0] == "0/2 done" and head.reasons[1].startswith("D1 OPEN")
+
+
+def test_unwritten_child_waits_for_the_mission_dependency(build, fed_hub):
+    rows = _rows(build(mission=_sequenced(fed_hub), unticked=(WEB,)))
+    assert rows[WEB].status == "blocked"
+    assert rows[WEB].reasons == (f"US {US3} not done",)
+
+
+def test_unwritten_child_of_an_open_question_is_blocked(fed_hub):
+    question = (
+        "- [ ] Q1 — Which tile provider? — owner: tech-lead — impact: cost — "
+        f"blocks: {US1}"
+    )
+    _, api, _ = _family(fed_hub, **{"## Open questions": question})
+    assert api.status == "blocked" and "Q1" in api.reasons[0]

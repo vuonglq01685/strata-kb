@@ -89,7 +89,8 @@ def family_rows(
     head = dataclasses.replace(
         parent,
         status=status,
-        reasons=(f"{done}/{len(kids)} done",),
+        # the mission's open decisions stay visible: the BA amends the mission
+        reasons=(f"{done}/{len(kids)} done", *inherited),
         target_repo=None,
         is_parent=True,
     )
@@ -105,7 +106,7 @@ def _child(
 ) -> missionnext.StoryStatus:
     cid = row.child
     target = facts.targets.get(cid) or row.repo
-    status, reasons = _child_status(cid, target, deps, inherited, parent.us_id, facts)
+    status, reasons = _child_status(cid, target, deps, inherited, parent, facts)
     title = facts.titles.get(cid) or f"{parent.title} ({row.repo})"
     return missionnext.StoryStatus(
         cid,
@@ -124,14 +125,22 @@ def _child_status(
     target: str,
     deps: tuple[str, ...],
     inherited: tuple[str, ...],
-    parent_id: str,
+    parent: missionnext.StoryStatus,
     facts: Facts,
 ) -> tuple[str, tuple[str, ...]]:
-    """done → to-draft (no ticket) → draft (mission blockers, demotion, DoR) →
-    blocked (routing refusal, dependency not done) → ready."""
+    """done → no ticket (blocked while the mission blocks it, else to-draft) →
+    draft (mission blockers, demotion, DoR) → blocked (routing refusal,
+    dependency not done) → ready."""
+    parent_id = parent.us_id
     if cid in facts.done:
         return "done", ()
     if cid not in facts.written:
+        gated = (
+            *inherited,
+            *(f"US {d} not done" for d in parent.depends_on if d not in facts.done),
+        )
+        if gated:
+            return "blocked", gated
         return "to-draft", ("child not written yet",)
     if inherited:
         return "draft", inherited

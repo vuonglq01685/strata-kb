@@ -3,6 +3,7 @@ the hub, no network."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -1048,3 +1049,86 @@ def test_local_mission_next_shows_parent_and_children(tmp_path, monkeypatch):
         app, ["mission", "next", "--missions-dir", str(root / "missions")]
     )
     assert "| M-platform-US1 | M-platform | in progress | 0/2 done |" in text.output
+
+
+def _family_layout(tmp_path: Path, mission: str = PLATFORM_NEXT) -> Path:
+    root = _ba_layout(tmp_path)
+    (root / "missions" / "M-platform.md").write_text(mission, encoding="utf-8")
+    tickets = root / "tickets"
+    (tickets / "M-platform-US1.md").write_text(PARENT_US1, encoding="utf-8")
+    (tickets / "M-platform-US1.web.md").write_text(
+        _child_us1("M-platform-US1.web", "web", DOR_FULL, 2), encoding="utf-8"
+    )
+    return root
+
+
+def _next_rows(root: Path) -> dict[str, dict]:
+    result = runner.invoke(
+        app, ["mission", "next", "--missions-dir", str(root / "missions"), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    return {r["us_id"]: r for r in json.loads(result.output)["stories"]}
+
+
+def test_local_mission_blockers_reach_the_children(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    root = _family_layout(tmp_path, PLATFORM_NEXT.replace("| DECIDED |", "| OPEN |"))
+    rows = _next_rows(root)
+    web, demo = rows["M-platform-US1.web"], rows["M-platform-US1.demo"]
+    assert web["status"] == "draft" and web["reasons"][0].startswith("D1 OPEN")
+    assert demo["status"] == "blocked" and demo["reasons"][0].startswith("D1 OPEN")
+    assert any(r.startswith("D1 OPEN") for r in rows["M-platform-US1"]["reasons"])
+
+
+def test_local_loose_parent_family_equals_the_hub_rows(tmp_path, fed_hub, monkeypatch):
+    from strata_kb import planingest, planstatus
+    from strata_kb.hub import HubHandle
+    from tests.test_planingest import (
+        API,
+        US1,
+        WEB,
+        child_story,
+        context_block,
+        parent_story,
+        write_repo,
+    )
+    from tests.test_planstatus import _mirror
+    from tests.test_planstatus_routing import _dev
+
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    block = context_block(fed_hub)
+    root = tmp_path / "ba-x"
+    parent = parent_story().replace("> Parent mission: M-airspace-filter @ rev 1\n", "")
+    write_repo(
+        root,
+        {},
+        {
+            f"{US1}.md": parent,
+            f"{API}.md": child_story(block, API, "demo", 1),
+            f"{WEB}.md": child_story(block, WEB, "web", 3),
+        },
+    )
+    planingest.run(root, root / ".kb", "demo", root / "missions", root / "tickets")
+    _mirror(fed_hub, root, "ba-x")
+    for repo in ("demo", "web"):
+        _dev(fed_hub, repo)
+    _, hub_rows, _ = planstatus.next_from_hub(HubHandle(root=fed_hub))
+    assert [r.us_id for r in hub_rows] == [US1, API, WEB]
+
+    result = runner.invoke(
+        app,
+        ["mission", "next", "--missions-dir", str(root / "missions"), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    local = json.loads(result.output)["unparented"]
+    assert local and not json.loads(result.output)["stories"]
+    keys = ("us_id", "status", "reasons", "depends_on", "parent", "is_parent")
+
+    def shape(row: dict) -> dict:
+        return {
+            k: list(v) if isinstance(v, tuple) else v
+            for k, v in row.items()
+            if k in keys
+        }
+
+    assert [shape(r) for r in local] == [shape(dataclasses.asdict(r)) for r in hub_rows]

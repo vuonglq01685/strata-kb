@@ -4273,23 +4273,26 @@ def mission_next(
     if done is not None:  # a parent is done when its children are
         done = done | planparents.done_parents(parents, done)
     results = missionnext.statuses(parsed, drafted, done, demoted)
+    unparented: list[missionnext.StoryStatus] = []
     if parents:
-        results = planparents.expand(
-            results,
-            parents,
-            planparents.Facts(
-                written=frozenset(drafted),
-                dor=drafted,
-                done=frozenset(done or ()),
-                mission_texts=mission_texts,
-                titles={t: planparents.title_of(x) for t, x in ticket_texts.items()},
-                demoted=demoted,
-            ),
+        facts = planparents.Facts(
+            written=frozenset(drafted),
+            dor=drafted,
+            done=frozenset(done or ()),
+            mission_texts=mission_texts,
+            titles={t: planparents.title_of(x) for t, x in ticket_texts.items()},
+            demoted=demoted,
         )
+        in_mission = {r.us_id for r in results}
+        results = planparents.expand(results, parents, facts)
+        for pid, ptext in parents.items():  # a parent no mission lists
+            if pid not in in_mission:
+                base = missionnext.StoryStatus(pid, "", facts.titles[pid], "", ())
+                unparented += planparents.family_rows(base, ptext, facts)
     if json_output:
-        typer.echo(json.dumps(missionnext.to_json(results, notes)))
+        typer.echo(json.dumps(missionnext.to_json(results, notes, unparented)))
     else:
-        typer.echo(missionnext.render(results, notes))
+        typer.echo(missionnext.render(results, notes, unparented=unparented))
 
 
 @app.command()
