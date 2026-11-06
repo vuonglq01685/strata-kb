@@ -1,11 +1,12 @@
 ---
 description: Fill the SA-owned "Technical grounding" section of a BA ticket (or "Services & order" of a mission plan) from the hub's <repo>-code document, via the sa-ticket-ground skill
-argument-hint: "<ticket-or-mission-file> [--mission]"
+argument-hint: "<ticket-or-mission-file> [--mission] | --scope \"<need>\""
 ---
 
 Invoke the `sa-ticket-ground` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as the file path, and `--mission`
-through when given.
+through when given. With `--scope "<need>"`, follow the skill's `## Scope mode`:
+read-only, returns the `## Repo scope` block, writes no file.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_resolve`, `kb_context_new`,

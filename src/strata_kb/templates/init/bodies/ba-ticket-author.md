@@ -52,6 +52,27 @@ a denial to report. Stop only when the MCP tool fails too.
    dependencies (`US … not done`) may be drafted with its reasons
    acknowledged by the BA — carry those reasons into the handover
    verbatim.
+1b. **Scope by repo** — skipped in child mode and in Amend mode.
+   (a) Run `/sa-ticket-ground --scope "<need>"` as a separate run.
+   (b) `Repos: 0` or `Repos: 1`: today's flow. With one repo, put
+   `> Target repo: <repo-id>` under the title.
+   (c) `Repos: ≥ 2`: present a **split proposal**: the child count; each
+   child id `<parent-id>.<repo-id>`, its repo, and its ACs by subject; the
+   order as `Blocked by`; the evidence rows of the Repo scope block; each child gets ≥ 2 ACs,
+   otherwise merge it into a sibling.
+   (d) The BA accepts, edits or rejects. Reject: one ticket; lint warns
+   `grounding touches several repos`. Accept: write the parent
+   `tickets/<folder>/<parent-id>.md` from `PARENT-TEMPLATE.md`, with the
+   `**Split decision:**` line under its `## Change log`
+   (`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name>`).
+   Draft the ACs once for the whole need, numbered AC1… across the story,
+   and distribute them by the split. Write each child
+   `tickets/<folder>/<child-id>.md` with `> Parent story: <parent-id> @ rev 1`,
+   `> Target repo: <repo-id>` and the parent's `## User Story` copied word
+   for word. Run steps 6–8 **per child**: lint with `parent_markdown`,
+   ground on the child's own repo, maturity review. Lint the parent last.
+   A mission story keeps the mission id as the parent id
+   (`<M-id>-US<n>`); its parent file is `tickets/<M-id>/<M-id>-US<n>.md`.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
    row, and put `> Parent mission: <mission-id> @ rev <N>` on its own line
@@ -294,6 +315,20 @@ Change rules:
   the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
   BA which other files cite the same row.
 
+## Child mode — `<parent-id>.<repo-id>[.<n>]`
+
+The argument matches `<parent-id>.<repo-id>[.<n>]` and the parent file
+exists: write that one child.
+
+- Intake comes from the parent: the User Story verbatim, the repo and
+  `Blocked by` from its split row, the folder = the parent's folder.
+  Step 1b is skipped.
+- AC ids are the next free numbers across the whole split: the highest
+  AC number in any row, plus 1 onwards.
+- The same change fills that split row's AC cell, replacing `-`. No parent
+  revision bump: the row was planned, not changed.
+- The `- Blocked by:` line in `## Dependencies` equals the split row.
+
 ## Hard rules
 
 - Citations are mandatory for every claim that touches a standard — no
@@ -376,8 +411,10 @@ The runner starts this skill as `/ba-ticket-author <us-id>` (a new ticket) or `/
 
 Check each answer with a fresh-context reviewer (the question, the cited source, the answer; on an objection, leave the row open). Apply an accepted answer: rewrite the ACs and sections it changes, replace the matching `OPEN(<owner>)` markers, tick the row and append `— answered: <answer> (<source>)`, log an Auto decision line, then re-run `kb_ticket_lint`, `kb_ticket_check` and the AC review. A row that no source settles stays open with its owner.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin main && git switch --detach FETCH_HEAD` (the working tree may be on an older branch that lacks merged tickets), then `kb mission next --json`. This ticket's story is finished only when its status is `ready` or `done` (not `draft` or `to-draft`) and `kb_ticket_lint` and `kb_ticket_check` pass on the current text: then change nothing and end `AUTO-RESULT: done`. Otherwise look for an open PR with `kb pr find --head auto/<ticket-id> --state open --json`, and on each `auto/<ticket-id>-r<N>` branch `git ls-remote --heads origin 'auto/<ticket-id>-r*'` lists (keep only `auto/<ticket-id>-r<N>` with a numeric `<N>`; never another ticket whose id starts the same). An open PR means a crashed run: `git fetch origin && git switch <its branch>`, check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below. With neither, do the work (the amend, for a `draft` story).
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin main && git switch --detach FETCH_HEAD` (the working tree may be on an older branch that lacks merged tickets), then `kb mission next --json`. This ticket's story is finished only when its status is `ready` or `done` (not `draft` or `to-draft`) and `kb_ticket_lint` and `kb_ticket_check` pass on the current text: then change nothing and end `AUTO-RESULT: done`. A story that became a parent is finished when its parent file is on `main` and every split child reads `ready` or `done` in `kb mission next --json`. The parent row itself reads `in progress` and never `ready`. Otherwise look for an open PR with `kb pr find --head auto/<ticket-id> --state open --json`, and on each `auto/<ticket-id>-r<N>` branch `git ls-remote --heads origin 'auto/<ticket-id>-r*'` lists (keep only `auto/<ticket-id>-r<N>` with a numeric `<N>`; never another ticket whose id starts the same). An open PR means a crashed run: `git fetch origin && git switch <its branch>`, check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below. With neither, do the work (the amend, for a `draft` story).
 
+- **Step 1b: "The BA accepts, edits or rejects"** → decide the split yourself, then have a fresh-context reviewer check it. The reviewer gets the need, the Repo scope block and your proposal, and answers agree or object with a reason. On an objection, decide once more. Write the `**Split decision:**` line with `accepted by: agent, reviewer agreed` (or `reviewer objected: <reason>; decided again`) and an `**Auto decision:**` line. Parent and children go in one PR on `auto/<parent-id>`.
+- **Child mode: Intake from the parent** → the runner's task `ba-ticket-author <child-id>` names the child. The branch is `auto/<child-id>`.
 - **Intake: "Ask, don't guess"** (business need, tags, mission, folder) → take them from the task. The story title, goal and scope come from the mission's US backlog row and its Business goal and Scope; the search tags from the mission's `## KB context` refs; the folder is the parent mission id, so the file is `tickets/<mission-id>/<us-id>.md`. A story with no parent mission keeps the folder its ticket already has; if there is none, end `AUTO-RESULT: failed no-folder <us-id>`.
 - **Intake: a story blocked by a Technology-decisions row or an open question is "NOT drafted"** → settle the blockers in this run, then draft. Settle each `D<n> OPEN` row and each `Q<n> open` question that names this story by the ba-mission-plan Auto mode rules ("Step 5b" for a row, "Open question with `blocks:`" for a question, each with its fresh-context reviewer), on this ticket's branch. Amend the mission in the same change: bump its `> Revision:`, append one change-log row (trigger `scope`, or `architecture` when the settlement supersedes a DECIDED row; `Affected` listing this story and every other story the settlement unblocks), run `kb_mission_lint` until `DoR: PASS`, and put the mission file in this ticket's PR. Then draft the ticket against the new revision. End `AUTO-RESULT: failed blocked-by-mission <row id>` only when a row or question needs a business decision no source supports: the row names no option, and neither the architecture document nor the KB offers one. A story blocked only by unfinished dependencies is drafted: record the reasons as an Auto decision and carry them into the ticket's Dependencies section.
 - **Ground technical: a D-row still `OPEN` is "a reported FAIL, not a blocker"** → when `/sa-ticket-ground` appends an `OPEN` row that blocks this ticket, or `kb_ticket_check` fails with `decision D<n> is OPEN`, settle the row in this run, as for an Intake blocker: decide it by "Step 5b", amend the mission in the same PR (revision bump, change-log row with this story in `Affected`, `kb_mission_lint` to `DoR: PASS`), and set the ticket's `> Parent mission: <mission-id> @ rev <N>` to the new revision. The reviewer also gets every DECIDED row that `kb_ticket_check` lists under `DECIDED rows already bind`; a pick that contradicts one of them is an objection. Then apply the decision to the ticket: rewrite the ACs, Open questions and grounding it changes, and re-run `kb_ticket_lint`, `kb_ticket_check` and the AC review. A decision that would supersede a DECIDED row of another mission is not yours to take: leave the row `OPEN` and end `AUTO-RESULT: failed blocked-by-mission <row id>`.

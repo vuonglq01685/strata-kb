@@ -130,6 +130,7 @@ a denial to report. Stop only when the MCP tool fails too.
 
    Then fill the section field by field:
    - `Grounded on: <repo-id>:<repo-id>-code @ <revision>` — first line. The first entry is always this qualified `<repo-id>:<repo-id>-code` of the repo the ticket is built in: the hub routes the ticket to that repo when it has no `> Target repo:` header. A later entry may ground on another repo's document, but never first.
+     With `--mission`, when the mission's stories touch several repos, list each repo's `<repo-id>:<repo-id>-code @ <revision>` on this one line, comma-separated. Qualify every `svc.*` in the table as `<repo-id>:svc.<name>`. `kb ticket check --mission` checks each id in its own repo's document.
    - `Service:` — `svc.<name>` ids as the document spells them (a name
      over 40 characters carries an opaque 6-hex-character suffix; copy
      it, never retype it). The record has no directory field — a
@@ -253,6 +254,24 @@ a denial to report. Stop only when the MCP tool fails too.
 - Open decisions for the Dev (code exists, document cannot prove): …
 - BA-section contradictions: …
 ```
+
+## Scope mode — `--scope "<need>"`
+
+Read-only: no file is written. The argument is a business need, not a
+file. Run `kb_search` with `kinds=["dev"]` (CLI:
+`kb query "<text>" --kind dev`) for the routes, pages, tables, jobs and
+services the need implies. Map each hit's doc id `<repo>-code` to
+`<repo>`. Ignore `-svc` hits. Return exactly this block:
+
+```
+## Repo scope
+| Repo | Evidence | What the need touches |
+|---|---|---|
+| <repo-id> | [<repo-id>-code §<section-id>] | <route/page/table/job/service> |
+Repos: <n>
+```
+
+No hit means `Repos: 0` (greenfield). The target is then set at grounding.
 
 ## Hard rules
 

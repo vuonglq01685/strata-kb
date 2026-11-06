@@ -52,6 +52,27 @@ a denial to report. Stop only when the MCP tool fails too.
    dependencies (`US … not done`) may be drafted with its reasons
    acknowledged by the BA — carry those reasons into the handover
    verbatim.
+1b. **Scope by repo** — skipped in child mode and in Amend mode.
+   (a) Run `/sa-ticket-ground --scope "<need>"` as a separate run.
+   (b) `Repos: 0` or `Repos: 1`: today's flow. With one repo, put
+   `> Target repo: <repo-id>` under the title.
+   (c) `Repos: ≥ 2`: present a **split proposal**: the child count; each
+   child id `<parent-id>.<repo-id>`, its repo, and its ACs by subject; the
+   order as `Blocked by`; the evidence rows of the Repo scope block; each child gets ≥ 2 ACs,
+   otherwise merge it into a sibling.
+   (d) The BA accepts, edits or rejects. Reject: one ticket; lint warns
+   `grounding touches several repos`. Accept: write the parent
+   `tickets/<folder>/<parent-id>.md` from `PARENT-TEMPLATE.md`, with the
+   `**Split decision:**` line under its `## Change log`
+   (`**Split decision:** <YYYY-MM-DD> — <n> children: <ids> — evidence: <citations> — accepted by: <BA name>`).
+   Draft the ACs once for the whole need, numbered AC1… across the story,
+   and distribute them by the split. Write each child
+   `tickets/<folder>/<child-id>.md` with `> Parent story: <parent-id> @ rev 1`,
+   `> Target repo: <repo-id>` and the parent's `## User Story` copied word
+   for word. Run steps 6–8 **per child**: lint with `parent_markdown`,
+   ground on the child's own repo, maturity review. Lint the parent last.
+   A mission story keeps the mission id as the parent id
+   (`<M-id>-US<n>`); its parent file is `tickets/<M-id>/<M-id>-US<n>.md`.
 2. **Parent mission (optional)** — if the BA names a parent mission, read
    `missions/<mission-id>.md`: take the story title from its US backlog
    row, and put `> Parent mission: <mission-id> @ rev <N>` on its own line
@@ -293,6 +314,20 @@ Change rules:
   `D<n>` instead. When this ticket cites one, the amendment MUST include
   the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
   BA which other files cite the same row.
+
+## Child mode — `<parent-id>.<repo-id>[.<n>]`
+
+The argument matches `<parent-id>.<repo-id>[.<n>]` and the parent file
+exists: write that one child.
+
+- Intake comes from the parent: the User Story verbatim, the repo and
+  `Blocked by` from its split row, the folder = the parent's folder.
+  Step 1b is skipped.
+- AC ids are the next free numbers across the whole split: the highest
+  AC number in any row, plus 1 onwards.
+- The same change fills that split row's AC cell, replacing `-`. No parent
+  revision bump: the row was planned, not changed.
+- The `- Blocked by:` line in `## Dependencies` equals the split row.
 
 ## Hard rules
 
