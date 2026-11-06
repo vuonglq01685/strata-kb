@@ -21,10 +21,7 @@ SPLIT_COLUMNS = ("Child", "Repo", "AC", "Blocked by", "Own fix", "Why")
 _REQUIRED = ("## User Story", "## Split", "## Change log")
 _FORBIDDEN = ("## Acceptance Criteria", "## Definition of Ready")
 
-_AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
-_AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
 _AC_CELL_RE = re.compile(r"(AC\d+)(?:\s*\(\s*replaces\s+(AC\d+)\s*\))?", re.I)
-_BLOCKED_BY_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$")
 _TOKEN_SPLIT_RE = re.compile(r"[\s,;()—–]+")
 _NO_VALUE = {"", "-", "none", "n/a"}
 
@@ -56,7 +53,7 @@ def parse_split(text: str) -> list[SplitRow]:
     out: list[SplitRow] = []
     for cells in rows[1:]:
         if len(cells) < len(rows[0]):
-            continue
+            continue  # reported by _check_split_table
         child, repo, ac, blocked, own_fix, why = (
             cells[c] for c in cols if c is not None
         )
@@ -125,7 +122,8 @@ def _check_shape(text: str) -> list[Issue]:
 
 
 def _check_split_table(rows: list[SplitRow], parent_id: str, text: str) -> list[Issue]:
-    header = _split_rows(text)[:1]
+    header_rows = _split_rows(text)
+    header = header_rows[:1]
     if not rows and header and tuple(header[0]) == SPLIT_COLUMNS:
         return [_err("'## Split' has no child rows")]
     issues: list[Issue] = []
@@ -134,10 +132,24 @@ def _check_split_table(rows: list[SplitRow], parent_id: str, text: str) -> list[
             _err(f"'## Split' columns must be exactly: {' | '.join(SPLIT_COLUMNS)}")
         )
         return issues
+    for n, cells in enumerate(header_rows[1:], 1):
+        if len(cells) < len(SPLIT_COLUMNS):
+            issues.append(
+                _err(
+                    f"split row {n} has {len(cells)} cells, expected {len(SPLIT_COLUMNS)}"
+                )
+            )
     seen: set[str] = set()
     for row in rows:
         m = ticket.CHILD_ID_RE.match(row.child)
-        if m is None or m.group("parent") != parent_id:
+        if m is None and "." in row.repo:
+            issues.append(
+                _err(
+                    f"split child '{row.child}': repo ids containing '.' cannot "
+                    "be split targets"
+                )
+            )
+        elif m is None or m.group("parent") != parent_id:
             issues.append(
                 _err(
                     f"split child '{row.child}' is not '{parent_id}.<repo>' "
@@ -207,32 +219,21 @@ def lint_parent(
 
 def _ac_ids(text: str) -> tuple[list[str], int]:
     """AC ids (upper-case) and the count of visible AC items."""
-    body = lintcore.section_body(text, "## Acceptance Criteria") or ""
-    items = [
-        m.group(1)
-        for line in lintcore.visible_body(body).splitlines()
-        if (m := _AC_ITEM_RE.match(line.strip()))
+    items = lintcore.ac_items(text)
+    ids = [
+        m.group(1).upper() for it in items if (m := lintcore.AC_ID_RE.match(it.strip()))
     ]
-    ids = [m.group(1).upper() for it in items if (m := _AC_ID_RE.match(it.strip()))]
     return ids, len(items)
 
 
-def _child_blocked_by(text: str) -> set[str]:
-    """Exact child ids on the `- Blocked by:` bullet of `## Dependencies`."""
-    body = lintcore.section_body(text, "## Dependencies") or ""
-    cells: list[str] = []
-    inside = False
-    for line in body.splitlines():
-        m = _BLOCKED_BY_RE.match(line)
-        if m:
-            inside = True
-            cells.append(m.group("rest"))
-        elif inside and line[:1].isspace() and line.strip():
-            cells.append(line)
-        else:
-            inside = False
-    tokens = (t.rstrip(".:") for t in _TOKEN_SPLIT_RE.split(" ".join(cells)))
-    return {t for t in tokens if ticket.CHILD_ID_RE.match(t)}
+def _child_blocked_by(text: str, split_ids: set[str]) -> set[str]:
+    """Tokens on the child's `- Blocked by:` bullet that are exact split
+    child ids; prose and other words are ignored."""
+    tokens = (
+        t.rstrip(".:")
+        for t in _TOKEN_SPLIT_RE.split(" ".join(lintcore.blocked_by_cells(text)))
+    )
+    return {t for t in tokens if t in split_ids}
 
 
 def _norm(text: str | None) -> str:
@@ -256,7 +257,8 @@ def lint_child_against_parent(
         issues.append(
             _err(f"child '{child_id}' needs '> Parent story: {parent_id} @ rev <N>'")
         )
-    row = next((r for r in parse_split(parent_text) if r.child == child_id), None)
+    rows = parse_split(parent_text)
+    row = next((r for r in rows if r.child == child_id), None)
     if row is None:
         return [
             *issues,
@@ -276,10 +278,11 @@ def lint_child_against_parent(
                 f"split row in {parent_id} {sorted(row.acs)}"
             )
         )
-    if _child_blocked_by(child_text) != set(row.blocked_by):
+    got_blocked = _child_blocked_by(child_text, {r.child for r in rows})
+    if got_blocked != set(row.blocked_by):
         issues.append(
             _err(
-                f"child '{child_id}' Blocked by {sorted(_child_blocked_by(child_text))} "
+                f"child '{child_id}' Blocked by {sorted(got_blocked)} "
                 f"differs from its split row in {parent_id} {sorted(row.blocked_by)}"
             )
         )

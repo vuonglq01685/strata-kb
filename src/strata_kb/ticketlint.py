@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
 
 # A '- [ ]' / '- [x]' checkbox list item.
-_AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
 
 # An AC is an observable outcome, never a shell command (docs/ac-quality.md).
 # A backticked span whose first word — after skipping
@@ -106,7 +105,6 @@ _NA_RE = re.compile(r"^\s*n/?a\b", re.I)
 
 _SEQUENCE_HEADING = "## Sequence diagram"
 _DEPENDENCIES_HEADING = "## Dependencies"
-_BLOCKED_BY_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$")
 _TRIGGER_SCAN_HEADINGS: tuple[str, ...] = (
     "## Summary",
     "## User Story",
@@ -252,16 +250,11 @@ def _check_story_count(text: str) -> list[Issue]:
 
 
 def _check_ac_present(text: str) -> tuple[list[Issue], list[str]]:
-    body = lintcore.section_body(text, "## Acceptance Criteria")
-    if body is None:
+    if lintcore.section_body(text, "## Acceptance Criteria") is None:
         return [], []
     # Visible items only: an AC parked in a comment is neither a real
     # criterion (floor) nor scope (ceiling).
-    items = [
-        m.group(1)
-        for line in lintcore.visible_body(body).splitlines()
-        if (m := _AC_ITEM_RE.match(line.strip()))
-    ]
+    items = lintcore.ac_items(text)
     if len(items) < 2:
         return [
             Issue(
@@ -298,7 +291,7 @@ def _check_ac_count(ac_items: list[str]) -> list[Issue]:
     ]
 
 
-_AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
+_AC_ID_RE = lintcore.AC_ID_RE
 
 
 def _check_ac_ids(ac_items: list[str]) -> list[Issue]:
@@ -636,18 +629,7 @@ def _check_backlog_membership(
 def _blocked_by_ids(text: str, mission_id: str) -> tuple[str, ...]:
     """US ids on the `- Blocked by:` bullet of `## Dependencies` and its
     indented sub-bullets, read like a `Depends on` cell."""
-    body = lintcore.section_body(text, _DEPENDENCIES_HEADING) or ""
-    cells: list[str] = []
-    inside = False
-    for line in body.splitlines():
-        m = _BLOCKED_BY_RE.match(line)
-        if m:
-            inside = True
-            cells.append(m.group("rest"))
-        elif inside and line[:1].isspace() and line.strip():
-            cells.append(line)
-        else:
-            inside = False
+    cells = lintcore.blocked_by_cells(text)
     return missionnext.dep_ids(" ".join(cells), mission_id)
 
 

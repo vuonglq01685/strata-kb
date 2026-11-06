@@ -209,3 +209,23 @@ def test_parent_story_pin():
     assert ticket.parent_story_pin("# T\n> Parent story: P @ rev 3\n") == ("P", 3)
     assert ticket.parent_story_pin("# T\n> Parent story: P\n") == ("P", 1)
     assert ticket.parent_story_pin("# T\n") is None
+
+
+def test_child_blocked_by_prose_with_dotted_words_is_ignored():
+    p = parent()
+    for prose in ("None — see README.md", "None (waiting for v1.2 release)"):
+        text = child(API, "api", ["AC1", "AC2"], blocked=prose)
+        assert storylint.lint_child_against_parent(text, API, p, PID) == [], prose
+
+
+def test_short_split_row_is_error():
+    rows = f"| {API} | api | AC1, AC2 | - | - | d |\n| {WEB} | web | AC3 |\n"
+    out = errors(storylint.lint_parent(parent(rows), kids(), parent_id=PID))
+    assert "split row 2 has 3 cells, expected 6" in out
+
+
+def test_dotted_repo_id_cannot_be_split_target():
+    cid = f"{PID}.my.app"
+    rows = f"| {cid} | my.app | AC1 | - | - | d |\n"
+    out = errors(storylint.lint_parent(parent(rows), {cid: "x"}, parent_id=PID))
+    assert "repo ids containing '.' cannot be split targets" in out

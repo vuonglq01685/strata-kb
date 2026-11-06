@@ -162,6 +162,44 @@ def section_body(text: str, heading: str) -> str | None:
     return "\n".join(lines[start:end])
 
 
+# A '- [ ]' / '- [x]' checkbox list item, a leading AC id, and the
+# `- Blocked by:` bullet of `## Dependencies`.
+AC_ITEM_RE = re.compile(r"^-\s*\[[ xX]\]\s*(.+)$")
+AC_ID_RE = re.compile(r"^(AC\d+)\b", re.I)
+BLOCKED_BY_RE = re.compile(r"^-\s*Blocked by:(?P<rest>.*)$")
+
+
+def ac_items(text: str) -> list[str]:
+    """Visible `- [ ]` items of `## Acceptance Criteria` (none when the
+    section is absent). An AC parked in a comment is not counted."""
+    body = section_body(text, "## Acceptance Criteria")
+    if body is None:
+        return []
+    return [
+        m.group(1)
+        for line in visible_body(body).splitlines()
+        if (m := AC_ITEM_RE.match(line.strip()))
+    ]
+
+
+def blocked_by_cells(text: str) -> list[str]:
+    """Raw text of the `- Blocked by:` bullet of `## Dependencies` and its
+    indented sub-bullets, one entry per line; no id interpretation."""
+    body = section_body(text, "## Dependencies") or ""
+    cells: list[str] = []
+    inside = False
+    for line in body.splitlines():
+        m = BLOCKED_BY_RE.match(line)
+        if m:
+            inside = True
+            cells.append(m.group("rest"))
+        elif inside and line[:1].isspace() and line.strip():
+            cells.append(line)
+        else:
+            inside = False
+    return cells
+
+
 def check_title(text: str) -> list[Issue]:
     for line in text.splitlines():
         if not line.strip():
