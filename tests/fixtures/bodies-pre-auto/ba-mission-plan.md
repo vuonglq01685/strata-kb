@@ -125,16 +125,27 @@ a denial to report. Stop only when the MCP tool fails too.
    `ready` — the Definition of Ready's decided-rows item is this step.
 5c. **Repos per story** — after 5b, for each backlog story read the
    repos `## Services & order` attributes to it; when the table does not
-   say, run `/sa-ticket-ground --scope "<story title and goal>"`. When a
+   say, run `/sa-ticket-ground --scope "<story title and goal>"`. A story
+   whose ticket file already exists under `tickets/<M-id>/` (or flat
+   `tickets/<us-id>.md`) is never re-split or overwritten by 5c. When a
    story touches ≥ 2 repos, present the split proposal with the contents
    of ba-ticket-author step 1b (child count; each child id
    `<parent-id>.<repo-id>`, repo and ACs by subject; `Blocked by` order;
-   the evidence rows; ≥ 2 ACs per child). On accept, write the parent file
-   `tickets/<M-id>/<M-id>-US<n>.md` with the headers `> Kind: parent story`,
-   `> Revision: 1`, `> Parent mission: <M-id> @ rev <N>`; the story's
-   `## User Story`; one split row per child with the AC cell `-` (planned)
-   and `Blocked by` as proposed; and the `**Split decision:**` line
-   under `## Change log`. No child files are written:
+   the evidence rows; ≥ 2 ACs per child), plus one drafted line
+   `As a <role>, I want <capability>, so that <value>.`, built from the
+   Business goal and the story title, for the BA to confirm: never invent
+   it. The BA accepts, edits or rejects. Reject: write nothing;
+   `/ba-ticket-author` proposes again at its step 1b. Accept (or edit):
+   start from `PARENT-TEMPLATE.md` (`docs/tickets/`) and write
+   `tickets/<M-id>/<M-id>-US<n>.md` with the H1 title, the headers
+   `> Kind: parent story`, `> Revision: 1`,
+   `> Parent mission: <M-id> @ rev <N>` (`<N>` = the mission's current
+   `> Revision:`), the confirmed `## User Story`, the template's `## Split`
+   table with one row per child, AC cell `-` (planned) and `Blocked by` as
+   proposed, and the `**Split decision:**` line under `## Change log`.
+   Every child copies the User Story word for word, so it keeps that
+   shape. Run `kb_ticket_lint` (CLI: `kb ticket lint <file>`) on each
+   parent until it shows no error. No child files are written:
    `/ba-ticket-author <child-id>` drafts each child later, when the BA
    picker yields it. The story's backlog row and `## Sequencing` row stay
    unchanged and name the parent id.
@@ -154,8 +165,7 @@ a denial to report. Stop only when the MCP tool fails too.
 7. **Lint** — run `kb_mission_lint` (CLI: `kb mission lint <file>`)
    against the draft. Fix every
    error and re-run until it reports `DoR: PASS`. A coverage warning of
-   `0/N US drafted` is EXPECTED at creation time — the tickets do not
-   exist yet. Report remaining warnings to the BA; they are the BA's
+   `k/N US drafted` is EXPECTED at creation time — only the 5c parents exist yet. Report remaining warnings to the BA; they are the BA's
    judgment call.
 8. **Maturity review** — once lint reports `DoR: PASS`, read
    `docs/review-rubric.md`, then `docs/review-rubric.local.md` if it
@@ -233,7 +243,8 @@ recorded in `## Change log`. A new mission is never created by `--amend`.
    trigger, skip the SA and `kb ticket check`: a mission's own stories
    change the svc.* sections it cites while it is being delivered. You
    still never read `<repo>-code` or `<repo>-svc` yourself.
-5. **Apply the change rules** below.
+5. **Apply the change rules** below. Amend mode runs step 5c for each story
+   the amend adds or re-scopes that has no ticket file yet.
 6. **Bump `> Revision:` and append the change-log row** `| Rev | Date |
    Trigger | What changed | Affected | Review |`. In `Affected` write FULL
    story ids (`M-<slug>-US<n>`), comma-separated, or `-` — a bare `US<n>`
@@ -290,7 +301,9 @@ Change rules:
   to the BA — do not hand over a failing mission silently.
 - **Never auto-generate ticket files from the backlog.** Each story goes
   through `/ba-ticket-author` with its own grounding pass — a backlog row
-  is a title, not a drafted ticket.
+  is a title, not a drafted ticket — except the parent file step 5c writes
+  for an accepted multi-repo split; its children still go through
+  `/ba-ticket-author`.
 - Close the `## Definition of Ready` boxes a tool proves, yourself, just
   before handover and on the final text: tick a box only when its
   evidence below holds after your last edit — a tool run in this session,
@@ -336,3 +349,4 @@ Change rules:
   hub is a recorded decision: the BA flips it at mission time, in step
   5b, not ticket by ticket. A proposal without a citation stays `OPEN`
   with a human owner.
+

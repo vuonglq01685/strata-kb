@@ -865,7 +865,6 @@ _BA_GATES = {
         "You never flip a status",  # D-row OPEN -> DECIDED
         "never tick an open-question checkbox",  # open question with blocks:
         "never commits or pushes",
-        'Step 5c: "present the split proposal" / accept',  # per-story split
     ],
     "bodies/ba-answer-questions.md": [
         "never answer a question yourself",
@@ -2077,3 +2076,25 @@ def test_mission_plan_repos_per_story_step(name):
         "<repo-id>:svc.<name>",
     ]:
         assert needle in t, needle
+
+
+@pytest.mark.parametrize(
+    "name", ["bodies/ba-mission-plan.md", "claude-command-ba-mission-plan.md"]
+)
+def test_mission_plan_5c_parent_file_rules(name):
+    t = _off_path(name)
+    for needle in [
+        "except the parent file step 5c writes",
+        "As a <role>, I want <capability>, so that <value>.",
+        "word for word",
+        "`PARENT-TEMPLATE.md`",
+        "`## Split`",
+        "`kb_ticket_lint` (CLI: `kb ticket lint <file>`)",
+        "never re-split or overwritten",
+        "Amend mode runs step 5c",
+        "only the 5c parents exist yet",
+    ]:
+        assert needle in t, needle
+    auto = _normal(_auto_section(name))
+    assert "Step 5c (Repos per story) never runs in auto mode" in auto
+    assert not any(g.startswith("**Step 5c") for g in _gates(name))
