@@ -2089,10 +2089,12 @@ def test_mission_plan_5c_parent_file_rules(name):
         "word for word",
         "`PARENT-TEMPLATE.md`",
         "`## Split`",
-        "`kb_ticket_lint` (CLI: `kb ticket lint <file>`)",
         "never re-split or overwritten",
         "Amend mode runs step 5c",
         "only the 5c parents exist yet",
+        "`ticket_id` = the parent id and the mission draft's text as `mission_markdown`",
+        "`kb ticket lint <file>` only after the mission file is saved at step 9",
+        "the revision step 6 will set",
     ]:
         assert needle in t, needle
     auto = _normal(_auto_section(name))

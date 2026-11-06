@@ -153,12 +153,14 @@ a denial to report. Stop only when the MCP tool fails too.
    `tickets/<M-id>/<M-id>-US<n>.md` with the H1 title, the headers
    `> Kind: parent story`, `> Revision: 1`,
    `> Parent mission: <M-id> @ rev <N>` (`<N>` = the mission's current
-   `> Revision:`), the confirmed `## User Story`, the template's `## Split`
+   `> Revision:`; in Amend mode the revision step 6 will set), the confirmed `## User Story`, the template's `## Split`
    table with one row per child, AC cell `-` (planned) and `Blocked by` as
    proposed, and the `**Split decision:**` line under `## Change log`.
    Every child copies the User Story word for word, so it keeps that
-   shape. Run `kb_ticket_lint` (CLI: `kb ticket lint <file>`) on each
-   parent until it shows no error. No child files are written:
+   shape. Run `kb_ticket_lint` on each parent until it shows no error,
+   with `ticket_id` = the parent id and the mission draft's text as
+   `mission_markdown` (the mission file is not saved yet); use the CLI
+   `kb ticket lint <file>` only after the mission file is saved at step 9. No child files are written:
    `/ba-ticket-author <child-id>` drafts each child later, when the BA
    picker yields it. The story's backlog row and `## Sequencing` row stay
    unchanged and name the parent id.
