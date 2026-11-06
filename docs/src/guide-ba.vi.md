@@ -535,8 +535,29 @@ hoạch tốt gần nhất. Chạy `kb ticket lint` trên parent và sửa lỗi
 thái, và liên kết từng child đã viết; trang của child liên kết tới parent và các child anh
 em. Child chờ các id `Blocked by` trong split; child chưa viết hiển thị `not ready` (hoặc
 `blocked` khi mission chặn nó). **Runner không bao giờ nhận parent**, và claim trên parent
-trả 400 (`parent_story`): runner của Dev làm các child. Child chưa viết được hub liệt kê là to-draft; BA tự viết
-(auto runner soạn child sẽ có ở phase 3).
+trả 400 (`parent_story`): runner của Dev làm các child. Child chưa viết được hub liệt kê là to-draft;
+`/ba-ticket-author <parent-id>.<repo-id>` soạn nó.
+
+**Split được đề xuất thế nào.** Bạn không phải tự quyết split một mình. Trong
+`/ba-ticket-author`, bước 1b "Scope by repo" đọc xem nhu cầu chạm những repo nào
+(`sa-ticket-ground --scope "<need>"`) rồi đề xuất một story hoặc một parent với một child
+cho mỗi repo, kèm AC của từng child. Chấp nhận thì skill viết parent và các child. Từ chối
+thì nhu cầu vẫn là một ticket; skill ghi `**Split decision:** <lý do>` dưới `## Change log`
+của parent (parent thiếu dòng này bị lint cảnh báo). Muốn soạn một child sau, chạy
+`/ba-ticket-author <parent-id>.<repo-id>`: skill đọc parent và chỉ viết child đó, không hỏi
+lại split.
+
+`/ba-mission-plan` (bước 5c, "Repos per story") có thể đề xuất cùng split ấy ngay khi lập
+kế hoạch mission. Parent đó được viết với `-` ở cột AC của mọi dòng split và không có file
+child; `kb ticket lint` chấp nhận nó, hub liệt kê mỗi child là to-draft, và picker soạn từng
+child một. Khi viết một child, điền AC của nó vào dòng split. Ở chế độ full-auto,
+`/ba-mission-plan` không bao giờ tách: việc tách xảy ra lúc soạn ticket, ở bước 1b, và một
+agent cùng một reviewer có ngữ cảnh mới quyết định chấp nhận hay từ chối.
+
+Hai cảnh báo lint hỗ trợ việc này. Một ticket đơn có grounding trên từ hai repo trở lên cảnh
+báo `grounding touches several repos (<a>, <b>) — split it into a parent story (BA Guide 3.10)
+or keep one ticket`. Mission có `## Services & order` nêu nhiều repo được kiểm tra với
+tài liệu `-code` của từng repo: viết id dạng `<repo>:svc.<name>`.
 
 ---
 

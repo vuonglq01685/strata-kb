@@ -27,6 +27,16 @@ A story can span dev repos: one parent story splits into one child ticket per re
 - **Guides.** The BA guide (en, vi) has "Stories across repos" (3.10); the Hub guide has the parent-story upgrade note.
 - **Upgrade.** Upgrade the hub first, then every Dev runner, then the BA repos (run `kb init`). Write parent stories only after the hub runs this release. Repos with no parent stories behave as before.
 
+BA skills split a story by repo and draft the children. Phase 3 of cross-repo stories.
+
+- **Scope step.** `/ba-ticket-author` step 1b "Scope by repo" asks `sa-ticket-ground --scope "<need>"` which repos the need touches and proposes one story or a parent with one child per repo. A rejected split is recorded as a `**Split decision:**` line under the parent's `## Change log`.
+- **Child mode.** `/ba-ticket-author <parent-id>.<repo-id>` reads the parent and writes only that child; in auto mode an agent plus a fresh-context reviewer take the split gates.
+- **Mission-time parents.** `/ba-mission-plan` step 5c "Repos per story" writes parents with `-` in the AC cell of each split row and no child files; it never runs in auto mode (the split happens at drafting). `kb ticket lint` and `kb plan-ingest` accept such a parent; the hub lists the unwritten children as to-draft.
+- **Picker.** The BA picker yields `ba-ticket-author <child-id>` for each to-draft split child.
+- **Multi-repo mission check.** `kb ticket check --heading "## Services & order"` accepts several `<repo>:<repo>-code @ <rev>` entries and `<repo>:svc.<name>` ids; each id is checked in its own repo's `-code` document and issue lines point at the mission file.
+- **Two lint warnings.** `kb ticket lint` warns `grounding touches several repos (<a>, <b>) — split it into a parent story (BA Guide 3.10) or keep one ticket` for a single ticket grounded on two or more repos, and warns when a parent has no `**Split decision:**` line.
+- **Guides.** BA guide 3.10 (en, vi) explains how the split is proposed. Run `kb init` to get the skills.
+
 ## 1.34.5 — 2026-11-05
 
 `kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.
