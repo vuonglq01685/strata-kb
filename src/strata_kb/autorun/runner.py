@@ -270,7 +270,7 @@ def _still_ready_here(
     whole plan: the same client-side routing test as the pick."""
     stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(
-        t.us_id == ticket and t.status == "ready" and t.target_repo == repo_id
+        t.us_id == ticket and t.status == "ready" and t.target_repo in (None, repo_id)
         for t in (*stories, *unparented)
     )
 

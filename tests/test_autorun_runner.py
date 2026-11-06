@@ -1172,10 +1172,9 @@ def _stored(env, ticket="US1"):
     [
         [S("US2", "ready")],  # unpublished: the ticket left the plan
         [StoryStatus("US1", "M-x", "t", "ready", (), (), "other")],  # routed elsewhere
-        [StoryStatus("US1", "M-x", "t", "ready", (), (), None)],  # no target any more
         [S("US1", "blocked"), S("US2", "ready")],  # not ready
     ],
-    ids=["unpublished", "routed-elsewhere", "untargeted", "not-ready"],
+    ids=["unpublished", "routed-elsewhere", "not-ready"],
 )
 def test_stored_task_no_longer_ready_here_is_dropped(cenv, stories, caplog):
     cenv[3]["stories"] = stories
@@ -1189,6 +1188,17 @@ def test_stored_task_no_longer_ready_here_is_dropped(cenv, stories, caplog):
     assert claims.of("release") == [("release", "US1", "US1 no longer ready for svc")]
     assert claims.of("forget") == [("forget", "US1")]
     assert "US1 is no longer ready for svc; picking again" in caplog.text
+
+
+def test_stored_untargeted_task_is_kept_like_the_pick(cenv):
+    # Same routing test as the pick: an untargeted ready row (hub with no dev repos)
+    # stays this runner's task, so attempts keep counting toward MAX_ATTEMPTS.
+    cenv[3]["stories"] = [StoryStatus("US1", "M-x", "t", "ready", (), (), None)]
+    _stored(cenv)
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US1")
+    assert claims.of("release") == [] and claims.of("forget") == []
 
 
 def test_stored_task_unpublished_is_dropped_and_repicked(cenv):
