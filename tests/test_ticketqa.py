@@ -434,32 +434,55 @@ def test_ask_records_asked_from(store):
 # --- split children: questions go to the parent, per-ticket blocking ---------
 
 
+def _publish_family(fed_hub: Path, tmp_path: Path, repo_id: str) -> None:
+    ba = tmp_path / repo_id
+    missions, tickets = family(_context_block(fed_hub))
+    write_repo(ba, missions, tickets)
+    planingest.run(ba, ba / ".kb", "demo", ba / "missions", ba / "tickets")
+    doc = f"{repo_id}-plan"
+    entry = make_fed_entry(
+        fed_hub / "federation",
+        repo_id,
+        doc,
+        title=f"{repo_id} {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
+    shutil.rmtree(entry / doc)
+    shutil.copytree(ba / ".kb" / "demo-plan", entry / doc)
+    manifest = entry / doc / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("demo-plan", doc),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def family_hub(fed_hub: Path, tmp_path: Path, run_git):
     """A hub with parent US1 (rev 1) and children US1.demo (AC1, AC2) and
     US1.web (AC3, AC4)."""
-    block = _context_block(fed_hub)
-    ba = tmp_path / "ba-one"
-    missions, tickets = family(block)
-    write_repo(ba, missions, tickets)
-    planingest.run(ba, ba / ".kb", "demo", ba / "missions", ba / "tickets")
-    entry = make_fed_entry(
-        fed_hub / "federation",
-        "ba-one",
-        "ba-one-plan",
-        title=f"ba-one {planingest.TITLE_SUFFIX}",
-        tags=["plan", "generated"],
-    )
-    shutil.rmtree(entry / "ba-one-plan")
-    shutil.copytree(ba / ".kb" / "demo-plan", entry / "ba-one-plan")
-    manifest = entry / "ba-one-plan" / "_manifest.yaml"
-    manifest.write_text(
-        manifest.read_text(encoding="utf-8").replace("demo-plan", "ba-one-plan"),
-        encoding="utf-8",
-    )
+    _publish_family(fed_hub, tmp_path, "ba-one")
     run_git(fed_hub, "add", "-A")
     run_git(fed_hub, "commit", "-m", "publish family")
     return HubHandle(root=fed_hub)
+
+
+def test_same_child_id_in_two_repos_lists_with_repo_filter(
+    family_hub, store, tmp_path, run_git
+):
+    _publish_family(family_hub.root, tmp_path, "ba-two")
+    run_git(family_hub.root, "add", "-A")
+    run_git(family_hub.root, "commit", "-m", "second repo")
+    mine = ask_question(family_hub, store, f"ba-one:{WEB}", "One?", "dev1")
+    ask_question(family_hub, store, f"ba-two:{WEB}", "Two?", "dev1")
+    rows = list_questions(family_hub, store, ticket_ref=WEB, repo="ba-one")
+    assert [r[0].id for r in rows] == [mine.id]
+
+
+def test_repo_filter_does_not_pull_in_another_repos_parent_questions(
+    family_hub, store, tmp_path, run_git
+):
+    ask_question(family_hub, store, f"{REPO}:{WEB}", "One?", "dev1")
+    assert list_questions(family_hub, store, ticket_ref=WEB, repo="ba-two") == []
 
 
 def test_ask_on_child_records_on_parent(family_hub, store):

@@ -24,7 +24,6 @@ from strata_kb import lintcore, planrev, ticketfetch
 from strata_kb import ticket as ticketmod
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
-from strata_kb.planingest import promote_headings
 
 MAX_QUESTION = 4000
 MAX_ANSWER = 4000
@@ -323,20 +322,12 @@ def effective_blocks(q: Question) -> frozenset[str]:
     return ac_ids(q.blocks) | proposed
 
 
-def _source_shape(section: str) -> str:
-    """The hub section (`## <id> <title>`, headings demoted) as the BA wrote
-    it, so the header and AC parsers see their usual input."""
-    heading, _, body = section.partition("\n")
-    title = heading.removeprefix("## ").partition(" ")[2]
-    return f"# {title}\n\n{promote_headings(body.strip(chr(10)))}\n"
-
-
 def _parent_pin(section: str) -> tuple[str, int] | None:
-    return ticketmod.parent_story_pin(_source_shape(section))
+    return ticketmod.parent_story_pin(ticketfetch.source_text(section))
 
 
 def _ticket_acs(section: str) -> frozenset[str]:
-    items = lintcore.ac_items(_source_shape(section))
+    items = lintcore.ac_items(ticketfetch.source_text(section))
     return frozenset(
         f"AC{int(m.group(1))}" for i in items if (m := _AC_REF_RE.match(i))
     )
@@ -363,9 +354,10 @@ def ask_question(
 ) -> Question:
     repo, _, _ = ticketfetch.find(hub, ticket_ref)
     ticket = ticketfetch.split_ref(ticket_ref)[1]
-    pin = _parent_pin(_read_section(hub, repo, ticket))
+    section = _read_section(hub, repo, ticket)
+    pin = _parent_pin(section)
     if pin is None:
-        rev = _read_revision(hub, repo, ticket)
+        rev = planrev.parse_revision(section) or 1
         return store.ask(repo, ticket, question, context, blocks, asked_by, rev)
     parent = pin[0]
     try:
@@ -433,7 +425,8 @@ def list_questions(
         repo = ref_repo or repo
     found = list(store.list(repo or None, ticket))
     if ticket is not None:
-        found += _parent_questions(hub, store, ticket_ref, ticket)
+        ref = f"{repo}:{ticket}" if repo else ticket_ref
+        found += _parent_questions(hub, store, ref, ticket)
         found = sorted({q.id: q for q in found}.values(), key=lambda q: q.id)
     revisions: dict[tuple[str, str], int | None] = {}
     acs: dict[str, frozenset[str]] = {}

@@ -86,6 +86,14 @@ def read_section(l3: Path, doc: str, ticket_id: str) -> str:
     return section
 
 
+def source_text(section: str) -> str:
+    """The hub section (`## <id> <title>`, headings demoted) back in the
+    shape the BA wrote it: `# <title>` and promoted headings."""
+    heading, _, body = section.partition("\n")
+    title = heading.partition(" ")[2].partition(" ")[2]
+    return f"# {title}\n\n{promote_headings(body.strip(chr(10)))}\n"
+
+
 def render(hub: HubHandle, ticket_ref: str) -> str:
     """The ticket as the BA wrote it, minus `## Definition of Ready` and
     `## Review record` (plan-ingest drops them: being on the hub means DoR
