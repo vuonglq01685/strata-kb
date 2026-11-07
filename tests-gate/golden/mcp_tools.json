@@ -591,7 +591,7 @@
     }
   },
   "kb_ticket_fetch": {
-    "description": "The `kb ticket fetch` text: a ticket the BA published, read from\nthe hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos\nhold it), restored to its ticket shape with a `> Fetched from hub:`\nline. Write it to docs/impl/<id>/ticket.md yourself; the BA's repo\nstays the place to amend it.",
+    "description": "The `kb ticket fetch` text: a ticket the BA published, read from\nthe hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos\nhold it), restored to its ticket shape with a `> Fetched from hub:`\nline. Write it to docs/impl/<id>/ticket.md yourself, only at Intake\n(never in the pre-merge re-check); the BA's repo stays the place to\namend it.",
     "inputSchema": {
       "properties": {
         "ticket": {

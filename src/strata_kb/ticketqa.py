@@ -132,16 +132,20 @@ def _row_to_question(row: tuple) -> Question:
     )  # fmt: skip
 
 
+def _missing_columns(conn: sqlite3.Connection) -> list[str]:
+    have = {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
+    return [c for c in _ADDED_COLUMNS if c not in have]
+
+
 class QaStore:
     def __init__(self, db_path: Path) -> None:
         self._path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
             conn.execute(_SCHEMA)
-            conn.execute("BEGIN IMMEDIATE")  # two openers must not both ALTER
-            have = {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
-            for col in _ADDED_COLUMNS:
-                if col not in have:
+            if _missing_columns(conn):  # a migrated db is opened without a write lock
+                conn.execute("BEGIN IMMEDIATE")  # two openers must not both ALTER
+                for col in _missing_columns(conn):
                     conn.execute(f"ALTER TABLE questions ADD COLUMN {col} TEXT")
 
     def _connect(self) -> sqlite3.Connection:
@@ -480,7 +484,7 @@ def _child_revision(hub: HubHandle, repo: str, child: str) -> int | None:
     is not on the hub or carries no pin."""
     try:
         pin = _parent_pin(_read_section(hub, repo, child))
-    except ticketfetch.TicketNotOnHub:
+    except ticketfetch.TicketFetchError:  # includes TicketNotOnHub
         return None
     return pin[1] if pin else None
 
@@ -534,8 +538,15 @@ def list_questions(
         if state == "answered" and q.answer_rev is not None:
             if key not in parents:
                 parents[key] = _is_parent(hub, *key)
+            # Rows from before the ticket became a parent hold section names.
+            children = [
+                c
+                for c in q.ticket_sections
+                if (m := ticketmod.CHILD_ID_RE.match(c))
+                and m.group("parent") == q.ticket
+            ]
             if parents[key]:
-                for child in q.ticket_sections:
+                for child in children:
                     if (q.repo, child) not in pins:
                         pins[q.repo, child] = _child_revision(hub, q.repo, child)
                     pin = pins[q.repo, child]
@@ -605,6 +616,8 @@ def format_questions(
             _field("blocks", q.blocks or "-"),
             _field("asked", f"{q.asked_by} at {q.asked_at} (rev {q.asked_rev})"),
         ]
+        if q.asked_from:
+            lines.append(_field("asked from", q.asked_from))
         if q.proposed_blocks:
             lines.append(_field("proposed blocks", q.proposed_blocks))
         if q.confirmed_by:

@@ -59,7 +59,7 @@ edit above it.
   their own before the first task; no CLI → move them by hand); get the ticket: given only an id, fetch
   it first — the hub is the source of truth: MCP `kb_ticket_fetch` `<id>`,
   its text saved as `docs/impl/<id>/ticket.md`, your `<ticket-file>` (CLI
-  fallback: `kb ticket fetch <id>` writes that file); a
+  fallback: `kb ticket fetch <id>` writes that file). When `docs/impl/<id>/ticket.md` is already committed, first fetch to a scratch path outside the repo (`kb_ticket_fetch`, or `kb ticket fetch <id> --out "$(mktemp -d)/ticket.md"`) and compare its `> Revision:` with the committed one. When the hub's is higher, read this ticket's change-log rows above the old revision and return to `dev-design` as for an answered question (a changed section that touches an approved design sends it back to `status: draft`) before you overwrite the baseline. A
   path or a pasted body is the fallback when the hub has no copy or is
   unreachable. A fetched ticket has no `## Definition of Ready`: being on
   the hub means DoR passed, so do not stop on its absence. Confirm
@@ -103,7 +103,7 @@ edit above it.
     approved design (it goes back to `status: draft`).
   - **waiting** (answer recorded, its ticket revision not on the hub yet)
     → show the answer as information only, say which revision it waits for,
-    and do not act on it.
+    and do not act on it; a waiting row that reads `blocks this ticket: yes` stops here like an open one; other rows are information only.
   - **open** and blocking (its list row reads `blocks this ticket: yes`) → say so in the state
     line (`BA-Q: open Q<ids>`) and do not continue past the gate; give the
     Dev the hub Q&A link to paste in chat: `STRATA_KB_HUB_URL` (process env,

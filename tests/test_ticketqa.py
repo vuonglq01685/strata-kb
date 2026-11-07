@@ -684,3 +684,50 @@ def test_parent_answer_without_change_is_answered(family_hub, store):
     q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
     answer_question(family_hub, store, q.id, "Metres", "ba1", None, [])
     assert list_questions(family_hub, store, status="all")[0][1] == "answered"
+
+
+# --- old answers on a ticket that later became a parent ----------------------
+
+
+@pytest.mark.parametrize("name", ["## Acceptance Criteria", "Scope", f"{API}"])
+def test_old_answer_with_non_child_sections_on_now_parent_keeps_state(
+    family_hub, store, name
+):
+    q = store.ask(REPO, US1, "Old?", "", "AC1", "dev1", 1)
+    store.answer(q.id, "Yes", "ba1", 1, [name])
+    rows = list_questions(family_hub, store, status="all")
+    assert [(r[0].id, r[1]) for r in rows] == [(q.id, "answered")]
+
+
+def test_old_answer_with_unreadable_child_entry_does_not_fail_the_list(
+    family_hub, store
+):
+    q = store.ask(REPO, US1, "Old?", "", "", "dev1", 1)
+    store.answer(q.id, "Yes", "ba1", 1, [f"{US1}.nope"])
+    rows = list_questions(family_hub, store, status="all")
+    assert [(r[0].id, r[1]) for r in rows] == [(q.id, "waiting")]
+
+
+def test_format_shows_asked_from(family_hub, store):
+    ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    out = format_questions(list_questions(family_hub, store))
+    assert f"asked from: {WEB}" in out
+    ordinary = store.ask(REPO, US1, "Plain?", "", "", "dev1", 1)
+    rows = [r for r in list_questions(family_hub, store) if r[0].id == ordinary.id]
+    assert "asked from" not in format_questions(rows)
+
+
+def test_open_of_migrated_db_needs_no_write_lock(tmp_path, monkeypatch):
+    db = tmp_path / "qa.db"
+    QaStore(db)
+    writer = sqlite3.connect(db, isolation_level=None)
+    writer.execute("BEGIN IMMEDIATE")
+    real = sqlite3.connect
+    monkeypatch.setattr(
+        "strata_kb.ticketqa.sqlite3.connect",
+        lambda path, timeout=10: real(path, timeout=0.2),
+    )
+    try:
+        QaStore(db)
+    finally:
+        writer.close()

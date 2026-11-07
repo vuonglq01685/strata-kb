@@ -2223,6 +2223,40 @@ def test_dev_gate_stops_only_on_blocks_this_ticket_yes(name):
     assert "`blocks:` names an AC" not in _normal(raw), name
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_intake_compares_committed_revision_before_overwriting(name):
+    text = _off_path(name)
+    for needle in [
+        "compare its `> Revision:` with the committed one",
+        "read this ticket's change-log rows above the old revision",
+        "before you overwrite the baseline",
+    ]:
+        assert needle in text, (name, needle)
+    assert text.index("compare its `> Revision:`") < text.index("before you overwrite")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_waiting_row_blocking_this_ticket_stops_the_entry(name):
+    assert (
+        "a waiting row that reads `blocks this ticket: yes` stops here like an open one"
+        in _off_path(name)
+    ), name
+
+
 _HANDOVER_FILES = ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
 
 
@@ -2240,7 +2274,7 @@ def test_handover_pre_merge_recheck_comes_before_the_merge(name):
         "`> Revision:`",
         "AUTO-RESULT: blocked-qa Q<id>",
         "AUTO-RESULT: failed ticket-revised <ticket-id>",
-        "`kb ticket fetch <ticket-id> --out <scratch-path>`",
+        '`kb ticket fetch <ticket-id> --out "$(mktemp -d)/ticket.md"`',
         "never overwrite `docs/impl/<ticket-id>/ticket.md`",
     ]:
         assert needle in tail, (name, needle)

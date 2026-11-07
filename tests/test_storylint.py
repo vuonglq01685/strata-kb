@@ -386,3 +386,26 @@ def test_change_log_affected_must_be_split_children():
 def test_change_log_affected_dash_allowed(cell):
     r = storylint.lint_parent(_logged(cell), kids(), parent_id=PID)
     assert "Affected" not in errors(r), errors(r)
+
+
+def _two_rows(old: str, new: str) -> str:
+    return parent(
+        extra=f"| 2 | 2026-11-06 | scope | a | {old} | B4 (agent) |\n"
+        f"| 3 | 2026-11-07 | scope | b | {new} | B4 (agent) |\n"
+    ).replace("> Revision: 1", "> Revision: 3")
+
+
+def test_change_log_older_row_naming_a_gone_child_is_a_warning():
+    gone = f"{PID}.mobile"
+    r = storylint.lint_parent(_two_rows(f"{API}, {gone}", API), kids(), parent_id=PID)
+    msg = f"change-log row 2: Affected '{gone}' is not a child in the split"
+    assert msg not in errors(r)
+    assert msg in "\n".join(i.message for i in r.issues if i.level == "warning")
+
+
+def test_change_log_newest_row_naming_a_gone_child_is_an_error():
+    gone = f"{PID}.mobile"
+    r = storylint.lint_parent(_two_rows(API, f"{API}, {gone}"), kids(), parent_id=PID)
+    assert f"change-log row 3: Affected '{gone}' is not a child in the split" in errors(
+        r
+    )

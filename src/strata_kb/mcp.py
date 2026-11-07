@@ -489,8 +489,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         """The `kb ticket fetch` text: a ticket the BA published, read from
         the hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos
         hold it), restored to its ticket shape with a `> Fetched from hub:`
-        line. Write it to docs/impl/<id>/ticket.md yourself; the BA's repo
-        stays the place to amend it."""
+        line. Write it to docs/impl/<id>/ticket.md yourself, only at Intake
+        (never in the pre-merge re-check); the BA's repo stays the place to
+        amend it."""
 
         def _run() -> str:
             from strata_kb import ticketfetch

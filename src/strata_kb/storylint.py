@@ -269,12 +269,18 @@ def lint_parent(
 
 
 def _check_change_log_affected(rows: list[SplitRow], text: str) -> list[Issue]:
-    """A parent change-log row's `Affected` names only split children."""
+    """A parent change-log row's `Affected` names only split children. Only the
+    newest row is an error: the log is append-only, so an older row may name a
+    child that was cancelled since."""
     ids = {r.child for r in rows}
+    log = [c for c in planrev.parse_change_log(text) if c.rev >= 2]
+    newest = max((c.rev for c in log), default=0)
     return [
-        _err(f"change-log row {c.rev}: Affected '{a}' is not a child in the split")
-        for c in planrev.parse_change_log(text)
-        if c.rev >= 2
+        Issue(
+            "error" if c.rev == newest else "warning",
+            f"change-log row {c.rev}: Affected '{a}' is not a child in the split",
+        )
+        for c in log
         for a in c.affected
         if a not in ids
     ]
