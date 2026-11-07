@@ -344,6 +344,9 @@ def build_routes(config: ServerConfig) -> list[Route]:
                         "blocks": q.blocks,
                         "answer": q.answer,
                         "answer_rev": q.answer_rev,
+                        "asked_from": q.asked_from,
+                        "proposed_blocks": q.proposed_blocks,
+                        "confirmed_by": q.confirmed_by,
                     }
                     for q, state, _rev in rows
                 ]

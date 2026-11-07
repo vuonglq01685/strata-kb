@@ -49,13 +49,19 @@ CREATE TABLE IF NOT EXISTS questions (
     answer_rev INTEGER,
     ticket_sections TEXT NOT NULL DEFAULT '[]',
     answered_by TEXT,
-    answered_at TEXT
+    answered_at TEXT,
+    asked_from TEXT,
+    proposed_blocks TEXT,
+    confirmed_by TEXT
 )
 """
 _COLUMNS = (
     "id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev, "
-    "answer, answer_rev, ticket_sections, answered_by, answered_at"
+    "answer, answer_rev, ticket_sections, answered_by, answered_at, "
+    "asked_from, proposed_blocks, confirmed_by"
 )
+# Added after the first release: an older db gets them by ALTER in QaStore.
+_ADDED_COLUMNS = ("asked_from", "proposed_blocks", "confirmed_by")
 
 
 class QaError(KbError):
@@ -78,6 +84,9 @@ class Question:
     ticket_sections: list[str]
     answered_by: str | None
     answered_at: str | None
+    asked_from: str | None = None
+    proposed_blocks: str | None = None
+    confirmed_by: str | None = None
 
 
 def qa_db_path(hub_root: Path) -> Path:
@@ -112,10 +121,12 @@ def _row_to_question(row: tuple) -> Question:
     (id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev) = row[
         :9
     ]
-    answer, answer_rev, sections, answered_by, answered_at = row[9:]
+    answer, answer_rev, sections, answered_by, answered_at = row[9:14]
+    asked_from, proposed_blocks, confirmed_by = row[14:]
     return Question(
         id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev,
         answer, answer_rev, json.loads(sections), answered_by, answered_at,
+        asked_from, proposed_blocks, confirmed_by,
     )  # fmt: skip
 
 
@@ -125,6 +136,11 @@ class QaStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
             conn.execute(_SCHEMA)
+            conn.execute("BEGIN IMMEDIATE")  # two openers must not both ALTER
+            have = {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
+            for col in _ADDED_COLUMNS:
+                if col not in have:
+                    conn.execute(f"ALTER TABLE questions ADD COLUMN {col} TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path, timeout=10)
@@ -138,6 +154,7 @@ class QaStore:
         blocks: str,
         asked_by: str,
         asked_rev: int,
+        asked_from: str | None = None,
     ) -> Question:
         _text("question", question, MAX_QUESTION)
         _text("context", context, MAX_CONTEXT, required=False)
@@ -160,8 +177,18 @@ class QaStore:
                 )
             cur = conn.execute(
                 "INSERT INTO questions (repo, ticket, question, context, blocks, "
-                "asked_by, asked_at, asked_rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (repo, ticket, question, context, blocks, asked_by, now, asked_rev),
+                "asked_by, asked_at, asked_rev, asked_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    repo,
+                    ticket,
+                    question,
+                    context,
+                    blocks,
+                    asked_by,
+                    now,
+                    asked_rev,
+                    asked_from,
+                ),
             )
         return Question(
             cur.lastrowid or 0,
@@ -178,6 +205,7 @@ class QaStore:
             [],
             None,
             None,
+            asked_from,
         )
 
     def get(self, id: int) -> Question | None:

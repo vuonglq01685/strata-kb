@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
@@ -354,3 +355,72 @@ def test_ticket_revision_none_when_gone_and_error_when_unreadable(hub_with_ticke
     ticketfetch.find(hub, US1)[2].unlink()
     with pytest.raises(ticketfetch.TicketFetchError, match="could not read"):
         ticket_revision(hub, REPO, US1)
+
+
+_OLD_SCHEMA = """
+CREATE TABLE questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo TEXT NOT NULL,
+    ticket TEXT NOT NULL,
+    question TEXT NOT NULL,
+    context TEXT NOT NULL,
+    blocks TEXT NOT NULL,
+    asked_by TEXT NOT NULL,
+    asked_at TEXT NOT NULL,
+    asked_rev INTEGER NOT NULL,
+    answer TEXT,
+    answer_rev INTEGER,
+    ticket_sections TEXT NOT NULL DEFAULT '[]',
+    answered_by TEXT,
+    answered_at TEXT
+)
+"""
+_NEW_COLUMNS = {"asked_from", "proposed_blocks", "confirmed_by"}
+
+
+def _old_db(tmp_path: Path) -> Path:
+    path = tmp_path / "old" / "qa.db"
+    path.parent.mkdir()
+    conn = sqlite3.connect(path)
+    conn.execute(_OLD_SCHEMA)
+    conn.execute(
+        "INSERT INTO questions (repo, ticket, question, context, blocks, asked_by, "
+        "asked_at, asked_rev) VALUES ('r', 't', 'q', '', '', 'me', 'now', 1)"
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _columns(path: Path) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
+    finally:
+        conn.close()
+
+
+def test_old_db_gains_new_columns(tmp_path):
+    path = _old_db(tmp_path)
+
+    q = QaStore(path).get(1)
+
+    assert q is not None
+    assert (q.asked_from, q.proposed_blocks, q.confirmed_by) == (None, None, None)
+    assert _columns(path) >= _NEW_COLUMNS
+
+
+def test_migration_twice_is_idempotent(tmp_path):
+    path = _old_db(tmp_path)
+
+    QaStore(path)
+    QaStore(path)
+
+    assert _columns(path) >= _NEW_COLUMNS
+
+
+def test_ask_records_asked_from(store):
+    q = store.ask("r", "t", "q?", "", "", "me", 1, asked_from="child-repo")
+
+    assert q.asked_from == "child-repo"
+    assert store.get(q.id).asked_from == "child-repo"
