@@ -572,8 +572,9 @@ is done, it is a new story. `kb ticket lint` errors when a change-log row of the
 (rev 2 or later) names in `Affected` something that is not a child in the split.
 
 **Questions on a child, recorded on the parent.** A Dev who asks about `US-12.web-app` is
-recorded on `US-12`, with the child as the source. `/ba-answer-questions` lists the
-parent's questions for every child, so a Dev on `US-12.payments-api` sees them too. Each row
+recorded on `US-12`, with the child as the source. The Q&A list of every
+child includes the parent's questions, so a Dev on `US-12.payments-api` sees them too.
+`/ba-answer-questions` handles a parent question once, at the parent. Each row
 reads `blocks this ticket: yes` or `no`. The Dev gate stops only on `yes`.
 
 **Proposed and confirmed blocks.** A Dev blocks their own ticket's ACs at once. A question

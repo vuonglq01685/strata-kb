@@ -295,8 +295,8 @@ nghi ngờ được gắn nhãn `business` hoặc `technical`:
 
 Một câu hỏi chặn một tiêu chí chấp nhận (AC) sẽ dừng cổng: skill đưa bạn đường dẫn Q&A
 của hub để dán vào chat. Ở mỗi lần vào, `/dev-implement-ticket` đọc các câu hỏi của ticket
-và hiển thị `BA-Q: none | open Q<ids> | waiting Q<ids>`; câu hỏi *waiting* chỉ để biết,
-câu hỏi *open* đang chặn thì dừng luồng. Q&A chỉ hoạt động khi MCP trỏ tới máy chủ HTTP
+và hiển thị `BA-Q: none | open Q<ids> | waiting Q<ids>`; dòng *open* hoặc *waiting* mà ghi
+`blocks this ticket: yes` thì dừng luồng; các dòng khác chỉ để biết. Q&A chỉ hoạt động khi MCP trỏ tới máy chủ HTTP
 của hub (`kb mcp-setup`).
 
 **Câu hỏi về story đã tách.** Câu hỏi về child ticket của bạn được ghi ở parent story, và danh

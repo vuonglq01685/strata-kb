@@ -307,8 +307,9 @@ alone, never in a parallel lane.
 
 A question that blocks an acceptance criterion stops the gate: the skill gives you
 the hub's Q&A link to paste in chat. On every entry `/dev-implement-ticket` reads the
-ticket's questions and shows `BA-Q: none | open Q<ids> | waiting Q<ids>`; a *waiting*
-question is information only, an *open* blocking one stops the flow. Q&A works only
+ticket's questions and shows `BA-Q: none | open Q<ids> | waiting Q<ids>`; a row that is
+*open* or *waiting* and reads `blocks this ticket: yes` stops the flow; any other row is
+information only. Q&A works only
 when MCP points at the hub's HTTP server (`kb mcp-setup`).
 
 **Questions on a split story.** A question about your child ticket is recorded on the

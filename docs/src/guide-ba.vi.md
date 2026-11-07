@@ -574,8 +574,9 @@ Child đã done không bao giờ bị amend: thay đổi trở thành child mớ
 `Affected` thứ không phải child trong split.
 
 **Câu hỏi về một child, ghi ở parent.** Dev hỏi về `US-12.web-app` được ghi vào `US-12`, với
-child là nguồn. `/ba-answer-questions` liệt kê câu hỏi của parent cho mọi child, nên Dev của
-`US-12.payments-api` cũng thấy. Mỗi dòng ghi `blocks this ticket: yes` hoặc `no`. Cổng của
+child là nguồn. Danh sách Q&A của mọi child
+gồm cả câu hỏi của parent, nên Dev của `US-12.payments-api` cũng thấy.
+`/ba-answer-questions` xử lý một câu hỏi của parent đúng một lần, ở parent. Mỗi dòng ghi `blocks this ticket: yes` hoặc `no`. Cổng của
 Dev chỉ dừng khi là `yes`.
 
 **Chặn được đề xuất và được xác nhận.** Dev chặn ngay các AC của ticket mình. Câu hỏi có thể
