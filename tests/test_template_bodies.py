@@ -490,8 +490,8 @@ def test_dev_design_and_plan_claude_commands_carry_the_question_rules(name):
         "dispatch `dev-sa`",
         "kb_question_ask",
         "A blocking open BA question (a question line without `— answered rev N` "
-        "that `kb_question_list(ticket=<id>)` lists as `blocks this ticket: yes`) "
-        "stops the gate",
+        'that `kb_question_list(ticket=<id>, status="all")` lists as open or '
+        "waiting and `blocks this ticket: yes`) stops the gate",
         HUB_ONLY_ERROR,
     ):
         assert phrase in text, (name, phrase)
@@ -590,6 +590,7 @@ def test_gate_counts_only_question_lines_without_an_answered_marker(body, comman
     for text in (_body(body), " ".join(read_template(command).split())):
         assert "a question line without `— answered rev N`" in text, body
         assert "`blocks this ticket: yes`" in text, body
+        assert 'kb_question_list(ticket=<id>, status="all")' in text, body
         assert "(the rubric's Pre-code axis says so)" in text, body
         assert "dev-sa" in text and "standard" in text and "tier" in text, body
 
@@ -2230,7 +2231,6 @@ def test_handover_pre_merge_recheck_comes_before_the_merge(name):
     raw = _raw(name) if name.startswith("bodies/") else read_template(name)
     text = _normal(raw)
     step = text.index("Pre-merge re-check")
-    assert step < text.index("kb pr merge"), name
     assert step < text.index("## Auto mode"), name
     tail = text[step:]
     for needle in [
@@ -2240,6 +2240,30 @@ def test_handover_pre_merge_recheck_comes_before_the_merge(name):
         "`> Revision:`",
         "AUTO-RESULT: blocked-qa Q<id>",
         "AUTO-RESULT: failed ticket-revised <ticket-id>",
+        "`kb ticket fetch <ticket-id> --out <scratch-path>`",
+        "never overwrite `docs/impl/<ticket-id>/ticket.md`",
     ]:
         assert needle in tail, (name, needle)
+    assert tail.index("Read the `> Revision:`") < tail.index("kb_ticket_fetch"), name
+    auto = text[text.index("## Auto mode") :]
+    assert auto.index("run the Pre-merge re-check first") < auto.index(
+        "kb pr merge --squash"
+    ), name
     assert "`ticket-revised <ticket-id>`" in text[text.index("Result line") :], name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "bodies/dev-execute.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-command-dev-execute.md",
+    ],
+)
+def test_gate_lists_open_and_waiting_rows_with_status_all(name):
+    off = _off_path(name)
+    assert 'kb_question_list(ticket=<id>, status="all")' in off, name
+    assert "open or waiting" in off, name
