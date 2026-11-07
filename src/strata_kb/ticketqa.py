@@ -436,6 +436,8 @@ def answer_question(
             f"Q{id} was already answered by {q.answered_by} at {q.answered_at}"
         )
     _check_answer_rev(answer_rev)
+    if _is_parent(hub, q.repo, q.ticket):
+        _check_child_ids(q.ticket, answer_rev, ticket_sections)
     if answer_rev is not None:
         hub_rev = ticket_revision(hub, q.repo, q.ticket)
         if hub_rev is None:
@@ -449,6 +451,36 @@ def answer_question(
                 "and bump its revision"
             )
     return store.answer(id, answer, answered_by, answer_rev, ticket_sections)
+
+
+def _is_parent(hub: HubHandle, repo: str, ticket: str) -> bool:
+    try:
+        section = _read_section(hub, repo, ticket)
+    except ticketfetch.TicketNotOnHub:
+        return False
+    return ticketmod.ticket_kind(ticketfetch.source_text(section)) == "parent story"
+
+
+def _check_child_ids(parent: str, answer_rev: int | None, sections: list[str]) -> None:
+    ok = answer_rev is not None and bool(sections)
+    for name in sections:
+        m = ticketmod.CHILD_ID_RE.match(name)
+        ok = ok and m is not None and m.group("parent") == parent
+    if not ok:
+        raise QaError(
+            "parent question: ticket_sections must list the child ids of the "
+            "change-log row for answer_rev"
+        )
+
+
+def _child_revision(hub: HubHandle, repo: str, child: str) -> int | None:
+    """The revision of the parent the child is pinned to; None when the child
+    is not on the hub or carries no pin."""
+    try:
+        pin = _parent_pin(_read_section(hub, repo, child))
+    except ticketfetch.TicketNotOnHub:
+        return None
+    return pin[1] if pin else None
 
 
 def _check_id(id: int) -> None:
@@ -488,6 +520,8 @@ def list_questions(
         found += _parent_questions(hub, store, repo, ticket)
         found = sorted({q.id: q for q in found}.values(), key=lambda q: q.id)
     revisions: dict[tuple[str, str], int | None] = {}
+    parents: dict[tuple[str, str], bool] = {}
+    pins: dict[tuple[str, str], int | None] = {}
     acs: dict[str, frozenset[str]] = {}
     rows: list[tuple[Question, str, int | None, bool | None]] = []
     for q in found:
@@ -495,6 +529,16 @@ def list_questions(
         if key not in revisions:
             revisions[key] = ticket_revision(hub, *key)
         state = derive_state(q, revisions[key])
+        if state == "answered" and q.answer_rev is not None:
+            if key not in parents:
+                parents[key] = _is_parent(hub, *key)
+            if parents[key]:
+                for child in q.ticket_sections:
+                    if (q.repo, child) not in pins:
+                        pins[q.repo, child] = _child_revision(hub, q.repo, child)
+                    pin = pins[q.repo, child]
+                    if pin is None or pin < q.answer_rev:
+                        state = "waiting"
         if status not in ("all", state):
             continue
         blocks_this = None

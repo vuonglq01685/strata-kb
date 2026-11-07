@@ -599,7 +599,7 @@ def test_confirm_without_proposal_refuses(family_hub, store):
 
 def test_propose_on_answered_refuses(family_hub, store):
     q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
-    answer_question(family_hub, store, q.id, "Yes.", "ba1", None, [])
+    answer_question(family_hub, store, q.id, "Yes.", "ba1", 2, [WEB])
     with pytest.raises(QaError, match="already answered"):
         propose_blocks(store, q.id, "AC2", "why")
     with pytest.raises(QaError, match="already answered"):
@@ -638,3 +638,43 @@ def test_ac_mentioned_in_the_reason_does_not_block(family_hub, store):
     propose_blocks(store, q.id, "AC4", "same rule as AC1")
     confirm_blocks(store, q.id, "ba1")
     assert _blocks_for_demo(family_hub, store) == [False]
+
+
+# --- parent question: answered only once every affected child is re-published --
+
+
+def _republish(hub, ticket, *, rev=None, pin=None):
+    """Edit the ticket's hub section: `> Revision` and/or the child's pin."""
+    l3 = ticketfetch.find(hub, f"{REPO}:{ticket}")[2]
+    text = l3.read_text(encoding="utf-8")
+    head, sep, rest = text.partition(f"## {ticket} ")
+    body, nxt, tail = rest.partition("\n## ")
+    if rev is not None:
+        body = body.replace("> Revision: 1", f"> Revision: {rev}", 1)
+    if pin is not None:
+        body = body.replace(f"{US1} @ rev 1", f"{US1} @ rev {pin}", 1)
+    l3.write_text(head + sep + body + nxt + tail, encoding="utf-8")
+
+
+def test_parent_answer_waits_for_every_affected_child(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
+    answer_question(family_hub, store, q.id, "Metres", "ba1", 2, [API, WEB])
+
+    def state():
+        return list_questions(family_hub, store, status="all")[0][1]
+
+    assert state() == "waiting"
+    _republish(family_hub, US1, rev=2)
+    _republish(family_hub, API, pin=2)
+    assert state() == "waiting"
+    _republish(family_hub, WEB, pin=2)
+    assert state() == "answered"
+
+
+def test_parent_answer_needs_child_ids(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
+    for bad in (["## Acceptance Criteria"], [], ["OTHER.web"]):
+        with pytest.raises(QaError, match="parent question: ticket_sections"):
+            answer_question(family_hub, store, q.id, "Metres", "ba1", 2, bad)
+    with pytest.raises(QaError, match="parent question: ticket_sections"):
+        answer_question(family_hub, store, q.id, "Metres", "ba1", None, [])
