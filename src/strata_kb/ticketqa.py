@@ -11,6 +11,7 @@ revision is its own `> Revision: N` line (`planrev`), not the hub's git HEAD.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import unicodedata
 from contextlib import closing
@@ -19,9 +20,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from strata_kb import planrev, ticketfetch
+from strata_kb import lintcore, planrev, ticketfetch
+from strata_kb import ticket as ticketmod
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
+from strata_kb.planingest import promote_headings
 
 MAX_QUESTION = 4000
 MAX_ANSWER = 4000
@@ -294,12 +297,49 @@ def derive_state(q: Question, hub_rev: int | None) -> State:
     return "waiting" if hub_rev is None or hub_rev < q.answer_rev else "answered"
 
 
+def _read_section(hub: HubHandle, repo: str, ticket: str) -> str:
+    _, doc, l3 = ticketfetch.find(hub, f"{repo}:{ticket}")
+    return ticketfetch.read_section(l3, doc, ticket)
+
+
 def _read_revision(hub: HubHandle, repo: str, ticket: str) -> int:
     """One federation load and one L3 read: no `render`, no git call (the
     Q&A list asks for every ticket it shows)."""
-    _, doc, l3 = ticketfetch.find(hub, f"{repo}:{ticket}")
-    section = ticketfetch.read_section(l3, doc, ticket)
-    return planrev.parse_revision(section) or 1
+    return planrev.parse_revision(_read_section(hub, repo, ticket)) or 1
+
+
+_AC_REF_RE = re.compile(r"\bAC-?(\d+)\b", re.I)
+
+
+def ac_ids(text: str) -> frozenset[str]:
+    """`AC3`, `AC-3` and `ac3` in `text`, each normalised to `AC3`."""
+    return frozenset(f"AC{int(n)}" for n in _AC_REF_RE.findall(text))
+
+
+def effective_blocks(q: Question) -> frozenset[str]:
+    """The ACs the question blocks: its own `blocks`, plus the Dev's
+    proposal once a BA has confirmed it."""
+    proposed = ac_ids(q.proposed_blocks or "") if q.confirmed_by else frozenset()
+    return ac_ids(q.blocks) | proposed
+
+
+def _source_shape(section: str) -> str:
+    """The hub section (`## <id> <title>`, headings demoted) as the BA wrote
+    it, so the header and AC parsers see their usual input."""
+    heading, _, body = section.partition("\n")
+    title = heading.removeprefix("## ").partition(" ")[2]
+    return f"# {title}\n\n{promote_headings(body.strip(chr(10)))}\n"
+
+
+def _parent_pin(section: str) -> tuple[str, int] | None:
+    return ticketmod.parent_story_pin(_source_shape(section))
+
+
+def _ticket_acs(section: str) -> frozenset[str]:
+    items = lintcore.ac_items(_source_shape(section))
+    return frozenset(
+        f"AC{int(m.group(1))}" for i in items if (m := _AC_REF_RE.match(i))
+    )
 
 
 def ticket_revision(hub: HubHandle, repo: str, ticket: str) -> int | None:
@@ -323,8 +363,21 @@ def ask_question(
 ) -> Question:
     repo, _, _ = ticketfetch.find(hub, ticket_ref)
     ticket = ticketfetch.split_ref(ticket_ref)[1]
-    rev = _read_revision(hub, repo, ticket)
-    return store.ask(repo, ticket, question, context, blocks, asked_by, rev)
+    pin = _parent_pin(_read_section(hub, repo, ticket))
+    if pin is None:
+        rev = _read_revision(hub, repo, ticket)
+        return store.ask(repo, ticket, question, context, blocks, asked_by, rev)
+    parent = pin[0]
+    try:
+        rev = _read_revision(hub, repo, parent)
+    except ticketfetch.TicketNotOnHub as exc:
+        raise QaError(
+            f"parent story {parent} is not on the hub — publish it before asking "
+            f"about {ticket}"
+        ) from exc
+    return store.ask(
+        repo, parent, question, context, blocks, asked_by, rev, asked_from=ticket
+    )
 
 
 def answer_question(
@@ -367,34 +420,69 @@ def list_questions(
     ticket_ref: str = "",
     repo: str = "",
     status: str = "open",
-) -> list[tuple[Question, str, int | None]]:
+) -> list[tuple[Question, str, int | None, bool | None]]:
+    """Rows `(question, state, hub revision, blocks_this)`. With a
+    `ticket_ref`, a split child's list also holds its parent's questions, and
+    `blocks_this` says whether the question blocks that ticket (None without
+    one)."""
     if status not in STATUSES:
         raise QaError(f"status must be one of {', '.join(STATUSES)}, not {status!r}")
     ticket = None
     if ticket_ref.strip():
         ref_repo, ticket = ticketfetch.split_ref(ticket_ref)
         repo = ref_repo or repo
+    found = list(store.list(repo or None, ticket))
+    if ticket is not None:
+        found += _parent_questions(hub, store, ticket_ref, ticket)
+        found = sorted({q.id: q for q in found}.values(), key=lambda q: q.id)
     revisions: dict[tuple[str, str], int | None] = {}
-    rows: list[tuple[Question, str, int | None]] = []
-    for q in store.list(repo or None, ticket):
+    acs: dict[str, frozenset[str]] = {}
+    rows: list[tuple[Question, str, int | None, bool | None]] = []
+    for q in found:
         key = (q.repo, q.ticket)
         if key not in revisions:
             revisions[key] = ticket_revision(hub, *key)
         state = derive_state(q, revisions[key])
-        if status in ("all", state):
-            rows.append((q, state, revisions[key]))
+        if status not in ("all", state):
+            continue
+        blocks_this = None
+        if ticket is not None:
+            if q.repo not in acs:
+                acs[q.repo] = _acs_on_hub(hub, q.repo, ticket)
+            blocks_this = bool(effective_blocks(q) & acs[q.repo])
+        rows.append((q, state, revisions[key], blocks_this))
     return rows
+
+
+def _acs_on_hub(hub: HubHandle, repo: str, ticket: str) -> frozenset[str]:
+    try:
+        return _ticket_acs(_read_section(hub, repo, ticket))
+    except ticketfetch.TicketNotOnHub:
+        return frozenset()
+
+
+def _parent_questions(
+    hub: HubHandle, store: QaStore, ticket_ref: str, ticket: str
+) -> list[Question]:
+    try:
+        repo, _, _ = ticketfetch.find(hub, ticket_ref)
+        pin = _parent_pin(_read_section(hub, repo, ticket))
+    except ticketfetch.TicketNotOnHub:
+        return []
+    return [] if pin is None else store.list(repo, pin[0])
 
 
 def _field(label: str, value: str) -> str:
     return f"  {label}: " + value.replace("\n", "\n    ")
 
 
-def format_questions(rows: list[tuple[Question, str, int | None]]) -> str:
+def format_questions(
+    rows: list[tuple[Question, str, int | None, bool | None]],
+) -> str:
     if not rows:
         return "No questions."
     blocks = []
-    for q, state, rev in rows:
+    for q, state, rev, blocks_this in rows:
         lines = [
             f"Q{q.id} [{state}] {q.repo}:{q.ticket} (hub rev {'—' if rev is None else rev})",
             _field("question", q.question),
@@ -402,6 +490,8 @@ def format_questions(rows: list[tuple[Question, str, int | None]]) -> str:
             _field("blocks", q.blocks or "-"),
             _field("asked", f"{q.asked_by} at {q.asked_at} (rev {q.asked_rev})"),
         ]
+        if blocks_this is not None:
+            lines.append(_field("blocks this ticket", "yes" if blocks_this else "no"))
         if q.answer is not None:
             lines += [
                 _field("answer", q.answer),

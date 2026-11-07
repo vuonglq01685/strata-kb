@@ -540,7 +540,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         `<repo>:<id>` when several repos hold it). `asked_by` is your own
         name (`git config user.name`); `context` says where the question
         came from (e.g. `design §Data model`), `blocks` the AC ids it blocks
-        (e.g. `AC-2,AC-3`). Returns `Q<id>` and the hub page of the
+        (e.g. `AC-2,AC-3`). On a split child the question is recorded on its
+        parent story (the answer changes the parent), and the parent must be
+        on the hub. Returns `Q<id>` and the hub page of the
         ticket's questions. Any authenticated caller may ask; names are
         self-declared, so this is tracking, not authentication. Works only
         on the shared hub server."""
@@ -577,7 +579,10 @@ def create_server(config: ServerConfig) -> MCPServer:
         revision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA
         `repo`. `status` is `open` (no answer), `waiting` (answered, but the
         ticket revision carrying the answer is not on the hub yet),
-        `answered`, or `all`. Results come only from the shared hub server;
+        `answered`, or `all`. A split child's list also holds its parent
+        story's questions (a child's question is recorded on the parent), and
+        each row says `blocks this ticket: yes|no` when `ticket` is given.
+        Results come only from the shared hub server;
         any other hub is refused. Do not act on a `waiting` answer: the
         ticket is the source of truth."""
 

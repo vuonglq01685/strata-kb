@@ -8,7 +8,7 @@
       {% if href %}<a href="{{ href }}">{{ ticket }}</a>{% else %}{{ ticket }}{% endif %}</h1>
     {% if rows %}<p class="meta-line">hub rev {{ '—' if hub_rev is none else hub_rev }}</p>{% endif %}
   </div>
-  {% for q, state, _rev in rows %}
+  {% for q, state, _rev, _blocks in rows %}
   <div class="panel">
     <div class="panel-head">
       <h2>Q{{ q.id }}

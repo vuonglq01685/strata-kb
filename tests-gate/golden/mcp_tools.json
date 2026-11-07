@@ -281,7 +281,7 @@
     }
   },
   "kb_question_ask": {
-    "description": "Ask the BA a question about a published ticket (`<id>`, or\n`<repo>:<id>` when several repos hold it). `asked_by` is your own\nname (`git config user.name`); `context` says where the question\ncame from (e.g. `design \u00a7Data model`), `blocks` the AC ids it blocks\n(e.g. `AC-2,AC-3`). Returns `Q<id>` and the hub page of the\nticket's questions. Any authenticated caller may ask; names are\nself-declared, so this is tracking, not authentication. Works only\non the shared hub server.",
+    "description": "Ask the BA a question about a published ticket (`<id>`, or\n`<repo>:<id>` when several repos hold it). `asked_by` is your own\nname (`git config user.name`); `context` says where the question\ncame from (e.g. `design \u00a7Data model`), `blocks` the AC ids it blocks\n(e.g. `AC-2,AC-3`). On a split child the question is recorded on its\nparent story (the answer changes the parent), and the parent must be\non the hub. Returns `Q<id>` and the hub page of the\nticket's questions. Any authenticated caller may ask; names are\nself-declared, so this is tracking, not authentication. Works only\non the shared hub server.",
     "inputSchema": {
       "properties": {
         "asked_by": {
@@ -330,7 +330,7 @@
     }
   },
   "kb_question_list": {
-    "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. Results come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
+    "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. A split child's list also holds its parent\nstory's questions (a child's question is recorded on the parent), and\neach row says `blocks this ticket: yes|no` when `ticket` is given.\nResults come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
     "inputSchema": {
       "properties": {
         "repo": {

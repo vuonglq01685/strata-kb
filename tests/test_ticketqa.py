@@ -10,19 +10,24 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import ticketfetch
+from strata_kb import planingest, ticketfetch
+from strata_kb.hub import HubHandle
 from strata_kb.ticketqa import (
     QaError,
     QaStore,
+    Question,
+    ac_ids,
     answer_question,
     ask_question,
     derive_state,
+    effective_blocks,
     format_questions,
     list_questions,
     qa_db_path,
     ticket_revision,
 )
-from tests.test_planingest import US1
+from tests.conftest import make_fed_entry
+from tests.test_planingest import API, US1, WEB, family, write_repo
 from tests.test_planingest import context_block as _context_block
 from tests.test_ticketfetch import publish_plan
 
@@ -51,7 +56,7 @@ def test_ask_records_hub_revision_and_lists_open(hub_with_ticket, store):
     )
     assert (q.repo, q.ticket, q.asked_rev, q.blocks) == (REPO, US1, 3, "AC-2")
     assert (q.answer, q.answer_rev, q.ticket_sections) == (None, None, [])
-    [(row, state, rev)] = list_questions(hub, store, ticket_ref=US1)
+    [(row, state, rev, _)] = list_questions(hub, store, ticket_ref=US1)
     assert (row, state, rev) == (q, "open", 3)
 
 
@@ -67,10 +72,10 @@ def test_answer_with_rev_is_waiting_until_hub_catches_up(hub_with_ticket, store)
     assert (a.answer, a.answer_rev, a.answered_by) == ("EUR", 4, "ba1")
     assert a.ticket_sections == ["Acceptance Criteria"] and a.answered_at
     assert list_questions(hub, store, status="open") == []
-    [(_, state, rev)] = list_questions(hub, store, status="waiting")
+    [(_, state, rev, _)] = list_questions(hub, store, status="waiting")
     assert (state, rev) == ("waiting", 3)
     hub_with_ticket(rev=4)
-    [(_, state, rev)] = list_questions(hub, store, status="answered")
+    [(_, state, rev, _)] = list_questions(hub, store, status="answered")
     assert (state, rev) == ("answered", 4)
 
 
@@ -78,7 +83,7 @@ def test_answer_without_rev_is_answered_at_once(hub_with_ticket, store):
     hub = hub_with_ticket()
     q = ask_question(hub, store, US1, "Q?", "dev1")
     answer_question(hub, store, q.id, "already in AC-1", "ba1", None, [])
-    [(_, state, _)] = list_questions(hub, store, status="all")
+    [(_, state, _, _)] = list_questions(hub, store, status="all")
     assert state == "answered"
 
 
@@ -220,7 +225,7 @@ def test_ticket_removed_from_hub_keeps_questions(hub_with_ticket, store):
 
     assert ticket_revision(hub, REPO, US1) is None
     rows = list_questions(hub, store, repo=REPO, status="all")
-    assert [(r.id, s, rev) for r, s, rev in rows] == [
+    assert [(r.id, s, rev) for r, s, rev, _ in rows] == [
         (open_q.id, "open", None),
         (done.id, "answered", None),
         (wait.id, "waiting", None),
@@ -233,7 +238,7 @@ def test_nested_repo_id_round_trips(hub_with_ticket, store):
     store.ask(REPO, "M-x-US1", "other", "", "", "dev1", 1)
     assert store.get(q.id) == q
     assert [
-        r.id for r, _, _ in list_questions(hub_with_ticket(), store, repo="mid/ba-x")
+        r.id for r, _, _, _ in list_questions(hub_with_ticket(), store, repo="mid/ba-x")
     ] == [q.id]
     assert [r.id for r in store.list(repo="mid/ba-x", ticket="M-x-US1")] == [q.id]
 
@@ -243,7 +248,7 @@ def test_list_filters_by_ticket_ref_and_status(hub_with_ticket, store):
     q = ask_question(hub, store, US1, "Q?", "dev1")
     store.ask(REPO, "M-other-US2", "else", "", "", "dev1", 1)
     got = list_questions(hub, store, ticket_ref=f"{REPO}:{US1}", status="all")
-    assert [r.id for r, _, _ in got] == [q.id]
+    assert [r.id for r, _, _, _ in got] == [q.id]
     assert list_questions(hub, store, ticket_ref=f"nope:{US1}") == []
     with pytest.raises(QaError, match="status"):
         list_questions(hub, store, status="bogus")
@@ -424,3 +429,106 @@ def test_ask_records_asked_from(store):
 
     assert q.asked_from == "child-repo"
     assert store.get(q.id).asked_from == "child-repo"
+
+
+# --- split children: questions go to the parent, per-ticket blocking ---------
+
+
+@pytest.fixture
+def family_hub(fed_hub: Path, tmp_path: Path, run_git):
+    """A hub with parent US1 (rev 1) and children US1.demo (AC1, AC2) and
+    US1.web (AC3, AC4)."""
+    block = _context_block(fed_hub)
+    ba = tmp_path / "ba-one"
+    missions, tickets = family(block)
+    write_repo(ba, missions, tickets)
+    planingest.run(ba, ba / ".kb", "demo", ba / "missions", ba / "tickets")
+    entry = make_fed_entry(
+        fed_hub / "federation",
+        "ba-one",
+        "ba-one-plan",
+        title=f"ba-one {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
+    shutil.rmtree(entry / "ba-one-plan")
+    shutil.copytree(ba / ".kb" / "demo-plan", entry / "ba-one-plan")
+    manifest = entry / "ba-one-plan" / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("demo-plan", "ba-one-plan"),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish family")
+    return HubHandle(root=fed_hub)
+
+
+def test_ask_on_child_records_on_parent(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
+    assert (q.repo, q.ticket, q.asked_from) == (REPO, US1, WEB)
+    assert q.asked_rev == ticket_revision(family_hub, REPO, US1)
+
+
+def test_ask_on_child_without_parent_on_hub_refuses(family_hub, store):
+    l3 = ticketfetch.find(family_hub, f"{REPO}:{US1}")[2]
+    manifest = l3.parent / "_manifest.yaml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        re.sub(rf"(?m)^(\s*-?\s*)id: {re.escape(US1)}$", r"\1id: gone", text),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        QaError, match=f"parent story {re.escape(US1)} is not on the hub"
+    ):
+        ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
+
+
+def test_list_on_child_includes_parent_questions(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{API}", "Which unit?", "dev1")
+    own = ask_question(family_hub, store, f"{REPO}:{WEB}", "Colour?", "dev1")
+    ids = [
+        r[0].id for r in list_questions(family_hub, store, ticket_ref=f"{REPO}:{WEB}")
+    ]
+    assert ids == [q.id, own.id]
+
+
+def test_blocks_this_ticket_normalises_ac_ids(family_hub, store):
+    ask_question(
+        family_hub, store, f"{REPO}:{API}", "Which unit?", "dev1", blocks="AC-3, ac4"
+    )
+    [(_, _, _, web)] = list_questions(family_hub, store, ticket_ref=f"{REPO}:{WEB}")
+    [(_, _, _, demo)] = list_questions(family_hub, store, ticket_ref=f"{REPO}:{API}")
+    assert (web, demo) == (True, False)
+
+
+def test_ordinary_ticket_unchanged(hub_with_ticket, store):
+    hub = hub_with_ticket()
+    q = ask_question(hub, store, US1, "Why?", "dev1", blocks="AC-2")
+    assert (q.ticket, q.asked_from) == (US1, None)
+    assert list_questions(hub, store)[0][3] is None
+    [(row, _, _, blocks_this)] = list_questions(hub, store, ticket_ref=US1)
+    assert (row, blocks_this) == (q, True)
+
+
+def test_ac_ids_and_effective_blocks():
+    assert ac_ids("AC-3, ac4; AC12 and nothing") == frozenset({"AC3", "AC4", "AC12"})
+    base = dict(
+        id=1,
+        repo="r",
+        ticket="t",
+        question="q",
+        context="",
+        blocks="AC1",
+        asked_by="a",
+        asked_at="x",
+        asked_rev=1,
+        answer=None,
+        answer_rev=None,
+        ticket_sections=[],
+        answered_by=None,
+        answered_at=None,
+        proposed_blocks="AC-2",
+    )
+    assert effective_blocks(Question(**base)) == frozenset({"AC1"})
+    assert effective_blocks(Question(**{**base, "confirmed_by": "ba"})) == frozenset(
+        {"AC1", "AC2"}
+    )

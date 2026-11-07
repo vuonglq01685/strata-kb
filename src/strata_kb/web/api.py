@@ -348,7 +348,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
                         "proposed_blocks": q.proposed_blocks,
                         "confirmed_by": q.confirmed_by,
                     }
-                    for q, state, _rev in rows
+                    for q, state, _rev, _blocks_this in rows
                 ]
             }
         )
