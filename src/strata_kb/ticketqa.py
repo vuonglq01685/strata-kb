@@ -425,8 +425,7 @@ def list_questions(
         repo = ref_repo or repo
     found = list(store.list(repo or None, ticket))
     if ticket is not None:
-        ref = f"{repo}:{ticket}" if repo else ticket_ref
-        found += _parent_questions(hub, store, ref, ticket)
+        found += _parent_questions(hub, store, repo, ticket)
         found = sorted({q.id: q for q in found}.values(), key=lambda q: q.id)
     revisions: dict[tuple[str, str], int | None] = {}
     acs: dict[str, frozenset[str]] = {}
@@ -455,14 +454,31 @@ def _acs_on_hub(hub: HubHandle, repo: str, ticket: str) -> frozenset[str]:
 
 
 def _parent_questions(
-    hub: HubHandle, store: QaStore, ticket_ref: str, ticket: str
+    hub: HubHandle, store: QaStore, repo: str, ticket: str
 ) -> list[Question]:
-    try:
-        repo, _, _ = ticketfetch.find(hub, ticket_ref)
-        pin = _parent_pin(_read_section(hub, repo, ticket))
-    except ticketfetch.TicketNotOnHub:
-        return []
-    return [] if pin is None else store.list(repo, pin[0])
+    """The parent-story questions of `ticket` in `repo`, or in every repo
+    that holds it when `repo` is empty. A repo whose copy is unreadable or
+    ambiguous adds none."""
+    repos = [repo] if repo else _repos_holding(hub, ticket)
+    out: list[Question] = []
+    for r in repos:
+        try:
+            pin = _parent_pin(_read_section(hub, r, ticket))
+        except ticketfetch.TicketFetchError:
+            continue
+        if pin is not None:
+            out += store.list(r, pin[0])
+    return out
+
+
+def _repos_holding(hub: HubHandle, ticket: str) -> list[str]:
+    return sorted(
+        {
+            fed.meta.repo_id
+            for fed, manifest in ticketfetch.plan_docs(hub, None)
+            if any(sec.id == ticket for sec in manifest.sections)
+        }
+    )
 
 
 def _field(label: str, value: str) -> str:

@@ -478,6 +478,23 @@ def test_same_child_id_in_two_repos_lists_with_repo_filter(
     assert [r[0].id for r in rows] == [mine.id]
 
 
+def test_same_child_id_in_two_repos_lists_without_repo_filter(
+    family_hub, store, tmp_path, run_git
+):
+    _publish_family(family_hub.root, tmp_path, "ba-two")
+    run_git(family_hub.root, "add", "-A")
+    run_git(family_hub.root, "commit", "-m", "second repo")
+    one = ask_question(family_hub, store, f"ba-one:{WEB}", "One?", "dev1", blocks="AC3")
+    two = ask_question(family_hub, store, f"ba-two:{WEB}", "Two?", "dev1", blocks="AC1")
+    own = store.ask("ba-two", WEB, "Own?", "", "AC4", "dev1", 1)
+    rows = list_questions(family_hub, store, ticket_ref=WEB)
+    assert [(r[0].id, r[3]) for r in rows] == [
+        (one.id, True),
+        (two.id, False),
+        (own.id, True),
+    ]
+
+
 def test_repo_filter_does_not_pull_in_another_repos_parent_questions(
     family_hub, store, tmp_path, run_git
 ):
