@@ -52,6 +52,9 @@ a denial to report. Stop only when the MCP tool fails too.
    behaviour, amend the ticket under `ba-ticket-author`'s amend
    rules (`## Amend mode` of that skill) — all questions of that ticket in
    one amendment: one amendment per ticket, never one per question.
+   A parent question goes to `### Amend a parent story` here, before any
+   amend runs (see "Parent-story questions" below); the bullets that follow
+   are for a non-parent ticket.
    - Bump `> Revision:` to N+1. If the ticket already holds an unpublished
      N+1 amendment for these questions (a rerun after a Definition of
      Ready or lint stop), resume it; never bump the revision again.
@@ -63,7 +66,7 @@ a denial to report. Stop only when the MCP tool fails too.
      revision of the ticket; otherwise the draft is stale, ignore it. On a
      merge conflict run `git merge --abort` and amend fresh.
    - Append one `## Change log` row: Trigger `question`, What changed =
-     `Q<ids>: <one line>`, Affected = the names of the changed sections,
+     `Q<ids>: <one line>`, Affected = the names of the changed sections (a non-parent ticket),
      comma-separated. When `kb_ticket_stale` on the ticket reports an
      `architecture` finding, the one row carries Trigger `question, architecture`
      and `/sa-ticket-ground` runs first, as a separate run, as step 4 of
@@ -104,9 +107,11 @@ a denial to report. Stop only when the MCP tool fails too.
      than the hub revision: `answer_rev` = R (N+1 for an amendment made
      now) and `ticket_sections` = the Affected of that change-log row (the
      same list for every question of that ticket);
+   - for a parent question `ticket_sections` equals the child ids in the new
+     parent row's Affected (see "Parent-story questions");
    - `answer_rev` = None and `ticket_sections` = `[]` only when the HUB
      revision already carries the answer, or the question is no longer
-     needed. Never judge "already says it" from the local file alone: a
+     needed; it also records a parent question that needs no ticket change. Never judge "already says it" from the local file alone: a
      local unpublished change would show as answered at once.
    A refusal (an `answer_rev` the hub's revision has already reached, an
    `answer_rev` while the ticket is not on the hub, a question someone
@@ -129,18 +134,20 @@ A question whose ticket is a parent story is worked on the parent file; its
 
 - **Triage.** Run `/sa-ticket-ground --scope "<question>"` on the parent's
   children and name the sibling ACs whose meaning the question shares. When
-  there are any, record them with
+  there are any and the proposed AC set differs from the recorded one,
+  record them with
   `kb_question_propose_blocks(id, blocks, reason)`. The BA accepts with
   `kb_question_confirm_blocks(id, confirmed_by=<git config user.name>)`, or
-  declines and leaves the proposal unconfirmed. Q&A names are self-declared,
+  declines and leaves the proposal unconfirmed. A triage rerun re-proposes
+  only when the proposed AC set changes: a proposal clears the confirmation. Q&A names are self-declared,
   so `confirmed_by` is an audit trail, not an access control.
 - **Answer once.** The BA answers; the SA proposes the amendments and the
   change flow in `ba-ticket-author`'s `### Amend a parent story` runs.
   Record with `kb_question_answer(id, answer, answered_by,
   ticket_sections=<the child ids in the new parent row's Affected>,
   answer_rev=<the new parent revision>)`.
-- The Definition of Ready stop applies to each amended child: when any
-  child's box stays unticked, record no answer.
+- The Definition of Ready stop applies to each amended or new child (`.n`
+  too): when any child's box stays unticked, record no answer.
 
 ## Hard rules
 

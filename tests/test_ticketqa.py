@@ -677,4 +677,10 @@ def test_parent_answer_needs_child_ids(family_hub, store):
         with pytest.raises(QaError, match="parent question: ticket_sections"):
             answer_question(family_hub, store, q.id, "Metres", "ba1", 2, bad)
     with pytest.raises(QaError, match="parent question: ticket_sections"):
-        answer_question(family_hub, store, q.id, "Metres", "ba1", None, [])
+        answer_question(family_hub, store, q.id, "Metres", "ba1", None, [API])
+
+
+def test_parent_answer_without_change_is_answered(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Which unit?", "dev1")
+    answer_question(family_hub, store, q.id, "Metres", "ba1", None, [])
+    assert list_questions(family_hub, store, status="all")[0][1] == "answered"

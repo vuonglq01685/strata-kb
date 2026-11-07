@@ -462,6 +462,8 @@ def _is_parent(hub: HubHandle, repo: str, ticket: str) -> bool:
 
 
 def _check_child_ids(parent: str, answer_rev: int | None, sections: list[str]) -> None:
+    if answer_rev is None and not sections:
+        return  # no ticket change: answered at once, as for an ordinary ticket
     ok = answer_rev is not None and bool(sections)
     for name in sections:
         m = ticketmod.CHILD_ID_RE.match(name)
