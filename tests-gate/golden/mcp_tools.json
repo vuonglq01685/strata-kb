@@ -329,6 +329,40 @@
       "type": "object"
     }
   },
+  "kb_question_confirm_blocks": {
+    "description": "Confirm the proposed blocks of open question `id`: from then on\nthe question blocks the proposed ACs too. `confirmed_by` is your own\nname (`git config user.name`). Refused when nothing is proposed or\nthe question is answered. Names are self-declared, so this is\ntracking, not authentication. Works only on the shared hub server.",
+    "inputSchema": {
+      "properties": {
+        "confirmed_by": {
+          "title": "Confirmed By",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "confirmed_by"
+      ],
+      "title": "kb_question_confirm_blocksArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_question_confirm_blocksOutput",
+      "type": "object"
+    }
+  },
   "kb_question_list": {
     "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. A split child's list also holds its parent\nstory's questions (a child's question is recorded on the parent), and\neach row says `blocks this ticket: yes|no` when `ticket` is given.\nResults come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
     "inputSchema": {
@@ -363,6 +397,45 @@
         "result"
       ],
       "title": "kb_question_listOutput",
+      "type": "object"
+    }
+  },
+  "kb_question_propose_blocks": {
+    "description": "Propose that open question `id` also blocks other ACs (e.g. `AC-2`\non a sibling child), with the `reason`. The proposal blocks nothing\nuntil the BA confirms it with `kb_question_confirm_blocks`; a new\nproposal replaces the old one and drops its confirmation. Refused\nonce the question is answered. Names are self-declared, so this is\ntracking, not authentication. Works only on the shared hub server.",
+    "inputSchema": {
+      "properties": {
+        "blocks": {
+          "title": "Blocks",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "blocks",
+        "reason"
+      ],
+      "title": "kb_question_propose_blocksArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_question_propose_blocksOutput",
       "type": "object"
     }
   },

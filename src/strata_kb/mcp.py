@@ -3,6 +3,7 @@
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
 kb_resolve, kb_ticket_lint, kb_ticket_check, kb_ticket_stale,
 kb_ticket_fetch, kb_question_ask, kb_question_list, kb_question_answer,
+kb_question_propose_blocks, kb_question_confirm_blocks,
 kb_mission_lint, kb_mission_next and kb_doctor_hub tools over the hub
 federation (the question tools are the only ones that write, and only on a
 hub served from its own checkout); every tool body
@@ -633,6 +634,49 @@ def create_server(config: ServerConfig) -> MCPServer:
                 )
 
             return _qa(op)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_propose_blocks(id: int, blocks: str, reason: str) -> str:
+        """Propose that open question `id` also blocks other ACs (e.g. `AC-2`
+        on a sibling child), with the `reason`. The proposal blocks nothing
+        until the BA confirms it with `kb_question_confirm_blocks`; a new
+        proposal replaces the old one and drops its confirmation. Refused
+        once the question is answered. Names are self-declared, so this is
+        tracking, not authentication. Works only on the shared hub server."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import propose_blocks
+
+            return _qa(
+                lambda hub, store: (
+                    f"Q{propose_blocks(store, id, blocks, reason).id} "
+                    "blocks proposed — waiting for the BA to confirm"
+                )
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_confirm_blocks(id: int, confirmed_by: str) -> str:
+        """Confirm the proposed blocks of open question `id`: from then on
+        the question blocks the proposed ACs too. `confirmed_by` is your own
+        name (`git config user.name`). Refused when nothing is proposed or
+        the question is answered. Names are self-declared, so this is
+        tracking, not authentication. Works only on the shared hub server."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import confirm_blocks
+
+            return _qa(
+                lambda hub, store: (
+                    f"Q{confirm_blocks(store, id, confirmed_by).id} "
+                    "proposed blocks confirmed"
+                )
+            )
 
         return await anyio.to_thread.run_sync(_run)
 

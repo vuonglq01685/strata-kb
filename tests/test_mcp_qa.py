@@ -323,3 +323,28 @@ async def test_store_failure_is_a_short_message_without_paths(hub_with_ticket):
             ),
         ]
     assert outs == ["Q&A store error — see hub log"] * 3
+
+
+@pytest.mark.anyio
+async def test_propose_and_confirm_blocks_round_trip(family_hub):  # noqa: F811
+    async with connect_client(
+        create_server(_config(family_hub.root)), raise_exceptions=True
+    ) as client:
+        await _call(
+            client, "kb_question_ask", ticket=WEB, question="Min?", asked_by="dev1"
+        )
+        out = await _call(
+            client,
+            "kb_question_propose_blocks",
+            id=1,
+            blocks="AC2",
+            reason="same minimum amount rule",
+        )
+        assert "Q1" in out
+        out = await _call(
+            client, "kb_question_confirm_blocks", id=1, confirmed_by="ba1"
+        )
+        assert "Q1" in out
+        listed = await _call(client, "kb_question_list", ticket=WEB)
+        assert "proposed blocks: AC2 — same minimum amount rule" in listed
+        assert "confirmed by: ba1" in listed

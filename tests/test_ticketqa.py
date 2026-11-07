@@ -19,10 +19,12 @@ from strata_kb.ticketqa import (
     ac_ids,
     answer_question,
     ask_question,
+    confirm_blocks,
     derive_state,
     effective_blocks,
     format_questions,
     list_questions,
+    propose_blocks,
     qa_db_path,
     ticket_revision,
 )
@@ -572,3 +574,60 @@ def test_ac_ids_and_effective_blocks():
     assert effective_blocks(Question(**{**base, "confirmed_by": "ba"})) == frozenset(
         {"AC1", "AC2"}
     )
+
+
+def _blocks_for_demo(hub, store):
+    rows = list_questions(hub, store, ticket_ref=f"{REPO}:{API}")
+    return [r[3] for r in rows]
+
+
+def test_proposed_blocks_do_not_block_until_confirmed(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    got = propose_blocks(store, q.id, "AC-2", "same minimum amount rule")
+    assert got.proposed_blocks == "AC2 — same minimum amount rule"
+    assert _blocks_for_demo(family_hub, store) == [False]
+    got = confirm_blocks(store, q.id, "ba1")
+    assert got.confirmed_by == "ba1"
+    assert _blocks_for_demo(family_hub, store) == [True]
+
+
+def test_confirm_without_proposal_refuses(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    with pytest.raises(QaError, match="no proposed blocks"):
+        confirm_blocks(store, q.id, "ba1")
+
+
+def test_propose_on_answered_refuses(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    answer_question(family_hub, store, q.id, "Yes.", "ba1", None, [])
+    with pytest.raises(QaError, match="already answered"):
+        propose_blocks(store, q.id, "AC2", "why")
+    with pytest.raises(QaError, match="already answered"):
+        confirm_blocks(store, q.id, "ba1")
+
+
+def test_propose_refuses_blank_reason_and_no_ac(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    with pytest.raises(QaError, match="reason must not be empty"):
+        propose_blocks(store, q.id, "AC2", "   ")
+    with pytest.raises(QaError, match="no AC id"):
+        propose_blocks(store, q.id, "two", "why")
+
+
+def test_repropose_clears_confirmation(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    propose_blocks(store, q.id, "AC2", "first")
+    confirm_blocks(store, q.id, "ba1")
+    got = propose_blocks(store, q.id, "AC1", "second")
+    assert (got.proposed_blocks, got.confirmed_by) == ("AC1 — second", None)
+    assert _blocks_for_demo(family_hub, store) == [False]
+
+
+def test_format_shows_proposal_and_confirmation(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    propose_blocks(store, q.id, "AC2", "same rule")
+    out = format_questions(list_questions(family_hub, store))
+    assert "proposed blocks: AC2 — same rule" in out
+    assert "confirmed by" not in out
+    confirm_blocks(store, q.id, "ba1")
+    assert "confirmed by: ba1" in format_questions(list_questions(family_hub, store))

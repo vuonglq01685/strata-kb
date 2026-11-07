@@ -287,6 +287,50 @@ class QaStore:
             ).fetchone()
         return _row_to_question(row)
 
+    def _update_open(self, id: int, sql: str, args: tuple, *, need_proposal: bool):
+        """Run `sql` on an unanswered question, under the write lock."""
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT answer, proposed_blocks FROM questions WHERE id = ?", (id,)
+            ).fetchone()
+            if row is None:
+                raise QaError(f"Q{id} does not exist")
+            if row[0] is not None:
+                raise QaError(f"Q{id} is already answered")
+            if need_proposal and row[1] is None:
+                raise QaError(f"Q{id} has no proposed blocks to confirm")
+            conn.execute(sql, (*args, id))
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM questions WHERE id = ?",  # noqa: S608 - constant columns
+                (id,),
+            ).fetchone()
+        return _row_to_question(row)
+
+    def propose_blocks(self, id: int, blocks: str, reason: str) -> Question:
+        """Record "<AC ids> — <reason>", replacing any earlier proposal and
+        its confirmation. It blocks nothing until `confirm_blocks`."""
+        _text("blocks", blocks, MAX_CONTEXT)
+        _text("reason", reason, MAX_CONTEXT)
+        ids = sorted(ac_ids(blocks), key=lambda a: int(a[2:]))
+        if not ids:
+            raise QaError(f"blocks names no AC id (e.g. AC2): {blocks!r}")
+        return self._update_open(
+            id,
+            "UPDATE questions SET proposed_blocks = ?, confirmed_by = NULL WHERE id = ?",
+            (f"{', '.join(ids)} — {reason.strip()}",),
+            need_proposal=False,
+        )
+
+    def confirm_blocks(self, id: int, confirmed_by: str) -> Question:
+        _name("confirmed_by", confirmed_by)
+        return self._update_open(
+            id,
+            "UPDATE questions SET confirmed_by = ? WHERE id = ?",
+            (confirmed_by,),
+            need_proposal=True,
+        )
+
 
 def derive_state(q: Question, hub_rev: int | None) -> State:
     if q.answer is None:
@@ -406,6 +450,21 @@ def answer_question(
     return store.answer(id, answer, answered_by, answer_rev, ticket_sections)
 
 
+def _check_id(id: int) -> None:
+    if not 1 <= id <= MAX_QUESTION_ID:
+        raise QaError(f"id must be a question number from 1 to {MAX_QUESTION_ID}")
+
+
+def propose_blocks(store: QaStore, id: int, blocks: str, reason: str) -> Question:
+    _check_id(id)
+    return store.propose_blocks(id, blocks, reason)
+
+
+def confirm_blocks(store: QaStore, id: int, confirmed_by: str) -> Question:
+    _check_id(id)
+    return store.confirm_blocks(id, confirmed_by)
+
+
 def list_questions(
     hub: HubHandle,
     store: QaStore,
@@ -499,6 +558,10 @@ def format_questions(
             _field("blocks", q.blocks or "-"),
             _field("asked", f"{q.asked_by} at {q.asked_at} (rev {q.asked_rev})"),
         ]
+        if q.proposed_blocks:
+            lines.append(_field("proposed blocks", q.proposed_blocks))
+        if q.confirmed_by:
+            lines.append(_field("confirmed by", q.confirmed_by))
         if blocks_this is not None:
             lines.append(_field("blocks this ticket", "yes" if blocks_this else "no"))
         if q.answer is not None:
