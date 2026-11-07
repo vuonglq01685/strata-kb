@@ -613,7 +613,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         the ticket, pass `answer_rev` (the ticket revision that carries the
         change; it must exceed the hub's current one, and it is refused while
         the ticket is off the hub) and `ticket_sections` (the changed
-        section names, the change-log row's `Affected`); the question stays
+        section names, the change-log row's `Affected`; for a parent-story
+        question, the child ids of the parent's change-log row for
+        `answer_rev`); the question stays
         `waiting` until that revision is on the hub. If the hub's current
         revision already says it, leave `answer_rev` unset and pass an empty
         `ticket_sections`. `answered_by` is your own name (`git config

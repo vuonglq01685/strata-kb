@@ -85,7 +85,8 @@ a denial to report. Stop only when the MCP tool fails too.
 4. **Record** — call `kb_question_answer` once per question, with `id` (an
    integer: the number without the `Q`), `answer` (the BA's words) set out
    as below and `answered_by` = `git config user.name`. `ticket_sections`
-   is a list of section names.
+   is a list of section names; for a parent-story question see
+   "Parent-story questions" below.
    - The `answer` is markdown and keeps its line breaks. The labels are
      fixed English words; the content is in the ticket's language:
 
@@ -120,6 +121,26 @@ a denial to report. Stop only when the MCP tool fails too.
    address is `STRATA_KB_HUB_URL`, from the process env or the repo's `.env`
    written by `kb mcp-setup`; read only that line and never show
    `STRATA_KB_HTTP_TOKEN`. If it is unset, give the path only).
+
+### Parent-story questions
+
+A question whose ticket is a parent story is worked on the parent file; its
+`asked_from` names the child that asked. Triage first, then answer once.
+
+- **Triage.** Run `/sa-ticket-ground --scope "<question>"` on the parent's
+  children and name the sibling ACs whose meaning the question shares. When
+  there are any, record them with
+  `kb_question_propose_blocks(id, blocks, reason)`. The BA accepts with
+  `kb_question_confirm_blocks(id, confirmed_by=<git config user.name>)`, or
+  declines and leaves the proposal unconfirmed. Q&A names are self-declared,
+  so `confirmed_by` is an audit trail, not an access control.
+- **Answer once.** The BA answers; the SA proposes the amendments and the
+  change flow in `ba-ticket-author`'s `### Amend a parent story` runs.
+  Record with `kb_question_answer(id, answer, answered_by,
+  ticket_sections=<the child ids in the new parent row's Affected>,
+  answer_rev=<the new parent revision>)`.
+- The Definition of Ready stop applies to each amended child: when any
+  child's box stays unticked, record no answer.
 
 ## Hard rules
 

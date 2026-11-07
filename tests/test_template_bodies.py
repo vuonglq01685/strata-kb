@@ -371,6 +371,40 @@ def test_ba_answer_questions_claude_command_matches_the_body_rules():
     assert "or the question is no longer needed" in text
 
 
+def test_ba_answer_questions_triages_parent_questions_then_answers_once():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    for needle in (
+        "kb_question_propose_blocks",
+        "kb_question_confirm_blocks",
+        "an audit trail, not an access control",
+        "asked_from",
+        "ticket_sections=<the child ids",
+        '/sa-ticket-ground --scope "<question>"',
+        "### Amend a parent story",
+        "Q&A names are self-declared",
+    ):
+        assert needle in n, needle
+    off = n[: n.index("## Auto mode")]
+    assert (
+        "kb_question_confirm_blocks" in off
+        and "answer_rev=<the new parent revision>" in off
+    )
+    auto = n[n.index("## Auto mode") :]
+    assert "`confirmed_by` = `kb-auto`" in auto
+    assert "`**Auto decision:**` line on the parent" in auto
+
+
+def test_ba_answer_questions_command_copy_carries_the_parent_flow():
+    n = _normal(read_template("claude-command-ba-answer-questions.md"))
+    for needle in (
+        "kb_question_propose_blocks",
+        "kb_question_confirm_blocks",
+        "ticket_sections=<the child ids",
+        "an audit trail, not an access control",
+    ):
+        assert needle in n, needle
+
+
 # --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
 
 HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
@@ -871,6 +905,7 @@ _BA_GATES = {
         "never answer a question yourself",
         "ask them to re-check and re-tick",
         "never commits, pushes or publishes",
+        "The BA accepts with `kb_question_confirm_blocks`",
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }
