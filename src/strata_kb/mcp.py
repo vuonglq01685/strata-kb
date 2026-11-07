@@ -583,6 +583,8 @@ def create_server(config: ServerConfig) -> MCPServer:
         `answered`, or `all`. A split child's list also holds its parent
         story's questions (a child's question is recorded on the parent), and
         each row says `blocks this ticket: yes|no` when `ticket` is given.
+        A row shows `proposed blocks:` (a Dev's proposed extra ACs and why)
+        and `confirmed by:` (the BA who confirmed; only then do they block).
         Results come only from the shared hub server;
         any other hub is refused. Do not act on a `waiting` answer: the
         ticket is the source of truth."""

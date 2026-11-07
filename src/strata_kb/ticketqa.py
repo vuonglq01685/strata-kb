@@ -362,7 +362,8 @@ def ac_ids(text: str) -> frozenset[str]:
 def effective_blocks(q: Question) -> frozenset[str]:
     """The ACs the question blocks: its own `blocks`, plus the Dev's
     proposal once a BA has confirmed it."""
-    proposed = ac_ids(q.proposed_blocks or "") if q.confirmed_by else frozenset()
+    ids_part = (q.proposed_blocks or "").partition(" — ")[0]  # not the reason
+    proposed = ac_ids(ids_part) if q.confirmed_by else frozenset()
     return ac_ids(q.blocks) | proposed
 
 

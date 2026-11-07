@@ -631,3 +631,10 @@ def test_format_shows_proposal_and_confirmation(family_hub, store):
     assert "confirmed by" not in out
     confirm_blocks(store, q.id, "ba1")
     assert "confirmed by: ba1" in format_questions(list_questions(family_hub, store))
+
+
+def test_ac_mentioned_in_the_reason_does_not_block(family_hub, store):
+    q = ask_question(family_hub, store, f"{REPO}:{WEB}", "Min amount?", "dev1")
+    propose_blocks(store, q.id, "AC4", "same rule as AC1")
+    confirm_blocks(store, q.id, "ba1")
+    assert _blocks_for_demo(family_hub, store) == [False]

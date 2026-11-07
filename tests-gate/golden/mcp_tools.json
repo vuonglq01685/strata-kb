@@ -364,7 +364,7 @@
     }
   },
   "kb_question_list": {
-    "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. A split child's list also holds its parent\nstory's questions (a child's question is recorded on the parent), and\neach row says `blocks this ticket: yes|no` when `ticket` is given.\nResults come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
+    "description": "List ticket questions, oldest first: id, ticket, state, question,\ncontext, blocks, who asked and when, and for answered ones the\nanswer, `answer_rev`, changed sections and the hub's current ticket\nrevision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA\n`repo`. `status` is `open` (no answer), `waiting` (answered, but the\nticket revision carrying the answer is not on the hub yet),\n`answered`, or `all`. A split child's list also holds its parent\nstory's questions (a child's question is recorded on the parent), and\neach row says `blocks this ticket: yes|no` when `ticket` is given.\nA row shows `proposed blocks:` (a Dev's proposed extra ACs and why)\nand `confirmed by:` (the BA who confirmed; only then do they block).\nResults come only from the shared hub server;\nany other hub is refused. Do not act on a `waiting` answer: the\nticket is the source of truth.",
     "inputSchema": {
       "properties": {
         "repo": {
