@@ -177,9 +177,8 @@ by the path `kb_question_ask` returned; if it is unset, give the path only.
 
 **Gate.** A blocking open BA question stops the gate: a plan whose
 `## Open questions` holds a question line without `— answered rev N`
-whose `blocks:` names an AC cannot pass GATE 2. Stop and give the Dev the
-hub Q&A link. A non-blocking open BA question does not stop the gate
-(`blocks: none`); it stays listed, and the A2 reviewer reads it as a known
+that `kb_question_list(ticket=<id>)` lists as `blocks this ticket: yes` cannot pass GATE 2. Stop and give the Dev the
+hub Q&A link. A non-blocking open BA question does not stop the gate (`blocks this ticket: no`, a sibling's for example); it stays listed, and the A2 reviewer reads it as a known
 open item, not a defect (the rubric's Pre-code axis says so). The answer is
 picked up by `dev-implement-ticket` on its next entry, which marks a newly
 answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying

@@ -123,10 +123,9 @@ unavailable, and so is a client that does not expose the tool. When Q&A is unava
 `OPEN(BA)` in the draft and a note in the PR description — and the work
 continues; only a blocking one stops: stop and tell the Dev, never reading it
 as "no questions". A blocking open BA question (a question line without `— answered rev N`
-whose `blocks:` names an AC) stops the gate and the Dev gets the
+that `kb_question_list(ticket=<id>)` lists as `blocks this ticket: yes`) stops the gate and the Dev gets the
 hub Q&A link to share with the BA (`STRATA_KB_HUB_URL` plus the returned path;
-path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking
-one does not stop the gate and the A1 reviewer reads it as a known open
+path only when unset; never show `STRATA_KB_HTTP_TOKEN`); a non-blocking one (`blocks this ticket: no`) does not stop the gate and the A1 reviewer reads it as a known open
 item, not a defect (the rubric's Pre-code axis says so). The answer is
 picked up by `dev-implement-ticket` on its next entry, which marks a newly
 answered line `— answered rev N — re-draft`: once per `Q<id>` line carrying

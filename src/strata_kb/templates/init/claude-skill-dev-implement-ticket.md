@@ -104,7 +104,7 @@ edit above it.
   - **waiting** (answer recorded, its ticket revision not on the hub yet)
     → show the answer as information only, say which revision it waits for,
     and do not act on it.
-  - **open** and blocking (`blocks:` names an AC) → say so in the state
+  - **open** and blocking (its list row reads `blocks this ticket: yes`) → say so in the state
     line (`BA-Q: open Q<ids>`) and do not continue past the gate; give the
     Dev the hub Q&A link to paste in chat: `STRATA_KB_HUB_URL` (process env,
     or the `.env` that `kb mcp-setup` wrote; read only that line, never show
@@ -112,8 +112,7 @@ edit above it.
     `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` (`<repo-id>` = the BA
     repo, as `kb_question_list` prints it in `<repo>:<ticket>`); unset → the
     path only.
-    An open question that blocks no AC does not stop the flow; it still
-    shows in the state line.
+    A row reading `blocks this ticket: no` (a sibling's, for example) is read and never stops the flow; it still shows in the state line.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
   section, run MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
   fallback: `kb ticket check docs/impl/<id>/ticket.md`, which reads the
@@ -264,7 +263,7 @@ Ask one decision per question: two decisions are two questions. Name no internal
 
 - **Intake: "if this story is blocked by something unmerged, say so and let the Dev decide"** → decide. Read the blocker's status (`kb mission next --from-hub --json`) and look for its deliverable in the codebase. Proceed when the blocker is `done`, when its code is already here, or when this story does not touch it, and log an Auto decision line. A blocker whose code this story needs and the codebase lacks is a real blocker.
 - **Intake: no `kb-context` block — "No `kb-context` block" means stop, the ticket is not Ready** → a real blocker: ask the BA.
-- **Questions: an `open` blocking question — "do not continue past the gate" and give the Dev the hub Q&A link** → stop. End `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` with every blocking question that is `open` or `waiting`, written as `Q<id>` and comma-separated. The runner re-runs this task once they are all `answered`. Run no phase and leave the working tree as it is; the hub link is not needed. A question that blocks no AC does not stop you; it shows in the state line.
+- **Questions: an `open` blocking question — "do not continue past the gate" and give the Dev the hub Q&A link** → stop. End `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` with every blocking question that is `open` or `waiting`, written as `Q<id>` and comma-separated. The runner re-runs this task once they are all `answered`. Run no phase and leave the working tree as it is; the hub link is not needed. A row reading `blocks this ticket: no` does not stop you; it shows in the state line.
 - **Questions: "STOP and tell the Dev" when Q&A is unavailable and a `Q<id>` line lacks `— answered rev N`** → end `AUTO-RESULT: failed qa-unavailable`; the state of that question cannot be known.
 - **Check the grounding: `[warn]` lines — "the Dev decides"** → read each `[warn]` (a diff, or facts that could not be verified) against the code, decide whether it touches an AC, and continue. Log the decision.
 - **Check the grounding: FAIL with "re-run /sa-ticket-ground", or any other FAIL — a blocker for the BA** → a real blocker: ask the BA, and put the errors in `context`.

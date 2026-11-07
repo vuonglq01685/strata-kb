@@ -104,7 +104,7 @@ edit above it.
   - **waiting** (answer recorded, its ticket revision not on the hub yet)
     → show the answer as information only, say which revision it waits for,
     and do not act on it.
-  - **open** and blocking (`blocks:` names an AC) → say so in the state
+  - **open** and blocking (its list row reads `blocks this ticket: yes`) → say so in the state
     line (`BA-Q: open Q<ids>`) and do not continue past the gate; give the
     Dev the hub Q&A link to paste in chat: `STRATA_KB_HUB_URL` (process env,
     or the `.env` that `kb mcp-setup` wrote; read only that line, never show
@@ -112,8 +112,7 @@ edit above it.
     `/ui/questions/ticket?repo=<repo-id>&ticket=<id>` (`<repo-id>` = the BA
     repo, as `kb_question_list` prints it in `<repo>:<ticket>`); unset → the
     path only.
-    An open question that blocks no AC does not stop the flow; it still
-    shows in the state line.
+    A row reading `blocks this ticket: no` (a sibling's, for example) is read and never stops the flow; it still shows in the state line.
 - **Check the grounding** — if the ticket has a `## Technical grounding`
   section, run MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
   fallback: `kb ticket check docs/impl/<id>/ticket.md`, which reads the

@@ -187,7 +187,7 @@ unexpectedly, reproduce it, find the actual cause, and fix the cause. Never
 edit a test to make it green, never widen a tolerance to pass, and never
 mark a task done with a failing test. When an AC turns out not to be
 implementable as written, stop that task, return to `dev-design`, and record
-`OPEN(BA)` (`dev-design` asks the BA through hub Q&A) — never decide the
+`OPEN(BA)` (`dev-design` asks the BA through hub Q&A; the task stays stopped only while a question of this ticket reads `blocks this ticket: yes` in `kb_question_list(ticket=<id>)`, and a `no` row never stops it) — never decide the
 ambiguity yourself, and never push past it
 because the code is half written. The skill is resumable: a later run
 re-checks freshness, re-reads the plan, and continues at the first unticked
