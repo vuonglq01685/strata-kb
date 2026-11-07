@@ -562,6 +562,33 @@ into a parent story (BA Guide 3.10) or keep one ticket`. Mission có `## Service
 nêu nhiều repo được kiểm tra với tài liệu `-code` của từng repo: viết id dạng
 `<repo>:svc.<name>`.
 
+**Đổi story ở cấp parent.** Chạy `/ba-ticket-author --amend <parent-id>`. SA đề xuất thay
+đổi: child nào cần amend (và AC nào của chúng), child nào thêm mới, child nào giữ nguyên.
+Bạn chấp nhận, sửa hoặc từ chối. Khi chấp nhận, parent lên rev N+1, các dòng split được giữ
+đồng bộ và một dòng change log nêu mọi child được amend và child mới. AC mới lấy số trống kế
+tiếp trong cả split; AC thay thế một AC của child đã xong được viết `AC<n> (replaces AC<m>)`.
+Child đã done không bao giờ bị amend: thay đổi trở thành child mới `<parent-id>.<repo-id>.2`
+(rồi `.3`). Parent đã done thì bị đóng băng, thay đổi tiếp theo là một story mới. Đổi
+`## User Story` ảnh hưởng mọi child; nếu có child đã done thì đó là một story mới.
+`kb ticket lint` báo lỗi khi một dòng change log của parent (rev 2 trở lên) ghi trong
+`Affected` thứ không phải child trong split.
+
+**Câu hỏi về một child, ghi ở parent.** Dev hỏi về `US-12.web-app` được ghi vào `US-12`, với
+child là nguồn. `/ba-answer-questions` liệt kê câu hỏi của parent cho mọi child, nên Dev của
+`US-12.payments-api` cũng thấy. Mỗi dòng ghi `blocks this ticket: yes` hoặc `no`. Cổng của
+Dev chỉ dừng khi là `yes`.
+
+**Chặn được đề xuất và được xác nhận.** Dev chặn ngay các AC của ticket mình. Câu hỏi có thể
+chặn child *anh em* chỉ được *đề xuất* (`kb_question_propose_blocks`, kèm lý do). Nó không
+chặn ai cho tới khi bạn xác nhận (`kb_question_confirm_blocks`). Đề xuất mới xóa xác nhận
+trước đó. Chỉ id AC được tính; phần lý do không chặn gì. Tên trong Q&A do người dùng tự khai,
+nên `confirmed_by` là dấu vết kiểm toán, không phải kiểm soát truy cập.
+
+**Khi nào câu hỏi ở parent thành answered.** Trả lời một lần, nêu các child bị ảnh hưởng làm
+ticket sections. Câu hỏi giữ trạng thái *waiting for publish* cho tới khi parent lên hub ở
+rev mới **và** mọi child được nêu có trên hub với pin `@ rev N+1` trở lên. Câu trả lời không
+đổi ticket nào (không rev, không child) được ghi là đã trả lời ngay.
+
 ---
 
 # 4. Các chế độ tự động hóa

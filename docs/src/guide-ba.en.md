@@ -560,6 +560,34 @@ parent story (BA Guide 3.10) or keep one ticket`. A mission whose `## Services &
 names several repos is checked against each repo's `-code` document: write the ids as
 `<repo>:svc.<name>`.
 
+**Changing a story at the parent.** Run `/ba-ticket-author --amend <parent-id>`. The SA
+proposes the change: which children to amend (and which of their ACs), which to add, which
+stay. You accept, edit or reject it. On accept the parent goes to rev N+1, its split rows
+are kept in step and one change-log row names every amended and new child. New ACs take the
+next free number across the whole split; an AC that replaces one in a finished child is
+written `AC<n> (replaces AC<m>)`. A child that is already done is never amended: the change
+becomes a new child `<parent-id>.<repo-id>.2` (then `.3`). A done parent is frozen, so a
+further change is a new story. A change to `## User Story` touches every child; if any child
+is done, it is a new story. `kb ticket lint` errors when a change-log row of the parent
+(rev 2 or later) names in `Affected` something that is not a child in the split.
+
+**Questions on a child, recorded on the parent.** A Dev who asks about `US-12.web-app` is
+recorded on `US-12`, with the child as the source. `/ba-answer-questions` lists the
+parent's questions for every child, so a Dev on `US-12.payments-api` sees them too. Each row
+reads `blocks this ticket: yes` or `no`. The Dev gate stops only on `yes`.
+
+**Proposed and confirmed blocks.** A Dev blocks their own ticket's ACs at once. A question
+that may block a *sibling* child is only *proposed* (`kb_question_propose_blocks`, with a
+reason). It blocks nobody until you confirm it (`kb_question_confirm_blocks`). A new
+proposal clears an earlier confirmation. Only the AC ids count; the reason text blocks
+nothing. Q&A names are self-declared, so `confirmed_by` is an audit trail, not an access
+control.
+
+**When a parent question reads answered.** Answer once, naming the affected children as
+the ticket sections. The question stays *waiting for publish* until the parent is on the hub
+at the new rev **and** every named child is on the hub pinned `@ rev N+1` or higher. An
+answer that changes no ticket (no rev, no children) reads answered at once.
+
 ---
 
 # 4. Automation modes

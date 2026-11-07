@@ -299,6 +299,19 @@ và hiển thị `BA-Q: none | open Q<ids> | waiting Q<ids>`; câu hỏi *waitin
 câu hỏi *open* đang chặn thì dừng luồng. Q&A chỉ hoạt động khi MCP trỏ tới máy chủ HTTP
 của hub (`kb mcp-setup`).
 
+**Câu hỏi về story đã tách.** Câu hỏi về child ticket của bạn được ghi ở parent story, và danh
+sách của ticket bạn gồm cả câu hỏi của parent. Mỗi dòng ghi `blocks this ticket: yes` hoặc
+`no`. Các cổng chỉ dừng khi có dòng open hoặc waiting ghi `yes`
+(`kb_question_list(ticket=<id>, status="all")`). Câu hỏi BA mới chỉ *đề xuất* chặn ticket của
+bạn thì chưa chặn cho tới khi BA xác nhận. Câu hỏi ở parent chỉ thành *answered* khi parent
+và mọi child bị ảnh hưởng đã được publish lại lên hub.
+
+**Kiểm tra lại trước khi merge.** Ngay trước khi bạn mở PR hoặc merge (và ở Auto mode, trước
+`kb pr merge`), `dev-handover` liệt kê lại các câu hỏi. Một dòng open hoặc waiting đang chặn
+sẽ dừng việc merge (Auto: `blocked-qa Q<id>`). Sau đó nó tải ticket về một đường dẫn tạm và so
+`> Revision:` với `docs/impl/<id>/ticket.md`. Revision cao hơn sẽ dừng việc merge (Auto:
+`failed ticket-revised <ticket-id>`): BA đã đổi ticket trong lúc bạn xây.
+
 ## 3.4 Sửa một bug
 
 Bug do BA publish có dạng `BUG-<n>`: không có story, không có tiêu chí chấp nhận, xong

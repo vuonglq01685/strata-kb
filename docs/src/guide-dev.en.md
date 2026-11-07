@@ -311,6 +311,20 @@ ticket's questions and shows `BA-Q: none | open Q<ids> | waiting Q<ids>`; a *wai
 question is information only, an *open* blocking one stops the flow. Q&A works only
 when MCP points at the hub's HTTP server (`kb mcp-setup`).
 
+**Questions on a split story.** A question about your child ticket is recorded on the
+parent story, and the list for your ticket includes the parent's questions. Each row reads
+`blocks this ticket: yes` or `no`. The gates stop only on an open or waiting row that reads
+`yes` (`kb_question_list(ticket=<id>, status="all")`). A question that the BA only
+*proposed* to block your ticket does not stop you until the BA confirms it. A parent
+question reads *answered* only once the parent and every affected child are republished on
+the hub.
+
+**Pre-merge re-check.** Right before you open the PR or merge (and in Auto mode before
+`kb pr merge`), `dev-handover` lists the questions again. A blocking open or waiting row
+stops the merge (Auto: `blocked-qa Q<id>`). It then fetches the ticket to a scratch path
+and compares its `> Revision:` with `docs/impl/<id>/ticket.md`. A higher revision stops the
+merge (Auto: `failed ticket-revised <ticket-id>`): the BA changed the ticket while you built.
+
 ## 3.4 Fix a bug
 
 A bug the BA published is `BUG-<n>`: no story, no acceptance criteria, done when its
