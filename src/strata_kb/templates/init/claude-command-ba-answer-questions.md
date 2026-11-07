@@ -40,7 +40,7 @@ the answers as waiting for publish until it lands), and give the hub Q&A
 link to paste in chat (`STRATA_KB_HUB_URL` plus the path; path only when unset; never show `STRATA_KB_HTTP_TOKEN`). The agent never commits, pushes or publishes.
 
 Parent-story question (its `asked_from` names the child): work it on the
-parent file and send it to `### Amend a parent story` before any plain amend.
+parent file and send it to `### Amend a parent story` before any plain amend. The resume rule (never bump the revision again) and the lint gate (record nothing until lint passes) still apply to a parent question.
 Triage first (re-propose only when the proposed AC set changes): `/sa-ticket-ground --scope "<question>"` on the
 children, record shared sibling ACs with `kb_question_propose_blocks(id,
 blocks, reason)`; the BA accepts with `kb_question_confirm_blocks(id,

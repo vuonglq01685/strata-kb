@@ -383,10 +383,11 @@ def test_ba_answer_questions_triages_parent_questions_then_answers_once():
         "### Amend a parent story",
         "Q&A names are self-declared",
         "A parent question goes to `### Amend a parent story` here, before any amend runs",
-        "Affected = the names of the changed sections (a non-parent ticket)",
+        "the bullets that follow are for a non-parent ticket",
         "for a parent question `ticket_sections` equals the child ids in the new parent row's Affected",
         "it also records a parent question that needs no ticket change",
         "each amended or new child (`.n` too)",
+        "the resume rule (never bump the revision again) and the lint gate (record nothing until lint passes) still apply to a parent question",
         "re-proposes only when the proposed AC set changes",
     ):
         assert needle in n, needle
