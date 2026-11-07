@@ -346,6 +346,30 @@ Change rules:
   the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
   BA which other files cite the same row.
 
+### Amend a parent story
+
+`/ba-ticket-author --amend <parent-id>` changes a split story at the parent.
+The BA describes the change; read the parent, its `## Split` and every
+written child.
+
+1. Run `/sa-ticket-ground --scope "<change>"` (a separate run). Present a
+   **change proposal**: the children to amend and which of their ACs; the new
+   children `<parent-id>.<repo-id>.<n>` to add (for a child that is `done` in
+   `kb mission next`, and for a repo new to the story); the children that
+   stay unchanged. A done child is never amended. A done parent (every child
+   done) is frozen: a further change is a new story.
+2. The BA accepts, edits or rejects. On accept: bump the parent's
+   `> Revision:` to N+1; add the new children to `## Split` with AC cell `-`;
+   append one change-log row whose `Affected` lists every amended and every
+   new child id; write a `**Split decision:**` line when children were added.
+3. For each amended child run the Amend mode above: rev +1, trigger `scope`
+   (`question` only from `/ba-answer-questions`), What changed
+   `parent rev N+1: <what>`, `> Parent story: <parent-id> @ rev N+1`, one
+   maturity round, then re-tick the DoR or stop for that child when a box
+   cannot be re-ticked. New children go through Child mode.
+4. Lint every changed child with `parent_markdown`, then the parent last with
+   `children_markdown`.
+
 ## Child mode — `<parent-id>.<repo-id>[.<n>]`
 
 The argument matches `<parent-id>.<repo-id>[.<n>]` and the parent file

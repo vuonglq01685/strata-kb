@@ -858,6 +858,7 @@ _BA_GATES = {
         "never commits or pushes",  # runner-driven PR
         'Step 1b: "The BA accepts, edits or rejects"',  # split decision
         "Child mode: Intake from the parent",  # child ticket
+        'Amend a parent story: "The BA accepts, edits or rejects"',  # parent change
     ],
     "bodies/ba-mission-plan.md": [
         "never auto-pick",
@@ -2127,3 +2128,25 @@ def test_ticket_author_names_the_lint_arguments_and_child_intake(name):
         "is drafted in Child mode",
     ]:
         assert needle in t, needle
+
+
+_PARENT_AMEND_NEEDLES = (
+    "### Amend a parent story",
+    "parent rev N+1:",
+    "A done child is never amended",
+    "<parent-id>.<repo-id>.<n>",
+    "children_markdown",
+)
+
+
+@pytest.mark.parametrize(
+    "template", ["bodies/ba-ticket-author.md", "claude-skill-ba-ticket-author.md"]
+)
+def test_ba_ticket_author_amend_a_parent_story(template):
+    raw = _raw(template)
+    off = _normal(raw[: raw.index(AUTO_HEADING)])
+    sub = off[off.index("### Amend a parent story") :]
+    for needle in _PARENT_AMEND_NEEDLES:
+        assert needle in sub, (template, needle)
+    assert off.index("## Amend mode") < off.index("### Amend a parent story")
+    assert off.index("### Amend a parent story") < off.index("## Child mode")

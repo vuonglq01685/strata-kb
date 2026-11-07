@@ -332,6 +332,30 @@ Change rules:
   the `architecture` trigger so `/sa-ticket-ground` re-points it; tell the
   BA which other files cite the same row.
 
+### Amend a parent story
+
+`/ba-ticket-author --amend <parent-id>` changes a split story at the parent.
+The BA describes the change; read the parent, its `## Split` and every
+written child.
+
+1. Run `/sa-ticket-ground --scope "<change>"` (a separate run). Present a
+   **change proposal**: the children to amend and which of their ACs; the new
+   children `<parent-id>.<repo-id>.<n>` to add (for a child that is `done` in
+   `kb mission next`, and for a repo new to the story); the children that
+   stay unchanged. A done child is never amended. A done parent (every child
+   done) is frozen: a further change is a new story.
+2. The BA accepts, edits or rejects. On accept: bump the parent's
+   `> Revision:` to N+1; add the new children to `## Split` with AC cell `-`;
+   append one change-log row whose `Affected` lists every amended and every
+   new child id; write a `**Split decision:**` line when children were added.
+3. For each amended child run the Amend mode above: rev +1, trigger `scope`
+   (`question` only from `/ba-answer-questions`), What changed
+   `parent rev N+1: <what>`, `> Parent story: <parent-id> @ rev N+1`, one
+   maturity round, then re-tick the DoR or stop for that child when a box
+   cannot be re-ticked. New children go through Child mode.
+4. Lint every changed child with `parent_markdown`, then the parent last with
+   `children_markdown`.
+
 ## Child mode — `<parent-id>.<repo-id>[.<n>]`
 
 The argument matches `<parent-id>.<repo-id>[.<n>]` and the parent file
@@ -436,6 +460,7 @@ Check each answer with a fresh-context reviewer (the question, the cited source,
 
 - **Step 1b: "The BA accepts, edits or rejects"** → decide the split yourself, then have a fresh-context reviewer check it. The reviewer gets the need, the Repo scope block and your proposal, and answers agree or object with a reason. On an objection, decide once more. Write the `**Split decision:**` line with `accepted by: agent, reviewer agreed` (or `reviewer objected: <reason>; decided again`) and an `**Auto decision:**` line. Parent and children go in one PR on `auto/<parent-id>`.
 - **Child mode: Intake from the parent** → the runner's task `ba-ticket-author <child-id>` names the child. This gate replaces the Intake gate's `tickets/<mission-id>/<us-id>.md` rule: the file is `tickets/<parent's folder>/<child-id>.md`. The branch is `auto/<child-id>`.
+- **Amend a parent story: "The BA accepts, edits or rejects"** → decide the change proposal yourself, then have a fresh-context reviewer check it, as in Step 1b. Write an `**Auto decision:**` line. Parent and children go in one PR on `auto/<parent-id>`.
 - **Intake: "Ask, don't guess"** (business need, tags, mission, folder) → take them from the task. The story title, goal and scope come from the mission's US backlog row and its Business goal and Scope; the search tags from the mission's `## KB context` refs; the folder is the parent mission id, so the file is `tickets/<mission-id>/<us-id>.md`. A story with no parent mission keeps the folder its ticket already has; if there is none, end `AUTO-RESULT: failed no-folder <us-id>`.
 - **Intake: a story blocked by a Technology-decisions row or an open question is "NOT drafted"** → settle the blockers in this run, then draft. Settle each `D<n> OPEN` row and each `Q<n> open` question that names this story by the ba-mission-plan Auto mode rules ("Step 5b" for a row, "Open question with `blocks:`" for a question, each with its fresh-context reviewer), on this ticket's branch. Amend the mission in the same change: bump its `> Revision:`, append one change-log row (trigger `scope`, or `architecture` when the settlement supersedes a DECIDED row; `Affected` listing this story and every other story the settlement unblocks), run `kb_mission_lint` until `DoR: PASS`, and put the mission file in this ticket's PR. Then draft the ticket against the new revision. End `AUTO-RESULT: failed blocked-by-mission <row id>` only when a row or question needs a business decision no source supports: the row names no option, and neither the architecture document nor the KB offers one. A story blocked only by unfinished dependencies is drafted: record the reasons as an Auto decision and carry them into the ticket's Dependencies section.
 - **Ground technical: a D-row still `OPEN` is "a reported FAIL, not a blocker"** → when `/sa-ticket-ground` appends an `OPEN` row that blocks this ticket, or `kb_ticket_check` fails with `decision D<n> is OPEN`, settle the row in this run, as for an Intake blocker: decide it by "Step 5b", amend the mission in the same PR (revision bump, change-log row with this story in `Affected`, `kb_mission_lint` to `DoR: PASS`), and set the ticket's `> Parent mission: <mission-id> @ rev <N>` to the new revision. The reviewer also gets every DECIDED row that `kb_ticket_check` lists under `DECIDED rows already bind`; a pick that contradicts one of them is an objection. Then apply the decision to the ticket: rewrite the ACs, Open questions and grounding it changes, and re-run `kb_ticket_lint`, `kb_ticket_check` and the AC review. A decision that would supersede a DECIDED row of another mission is not yours to take: leave the row `OPEN` and end `AUTO-RESULT: failed blocked-by-mission <row id>`.

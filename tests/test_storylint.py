@@ -365,3 +365,24 @@ def test_shipped_parent_template_warns_until_a_split_decision_is_written():
         "no '**Split decision:**' line under '## Change log' — record who accepted the split"
         in warnings(r)
     )
+
+
+def _logged(affected: str) -> str:
+    return parent(
+        extra=f"| 2 | 2026-11-07 | scope | change | {affected} | B4 (agent) |\n"
+    ).replace("> Revision: 1", "> Revision: 2")
+
+
+def test_change_log_affected_must_be_split_children():
+    r = storylint.lint_parent(_logged(f"{API}, {PID}.mobile"), kids(), parent_id=PID)
+    assert (
+        f"change-log row 2: Affected '{PID}.mobile' is not a child in the split"
+        in errors(r)
+    )
+    assert "Affected 'M-x-US1.api'" not in errors(r)
+
+
+@pytest.mark.parametrize("cell", ["-", "", f"{API}, {WEB}"])
+def test_change_log_affected_dash_allowed(cell):
+    r = storylint.lint_parent(_logged(cell), kids(), parent_id=PID)
+    assert "Affected" not in errors(r), errors(r)
