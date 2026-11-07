@@ -54,7 +54,10 @@ a denial to report. Stop only when the MCP tool fails too.
    one amendment: one amendment per ticket, never one per question.
    A parent question goes to `### Amend a parent story` here, before any
    amend runs (see "Parent-story questions" below); the bullets that follow
-   are for a non-parent ticket; the resume rule (never bump the revision again) and the lint gate (record nothing until lint passes) still apply to a parent question.
+   are for a non-parent ticket; the resume rule (resume the unpublished N+1,
+   never bump the revision again, merge the newer
+   `auto/qa-parked/<ticket-id>` draft) and the lint gate (record nothing
+   until lint passes) still apply to a parent question.
    - Bump `> Revision:` to N+1. If the ticket already holds an unpublished
      N+1 amendment for these questions (a rerun after a Definition of
      Ready or lint stop), resume it; never bump the revision again.
