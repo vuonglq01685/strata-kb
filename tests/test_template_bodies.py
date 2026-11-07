@@ -2136,6 +2136,10 @@ _PARENT_AMEND_NEEDLES = (
     "A done child is never amended",
     "<parent-id>.<repo-id>.<n>",
     "children_markdown",
+    "next free number across the whole split",
+    "(replaces AC",
+    "split row",
+    "touches every child",
 )
 
 
