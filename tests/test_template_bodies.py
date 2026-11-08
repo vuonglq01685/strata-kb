@@ -435,10 +435,16 @@ def test_ba_answer_questions_routes_a_split_proposal_to_child_of():
     ):
         assert needle in auto, needle
     assert "(a split proposal: see `### Split proposals`)" in off
-    assert "the BA ticks each child's Definition of Ready before publishing" in _normal(
-        _raw("bodies/ba-bug-report.md")
+    assert (
+        "When `auto/qa-parked/<BUG-id>` exists, merge that draft and continue with the Definition of Ready re-check; do not run `--child-of` again"
+        in off
     )
-    assert "ticks each child's Definition of Ready" in _normal(
+    assert "the question stays open until every child is fully ticked" in off
+    bug = _normal(_raw("bodies/ba-bug-report.md"))
+    assert bug.index("every child's Definition of Ready is fully ticked") < bug.index(
+        "answer the proposal question: `kb_question_answer"
+    )
+    assert "only after every child's Definition of Ready is ticked" in _normal(
         read_template("claude-command-ba-bug-report.md")
     )
     cmd = _normal(read_template("claude-command-ba-answer-questions.md"))

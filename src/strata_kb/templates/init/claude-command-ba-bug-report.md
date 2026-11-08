@@ -28,4 +28,4 @@ proposal for BUG-<n>:` question, requires the first responder's claim to be
 sets `> Kind: parent bug`, adds
 `## Split` (own row with `Own fix`, one row per child) and writes child
 bugs (`- Blocked by:` under `## Dependencies`) with `> Parent bug: <BUG-id> @ rev N+1`. Write files only: never
-commit or publish; the BA ticks each child's Definition of Ready first, or the children stay off the hub.
+commit or publish. It answers the question only after every child's Definition of Ready is ticked (the BA ticks them; the lint leaves them unticked), or the children stay off the hub.

@@ -165,8 +165,14 @@ proposal to split a bug across repos; the ticket id is the bug id. Run
 `/ba-bug-report --child-of BUG-<n>` in this run: it reads the proposal from
 the question, checks the Dev's claim, and the BA accepts, edits or rejects
 it. On accept it writes the parent bug and the child bug files, lints them
-and answers the question with `answer_rev` = the parent's new revision and
-`ticket_sections` = the child ids. On reject it answers with
+and, once every child's Definition of Ready is ticked, answers the question
+with `answer_rev` = the parent's new revision and `ticket_sections` = the
+child ids; the question stays open until every child is fully ticked. When
+`auto/qa-parked/<BUG-id>` exists, merge that draft and continue with the
+Definition of Ready re-check; do not run `--child-of` again (the parked
+draft already holds the parent and the children; a stale draft, one whose
+parent `> Revision:` is not above the default branch's, is ignored). On a
+conflict run `git merge --abort` and start fresh. On reject it answers with
 `answer_rev=None` and `ticket_sections=[]`, and the bug stays unsplit. Do not
 call `kb_question_answer` for it yourself, and skip steps 3-4 for it. The
 files are for the BA to commit and publish, as step 5 says.

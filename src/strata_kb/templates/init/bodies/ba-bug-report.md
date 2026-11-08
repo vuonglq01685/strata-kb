@@ -136,15 +136,18 @@ per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
    - Lint every child with `kb_ticket_lint` `parent_markdown` (the parent
      file) and `ticket_id` = the child id, then the parent with `children_markdown` and `ticket_id`. Fix
      until `DoR: PASS`.
-   - Answer the proposal question: `kb_question_answer(id, answer,
+   - The lint leaves each child's `## Definition of Ready` unticked. The BA
+     ticks every box (in auto mode `/ba-answer-questions` does, from the
+     child's text). Do not answer before every child's Definition of Ready
+     is fully ticked; until then the question stays open.
+   - Then answer the proposal question: `kb_question_answer(id, answer,
      answered_by, ticket_sections=<child ids>, answer_rev=N+1)`. Reads
      stay unanswered until every child is published at rev ≥ N+1.
 5. On reject: change no file; answer the question with `answer_rev=None`
    and `ticket_sections=[]` (answered at once; the Dev continues).
-6. Write files only. Never commit or publish: the BA ticks each child's
-   Definition of Ready before publishing (the lint leaves the boxes
-   unticked), otherwise the children stay off the hub; then the BA commits
-   and runs `kb publish`.
+6. Write files only. Never commit or publish: the BA commits, then runs
+   `kb publish`; a child whose Definition of Ready is not ticked stays off
+   the hub.
 
 ## Hard rules
 
