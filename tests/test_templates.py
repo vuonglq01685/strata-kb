@@ -3443,7 +3443,9 @@ def test_ba_bug_report_hard_rules():
 def test_ba_bug_report_does_not_run_story_only_gates():
     for name in _full_forms("ba-bug-report"):
         text = _normalised(_read_init_template(name))
-        assert "/sa-ticket-ground" not in text, name
+        assert "/sa-ticket-ground" not in text.replace(
+            "/sa-ticket-ground --scope", ""
+        ), name
         assert "Maturity review" not in text, name
 
 
@@ -3774,6 +3776,53 @@ def test_bug_skill_writes_the_target_repo_header():
     for name in _full_forms("ba-bug-report"):
         text = _normalised(_read_init_template(name))
         assert "> Target repo: <repo-id>" in text, name
+
+
+def test_ba_bug_report_proposes_first_responder_and_splits_with_child_of():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        for needle in (
+            "/sa-ticket-ground --scope",
+            "`Repos: 0`",
+            "The SA proposes",
+            "digits-only",
+            "`BUG-<n>.<repo-id>` is never counted",
+            "## `--child-of BUG-<n>`",
+            "Split proposal for BUG-<n>:",
+            "`stopped`",
+            "split into child bugs",
+            "> Kind: parent bug",
+            "docs/tickets/PARENT-BUG-TEMPLATE.md",
+            "`Own fix`",
+            "**Split decision:**",
+            "> Parent bug: <BUG-id> @ rev",
+            "`parent_markdown`",
+            "`children_markdown`",
+            "Write files only",
+            "answer_rev=N+1",
+            "answer_rev=None",
+            "ticket_sections=[]",
+        ):
+            assert needle in text, f"{name} missing {needle}"
+        assert "never guess it from the symptom" not in text, name
+        assert "## Auto mode" not in text, name
+
+
+def test_ba_bug_report_command_copy_carries_child_of():
+    text = _normalised(_read_init_template("claude-command-ba-bug-report.md"))
+    assert 'argument-hint: "[what broke | --child-of BUG-<n>]"' in text
+    for needle in (
+        "--child-of BUG-<n>",
+        "> Kind: parent bug",
+        "`Own fix`",
+        "> Parent bug: <BUG-id> @ rev",
+        "digits-only",
+        "Split proposal for BUG-<n>:",
+        "`stopped`",
+        "Write files only",
+        "/sa-ticket-ground --scope",
+    ):
+        assert needle in text, needle
 
 
 def test_sa_ticket_ground_first_grounding_is_the_qualified_own_code_doc():
