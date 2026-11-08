@@ -632,3 +632,9 @@ def test_picker_yields_own_fix_to_first_responder_only(tmp_path: Path, monkeypat
     assert pick_dev(None, tmp_path, "other-repo") is None  # type: ignore[arg-type]
     _hub(monkeypatch, [], [_parent_bug(REPO, ready=False)])
     assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]
+
+
+def test_picker_skips_own_fix_without_a_target(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [], [_parent_bug(None)])
+    assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]

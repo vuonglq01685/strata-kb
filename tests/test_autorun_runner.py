@@ -1271,3 +1271,17 @@ def test_stored_task_now_a_parent_is_dropped_not_stopped(cenv):
     state = autostate.load(cenv[1])
     assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
     assert claims.of("forget") == [("forget", "US1")]
+
+
+def test_stored_own_fix_task_survives_a_resume(cenv):
+    cenv[3]["stories"] = [
+        StoryStatus(
+            "BUG-9", "", "t", "in progress", ("own fix pending",), (), "svc", True,
+            own_fix_ready=True,
+        )
+    ]  # fmt: skip
+    autostate.save(cenv[1], autostate.AutoState("dev-fix-bug:BUG-9", 1, (), None, ""))
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-fix-bug BUG-9")
+    assert claims.of("release") == [] and claims.of("forget") == []
