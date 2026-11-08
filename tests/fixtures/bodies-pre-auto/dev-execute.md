@@ -237,7 +237,7 @@ hub.
   test.
 - **When an AC turns out not to be implementable as written** — stop
   that task, return to `dev-design`, and record `OPEN(BA)`; `dev-design`
-  asks the BA through hub Q&A. Do not
+  asks the BA through hub Q&A; the task stays stopped only while a question of this ticket is open or waiting and reads `blocks this ticket: yes` in `kb_question_list(ticket=<id>, status="all")`, and a `no` row never stops it. Do not
   decide the ambiguity yourself, and do not push past it because the
   code is half written.
 - **Resumable** — a later run re-checks freshness, re-reads the plan,

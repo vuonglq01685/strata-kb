@@ -10,8 +10,9 @@ from mcp.shared.memory import (
 )
 
 from strata_kb.mcp import QA_NEEDS_HUB_SERVER, ServerConfig, create_server
-from tests.test_planingest import US1
+from tests.test_planingest import US1, WEB
 from tests.test_ticketfetch import _bug_hub
+from tests.test_ticketqa import family_hub  # noqa: F401 - fixture
 
 REPO = "ba-one"
 
@@ -80,6 +81,23 @@ async def test_round_trip_ask_list_answer(hub_with_ticket):
             ticket_sections=[],
         )
         assert "already answered by ba1" in again
+
+
+@pytest.mark.anyio
+async def test_list_on_child_says_whether_a_question_blocks_this_ticket(family_hub):  # noqa: F811
+    async with connect_client(
+        create_server(_config(family_hub.root)), raise_exceptions=True
+    ) as client:
+        await _call(
+            client,
+            "kb_question_ask",
+            ticket=WEB,
+            question="Which unit?",
+            asked_by="dev1",
+            blocks="AC-3",
+        )
+        listed = await _call(client, "kb_question_list", ticket=WEB)
+        assert "blocks this ticket: yes" in listed
 
 
 @pytest.mark.anyio
@@ -214,7 +232,8 @@ async def test_nested_repo_ref_mid_slash_ba(fed_hub, tmp_path):
         f"Q1 asked on mid/ba-x:{US1} — "
         f"/ui/questions/ticket?repo=mid%2Fba-x&ticket={US1}"
     )
-    assert "Q1 [open] mid/ba-x:" in by_repo and by_repo == by_ref
+    assert "Q1 [open] mid/ba-x:" in by_repo
+    assert by_ref.replace("\n  blocks this ticket: no", "") == by_repo
 
 
 @pytest.mark.anyio
@@ -304,3 +323,28 @@ async def test_store_failure_is_a_short_message_without_paths(hub_with_ticket):
             ),
         ]
     assert outs == ["Q&A store error — see hub log"] * 3
+
+
+@pytest.mark.anyio
+async def test_propose_and_confirm_blocks_round_trip(family_hub):  # noqa: F811
+    async with connect_client(
+        create_server(_config(family_hub.root)), raise_exceptions=True
+    ) as client:
+        await _call(
+            client, "kb_question_ask", ticket=WEB, question="Min?", asked_by="dev1"
+        )
+        out = await _call(
+            client,
+            "kb_question_propose_blocks",
+            id=1,
+            blocks="AC2",
+            reason="same minimum amount rule",
+        )
+        assert "Q1" in out
+        out = await _call(
+            client, "kb_question_confirm_blocks", id=1, confirmed_by="ba1"
+        )
+        assert "Q1" in out
+        listed = await _call(client, "kb_question_list", ticket=WEB)
+        assert "proposed blocks: AC2 — same minimum amount rule" in listed
+        assert "confirmed by: ba1" in listed

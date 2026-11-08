@@ -39,6 +39,21 @@ remind the BA to commit and merge the ticket change as usual (the hub shows
 the answers as waiting for publish until it lands), and give the hub Q&A
 link to paste in chat (`STRATA_KB_HUB_URL` plus the path; path only when unset; never show `STRATA_KB_HTTP_TOKEN`). The agent never commits, pushes or publishes.
 
+Parent-story question (its `asked_from` names the child): work it on the
+parent file and send it to `### Amend a parent story` before any plain amend. The resume rule (resume the unpublished N+1,
+never bump the revision again, merge the newer
+`auto/qa-parked/<ticket-id>` draft) and the lint gate (record nothing
+until lint passes) still apply to a parent question.
+Triage first (re-propose only when the proposed AC set changes): `/sa-ticket-ground --scope "<question>"` on the
+children, record shared sibling ACs with `kb_question_propose_blocks(id,
+blocks, reason)`; the BA accepts with `kb_question_confirm_blocks(id,
+confirmed_by=<git config user.name>)` or leaves it unconfirmed (Q&A names are
+self-declared, so `confirmed_by` is an audit trail, not an access control).
+Then answer once: run `ba-ticket-author`'s `### Amend a parent story`, and
+record with `ticket_sections=<the child ids in the new parent row's
+Affected>` and `answer_rev=<the new parent revision>` (no change needed:
+`answer_rev` None and `[]`); when any amended or new (`.n`) child's Definition of Ready box stays unticked, record no answer.
+
 End every response with `## Next step` (an ordered list, option 1 is the
 next step in flow) and a `State:` line: `State: questions <n>/<m> answered ·
 tickets amended <n> · publish <✅ on the hub|⬜ waiting for commit and

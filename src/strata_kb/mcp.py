@@ -3,6 +3,7 @@
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
 kb_resolve, kb_ticket_lint, kb_ticket_check, kb_ticket_stale,
 kb_ticket_fetch, kb_question_ask, kb_question_list, kb_question_answer,
+kb_question_propose_blocks, kb_question_confirm_blocks,
 kb_mission_lint, kb_mission_next and kb_doctor_hub tools over the hub
 federation (the question tools are the only ones that write, and only on a
 hub served from its own checkout); every tool body
@@ -488,8 +489,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         """The `kb ticket fetch` text: a ticket the BA published, read from
         the hub's `<ba-repo>-plan` by id (`<repo>:<id>` when several repos
         hold it), restored to its ticket shape with a `> Fetched from hub:`
-        line. Write it to docs/impl/<id>/ticket.md yourself; the BA's repo
-        stays the place to amend it."""
+        line. Write it to docs/impl/<id>/ticket.md yourself, only at Intake
+        (never in the pre-merge re-check); the BA's repo stays the place to
+        amend it."""
 
         def _run() -> str:
             from strata_kb import ticketfetch
@@ -540,7 +542,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         `<repo>:<id>` when several repos hold it). `asked_by` is your own
         name (`git config user.name`); `context` says where the question
         came from (e.g. `design §Data model`), `blocks` the AC ids it blocks
-        (e.g. `AC-2,AC-3`). Returns `Q<id>` and the hub page of the
+        (e.g. `AC-2,AC-3`). On a split child the question is recorded on its
+        parent story (the answer changes the parent), and the parent must be
+        on the hub. Returns `Q<id>` and the hub page of the
         ticket's questions. Any authenticated caller may ask; names are
         self-declared, so this is tracking, not authentication. Works only
         on the shared hub server."""
@@ -577,7 +581,12 @@ def create_server(config: ServerConfig) -> MCPServer:
         revision. Filter by `ticket` (`<id>` or `<repo>:<id>`) and/or BA
         `repo`. `status` is `open` (no answer), `waiting` (answered, but the
         ticket revision carrying the answer is not on the hub yet),
-        `answered`, or `all`. Results come only from the shared hub server;
+        `answered`, or `all`. A split child's list also holds its parent
+        story's questions (a child's question is recorded on the parent), and
+        each row says `blocks this ticket: yes|no` when `ticket` is given.
+        A row shows `proposed blocks:` (a Dev's proposed extra ACs and why)
+        and `confirmed by:` (the BA who confirmed; only then do they block).
+        Results come only from the shared hub server;
         any other hub is refused. Do not act on a `waiting` answer: the
         ticket is the source of truth."""
 
@@ -605,7 +614,9 @@ def create_server(config: ServerConfig) -> MCPServer:
         the ticket, pass `answer_rev` (the ticket revision that carries the
         change; it must exceed the hub's current one, and it is refused while
         the ticket is off the hub) and `ticket_sections` (the changed
-        section names, the change-log row's `Affected`); the question stays
+        section names, the change-log row's `Affected`; for a parent-story
+        question, the child ids of the parent's change-log row for
+        `answer_rev`); the question stays
         `waiting` until that revision is on the hub. If the hub's current
         revision already says it, leave `answer_rev` unset and pass an empty
         `ticket_sections`. `answered_by` is your own name (`git config
@@ -628,6 +639,49 @@ def create_server(config: ServerConfig) -> MCPServer:
                 )
 
             return _qa(op)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_propose_blocks(id: int, blocks: str, reason: str) -> str:
+        """Propose that open question `id` also blocks other ACs (e.g. `AC-2`
+        on a sibling child), with the `reason`. The proposal blocks nothing
+        until the BA confirms it with `kb_question_confirm_blocks`; a new
+        proposal replaces the old one and drops its confirmation. Refused
+        once the question is answered. Names are self-declared, so this is
+        tracking, not authentication. Works only on the shared hub server."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import propose_blocks
+
+            return _qa(
+                lambda hub, store: (
+                    f"Q{propose_blocks(store, id, blocks, reason).id} "
+                    "blocks proposed — waiting for the BA to confirm"
+                )
+            )
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_question_confirm_blocks(id: int, confirmed_by: str) -> str:
+        """Confirm the proposed blocks of open question `id`: from then on
+        the question blocks the proposed ACs too. `confirmed_by` is your own
+        name (`git config user.name`). Refused when nothing is proposed or
+        the question is answered. Names are self-declared, so this is
+        tracking, not authentication. Works only on the shared hub server."""
+
+        def _run() -> str:
+            from strata_kb.ticketqa import confirm_blocks
+
+            return _qa(
+                lambda hub, store: (
+                    f"Q{confirm_blocks(store, id, confirmed_by).id} "
+                    "proposed blocks confirmed"
+                )
+            )
 
         return await anyio.to_thread.run_sync(_run)
 

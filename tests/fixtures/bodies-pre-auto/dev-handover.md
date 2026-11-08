@@ -114,6 +114,7 @@ hub.
   responsible for, report `amend needed: <repo_id>-svc
   §svc.<name>` under `## Notes`. **Never edit a `reviewed`
   section.**
+- **Pre-merge re-check** — right before the Dev opens the PR or merges (GATE 3, GATE 4), and in Auto mode before `kb pr merge`. Re-run `kb_question_list(ticket=<id>, status="all")`: a row that is open or waiting and reads `blocks this ticket: yes` stops the merge. Tell the Dev; in Auto mode end `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`. Read the `> Revision:` of `docs/impl/<ticket-id>/ticket.md` first: it is the revision this branch implemented, the copy `dev-implement-ticket` fetched at its start (and re-fetched on each answered question). Then fetch the ticket again with `kb_ticket_fetch` (CLI: `kb ticket fetch <ticket-id> --out "$(mktemp -d)/ticket.md"`, a scratch path outside the repo so no `assets/` lands in it; never overwrite `docs/impl/<ticket-id>/ticket.md`, the baseline). A fetched `> Revision:` higher than the baseline stops the merge. Tell the Dev; in Auto mode end `AUTO-RESULT: failed ticket-revised <ticket-id>`.
 - **GATE 3** — offered only after A5 comes back clean (run `kb claim update <ticket-id>` first;
   exit `3` → STOP as on entry) — the Dev opens
   the PR; **GATE 4** the Dev merges. **The agent does neither.** Option 1

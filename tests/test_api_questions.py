@@ -18,6 +18,15 @@ def test_requires_auth(web_client):
     assert web_client.get("/api/questions").status_code == 401
 
 
+def test_api_questions_json_has_new_fields(web_client, hub_with_ticket, auth):
+    hub = hub_with_ticket(rev=1)
+    ask_question(hub, QaStore(qa_db_path(hub.root)), US1, "Which?", "dev1")
+
+    (q,) = web_client.get("/api/questions", headers=auth).json()["questions"]
+
+    assert {q[k] for k in ("asked_from", "proposed_blocks", "confirmed_by")} == {None}
+
+
 def test_lists_the_open_question(web_client, hub_with_ticket, auth):
     hub = hub_with_ticket(rev=1)
     ask_question(
@@ -44,6 +53,9 @@ def test_lists_the_open_question(web_client, hub_with_ticket, auth):
         "blocks": "AC-2",
         "answer": None,
         "answer_rev": None,
+        "asked_from": None,
+        "proposed_blocks": None,
+        "confirmed_by": None,
     }
     assert q["asked_at"]
 

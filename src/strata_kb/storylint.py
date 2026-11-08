@@ -264,7 +264,26 @@ def lint_parent(
     ]
     issues += _check_acs_unique(rows) + _check_blocked_by(rows)
     issues += _check_written_children(rows, children, parent_text, parent_id)
+    issues += _check_change_log_affected(rows, parent_text)
     return LintReport(issues)
+
+
+def _check_change_log_affected(rows: list[SplitRow], text: str) -> list[Issue]:
+    """A parent change-log row's `Affected` names only split children. Only the
+    newest row is an error: the log is append-only, so an older row may name a
+    child that was cancelled since."""
+    ids = {r.child for r in rows}
+    log = [c for c in planrev.parse_change_log(text) if c.rev >= 2]
+    newest = max((c.rev for c in log), default=0)
+    return [
+        Issue(
+            "error" if c.rev == newest else "warning",
+            f"change-log row {c.rev}: Affected '{a}' is not a child in the split",
+        )
+        for c in log
+        for a in c.affected
+        if a not in ids
+    ]
 
 
 def _ac_ids(text: str) -> tuple[list[str], int]:

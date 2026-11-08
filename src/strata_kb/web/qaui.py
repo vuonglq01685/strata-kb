@@ -30,7 +30,7 @@ from strata_kb.web.ui import _render_page, render_error_page
 
 logger = logging.getLogger("strata_kb.web.qaui")
 
-Row = tuple[Question, str, int | None]  # (question, derived state, hub revision)
+Row = tuple[Question, str, int | None, bool | None]  # + blocks this ticket
 
 
 @dataclass(frozen=True)
@@ -90,10 +90,10 @@ def _summaries(
         by_ticket.setdefault((row[0].repo, row[0].ticket), []).append(row)
     repos: dict[str, list[TicketSummary]] = {}
     for (repo, ticket), items in sorted(by_ticket.items()):
-        states = [state for _, state, _ in items]
+        states = [state for _, state, _, _ in items]
         if unresolved_only and set(states) == {"answered"}:
             continue
-        open_asked = [q.asked_at for q, state, _ in items if state == "open"]
+        open_asked = [q.asked_at for q, state, _, _ in items if state == "open"]
         repos.setdefault(repo, []).append(
             TicketSummary(
                 ticket=ticket,
@@ -114,7 +114,7 @@ def unresolved_count(hub: HubHandle, repo: str, ticket: str) -> int:
     try:
         return sum(
             state != "answered"
-            for _, state, _ in _rows(hub, ticket_ref=ticket, repo=repo)
+            for _, state, _, _ in _rows(hub, ticket_ref=ticket, repo=repo)
         )
     except (sqlite3.Error, KbError):
         logger.warning("Q&A store unreadable for %s:%s", repo, ticket, exc_info=True)

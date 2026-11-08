@@ -37,6 +37,15 @@ BA skills split a story by repo and draft the children. Phase 3 of cross-repo st
 - **Two lint warnings.** `kb ticket lint` warns `grounding touches several repos (<a>, <b>) — split it into a parent story (BA Guide 3.10) or keep one ticket` for a single ticket grounded on two or more repos, and warns when a parent has no `**Split decision:**` line.
 - **Guides.** BA guide 3.10 (en, vi) explains how the split is proposed. Run `kb init` to get the skills.
 
+Changes and Q&A work at the parent story. Phase 4 of cross-repo stories.
+
+- **Amend a parent.** `/ba-ticket-author --amend <parent-id>` has the SA propose which children to amend, add or keep; on accept the parent goes to rev N+1, its split rows follow, new ACs take the next free number (`AC<n> (replaces AC<m>)`), a done child is replaced by a new `.n` child and a done parent is frozen. `kb ticket lint` errors when a parent change-log row (rev 2 or later) names in `Affected` something that is not a child in the split.
+- **Questions at the parent.** A question asked on a split child is recorded on the parent (`asked_from` names the child) and listed for every child. Rows show `blocks this ticket: yes|no`. A Dev gate stops only on an open or waiting row that reads `yes`.
+- **Proposed and confirmed blocks.** `kb_question_propose_blocks(id, blocks, reason)` proposes ACs a question blocks in a sibling; `kb_question_confirm_blocks(id, confirmed_by)` makes them count. A new proposal clears the confirmation. `confirmed_by` is an audit trail, not an access control.
+- **Parent answers.** A parent question answered with a rev reads *answered* only when the parent and every listed child are on the hub at that rev or higher; without a rev it reads answered at once.
+- **Pre-merge re-check.** `dev-handover` re-lists questions and compares the hub ticket's `> Revision:` with the implemented one before a PR or merge; Auto ends `blocked-qa Q<id>` or `failed ticket-revised <ticket-id>`.
+- **Upgrade.** The Q&A store gains three nullable columns on first open; no action needed. Upgrade the hub, then run `kb init` in the BA and Dev repos to get the skills. The guides (en, vi) cover all of it.
+
 ## 1.34.5 — 2026-11-05
 
 `kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.

@@ -371,6 +371,47 @@ def test_ba_answer_questions_claude_command_matches_the_body_rules():
     assert "or the question is no longer needed" in text
 
 
+def test_ba_answer_questions_triages_parent_questions_then_answers_once():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    for needle in (
+        "kb_question_propose_blocks",
+        "kb_question_confirm_blocks",
+        "an audit trail, not an access control",
+        "asked_from",
+        "ticket_sections=<the child ids",
+        '/sa-ticket-ground --scope "<question>"',
+        "### Amend a parent story",
+        "Q&A names are self-declared",
+        "A parent question goes to `### Amend a parent story` here, before any amend runs",
+        "the bullets that follow are for a non-parent ticket",
+        "for a parent question `ticket_sections` equals the child ids in the new parent row's Affected",
+        "it also records a parent question that needs no ticket change",
+        "each amended or new child (`.n` too)",
+        "the resume rule (resume the unpublished N+1, never bump the revision again, merge the newer `auto/qa-parked/<ticket-id>` draft) and the lint gate (record nothing until lint passes) still apply to a parent question",
+        "re-proposes only when the proposed AC set changes",
+    ):
+        assert needle in n, needle
+    off = n[: n.index("## Auto mode")]
+    assert (
+        "kb_question_confirm_blocks" in off
+        and "answer_rev=<the new parent revision>" in off
+    )
+    auto = n[n.index("## Auto mode") :]
+    assert "`confirmed_by` = `kb-auto`" in auto
+    assert "`**Auto decision:**` line on the parent" in auto
+
+
+def test_ba_answer_questions_command_copy_carries_the_parent_flow():
+    n = _normal(read_template("claude-command-ba-answer-questions.md"))
+    for needle in (
+        "kb_question_propose_blocks",
+        "kb_question_confirm_blocks",
+        "ticket_sections=<the child ids",
+        "an audit trail, not an access control",
+    ):
+        assert needle in n, needle
+
+
 # --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
 
 HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
@@ -449,7 +490,8 @@ def test_dev_design_and_plan_claude_commands_carry_the_question_rules(name):
         "dispatch `dev-sa`",
         "kb_question_ask",
         "A blocking open BA question (a question line without `— answered rev N` "
-        "whose `blocks:` names an AC) stops the gate",
+        'that `kb_question_list(ticket=<id>, status="all")` lists as open or '
+        "waiting and `blocks this ticket: yes`) stops the gate",
         HUB_ONLY_ERROR,
     ):
         assert phrase in text, (name, phrase)
@@ -497,7 +539,7 @@ def test_dev_implement_ticket_resumes_from_the_question_states(name):
         else 'never treat it as "no questions"',
         "`answer_rev`",
         "back to `status: draft`",
-        "blocks no AC",
+        "blocks this ticket: no",
     ):
         assert phrase in text, (name, phrase)
 
@@ -547,7 +589,8 @@ def test_author_dispatch_carries_the_questions_rule(body, command):
 def test_gate_counts_only_question_lines_without_an_answered_marker(body, command):
     for text in (_body(body), " ".join(read_template(command).split())):
         assert "a question line without `— answered rev N`" in text, body
-        assert "whose `blocks:` names an AC" in text, body
+        assert "`blocks this ticket: yes`" in text, body
+        assert 'kb_question_list(ticket=<id>, status="all")' in text, body
         assert "(the rubric's Pre-code axis says so)" in text, body
         assert "dev-sa" in text and "standard" in text and "tier" in text, body
 
@@ -858,6 +901,7 @@ _BA_GATES = {
         "never commits or pushes",  # runner-driven PR
         'Step 1b: "The BA accepts, edits or rejects"',  # split decision
         "Child mode: Intake from the parent",  # child ticket
+        'Amend a parent story: "The BA accepts, edits or rejects"',  # parent change
     ],
     "bodies/ba-mission-plan.md": [
         "never auto-pick",
@@ -870,6 +914,7 @@ _BA_GATES = {
         "never answer a question yourself",
         "ask them to re-check and re-tick",
         "never commits, pushes or publishes",
+        "The BA accepts with `kb_question_confirm_blocks`",
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }
@@ -2127,3 +2172,132 @@ def test_ticket_author_names_the_lint_arguments_and_child_intake(name):
         "is drafted in Child mode",
     ]:
         assert needle in t, needle
+
+
+_PARENT_AMEND_NEEDLES = (
+    "### Amend a parent story",
+    "parent rev N+1:",
+    "A done child is never amended",
+    "<parent-id>.<repo-id>.<n>",
+    "children_markdown",
+    "next free number across the whole split",
+    "(replaces AC",
+    "split row",
+    "touches every child",
+)
+
+
+@pytest.mark.parametrize(
+    "template", ["bodies/ba-ticket-author.md", "claude-skill-ba-ticket-author.md"]
+)
+def test_ba_ticket_author_amend_a_parent_story(template):
+    raw = _raw(template)
+    off = _normal(raw[: raw.index(AUTO_HEADING)])
+    sub = off[off.index("### Amend a parent story") :]
+    for needle in _PARENT_AMEND_NEEDLES:
+        assert needle in sub, (template, needle)
+    assert off.index("## Amend mode") < off.index("### Amend a parent story")
+    assert off.index("### Amend a parent story") < off.index("## Child mode")
+
+
+# Task 7 (phase 4): the Dev question gate reads the list's per-ticket line.
+_QA_GATE_FILES = {
+    "bodies/dev-implement-ticket.md": [
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+    "bodies/dev-design.md": ["claude-command-dev-design.md"],
+    "bodies/dev-plan.md": ["claude-command-dev-plan.md"],
+    "bodies/dev-execute.md": ["claude-command-dev-execute.md"],
+    "bodies/dev-handover.md": ["claude-command-dev-handover.md"],
+}
+_QA_GATE_NAMES = sorted(
+    n for body, copies in _QA_GATE_FILES.items() for n in (body, *copies)
+)
+
+
+@pytest.mark.parametrize("name", _QA_GATE_NAMES)
+def test_dev_gate_stops_only_on_blocks_this_ticket_yes(name):
+    assert "blocks this ticket: yes" in _off_path(name), name
+    raw = _raw(name) if name.startswith("bodies/") else read_template(name)
+    assert "`blocks:` names an AC" not in _normal(raw), name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_intake_compares_committed_revision_before_overwriting(name):
+    text = _off_path(name)
+    for needle in [
+        "compare its `> Revision:` with the committed one",
+        "read this ticket's change-log rows above the old revision",
+        "before you overwrite the baseline",
+    ]:
+        assert needle in text, (name, needle)
+    assert text.index("compare its `> Revision:`") < text.index("before you overwrite")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-implement-ticket.md",
+        "claude-skill-dev-implement-ticket.md",
+        "claude-command-dev-implement-ticket.md",
+    ],
+)
+def test_waiting_row_blocking_this_ticket_stops_the_entry(name):
+    assert (
+        "a waiting row that reads `blocks this ticket: yes` stops here like an open one"
+        in _off_path(name)
+    ), name
+
+
+_HANDOVER_FILES = ["bodies/dev-handover.md", "claude-command-dev-handover.md"]
+
+
+@pytest.mark.parametrize("name", _HANDOVER_FILES)
+def test_handover_pre_merge_recheck_comes_before_the_merge(name):
+    raw = _raw(name) if name.startswith("bodies/") else read_template(name)
+    text = _normal(raw)
+    step = text.index("Pre-merge re-check")
+    assert step < text.index("## Auto mode"), name
+    tail = text[step:]
+    for needle in [
+        'kb_question_list(ticket=<id>, status="all")',
+        "blocks this ticket: yes",
+        "kb_ticket_fetch",
+        "`> Revision:`",
+        "AUTO-RESULT: blocked-qa Q<id>",
+        "AUTO-RESULT: failed ticket-revised <ticket-id>",
+        '`kb ticket fetch <ticket-id> --out "$(mktemp -d)/ticket.md"`',
+        "never overwrite `docs/impl/<ticket-id>/ticket.md`",
+    ]:
+        assert needle in tail, (name, needle)
+    assert tail.index("Read the `> Revision:`") < tail.index("kb_ticket_fetch"), name
+    auto = text[text.index("## Auto mode") :]
+    assert auto.index("run the Pre-merge re-check first") < auto.index(
+        "kb pr merge --squash"
+    ), name
+    assert "`ticket-revised <ticket-id>`" in text[text.index("Result line") :], name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bodies/dev-design.md",
+        "bodies/dev-plan.md",
+        "bodies/dev-execute.md",
+        "claude-command-dev-design.md",
+        "claude-command-dev-plan.md",
+        "claude-command-dev-execute.md",
+    ],
+)
+def test_gate_lists_open_and_waiting_rows_with_status_all(name):
+    off = _off_path(name)
+    assert 'kb_question_list(ticket=<id>, status="all")' in off, name
+    assert "open or waiting" in off, name

@@ -239,3 +239,8 @@ def test_missing_executable_is_failed(tmp_path):
         tmp_path, "/x", log_dir=tmp_path / "logs", executable=str(tmp_path / "nope")
     )
     assert result.kind == "failed"
+
+
+def test_parse_ticket_revised_is_failed_with_reason():
+    result = parse_result("AUTO-RESULT: failed ticket-revised US3")
+    assert (result.kind, result.reason) == ("failed", "ticket-revised US3")

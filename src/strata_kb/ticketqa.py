@@ -11,6 +11,7 @@ revision is its own `> Revision: N` line (`planrev`), not the hub's git HEAD.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import unicodedata
 from contextlib import closing
@@ -19,7 +20,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from strata_kb import planrev, ticketfetch
+from strata_kb import lintcore, planrev, ticketfetch
+from strata_kb import ticket as ticketmod
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 
@@ -49,13 +51,19 @@ CREATE TABLE IF NOT EXISTS questions (
     answer_rev INTEGER,
     ticket_sections TEXT NOT NULL DEFAULT '[]',
     answered_by TEXT,
-    answered_at TEXT
+    answered_at TEXT,
+    asked_from TEXT,
+    proposed_blocks TEXT,
+    confirmed_by TEXT
 )
 """
 _COLUMNS = (
     "id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev, "
-    "answer, answer_rev, ticket_sections, answered_by, answered_at"
+    "answer, answer_rev, ticket_sections, answered_by, answered_at, "
+    "asked_from, proposed_blocks, confirmed_by"
 )
+# Added after the first release: an older db gets them by ALTER in QaStore.
+_ADDED_COLUMNS = ("asked_from", "proposed_blocks", "confirmed_by")
 
 
 class QaError(KbError):
@@ -78,6 +86,9 @@ class Question:
     ticket_sections: list[str]
     answered_by: str | None
     answered_at: str | None
+    asked_from: str | None = None
+    proposed_blocks: str | None = None
+    confirmed_by: str | None = None
 
 
 def qa_db_path(hub_root: Path) -> Path:
@@ -112,11 +123,18 @@ def _row_to_question(row: tuple) -> Question:
     (id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev) = row[
         :9
     ]
-    answer, answer_rev, sections, answered_by, answered_at = row[9:]
+    answer, answer_rev, sections, answered_by, answered_at = row[9:14]
+    asked_from, proposed_blocks, confirmed_by = row[14:]
     return Question(
         id, repo, ticket, question, context, blocks, asked_by, asked_at, asked_rev,
         answer, answer_rev, json.loads(sections), answered_by, answered_at,
+        asked_from, proposed_blocks, confirmed_by,
     )  # fmt: skip
+
+
+def _missing_columns(conn: sqlite3.Connection) -> list[str]:
+    have = {r[1] for r in conn.execute("PRAGMA table_info(questions)")}
+    return [c for c in _ADDED_COLUMNS if c not in have]
 
 
 class QaStore:
@@ -125,6 +143,10 @@ class QaStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
             conn.execute(_SCHEMA)
+            if _missing_columns(conn):  # a migrated db is opened without a write lock
+                conn.execute("BEGIN IMMEDIATE")  # two openers must not both ALTER
+                for col in _missing_columns(conn):
+                    conn.execute(f"ALTER TABLE questions ADD COLUMN {col} TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path, timeout=10)
@@ -138,6 +160,7 @@ class QaStore:
         blocks: str,
         asked_by: str,
         asked_rev: int,
+        asked_from: str | None = None,
     ) -> Question:
         _text("question", question, MAX_QUESTION)
         _text("context", context, MAX_CONTEXT, required=False)
@@ -160,8 +183,18 @@ class QaStore:
                 )
             cur = conn.execute(
                 "INSERT INTO questions (repo, ticket, question, context, blocks, "
-                "asked_by, asked_at, asked_rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (repo, ticket, question, context, blocks, asked_by, now, asked_rev),
+                "asked_by, asked_at, asked_rev, asked_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    repo,
+                    ticket,
+                    question,
+                    context,
+                    blocks,
+                    asked_by,
+                    now,
+                    asked_rev,
+                    asked_from,
+                ),
             )
         return Question(
             cur.lastrowid or 0,
@@ -178,6 +211,7 @@ class QaStore:
             [],
             None,
             None,
+            asked_from,
         )
 
     def get(self, id: int) -> Question | None:
@@ -257,6 +291,50 @@ class QaStore:
             ).fetchone()
         return _row_to_question(row)
 
+    def _update_open(self, id: int, sql: str, args: tuple, *, need_proposal: bool):
+        """Run `sql` on an unanswered question, under the write lock."""
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT answer, proposed_blocks FROM questions WHERE id = ?", (id,)
+            ).fetchone()
+            if row is None:
+                raise QaError(f"Q{id} does not exist")
+            if row[0] is not None:
+                raise QaError(f"Q{id} is already answered")
+            if need_proposal and row[1] is None:
+                raise QaError(f"Q{id} has no proposed blocks to confirm")
+            conn.execute(sql, (*args, id))
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM questions WHERE id = ?",  # noqa: S608 - constant columns
+                (id,),
+            ).fetchone()
+        return _row_to_question(row)
+
+    def propose_blocks(self, id: int, blocks: str, reason: str) -> Question:
+        """Record "<AC ids> — <reason>", replacing any earlier proposal and
+        its confirmation. It blocks nothing until `confirm_blocks`."""
+        _text("blocks", blocks, MAX_CONTEXT)
+        _text("reason", reason, MAX_CONTEXT)
+        ids = sorted(ac_ids(blocks), key=lambda a: int(a[2:]))
+        if not ids:
+            raise QaError(f"blocks names no AC id (e.g. AC2): {blocks!r}")
+        return self._update_open(
+            id,
+            "UPDATE questions SET proposed_blocks = ?, confirmed_by = NULL WHERE id = ?",
+            (f"{', '.join(ids)} — {reason.strip()}",),
+            need_proposal=False,
+        )
+
+    def confirm_blocks(self, id: int, confirmed_by: str) -> Question:
+        _name("confirmed_by", confirmed_by)
+        return self._update_open(
+            id,
+            "UPDATE questions SET confirmed_by = ? WHERE id = ?",
+            (confirmed_by,),
+            need_proposal=True,
+        )
+
 
 def derive_state(q: Question, hub_rev: int | None) -> State:
     if q.answer is None:
@@ -266,12 +344,42 @@ def derive_state(q: Question, hub_rev: int | None) -> State:
     return "waiting" if hub_rev is None or hub_rev < q.answer_rev else "answered"
 
 
+def _read_section(hub: HubHandle, repo: str, ticket: str) -> str:
+    _, doc, l3 = ticketfetch.find(hub, f"{repo}:{ticket}")
+    return ticketfetch.read_section(l3, doc, ticket)
+
+
 def _read_revision(hub: HubHandle, repo: str, ticket: str) -> int:
     """One federation load and one L3 read: no `render`, no git call (the
     Q&A list asks for every ticket it shows)."""
-    _, doc, l3 = ticketfetch.find(hub, f"{repo}:{ticket}")
-    section = ticketfetch.read_section(l3, doc, ticket)
-    return planrev.parse_revision(section) or 1
+    return planrev.parse_revision(_read_section(hub, repo, ticket)) or 1
+
+
+_AC_REF_RE = re.compile(r"\bAC-?(\d+)\b", re.I)
+
+
+def ac_ids(text: str) -> frozenset[str]:
+    """`AC3`, `AC-3` and `ac3` in `text`, each normalised to `AC3`."""
+    return frozenset(f"AC{int(n)}" for n in _AC_REF_RE.findall(text))
+
+
+def effective_blocks(q: Question) -> frozenset[str]:
+    """The ACs the question blocks: its own `blocks`, plus the Dev's
+    proposal once a BA has confirmed it."""
+    ids_part = (q.proposed_blocks or "").partition(" — ")[0]  # not the reason
+    proposed = ac_ids(ids_part) if q.confirmed_by else frozenset()
+    return ac_ids(q.blocks) | proposed
+
+
+def _parent_pin(section: str) -> tuple[str, int] | None:
+    return ticketmod.parent_story_pin(ticketfetch.source_text(section))
+
+
+def _ticket_acs(section: str) -> frozenset[str]:
+    items = lintcore.ac_items(ticketfetch.source_text(section))
+    return frozenset(
+        f"AC{int(m.group(1))}" for i in items if (m := _AC_REF_RE.match(i))
+    )
 
 
 def ticket_revision(hub: HubHandle, repo: str, ticket: str) -> int | None:
@@ -295,8 +403,22 @@ def ask_question(
 ) -> Question:
     repo, _, _ = ticketfetch.find(hub, ticket_ref)
     ticket = ticketfetch.split_ref(ticket_ref)[1]
-    rev = _read_revision(hub, repo, ticket)
-    return store.ask(repo, ticket, question, context, blocks, asked_by, rev)
+    section = _read_section(hub, repo, ticket)
+    pin = _parent_pin(section)
+    if pin is None:
+        rev = planrev.parse_revision(section) or 1
+        return store.ask(repo, ticket, question, context, blocks, asked_by, rev)
+    parent = pin[0]
+    try:
+        rev = _read_revision(hub, repo, parent)
+    except ticketfetch.TicketNotOnHub as exc:
+        raise QaError(
+            f"parent story {parent} is not on the hub — publish it before asking "
+            f"about {ticket}"
+        ) from exc
+    return store.ask(
+        repo, parent, question, context, blocks, asked_by, rev, asked_from=ticket
+    )
 
 
 def answer_question(
@@ -318,6 +440,8 @@ def answer_question(
             f"Q{id} was already answered by {q.answered_by} at {q.answered_at}"
         )
     _check_answer_rev(answer_rev)
+    if _is_parent(hub, q.repo, q.ticket):
+        _check_child_ids(q.ticket, answer_rev, ticket_sections)
     if answer_rev is not None:
         hub_rev = ticket_revision(hub, q.repo, q.ticket)
         if hub_rev is None:
@@ -333,40 +457,158 @@ def answer_question(
     return store.answer(id, answer, answered_by, answer_rev, ticket_sections)
 
 
+def _is_parent(hub: HubHandle, repo: str, ticket: str) -> bool:
+    try:
+        section = _read_section(hub, repo, ticket)
+    except ticketfetch.TicketNotOnHub:
+        return False
+    return ticketmod.ticket_kind(ticketfetch.source_text(section)) == "parent story"
+
+
+def _check_child_ids(parent: str, answer_rev: int | None, sections: list[str]) -> None:
+    if answer_rev is None and not sections:
+        return  # no ticket change: answered at once, as for an ordinary ticket
+    ok = answer_rev is not None and bool(sections)
+    for name in sections:
+        m = ticketmod.CHILD_ID_RE.match(name)
+        ok = ok and m is not None and m.group("parent") == parent
+    if not ok:
+        raise QaError(
+            "parent question: ticket_sections must list the child ids of the "
+            "change-log row for answer_rev"
+        )
+
+
+def _child_revision(hub: HubHandle, repo: str, child: str) -> int | None:
+    """The revision of the parent the child is pinned to; None when the child
+    is not on the hub or carries no pin."""
+    try:
+        pin = _parent_pin(_read_section(hub, repo, child))
+    except ticketfetch.TicketFetchError:  # includes TicketNotOnHub
+        return None
+    return pin[1] if pin else None
+
+
+def _check_id(id: int) -> None:
+    if not 1 <= id <= MAX_QUESTION_ID:
+        raise QaError(f"id must be a question number from 1 to {MAX_QUESTION_ID}")
+
+
+def propose_blocks(store: QaStore, id: int, blocks: str, reason: str) -> Question:
+    _check_id(id)
+    return store.propose_blocks(id, blocks, reason)
+
+
+def confirm_blocks(store: QaStore, id: int, confirmed_by: str) -> Question:
+    _check_id(id)
+    return store.confirm_blocks(id, confirmed_by)
+
+
 def list_questions(
     hub: HubHandle,
     store: QaStore,
     ticket_ref: str = "",
     repo: str = "",
     status: str = "open",
-) -> list[tuple[Question, str, int | None]]:
+) -> list[tuple[Question, str, int | None, bool | None]]:
+    """Rows `(question, state, hub revision, blocks_this)`. With a
+    `ticket_ref`, a split child's list also holds its parent's questions, and
+    `blocks_this` says whether the question blocks that ticket (None without
+    one)."""
     if status not in STATUSES:
         raise QaError(f"status must be one of {', '.join(STATUSES)}, not {status!r}")
     ticket = None
     if ticket_ref.strip():
         ref_repo, ticket = ticketfetch.split_ref(ticket_ref)
         repo = ref_repo or repo
+    found = list(store.list(repo or None, ticket))
+    if ticket is not None:
+        found += _parent_questions(hub, store, repo, ticket)
+        found = sorted({q.id: q for q in found}.values(), key=lambda q: q.id)
     revisions: dict[tuple[str, str], int | None] = {}
-    rows: list[tuple[Question, str, int | None]] = []
-    for q in store.list(repo or None, ticket):
+    parents: dict[tuple[str, str], bool] = {}
+    pins: dict[tuple[str, str], int | None] = {}
+    acs: dict[str, frozenset[str]] = {}
+    rows: list[tuple[Question, str, int | None, bool | None]] = []
+    for q in found:
         key = (q.repo, q.ticket)
         if key not in revisions:
             revisions[key] = ticket_revision(hub, *key)
         state = derive_state(q, revisions[key])
-        if status in ("all", state):
-            rows.append((q, state, revisions[key]))
+        if state == "answered" and q.answer_rev is not None:
+            if key not in parents:
+                parents[key] = _is_parent(hub, *key)
+            # Rows from before the ticket became a parent hold section names.
+            children = [
+                c
+                for c in q.ticket_sections
+                if (m := ticketmod.CHILD_ID_RE.match(c))
+                and m.group("parent") == q.ticket
+            ]
+            if parents[key]:
+                for child in children:
+                    if (q.repo, child) not in pins:
+                        pins[q.repo, child] = _child_revision(hub, q.repo, child)
+                    pin = pins[q.repo, child]
+                    if pin is None or pin < q.answer_rev:
+                        state = "waiting"
+        if status not in ("all", state):
+            continue
+        blocks_this = None
+        if ticket is not None:
+            if q.repo not in acs:
+                acs[q.repo] = _acs_on_hub(hub, q.repo, ticket)
+            blocks_this = bool(effective_blocks(q) & acs[q.repo])
+        rows.append((q, state, revisions[key], blocks_this))
     return rows
+
+
+def _acs_on_hub(hub: HubHandle, repo: str, ticket: str) -> frozenset[str]:
+    try:
+        return _ticket_acs(_read_section(hub, repo, ticket))
+    except ticketfetch.TicketNotOnHub:
+        return frozenset()
+
+
+def _parent_questions(
+    hub: HubHandle, store: QaStore, repo: str, ticket: str
+) -> list[Question]:
+    """The parent-story questions of `ticket` in `repo`, or in every repo
+    that holds it when `repo` is empty. A repo whose copy is unreadable or
+    ambiguous adds none."""
+    repos = [repo] if repo else _repos_holding(hub, ticket)
+    out: list[Question] = []
+    for r in repos:
+        try:
+            pin = _parent_pin(_read_section(hub, r, ticket))
+        except ticketfetch.TicketFetchError:
+            continue
+        if pin is not None:
+            out += store.list(r, pin[0])
+    return out
+
+
+def _repos_holding(hub: HubHandle, ticket: str) -> list[str]:
+    return sorted(
+        {
+            fed.meta.repo_id
+            for fed, manifest in ticketfetch.plan_docs(hub, None)
+            if any(sec.id == ticket for sec in manifest.sections)
+        }
+    )
 
 
 def _field(label: str, value: str) -> str:
     return f"  {label}: " + value.replace("\n", "\n    ")
 
 
-def format_questions(rows: list[tuple[Question, str, int | None]]) -> str:
+def format_questions(
+    rows: list[tuple[Question, str, int | None, bool | None]],
+) -> str:
     if not rows:
         return "No questions."
     blocks = []
-    for q, state, rev in rows:
+    for q, state, rev, blocks_this in rows:
         lines = [
             f"Q{q.id} [{state}] {q.repo}:{q.ticket} (hub rev {'—' if rev is None else rev})",
             _field("question", q.question),
@@ -374,6 +616,14 @@ def format_questions(rows: list[tuple[Question, str, int | None]]) -> str:
             _field("blocks", q.blocks or "-"),
             _field("asked", f"{q.asked_by} at {q.asked_at} (rev {q.asked_rev})"),
         ]
+        if q.asked_from:
+            lines.append(_field("asked from", q.asked_from))
+        if q.proposed_blocks:
+            lines.append(_field("proposed blocks", q.proposed_blocks))
+        if q.confirmed_by:
+            lines.append(_field("confirmed by", q.confirmed_by))
+        if blocks_this is not None:
+            lines.append(_field("blocks this ticket", "yes" if blocks_this else "no"))
         if q.answer is not None:
             lines += [
                 _field("answer", q.answer),

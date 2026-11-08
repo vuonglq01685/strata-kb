@@ -59,7 +59,7 @@ renames on their own before the first task; no CLI → move them by hand),
 then gets the ticket — given only an id, fetches it first (the hub is the
 source of truth: MCP `kb_ticket_fetch` `<id>`, its text saved as
 `docs/impl/<id>/ticket.md`, your `<ticket-file>`; CLI fallback `kb ticket
-fetch <id>` writes that file), a path
+fetch <id>` writes that file). When `docs/impl/<id>/ticket.md` is already committed, first fetch to a scratch path outside the repo (`kb_ticket_fetch`, or `kb ticket fetch <id> --out "$(mktemp -d)/ticket.md"`) and compare its `> Revision:` with the committed one. When the hub's is higher, read this ticket's change-log rows above the old revision and return to `dev-design` as for an answered question (a changed section that touches an approved design sends it back to `status: draft`) before you overwrite the baseline. A path
 or a pasted body being the fallback when the hub has no copy or is
 unreachable; a fetched ticket has no `## Definition of Ready` (being on
 the hub means DoR passed), so its absence is not a stop — then reads the
@@ -93,13 +93,12 @@ answer's `answer_rev`, else the hub rev; `— re-draft` tells `dev-design` or
 `dev-plan` to re-dispatch its author once for this new answer), and go back to `dev-design` when a
 changed section touches an approved design (it goes back to `status: draft`);
 **waiting** → show the answer as information only, say which revision it
-waits for, do not act on it; **open** and blocking (`blocks:` names an AC) →
+waits for, do not act on it (a waiting row that reads `blocks this ticket: yes` stops here like an open one; other rows are information only); **open** and blocking (its list row reads `blocks this ticket: yes`) →
 say so in the state line (`BA-Q: open Q<ids>`), do not continue past the gate,
 and give the Dev the hub Q&A link (`STRATA_KB_HUB_URL` plus
 `/ui/questions/ticket?repo=<repo-id>&ticket=<id>`, `<repo-id>` = the BA repo,
 as `kb_question_list` prints it in `<repo>:<ticket>`; path only when unset;
-never show `STRATA_KB_HTTP_TOKEN`); an open question that blocks no AC does not stop
-the flow but still shows in the state line; **Check the
+never show `STRATA_KB_HTTP_TOKEN`); a row reading `blocks this ticket: no` (a sibling's, for example) is read and never stops the flow but still shows in the state line; **Check the
 grounding** runs MCP `kb_ticket_check` with your `<ticket-file>`'s text (CLI
 fallback `kb ticket check docs/impl/<id>/ticket.md`, which reads the local
 `-code` only when the hub holds none) when the ticket has a `## Technical grounding` section: PASS

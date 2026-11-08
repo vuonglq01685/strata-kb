@@ -119,6 +119,8 @@ EXPECTED_TOOLS = {
     "kb_question_ask",
     "kb_question_list",
     "kb_question_answer",
+    "kb_question_propose_blocks",
+    "kb_question_confirm_blocks",
 }
 
 
