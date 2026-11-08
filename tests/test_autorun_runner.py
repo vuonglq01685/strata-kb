@@ -1285,3 +1285,55 @@ def test_stored_own_fix_task_survives_a_resume(cenv):
     assert once(cenv, script, claims=claims) == "ran"
     assert script.prompts[0].startswith("/dev-fix-bug BUG-9")
     assert claims.of("release") == [] and claims.of("forget") == []
+
+
+# --- blocked-split ----------------------------------------------------------
+
+BUG = Task("dev-fix-bug", "BUG-7")
+
+
+def _bug_row(**kw) -> StoryStatus:
+    return StoryStatus("BUG-7", "", "t", "ready", (), (), "svc", **kw)
+
+
+def _split_env(env, monkeypatch, rows):
+    seen: list = []
+
+    def pick(h, root, repo_id, skip=()):
+        seen.append(tuple(skip))
+        return None if BUG.key in skip else BUG
+
+    monkeypatch.setattr(picker, "pick_dev", pick)
+    monkeypatch.setattr(
+        planstatus, "next_from_hub", lambda h, repo=None, for_repo=None: ([], rows, [])
+    )
+    return seen
+
+
+def test_blocked_split_is_not_re_picked_until_parent(env, monkeypatch):
+    rows = [_bug_row()]
+    seen = _split_env(env, monkeypatch, rows)
+    script = Script(TaskResult("blocked-split", ("BUG-7",)), TaskResult("done"))
+    assert once(env, script) == "ran"
+    state = autostate.load(env[1])
+    assert (state.task, state.waiting_split) == (None, ("BUG-7",))
+
+    assert once(env, script) == "idle"  # row still a plain bug: skipped
+    assert seen[-1] == (BUG.key,)
+    assert len(script.prompts) == 1
+
+    rows[:] = [_bug_row(is_parent=True, own_fix_ready=True)]
+    assert once(env, script) == "ran"  # the BA split it: own fix may run
+    assert seen[-1] == ()
+    assert autostate.load(env[1]).waiting_split == ()
+    assert script.prompts[1].startswith("/dev-fix-bug BUG-7")
+
+
+def test_blocked_split_survives_restart(env, monkeypatch):
+    seen = _split_env(env, monkeypatch, [_bug_row()])
+    once(env, Script(TaskResult("blocked-split", ("BUG-7",))))
+    raw = (env[1] / "auto" / "state.json").read_text()
+    assert '"waiting_split": [\n    "BUG-7"\n  ]' in raw
+    assert autostate.load(env[1]).waiting_split == ("BUG-7",)
+    assert once(env, Script()) == "idle"
+    assert seen[-1] == (BUG.key,)

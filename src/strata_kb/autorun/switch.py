@@ -124,6 +124,7 @@ def status(kb_dir: Path) -> dict:
         "waiting_on": list(state.waiting_on),
         "stop_reason": state.stop_reason,
         "skipped": list(state.skipped),
+        "waiting_split": list(state.waiting_split),
         # For /kb-auto: is a loop alive (OS lock probe), and which branch the
         # switch must be pushed to.
         "running": _running_pid(kb_dir),

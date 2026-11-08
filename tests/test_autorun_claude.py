@@ -44,6 +44,27 @@ def test_parse_blocked_ids():
     assert parse_result("AUTO-RESULT: blocked-qa Q12,Q13").ids == (12, 13)
 
 
+def test_parse_blocked_split():
+    assert parse_result("AUTO-RESULT: blocked-split BUG-7") == TaskResult(
+        "blocked-split", ("BUG-7",)
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "AUTO-RESULT: blocked-split",
+        "AUTO-RESULT: blocked-split 7",
+        "AUTO-RESULT: blocked-split BUG-x",
+        "AUTO-RESULT: blocked-split BUG-7,BUG-8",
+    ],
+)
+def test_parse_blocked_split_bad_id_is_failed(line):
+    result = parse_result(line)
+    assert result.kind == "failed"
+    assert result.reason.startswith("bad result line")
+
+
 def test_missing_line_is_failed():
     assert parse_result("done!\n") == TaskResult("failed", (), "no result line")
 

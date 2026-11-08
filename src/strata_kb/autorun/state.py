@@ -32,6 +32,8 @@ class AutoState:
     skipped: tuple[str, ...] = ()
     # "<run id>:<attempt>" of the failed kb-publish run the loop re-ran once
     publish_retry: str | None = None
+    # bugs a Dev asked the BA to split: not re-picked until their row is a parent
+    waiting_split: tuple[str, ...] = ()
 
 
 def _empty() -> AutoState:
@@ -74,6 +76,9 @@ def _parse(raw: object) -> AutoState:
     publish_retry = raw.get("publish_retry")
     if publish_retry is not None and not isinstance(publish_retry, str):
         raise ValueError("publish_retry must be a string or null")
+    split = raw.get("waiting_split", [])
+    if not isinstance(split, list) or not all(isinstance(k, str) for k in split):
+        raise ValueError("waiting_split must be a list of strings")
     return AutoState(
         task,
         attempts,
@@ -84,6 +89,7 @@ def _parse(raw: object) -> AutoState:
         same_pick,
         tuple(skipped),
         publish_retry,
+        tuple(split),
     )
 
 
