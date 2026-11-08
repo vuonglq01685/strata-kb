@@ -24,7 +24,8 @@ numbers are the highest digits-only `BUG-<n>.md` stem plus one.
 
 `--child-of BUG-<n>` turns a bug into a parent bug: it reads the `Split
 proposal for BUG-<n>:` question, requires the first responder's claim to be
-`stopped` (`split into child bugs`), sets `> Kind: parent bug`, adds
+`stopped` (`split into child bugs`, read with `kb claim list --json`),
+sets `> Kind: parent bug`, adds
 `## Split` (own row with `Own fix`, one row per child) and writes child
-bugs with `> Parent bug: <BUG-id> @ rev N+1`. Write files only: never
+bugs (`- Blocked by:` under `## Dependencies`) with `> Parent bug: <BUG-id> @ rev N+1`. Write files only: never
 commit or publish.

@@ -530,3 +530,10 @@ def test_planparents_covers_parent_bug():
         parent_bug()
     )
     assert planparents.is_parent(parent()) and not planparents.is_parent_bug(parent())
+
+
+def test_parent_bug_own_row_blocked_by_children_lints():
+    own = f"| {BID} | api | - | {BAPI}, {BWEB} | yes | waits for both |\n"
+    rows = own + BROWS.removeprefix(OWN)
+    r = storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID)
+    assert r.passed, errors(r)

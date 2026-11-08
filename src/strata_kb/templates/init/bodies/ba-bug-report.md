@@ -111,25 +111,30 @@ per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
    `Split proposal for BUG-<n>:` (`kb_question_list(ticket=BUG-<n>)`), or
    text the BA pastes. It holds the `## Child bug proposal` table and the
    `Own fix: yes|no` and `Own fix blocked by:` lines.
-2. Check the first responder's claim in `kb claim list`: it must read
-   `stopped` (`split into child bugs`). Still active → stop and ask the Dev
+2. Check the first responder's claim in `kb claim list --json`: `state`
+   must be `stopped` and `stop_reason` `split into child bugs`. Still active → stop and ask the Dev
    to stop it. Do not edit before.
 3. The BA accepts, edits or rejects the proposal.
 4. On accept, with N the current `> Revision:`:
    - In `BUG-<n>.md` set `> Kind: parent bug` and `> Revision: N+1`.
    - Add `## Split` from `docs/tickets/PARENT-BUG-TEMPLATE.md`: the own row
-     (Child = `BUG-<n>`, `Own fix` yes|no, AC `-`, `Blocked by` = the child
-     ids) and one row `BUG-<n>.<repo-id>` per child (`Own fix` `-`, AC `-`).
+     (Child = `BUG-<n>`, Repo = the bug's `> Target repo:`, `Own fix`
+     yes|no, AC `-`, `Blocked by` = the proposal's `Own fix blocked by:`
+     value, `-` when it says `-`) and one row `BUG-<n>.<repo-id>` per child
+     (`Own fix` `-`, AC `-`, `Blocked by` and `Why` from its proposal row:
+     the Blocked by column and the Root cause).
    - Append a `## Change log` row (trigger `scope`, Affected = the child
      ids) and a `**Split decision:**` line.
    - Write each child `tickets/bugs/BUG-<n>.<repo-id>.md` from
      `docs/tickets/BUG-TEMPLATE.md`: `> Type:` and `> Severity:` copied
      from the parent, `> Revision: 1`, `> Related ticket: BUG-<n>`,
      `> Target repo: <repo-id>`, `> Parent bug: <BUG-id> @ rev N+1`, the
-     `- Blocked by:` line as in its split row, root cause and reproduction
-     from the proposal.
+     root cause and reproduction from the proposal, and a `## Dependencies`
+     section holding the `- Blocked by:` bullet as in its split row (`None`
+     when empty); the lint reads that bullet only under that heading. Its
+     Attachments is its own folder or `N/A — <reason>`.
    - Lint every child with `kb_ticket_lint` `parent_markdown` (the parent
-     file), then the parent with `children_markdown` and `ticket_id`. Fix
+     file) and `ticket_id` = the child id, then the parent with `children_markdown` and `ticket_id`. Fix
      until `DoR: PASS`.
    - Answer the proposal question: `kb_question_answer(id, answer,
      answered_by, ticket_sections=<child ids>, answer_rev=N+1)`. Reads

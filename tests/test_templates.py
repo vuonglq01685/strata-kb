@@ -3800,6 +3800,12 @@ def test_ba_bug_report_proposes_first_responder_and_splits_with_child_of():
             "`children_markdown`",
             "Write files only",
             "answer_rev=N+1",
+            "`Own fix blocked by:`",
+            "`## Dependencies`",
+            "`kb claim list --json`",
+            "`stop_reason`",
+            "`ticket_id`",
+            "`> Target repo:`",
             "answer_rev=None",
             "ticket_sections=[]",
         ):

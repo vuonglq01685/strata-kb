@@ -487,3 +487,35 @@ def test_parent_bug_pin_is_accepted_and_checked_against_the_parent():
     # no parent text to load: the child checks say so
     errors = _errors(ticketlint.lint(text, None, ticket_id="BUG-7.api"))
     assert any("parent bug BUG-7 not found" in e for e in errors)
+
+
+# --- a child bug written per /ba-bug-report --child-of ---
+
+
+def _written_child(blocked: str, *, deps: bool = True) -> str:
+    text = _bug(
+        title="# BUG-7.web — UI shows stale total",
+        override={"## Attachments": "N/A — see parent"},
+    )
+    text = text.replace(
+        "> Revision: 1\n",
+        "> Revision: 1\n> Parent bug: BUG-7 @ rev 1\n> Target repo: web\n",
+    )
+    return text + (f"\n## Dependencies\n- Blocked by: {blocked}\n" if deps else "")
+
+
+def _child_lint(text: str):
+    from tests.test_storylint import parent_bug
+
+    return ticketlint.lint(
+        text, None, ticket_id="BUG-7.web", load_ticket=lambda _i: parent_bug()
+    )
+
+
+def test_child_bug_with_dependencies_blocked_by_passes_against_its_parent():
+    assert _errors(_child_lint(_written_child("BUG-7.api"))) == []
+
+
+def test_child_bug_blocked_by_outside_dependencies_fails_against_its_parent():
+    out = _errors(_child_lint(_written_child("BUG-7.api", deps=False)))
+    assert any("Blocked by" in e for e in out)
