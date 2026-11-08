@@ -289,8 +289,8 @@ it until `DoR: PASS`. A bug skips the maturity review and the technical groundin
 
 - **Header lines.** `> Type: bug|hotfix` (a hotfix ships ahead of the next release) and
   `> Severity: S1..S4`, both required; optionally `> Related ticket: <id|none>`. No
-  `> Parent mission:`. The agent also asks which dev repo the fix lands in and writes
-  `> Target repo: <repo-id>` (you choose; with only one dev repo on the hub you may leave the line out, since the hub routes the bug to it).
+  `> Parent mission:`. The SA proposes which dev repo the fix lands in and the agent writes
+  `> Target repo: <repo-id>` (you accept or change it; with only one dev repo on the hub you may leave the line out, since the hub routes the bug to it).
   Without a target, a hub with two or more dev repos blocks the bug as `no target repo`.
 - **Screenshots.** PNG or WebP only, in `tickets/bugs/BUG-<n>/`, referenced as
   `![caption](BUG-<n>/<file>.png)` under `## Attachments`; with none, `N/A — <reason>`.
@@ -304,7 +304,7 @@ One bug can need a fix in two dev repos. Then it becomes a **parent bug** with o
 
 - **First responder.** The SA reads the code evidence and proposes which repo looks at the bug first. The agent writes it as `> Target repo:`. Only that repo's Dev sees `/dev-fix-bug BUG-<n>`.
 - **Split proposal.** The Dev finds a root cause in another repo too. The Dev writes a `## Child bug proposal` in `rootcause.md`, asks `Split proposal for BUG-<n>: <one line>` and the run ends `blocked-split BUG-<n>`. The Dev's claim is stopped, not lost.
-- **You answer.** In `/ba-answer-questions` the proposal sits under `### Split proposals`. To accept, run `/ba-bug-report --child-of BUG-<n>`. It rewrites `BUG-<n>` as `> Kind: parent bug` with a `## Split` table and writes `BUG-<n>.<repo>` child files. You tick each child's DoR. Then the agent answers with the new revision and the child ids. To reject, answer with no change.
+- **You answer.** In `/ba-answer-questions` the proposal sits under `### Split proposals`. To accept, run `/ba-bug-report --child-of BUG-<n>`. It rewrites `BUG-<n>` as `> Kind: parent bug` with a `## Split` table and writes `BUG-<n>.<repo>` child files. You tick each child's DoR. Then the agent answers with the new revision and the child ids. The agent records the answer first. Only then commit the files and run `kb publish`. The question reads answered once the children are on the hub. Publish before the answer and it is refused ("hub already has revision N+1"); never publish and it stays waiting. To reject, answer with no change.
 - **`Own fix`.** The parent's own row says `yes` when its repo also fixes something itself. `Blocked by` on that row says which child it waits for.
 - **Done.** The parent bug is done when every child is done and, with `Own fix: yes`, the own fix is done too. The hub shows `k/N done` and `own fix done|pending`.
 

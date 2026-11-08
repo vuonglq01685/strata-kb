@@ -289,8 +289,8 @@ khi `DoR: PASS`. Bug bỏ qua maturity review và technical grounding.
 
 - **Dòng tiêu đề.** `> Type: bug|hotfix` (hotfix ship trước bản phát hành kế tiếp) và
   `> Severity: S1..S4`, cả hai bắt buộc; tùy chọn `> Related ticket: <id|none>`. Không có
-  `> Parent mission:`. Agent cũng hỏi bản sửa nằm ở dev repo nào và ghi
-  `> Target repo: <repo-id>` (bạn chọn; hub chỉ có một dev repo thì có thể bỏ dòng này, hub sẽ định tuyến bug tới repo đó). Không
+  `> Parent mission:`. SA đề xuất bản sửa nằm ở dev repo nào và agent ghi
+  `> Target repo: <repo-id>` (bạn chấp nhận hoặc đổi; hub chỉ có một dev repo thì có thể bỏ dòng này, hub sẽ định tuyến bug tới repo đó). Không
   có đích, hub có từ hai dev repo trở lên sẽ chặn bug với lý do `no target repo`.
 - **Ảnh chụp.** Chỉ PNG hoặc WebP, trong `tickets/bugs/BUG-<n>/`, tham chiếu dạng
   `![caption](BUG-<n>/<file>.png)` dưới `## Attachments`; không có thì `N/A — <reason>`.
@@ -303,7 +303,7 @@ Một bug có thể cần sửa ở hai dev repo. Khi đó nó thành **parent b
 
 - **Repo phản hồi đầu tiên.** SA đọc bằng chứng trong code và đề xuất repo nào xem bug trước. Agent ghi vào `> Target repo:`. Chỉ Dev của repo đó thấy `/dev-fix-bug BUG-<n>`.
 - **Đề xuất tách.** Dev thấy nguyên nhân gốc nằm cả ở repo khác. Dev viết `## Child bug proposal` trong `rootcause.md`, hỏi `Split proposal for BUG-<n>: <một dòng>` và lượt chạy kết thúc `blocked-split BUG-<n>`. Claim của Dev được dừng lại, không mất.
-- **Bạn trả lời.** Trong `/ba-answer-questions`, đề xuất nằm ở mục `### Split proposals`. Muốn chấp nhận, chạy `/ba-bug-report --child-of BUG-<n>`. Lệnh này viết lại `BUG-<n>` thành `> Kind: parent bug` có bảng `## Split` và tạo các file child `BUG-<n>.<repo>`. Bạn tick DoR của từng child. Sau đó agent trả lời với revision mới và id các child. Muốn từ chối, trả lời mà không đổi gì.
+- **Bạn trả lời.** Trong `/ba-answer-questions`, đề xuất nằm ở mục `### Split proposals`. Muốn chấp nhận, chạy `/ba-bug-report --child-of BUG-<n>`. Lệnh này viết lại `BUG-<n>` thành `> Kind: parent bug` có bảng `## Split` và tạo các file child `BUG-<n>.<repo>`. Bạn tick DoR của từng child. Sau đó agent trả lời với revision mới và id các child. Agent ghi câu trả lời trước. Chỉ sau đó bạn mới commit các file và chạy `kb publish`. Câu hỏi chuyển sang answered khi các child đã lên hub. Publish trước khi có câu trả lời thì bị từ chối ("hub already has revision N+1"); không publish thì câu hỏi vẫn ở waiting. Muốn từ chối, trả lời mà không đổi gì.
 - **`Own fix`.** Dòng riêng của parent ghi `yes` khi repo đó cũng tự sửa một phần. Cột `Blocked by` của dòng này cho biết nó chờ child nào.
 - **Xong.** Parent bug xong khi mọi child xong và, nếu `Own fix: yes`, phần tự sửa cũng xong. Hub hiển thị `k/N done` và `own fix done|pending`.
 
