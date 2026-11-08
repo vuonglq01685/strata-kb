@@ -2115,6 +2115,21 @@ def test_sa_mission_multi_repo_qualifies_service_ids(name):
         assert needle in t, needle
 
 
+@pytest.mark.parametrize("name", _SA_SCOPE)
+def test_sa_ticket_multi_repo_grounds_each_line_in_its_own_repo(name):
+    t = _off_path(name)
+    for needle in [
+        "A later entry may ground on another repo's document, but never first.",
+        "A ticket kept as one ticket across repos (the BA rejected the split)",
+        "the build repo first",
+        "prefix every id or path that belongs to a later repo with `<repo-id>:`",
+        "An unqualified line belongs to the first entry",
+        "a line that names two repos is a gate error",
+        "`kb ticket check` checks each line in its own repo's document",
+    ]:
+        assert needle in t, needle
+
+
 @pytest.mark.parametrize("name", _BA_SPLIT)
 def test_ticket_author_scope_by_repo_step(name):
     t = _off_path(name)

@@ -568,7 +568,9 @@ step 1b, and an agent plus a fresh-context reviewer take the accept-or-reject de
 Two lint warnings help here. `kb ticket lint` warns on a parent without a
 `**Split decision:**` line under its `## Change log`. It also warns on a single ticket
 grounded on two or more repos: `grounding touches several repos (<a>, <b>) — split it into a
-parent story (BA Guide 3.10) or keep one ticket`. A mission whose `## Services & order`
+parent story (BA Guide 3.10) or keep one ticket`. A ticket you keep as one is still checked
+against each repo's `-code` document: the SA writes a later repo's ids and paths as
+`<repo>:<id>`, one repo per line. A mission whose `## Services & order`
 names several repos is checked against each repo's `-code` document: write the ids as
 `<repo>:svc.<name>`.
 

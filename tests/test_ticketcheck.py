@@ -2671,3 +2671,75 @@ def test_multi_repo_issue_line_numbers_point_at_the_mission_file():
         m.startswith("[web] ") and f"(line {bad})" in m
         for m in errors(_multi_check(text))
     )
+
+
+# --- a single ticket grounded on several repos (BA rejected the split) -----
+
+
+def _ticket_multi(*body: str, grounded: str | None = None) -> str:
+    grounded = grounded or f"demo:demo-code @ {_R1}, web:web-code @ {_R2}"
+    return ticket("\n".join([f"- Grounded on: {grounded}", *body]))
+
+
+def _ticket_check(text: str):
+    return ticketcheck.check(text, load_doc=_two_docs)
+
+
+def test_two_repo_ticket_each_id_resolves_in_its_own_doc():
+    text = _ticket_multi(
+        "- Service:", "  - demo:svc.api", "  - web:svc.web", "- Open decisions: none"
+    )
+    report = _ticket_check(text)
+    assert errors(report) == [], report.render("Grounding")
+    assert any(
+        n.startswith("[demo] ") and "demo-code read from" in n for n in notes(report)
+    )
+    assert any(
+        n.startswith("[web] ") and "web-code read from" in n for n in notes(report)
+    )
+
+
+def test_two_repo_ticket_id_in_the_wrong_repo_errors_on_its_ticket_line():
+    text = _ticket_multi("- Service:", "  - demo:svc.api", "  - web:svc.api")
+    bad = next(i for i, ln in enumerate(text.splitlines(), 1) if "web:svc.api" in ln)
+    assert any(
+        m.startswith("[web] ") and "svc.api" in m and f"(line {bad})" in m
+        for m in errors(_ticket_check(text))
+    )
+
+
+def test_two_repo_ticket_unqualified_line_belongs_to_the_first_entry():
+    ok = _ticket_check(_ticket_multi("- Service: svc.api"))
+    assert errors(ok) == [], ok.render("Grounding")
+    bad = _ticket_check(_ticket_multi("- Service: svc.web"))
+    assert any(m.startswith("[demo] ") and "svc.web" in m for m in errors(bad))
+
+
+def test_two_repo_ticket_line_naming_two_repos_errors():
+    text = _ticket_multi("- Service: demo:svc.api, web:svc.web")
+    at = next(i for i, ln in enumerate(text.splitlines(), 1) if "web:svc.web" in ln)
+    assert (
+        f"line names several repos (demo, web) — give each repo its own line "
+        f"or sub-bullet (line {at})"
+    ) in errors(_ticket_check(text))
+
+
+def test_two_repo_ticket_reports_an_open_decision_once():
+    text = _ticket_multi("- Service: svc.api", "- Open decisions:", "  - which port?")
+    report = _ticket_check(text)
+    assert len([m for m in errors(report) if "open decision: which port?" in m]) == 1
+
+
+def test_two_repo_ticket_issue_on_its_own_line_is_not_repeated_per_repo():
+    text = _ticket_multi("- Service:", "  - demo:svc.api", "  - web:svc.nope")
+    report = _ticket_check(text)
+    nope = [m for m in errors(report) if "svc.nope" in m]
+    assert len(nope) == 1 and nope[0].startswith("[web] "), nope
+
+
+def test_two_repo_ticket_repo_name_inside_a_command_is_no_qualifier():
+    text = _ticket_multi(
+        "- Service: svc.api", "- Healthchecks: svc.api — `redis-cli -h web:6379 ping`"
+    )
+    report = _ticket_check(text)
+    assert errors(report) == [], report.render("Grounding")

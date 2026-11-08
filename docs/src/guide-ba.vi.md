@@ -569,7 +569,9 @@ agent cùng một reviewer có ngữ cảnh mới quyết định chấp nhận 
 Lint đưa ra hai cảnh báo hỗ trợ việc này. `kb ticket lint` cảnh báo khi parent thiếu
 dòng `**Split decision:**` dưới `## Change log`. Nó cũng cảnh báo khi một ticket đơn có
 grounding trên từ hai repo trở lên: `grounding touches several repos (<a>, <b>) — split it
-into a parent story (BA Guide 3.10) or keep one ticket`. Mission có `## Services & order`
+into a parent story (BA Guide 3.10) or keep one ticket`. Ticket giữ nguyên một ticket vẫn
+được kiểm tra với tài liệu `-code` của từng repo: SA viết id và đường dẫn của repo sau dạng
+`<repo>:<id>`, mỗi dòng một repo. Mission có `## Services & order`
 nêu nhiều repo được kiểm tra với tài liệu `-code` của từng repo: viết id dạng
 `<repo>:svc.<name>`.
 

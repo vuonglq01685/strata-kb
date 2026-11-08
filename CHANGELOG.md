@@ -35,6 +35,7 @@ BA skills split a story by repo and draft the children. Phase 3 of cross-repo st
 - **Picker.** The BA picker yields `ba-ticket-author <child-id>` for each to-draft split child.
 - **Multi-repo mission check.** `kb ticket check --heading "## Services & order"` accepts several `<repo>:<repo>-code @ <rev>` entries and `<repo>:svc.<name>` ids; each id is checked in its own repo's `-code` document and issue lines point at the mission file.
 - **Two lint warnings.** `kb ticket lint` warns `grounding touches several repos (<a>, <b>) — split it into a parent story (BA Guide 3.10) or keep one ticket` for a single ticket grounded on two or more repos, and warns when a parent has no `**Split decision:**` line.
+- **One ticket across repos passes the gate.** A ticket the BA keeps as one (split rejected) may list several `<repo>:<repo>-code @ <rev>` entries on its `Grounded on:` line, the build repo first. `kb ticket check` checks each line in its own repo's `-code`: a later repo's ids and paths are written `<repo>:<id>`, an unqualified line belongs to the first entry, and a line naming two repos is an error. Before, such a ticket could never pass. `sa-ticket-ground` and the BA guide (en, vi) say so; the lint warning stays.
 - **Guides.** BA guide 3.10 (en, vi) explains how the split is proposed. Run `kb init` to get the skills.
 
 Changes and Q&A work at the parent story. Phase 4 of cross-repo stories.
