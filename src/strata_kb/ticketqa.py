@@ -462,7 +462,8 @@ def _is_parent(hub: HubHandle, repo: str, ticket: str) -> bool:
         section = _read_section(hub, repo, ticket)
     except ticketfetch.TicketNotOnHub:
         return False
-    return ticketmod.ticket_kind(ticketfetch.source_text(section)) == "parent story"
+    kind = ticketmod.ticket_kind(ticketfetch.source_text(section))
+    return kind in ("parent story", "parent bug")
 
 
 def _check_child_ids(parent: str, answer_rev: int | None, sections: list[str]) -> None:

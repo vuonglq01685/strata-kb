@@ -22,7 +22,15 @@ _H1_RE = re.compile(r"^#[ \t]+(.+?)[ \t]*$", re.M)
 
 
 def is_parent(text: str) -> bool:
+    return ticket.ticket_kind(text) in ("parent story", "parent bug")
+
+
+def is_parent_story(text: str) -> bool:
     return ticket.ticket_kind(text) == "parent story"
+
+
+def is_parent_bug(text: str) -> bool:
+    return ticket.ticket_kind(text) == "parent bug"
 
 
 def title_of(text: str) -> str:

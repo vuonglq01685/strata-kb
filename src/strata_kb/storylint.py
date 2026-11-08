@@ -4,8 +4,10 @@ A parent story (`> Kind: parent story`) carries the business story and a
 `## Split` table that names one child ticket per repo. It has no acceptance
 criteria of its own: each AC lives in exactly one live child. This module
 checks the parent's shape (`lint_parent`) and each child against its parent
-row (`lint_child_against_parent`). It must not import `ticketlint`
-(`ticketlint` calls it).
+row (`lint_child_against_parent`). A parent bug (`> Kind: parent bug`) uses
+the same table with one extra row for the parent's own fix and no ACs; its
+children are bugs (`lint_bug_child_against_parent`). It must not import
+`ticketlint` (`ticketlint` calls it).
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from strata_kb.lintcore import LintReport
 SPLIT_COLUMNS = ("Child", "Repo", "AC", "Blocked by", "Own fix", "Why")
 _REQUIRED = ("## User Story", "## Split", "## Change log")
 _FORBIDDEN = ("## Acceptance Criteria", "## Definition of Ready")
+# The parent bug's other headings are buglint's (it is a bug ticket too).
+_BUG_REQUIRED = ("## Split", "## Change log")
 
 _AC_CELL_RE = re.compile(r"(AC\d+)(?:\s*\(\s*replaces\s+(AC\d+)\s*\))?", re.I)
 _TOKEN_SPLIT_RE = re.compile(r"[\s,;()—–]+")
@@ -41,6 +45,11 @@ class SplitRow:
 def is_planned(row: SplitRow) -> bool:
     """A child planned at mission time: AC cell `-`, its file not written yet."""
     return row.acs == () and row.ac_cell.strip().lower() in _NO_VALUE
+
+
+def own_row(rows: list[SplitRow], parent_id: str) -> SplitRow | None:
+    """The parent bug's own-fix row: the row whose child is the parent id."""
+    return next((r for r in rows if r.child == parent_id), None)
 
 
 def _split_rows(text: str) -> list[list[str]]:
@@ -111,7 +120,9 @@ def _err(message: str) -> Issue:
     return Issue("error", message)
 
 
-def _check_shape(text: str) -> list[Issue]:
+def _check_shape(text: str, *, bug: bool = False) -> list[Issue]:
+    if bug:  # title, revision and the rest are buglint's
+        return lintcore.check_headings(text, _BUG_REQUIRED) + _split_decision(text)
     issues = lintcore.check_title(text) + lintcore.check_headings(text, _REQUIRED)
     issues += [
         _err(f"a parent story has no '{h}' — the ACs live in its children")
@@ -125,19 +136,23 @@ def _check_shape(text: str) -> list[Issue]:
         ]
     else:
         issues += planrev.check_revision(text)
+    return issues + _split_decision(text)
+
+
+def _split_decision(text: str) -> list[Issue]:
     log = lintcore.section_body(text, "## Change log") or ""
-    if not any(
+    if any(
         ln.startswith("**Split decision:**")
         for ln in lintcore.visible_body(log).splitlines()
     ):
-        issues.append(
-            Issue(
-                "warning",
-                "no '**Split decision:**' line under '## Change log' — "
-                "record who accepted the split",
-            )
+        return []
+    return [
+        Issue(
+            "warning",
+            "no '**Split decision:**' line under '## Change log' — "
+            "record who accepted the split",
         )
-    return issues
+    ]
 
 
 def _check_split_table(rows: list[SplitRow], parent_id: str, text: str) -> list[Issue]:
@@ -237,9 +252,14 @@ def _check_written_children(
             and planrev.later_row_lists(parent_text, pin[1], row.child)
         ):
             continue
-        issues += lint_child_against_parent(
-            text, row.child, parent_text, parent_id, check_ac_count=False
-        )
+        if ticket.ticket_kind(parent_text) == "parent bug":
+            issues += lint_bug_child_against_parent(
+                text, row.child, parent_text, parent_id
+            )
+        else:
+            issues += lint_child_against_parent(
+                text, row.child, parent_text, parent_id, check_ac_count=False
+            )
     return issues
 
 
@@ -249,23 +269,52 @@ def lint_parent(
     """Shape and split-table checks for a parent story. `children` maps each
     split child id to its text, or None when the file is missing."""
     kind = ticket.ticket_kind(parent_text)
-    if kind == "parent bug":
-        return LintReport([_err("parent bug is not supported yet (phase 5)")])
+    bug = kind == "parent bug"
     issues: list[Issue] = []
-    if kind != "parent story":
+    if kind != "parent story" and not bug:
         issues.append(_err("'> Kind: parent story' line missing in the header"))
-    issues += _check_shape(parent_text)
-    rows = parse_split(parent_text)
+    issues += _check_shape(parent_text, bug=bug)
+    all_rows = parse_split(parent_text)
+    if bug:
+        issues += _check_own_rows(all_rows, parent_id)
+    # the own-fix row is not a child: no child id, no ticket file
+    rows = [r for r in all_rows if not (bug and r.child == parent_id)]
     issues += _check_split_table(rows, parent_id, parent_text)
+    # every ACs cell of a parent bug is `-`, so its children are never 'planned'
     issues += [
         _err(f"split child '{r.child}' has no ticket file")
         for r in rows
-        if children.get(r.child) is None and not is_planned(r)
+        if children.get(r.child) is None and (bug or not is_planned(r))
     ]
-    issues += _check_acs_unique(rows) + _check_blocked_by(rows)
+    issues += _check_acs_unique(rows) + _check_blocked_by(all_rows if bug else rows)
     issues += _check_written_children(rows, children, parent_text, parent_id)
-    issues += _check_change_log_affected(rows, parent_text)
+    issues += _check_change_log_affected(all_rows, parent_text)
     return LintReport(issues)
+
+
+def _check_own_rows(rows: list[SplitRow], parent_id: str) -> list[Issue]:
+    own = [r for r in rows if r.child == parent_id]
+    issues: list[Issue] = []
+    if len(own) != 1:
+        issues.append(
+            _err(
+                f"parent bug needs exactly one split row for {parent_id} itself "
+                "(its own fix)"
+            )
+        )
+    issues += [
+        _err(f"split row {r.child}: Own fix must be yes or no")
+        for r in own
+        if r.own_fix.strip().lower() not in ("yes", "no")
+    ]
+    issues += [
+        _err(f"split child '{r.child}': Own fix must be -")
+        for r in rows
+        if r.child != parent_id and r.own_fix.strip() != "-"
+    ]
+    if not all(is_planned(r) for r in rows):
+        issues.append(_err("a parent bug's split has no ACs"))
+    return issues
 
 
 def _check_change_log_affected(rows: list[SplitRow], text: str) -> list[Issue]:
@@ -372,5 +421,47 @@ def lint_child_against_parent(
     ):
         issues.append(
             _err(f"child '{child_id}' '## User Story' differs from {parent_id}'s")
+        )
+    return issues
+
+
+def lint_bug_child_against_parent(
+    child_text: str, child_id: str, parent_text: str | None, parent_id: str
+) -> list[Issue]:
+    """Errors for a child bug that disagrees with its parent bug's split row:
+    the pin, `> Target repo:` and `- Blocked by:` must match."""
+    if parent_text is None:
+        return [
+            _err(
+                f"parent bug {parent_id} not found — pass its text "
+                "or keep it in the same folder"
+            )
+        ]
+    issues: list[Issue] = []
+    pin = ticket.parent_story_pin(child_text)
+    if pin is None or pin[0] != parent_id:
+        issues.append(
+            _err(f"child '{child_id}' needs '> Parent bug: {parent_id} @ rev <N>'")
+        )
+    rows = parse_split(parent_text)
+    row = next((r for r in rows if r.child == child_id), None)
+    if row is None:
+        return [
+            *issues,
+            _err(f"child '{child_id}' is not listed in the split of {parent_id}"),
+        ]
+    if ticket.target_header(child_text) != row.repo:
+        issues.append(
+            _err(
+                f"child '{child_id}' '> Target repo:' differs from split Repo '{row.repo}'"
+            )
+        )
+    got_blocked = _child_blocked_by(child_text, {r.child for r in rows})
+    if got_blocked != set(row.blocked_by):
+        issues.append(
+            _err(
+                f"child '{child_id}' Blocked by {sorted(got_blocked)} "
+                f"differs from its split row in {parent_id} {sorted(row.blocked_by)}"
+            )
         )
     return issues

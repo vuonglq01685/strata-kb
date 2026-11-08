@@ -671,6 +671,7 @@ _BA_SPEC_8_PATHS = (
     "docs/tickets/TEMPLATE.md",
     "docs/tickets/BUG-TEMPLATE.md",
     "docs/tickets/PARENT-TEMPLATE.md",
+    "docs/tickets/PARENT-BUG-TEMPLATE.md",
     "tickets/.gitkeep",
     ".github/workflows/kb-ticket-lint.yml",
     "QUICKSTART-BA.md",
@@ -870,6 +871,7 @@ def test_hub_child_unchanged_by_phase4(tmp_path: Path):
         assert not (repo / "docs" / "tickets" / "TEMPLATE.md").exists()
         assert not (repo / "docs" / "tickets" / "BUG-TEMPLATE.md").exists()
         assert not (repo / "docs" / "tickets" / "PARENT-TEMPLATE.md").exists()
+        assert not (repo / "docs" / "tickets" / "PARENT-BUG-TEMPLATE.md").exists()
         assert not (repo / ".claude" / "skills" / "ba-bug-report").exists()
         assert not (repo / ".claude" / "skills" / "dev-fix-bug").exists()
         assert not (repo / ".github" / "workflows" / "kb-ticket-lint.yml").exists()
@@ -3537,6 +3539,29 @@ def test_init_kind_ba_installs_ba_bug_report_and_the_bug_template(tmp_path: Path
     # the Dev-side skill is not a BA concern
     assert not (tmp_path / ".claude" / "skills" / "dev-fix-bug").exists()
     assert not (tmp_path / ".cursor" / "commands" / "dev-fix-bug.md").exists()
+
+
+def test_init_installs_parent_bug_template(tmp_path: Path):
+    init_repo(tmp_path, "ba")
+    text = (tmp_path / "docs" / "tickets" / "PARENT-BUG-TEMPLATE.md").read_text(
+        encoding="utf-8"
+    )
+    assert text == initcmd.read_template("parent-bug-template.md")
+    assert "> Kind: parent bug" in text and "## Split" in text
+    assert "| BUG-<n> | <repo-id> | - | - | yes |" in text
+
+
+def test_shipped_parent_bug_template_lints_with_ids_filled(tmp_path: Path):
+    from strata_kb import ticketlint
+
+    text = (
+        initcmd.read_template("parent-bug-template.md")
+        .replace("BUG-<n>", "BUG-5")
+        .replace("<repo-id>", "api")
+    )
+    report = ticketlint.lint(text, None, ticket_id="BUG-5", load_ticket={}.get)
+    shape = ("exactly one", "Own fix", "no ACs", "not 'BUG-5")
+    assert not [i.message for i in report.issues if any(k in i.message for k in shape)]
 
 
 def test_init_kind_dev_installs_dev_fix_bug_and_no_ba_bug_artifacts(tmp_path: Path):

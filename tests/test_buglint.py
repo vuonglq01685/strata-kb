@@ -479,3 +479,11 @@ def test_bug_with_a_target_repo_header_lints_clean():
     assert "> Target repo: api" in text
     report = _lint(text)
     assert _errors(report) == []
+
+
+def test_parent_bug_pin_is_accepted_and_checked_against_the_parent():
+    text = _bug().replace("> Type: bug\n", "> Type: bug\n> Parent bug: BUG-7 @ rev 1\n")
+    assert not any("not a parent mission" in e for e in _errors(_lint(text)))
+    # no parent text to load: the child checks say so
+    errors = _errors(ticketlint.lint(text, None, ticket_id="BUG-7.api"))
+    assert any("parent bug BUG-7 not found" in e for e in errors)

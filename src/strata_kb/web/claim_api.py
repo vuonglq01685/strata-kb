@@ -186,7 +186,8 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         except ticketfetch.TicketFetchError as exc:
             # unreadable or missing mid auto-pull: the runner retries
             return _error(503, "hub_busy", str(exc))
-        if planparents.is_parent(planstatus._restore("", section)):
+        # a parent bug is taken: the first responder fixes its own row
+        if planparents.is_parent_story(planstatus._restore("", section)):
             return _error(
                 400,
                 "parent_story",

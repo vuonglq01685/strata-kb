@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from strata_kb import storylint, ticket
+from strata_kb import buglint, storylint, ticket
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
+
+if TYPE_CHECKING:
+    from strata_kb.hub import HubHandle
 
 _LoadText = Callable[[str], str | None]
 # ticketlint.check_parent_mission, passed in: this module cannot import ticketlint
@@ -44,6 +48,8 @@ def lint_parent(
     load_mission: _LoadText | None,
     load_ticket: _LoadText | None,
     check_mission: _CheckMission,
+    hub: HubHandle | None = None,
+    fail_on_stale: bool = False,
 ) -> LintReport:
     pid = ticket_id or (path.stem if path else None)
     if pid is None:
@@ -51,8 +57,15 @@ def lint_parent(
     children = {
         r.child: load_ticket(r.child) if load_ticket else None
         for r in storylint.parse_split(text)
+        if r.child != pid  # a parent bug's own-fix row is not a child
     }
     report = storylint.lint_parent(text, children, parent_id=pid)
+    if ticket.ticket_kind(text) == "parent bug":
+        # a parent bug is a bug ticket too: every buglint rule, and no mission
+        bugs = buglint.lint(
+            text, hub, path=path, fail_on_stale=fail_on_stale, ticket_id=pid
+        )
+        return LintReport(dedupe(bugs.issues + report.issues), bugs.notes)
     pm_issues, notes = check_mission(
         text,
         path,

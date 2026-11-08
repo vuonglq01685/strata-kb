@@ -748,6 +748,8 @@ def lint(
             load_mission=load_mission,
             load_ticket=load_ticket,
             check_mission=check_parent_mission,
+            hub=hub,
+            fail_on_stale=fail_on_stale,
         )
     kind = ticket.ticket_type(text)
     if kind in ("bug", "hotfix"):
@@ -759,6 +761,7 @@ def lint(
             fail_on_stale=fail_on_stale,
             ticket_id=ticket_id,
             load_mission=load_mission,
+            load_ticket=load_ticket,
         )
     if kind != "story":
         return LintReport(

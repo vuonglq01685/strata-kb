@@ -351,12 +351,23 @@ def _select(
         ) or _fence_reason(text)
         if reason:
             raise PlanIngestError(
-                f"parent story {us_id} fails lint: "
+                f"{ticket.ticket_kind(text)} {us_id} fails lint: "
                 f"{reason.removeprefix('lint error: ')} — nothing published"
             )
         pin = planrev.parent_pin(text)
         group_of[us_id] = pin[0] if pin and pin[0] in live else TICKETS_GROUP
-        published.append(_Item(us_id, _rel(path, root), text, False, group_of[us_id]))
+        is_bug = ticket.ticket_kind(text) == "parent bug"
+        assets: tuple[tuple[str, bytes], ...] = ()
+        if is_bug:  # a parent bug ships its images like any bug
+            attached = _attach(text, path.stem, path.parent)
+            if isinstance(attached, str):
+                raise PlanIngestError(
+                    f"parent bug {us_id} fails: {attached} — nothing published"
+                )
+            text, assets = attached
+        published.append(
+            _Item(us_id, _rel(path, root), text, False, group_of[us_id], is_bug, assets)
+        )
 
     for us_id, path in ticket_files.items():
         if us_id in parent_texts:
