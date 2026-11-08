@@ -326,6 +326,23 @@ khi các bước của nó không còn tái hiện kết quả sai. `/dev-fix-bu
 5. **Handover**: `/dev-handover` với quy tắc cho bug; test tái hiện và nguyên nhân gốc
    thay thế design và plan.
 
+### Bug trải trên nhiều repo
+
+Bạn là người phản hồi đầu tiên khi `> Target repo:` của bug là repo của bạn. Nếu nguyên nhân gốc còn nằm ở repo khác, hãy đề xuất tách.
+
+1. Viết `## Child bug proposal` trong `docs/impl/<id>/rootcause.md`: mỗi repo một child, các blocker, và repo của bạn có `Own fix` hay không.
+2. Hỏi `Split proposal for BUG-<n>: <một dòng>` trên hub.
+3. Lượt chạy dừng claim của bạn (`--stopped "split into child bugs"`) và kết thúc `AUTO-RESULT: blocked-split BUG-<n>`.
+
+Sau đó chạy lại `/dev-fix-bug BUG-<n>`. Nó đọc hub trước.
+
+- Giờ là parent bug: bạn làm phần tự sửa, khi các blocker đã xong.
+- Câu hỏi đã được trả lời, không tách: tiếp tục sửa.
+- Câu hỏi còn mở hoặc đang chờ: claim lại được dừng và lượt chạy chờ.
+- Chưa có câu hỏi: nó hỏi.
+
+Mỗi child bug thuộc Dev của repo đó. Parent bug xong khi mọi child xong và, nếu `Own fix: yes`, phần tự sửa của bạn cũng xong. Một mục `-svc` cho `BUG-<n>` chỉ có nghĩa là phần tự sửa đã xong.
+
 ## 3.5 Nhiều Dev trên một repo: claim
 
 Một **claim ticket** trên hub giữ hai Dev khỏi làm cùng một ticket.

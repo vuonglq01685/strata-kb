@@ -8,6 +8,7 @@ from strata_kb.ticketclaim import ClaimStore, claims_db_path
 from strata_kb.web import claim_api
 from tests.test_planingest import US1, context_block
 from tests.test_planstatus import US
+from tests.test_planstatus_parents import bug_build  # noqa: F401
 from tests.test_ticketfetch import publish_plan
 
 REPO = "ba-one"
@@ -376,3 +377,32 @@ def test_take_section_read_failure_is_a_transient_503(
     assert r.status_code == 503
     assert r.json()["error"] == "hub_busy"
     assert web_client.get("/api/claims", headers=auth).json()["claims"] == []
+
+
+def _mark_done(hub, repo: str, *ids: str) -> None:
+    history = hub.root / "federation" / repo / f"{repo}-svc" / "history.md"
+    history.write_text(
+        history.read_text(encoding="utf-8") + "".join(f"| {i} | t | |\n" for i in ids),
+        encoding="utf-8",
+    )
+
+
+def test_close_done_closes_parent_bug_claim_only_on_rollup(
+    web_client,
+    bug_build,  # noqa: F811
+    auth,
+):
+    hub = bug_build()
+    taken = web_client.post(
+        "/api/claims", json={"ticket": "BUG-12", "holder": "a@m1"}, headers=auth
+    )
+    assert taken.status_code == 201
+
+    def open_claims() -> int:
+        return len(web_client.get("/api/claims", headers=auth).json()["claims"])
+
+    _mark_done(hub, "api", "BUG-12")  # the own fix alone: children still open
+    assert open_claims() == 1
+    _mark_done(hub, "api", "BUG-12.api")
+    _mark_done(hub, "web", "BUG-12.web")  # the whole roll-up
+    assert open_claims() == 0

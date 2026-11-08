@@ -116,6 +116,22 @@ a denial to report. Stop only when the MCP tool fails too.
    line, filled only when a hypothesis is proven) and `Evidence:`
    (`file:line` references). A hypothesis that fails is logged as failed
    and the next one starts from what it taught you, not from a guess.
+   Root cause wholly or partly in another dev repo → ask the BA to run
+   /ba-bug-report --child-of: append `## Child bug proposal` to
+   `rootcause.md` with a table `| Child | Repo | Root cause | Reproduction |
+   Blocked by |` (one row per repo, child id `<BUG-id>.<repo-id>`), a line
+   `Own fix: yes|no — <what this repo still fixes>` and a line `Own fix
+   blocked by: <child ids|->`. Record it on the hub:
+   `kb_question_ask(ticket=<BUG-id>, question="Split proposal for <BUG-id>:
+   <one line>", asked_by, context=<the table and the two lines>, blocks="")`;
+   the question starts exactly `Split proposal for <BUG-id>: <one line>` and
+   the Auto Question format does not apply to it (the runner matches that
+   prefix).
+   Commit `docs/impl/<BUG-id>/` on the bug's branch (`fix/<BUG-id>` or
+   `hotfix/<BUG-id>`, as for the reproduction commit) and push it, so the
+   proposal survives the runner moving on. Then `kb claim update <BUG-id>
+   --stopped "split into child bugs"` and STOP: tell the Dev to ask the BA to run `/ba-bug-report --child-of
+   <BUG-id>`. Never create a ticket; never edit the bug file.
 4. **Fix** — one change at the root cause, not at the symptom, with
    nothing bundled in. The reproduction test now passes; then run the full
    suite and linters (`cmd.test` and `cmd.lint` from `-code §cmd.*`, or
@@ -161,6 +177,21 @@ Re-entry is derived, never stored:
 - present, `Root cause:` empty and three or more rows of the hypothesis
   log failed → STOP and raise the architecture question with the Dev;
   never a fourth hypothesis without that conversation.
+- `rootcause.md` has `## Child bug proposal` → decide from the hub, not
+  from the claim (Intake's take made it active). Each step is safe to repeat.
+  Fetch the bug (`kb_ticket_fetch`):
+  1. it reads `> Kind: parent bug` → the own-fix run: fix only the part named
+     in the parent's own split row, then the normal handover, so its `-svc`
+     history marks the own fix done;
+  2. still a plain bug and its `Split proposal for <BUG-id>:` question is
+     answered → the BA rejected the split: read the answer as for any
+     answered question and keep fixing in this repo;
+  3. still plain and the question is open or waiting (an accepted split reads
+     `waiting` until the children publish) → still waiting: run
+     `kb claim update <BUG-id> --stopped "split into child bugs"` again,
+     then STOP, do not ask again;
+  4. a proposal but no question yet → ask it, stop the claim as in step 3,
+     then STOP.
 - `Root cause:` filled → `root cause ✅`; `fix ✅` once the reproduction
   test and the full suite pass on the branch; no PR yet → Fix, then
   Handover. A fix that failed cleared `Root cause:` (step 4), so this

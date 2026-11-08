@@ -43,13 +43,25 @@ class RunnerClaims:
         self._lock = threading.Lock()  # the heartbeat thread beats beside the loop
 
     def held_by_others(self, mine: str | None) -> set[str]:
-        """Tickets of every held claim but `mine`'s. A `review` claim whose PR
+        """Tickets of every held claim but `mine`'s and our own stopped claims. A `review` claim whose PR
         was closed unmerged is reported to the hub, which frees it."""
         claims = self._client.held()
         for claim in claims:
             if claim.get("phase") == "review" and claim.get("pr"):
                 self._report_closed_pr(claim)
-        return {c["ticket"] for c in claims if c["ticket"] != mine}
+        return {
+            c["ticket"] for c in claims if c["ticket"] != mine and not self._is_ours(c)
+        }
+
+    def _is_ours(self, claim: dict) -> bool:
+        """Our own `stopped` claim (this machine holds its token): the Dev may
+        re-take it. Our `review`/`publishing` claims stay held."""
+        saved = self._local.get(claim["ticket"])
+        return (
+            claim.get("state") == "stopped"
+            and saved is not None
+            and saved[0] == claim.get("id")
+        )
 
     def _report_closed_pr(self, claim: dict) -> None:
         """Only a claim whose PR is in this checkout's own repo is checked: the

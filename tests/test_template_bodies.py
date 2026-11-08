@@ -412,6 +412,54 @@ def test_ba_answer_questions_command_copy_carries_the_parent_flow():
         assert needle in n, needle
 
 
+def test_ba_answer_questions_routes_a_split_proposal_to_child_of():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    off = n[: n.index("## Auto mode")]
+    for needle in (
+        "Split proposal for BUG-",
+        "/ba-bug-report --child-of <BUG-id>",
+        "before any amend runs",
+        "the normal answer-record rules (Definition of Ready stop, change-log row, `kb_ticket_lint` step) do not apply",
+        "`--child-of` records the answer",
+    ):
+        assert needle in off, needle
+    auto = n[n.index("## Auto mode") :]
+    for needle in (
+        "accepted by: agent, reviewer agreed",
+        "**Split decision:**",
+        "leave the bug unsplit",
+        "re-check each child bug's Definition of Ready boxes",
+        "AUTO-RESULT: failed dor-unticked <child-id>",
+        "reviewer objected: <reason>; decided again",
+        "writes no `**Split decision:**` line and edits no parent",
+    ):
+        assert needle in auto, needle
+    assert "(a split proposal: see `### Split proposals`)" in off
+    assert (
+        "When `auto/qa-parked/<BUG-id>` exists, merge that draft and continue with the Definition of Ready re-check; do not run `--child-of` again"
+        in off
+    )
+    assert "the question stays open until every child is fully ticked" in off
+    assert (
+        "after the re-check passes, call `kb_question_answer(id, answer, answered_by, ticket_sections=<the child ids>, answer_rev=<the parent bug's revision>)` from this run"
+        in off
+    )
+    assert (
+        "Apart from that resume, do not call `kb_question_answer` for it yourself"
+        in off
+    )
+    bug = _normal(_raw("bodies/ba-bug-report.md"))
+    assert bug.index("every child's Definition of Ready is fully ticked") < bug.index(
+        "answer the proposal question: `kb_question_answer"
+    )
+    assert "only after every child's Definition of Ready is ticked" in _normal(
+        read_template("claude-command-ba-bug-report.md")
+    )
+    cmd = _normal(read_template("claude-command-ba-answer-questions.md"))
+    assert "Split proposal for BUG-" in cmd
+    assert "/ba-bug-report --child-of" in cmd
+
+
 # --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
 
 HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
@@ -915,6 +963,7 @@ _BA_GATES = {
         "ask them to re-check and re-tick",
         "never commits, pushes or publishes",
         "The BA accepts with `kb_question_confirm_blocks`",
+        'Split proposal: "The BA accepts, edits or rejects"',
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }
@@ -985,6 +1034,7 @@ _DEV_GATES = {
         "question the architecture with the Dev",
         "The Dev opens the PR and merges",
         "ask the Dev for it first",
+        "ask the BA to run /ba-bug-report --child-of",
         "never merge",
     ],
 }
@@ -1411,6 +1461,48 @@ def test_dev_fix_bug_checks_for_finished_work_before_it_branches():
     assert text.index("Already finished") < text.index("The branch and its base")
     assert "A local `fix/<BUG-id>`" in text
     assert "`git switch fix/<BUG-id>`" in text
+
+
+_CHILD_BUG_NEEDLES = (
+    "## Child bug proposal",
+    "Split proposal for <BUG-id>:",
+    '--stopped "split into child bugs"',
+    "AUTO-RESULT: blocked-split",
+    "/ba-bug-report --child-of",
+    "Never create a ticket",
+)
+
+
+@pytest.mark.parametrize(
+    "template",
+    ["bodies/dev-fix-bug.md", "claude-command-dev-fix-bug.md"],
+)
+def test_dev_fix_bug_proposes_child_bugs(template):
+    text = _normal(_raw(template))
+    for needle in _CHILD_BUG_NEEDLES:
+        assert needle in text, (template, needle)
+
+
+def test_dev_fix_bug_split_re_entry_and_result_line():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    assert "`## Child bug proposal` → decide from the hub, not from the claim" in text
+    assert "`> Kind: parent bug`" in text and "own-fix run" in text
+    assert "rejected the split" in text and "proposal but no question yet" in text
+    assert "`stopped`" not in text.split("## Auto mode")[0].split("Re-entry is")[1]
+    assert "- `AUTO-RESULT: blocked-split BUG-<n>`" in text
+
+
+def test_dev_fix_bug_split_question_is_exempt_from_question_format():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    assert text.count("starts exactly `Split proposal for <BUG-id>: <one line>`") == 2
+    assert text.count("Question format does not apply") == 2
+
+
+def test_dev_fix_bug_auto_split_bullet_commits_and_pushes_proposal_before_stopping():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    bullet = text.split('**Root cause elsewhere: "ask the BA')[1].split("\n- ")[0]
+    commit = bullet.index("commit and push `docs/impl/<BUG-id>/` on the bug's branch")
+    assert bullet.index("record the question") < commit < bullet.index("--stopped")
 
 
 def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():

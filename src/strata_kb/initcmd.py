@@ -148,6 +148,7 @@ BA_TEMPLATES: dict[str, str] = {
     "docs/tickets/TEMPLATE.md": "ticket-template.md",
     "docs/tickets/BUG-TEMPLATE.md": "bug-template.md",
     "docs/tickets/PARENT-TEMPLATE.md": "parent-story-template.md",
+    "docs/tickets/PARENT-BUG-TEMPLATE.md": "parent-bug-template.md",
     "docs/missions/TEMPLATE.md": "mission-template.md",
     "docs/ac-quality.md": "ac-quality.md",
     "docs/review-rubric.md": "review-rubric.md",

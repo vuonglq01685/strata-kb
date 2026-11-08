@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from strata_kb import planstatus
-from strata_kb.autorun.picker import Task, dev_candidates, pick_ba, pick_dev
+from strata_kb.autorun.picker import Task, _ba_tasks, dev_candidates, pick_ba, pick_dev
 from strata_kb.errors import KbError
 from strata_kb.missionnext import StoryStatus
 
@@ -609,3 +609,45 @@ def test_ba_parent_mission_blocker_still_plans_the_mission():
         "next": None,
     }
     assert list(_ba_tasks(data)) == [Task("ba-mission-plan", "--amend M-x")]
+
+
+def _parent_bug(target: str | None, ready: bool = True) -> StoryStatus:
+    return StoryStatus(
+        "BUG-7",
+        "",
+        "t",
+        "in progress",
+        ("1/2 done", "own fix pending"),
+        (),
+        target,
+        is_parent=True,
+        own_fix_ready=ready,
+    )
+
+
+def test_picker_yields_own_fix_to_first_responder_only(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [], [_parent_bug(REPO)])
+    assert pick_dev(None, tmp_path, REPO) == Task("dev-fix-bug", "BUG-7")  # type: ignore[arg-type]
+    assert pick_dev(None, tmp_path, "other-repo") is None  # type: ignore[arg-type]
+    _hub(monkeypatch, [], [_parent_bug(REPO, ready=False)])
+    assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]
+
+
+def test_picker_skips_own_fix_without_a_target(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [], [_parent_bug(None)])
+    assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]
+
+
+def test_ba_tasks_never_author_bug_rows():
+    data = {
+        "stories": [],
+        "next": None,
+        "unparented": [
+            {"us_id": "BUG-7.web", "status": "draft", "reasons": []},
+            {"us_id": "BUG-8", "status": "to-draft", "reasons": []},
+            {"us_id": "M-x-US1", "status": "draft", "reasons": []},
+        ],
+    }
+    assert [t.arg for t in _ba_tasks(data)] == ["--amend M-x-US1"]

@@ -99,9 +99,82 @@ def test_lint_dispatches_parent_story(fed_hub: Path, golden_block: str):
     assert any(WEB in e and "no ticket file" in e for e in _errors(report))
 
 
-def test_parent_bug_is_rejected(fed_hub: Path):
-    report = lint(parent_text(kind="parent bug"), _hub(fed_hub), ticket_id=PID)
-    assert "parent bug is not supported yet (phase 5)" in _errors(report)
+def bug_parent_text(pid: str = "BUG-12", rows: str | None = None) -> str:
+    from tests.test_buglint import _bug
+
+    rows = rows or (
+        f"| {pid} | api | - | - | yes | first fix |\n"
+        f"| {pid}.api | api | - | - | - | data |\n"
+        f"| {pid}.web | web | - | {pid}.api | - | ui |\n"
+    )
+    split = (
+        "\n\n## Split\n| Child | Repo | AC | Blocked by | Own fix | Why |\n"
+        f"|---|---|---|---|---|---|\n{rows}\n"
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+    )
+    text = _bug(title=f"# {pid} — export fails") + split
+    return text.replace("> Type: bug\n", "> Type: bug\n> Kind: parent bug\n", 1)
+
+
+def bug_child_text(cid: str, repo: str, blocked: str = "None", pid: str = "BUG-12"):
+    from tests.test_buglint import _bug
+
+    text = _bug(
+        title=f"# {cid} — export fails",
+        override={"## Attachments": "N/A — see the parent"},
+    )
+    text = text.replace(
+        "> Type: bug\n",
+        f"> Type: bug\n> Parent bug: {pid} @ rev 1\n> Target repo: {repo}\n",
+        1,
+    )
+    return text + f"\n## Dependencies\n- Blocked by: {blocked}\n"
+
+
+def bug_family(pid: str = "BUG-12") -> dict[str, str]:
+    api, web = f"{pid}.api", f"{pid}.web"
+    return {
+        pid: bug_parent_text(pid),
+        api: bug_child_text(api, "api"),
+        web: bug_child_text(web, "web", blocked=api),
+    }
+
+
+def test_parent_bug_lints_and_runs_buglint_rules(fed_hub: Path):
+    texts = bug_family()
+    report = lint(
+        texts["BUG-12"], _hub(fed_hub), ticket_id="BUG-12", load_ticket=texts.get
+    )
+    assert report.passed, _errors(report)
+    no_severity = texts["BUG-12"].replace("> Severity: S2\n", "")
+    report = lint(no_severity, _hub(fed_hub), ticket_id="BUG-12", load_ticket=texts.get)
+    assert any("Severity" in e for e in _errors(report))
+    assert "parent bug is not supported yet (phase 5)" not in _errors(report)
+
+
+def test_parent_bug_split_rules_flow_through_lint(fed_hub: Path):
+    texts = bug_family()
+    gone = {k: v for k, v in texts.items() if k != "BUG-12.web"}
+    report = lint(
+        texts["BUG-12"], _hub(fed_hub), ticket_id="BUG-12", load_ticket=gone.get
+    )
+    assert any("BUG-12.web" in e and "no ticket file" in e for e in _errors(report))
+    no_own = bug_parent_text(rows="| BUG-12.api | api | - | - | - | data |\n")
+    report = lint(no_own, _hub(fed_hub), ticket_id="BUG-12", load_ticket=texts.get)
+    assert any("exactly one split row" in e for e in _errors(report))
+
+
+def test_child_bug_lint_runs_parent_rules(fed_hub: Path):
+    texts = bug_family()
+    api = "BUG-12.api"
+    ok = lint(texts[api], _hub(fed_hub), ticket_id=api, load_ticket=texts.get)
+    assert ok.passed, _errors(ok)
+    bad = bug_child_text(api, "web")
+    report = lint(bad, _hub(fed_hub), ticket_id=api, load_ticket=texts.get)
+    assert any("'> Target repo:' differs" in e for e in _errors(report))
+    report = lint(texts[api], _hub(fed_hub), ticket_id=api, load_ticket={}.get)
+    assert any("parent bug BUG-12 not found" in e for e in _errors(report))
 
 
 def test_child_lint_runs_parent_rules(fed_hub: Path, golden_block: str):

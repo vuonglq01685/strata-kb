@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import yaml
 
@@ -217,6 +217,50 @@ def _check_done(
     return None
 
 
+def _skip(state: autostate.AutoState) -> tuple[str, ...]:
+    """Task keys the pick passes over: done-but-repicked, and bugs awaiting a split."""
+    return (*state.skipped, *(f"dev-fix-bug:{b}" for b in state.waiting_split))
+
+
+def _split_answered(qa: qa_mod.QaClient, bug: str) -> bool:
+    """The BA answered the bug's latest `Split proposal for <bug>:` question (e.g.
+    rejected the split): the Dev's next run reads the answer."""
+    try:
+        rows = qa.list(status="all", ticket=bug)
+    except KbError as exc:
+        logger.warning("split question of %s not read: %s", bug, exc)
+        return False
+    prefix = f"Split proposal for {bug}:"
+    mine = [q for q in rows if str(q.get("question", "")).startswith(prefix)]
+    return bool(mine) and max(mine, key=lambda q: q["id"]).get("state") == "answered"
+
+
+def _split_done(
+    kb_dir: Path,
+    hub: HubHandle | hubapi.HubApi,
+    qa: qa_mod.QaClient,
+    state: autostate.AutoState,
+) -> autostate.AutoState:
+    """Drop bugs the BA has dealt with: the hub row reads `is_parent` (split), or
+    the split proposal is answered (accepted, edited or rejected)."""
+    try:
+        stories, unparented, _notes = picker.plan_next(hub, require_target=True)
+    except KbError as exc:
+        logger.warning("plan not read for split check: %s", exc)
+        return state
+    parents = {t.us_id for t in (*stories, *unparented) if t.is_parent}
+    left = tuple(
+        b
+        for b in state.waiting_split
+        if b not in parents and not _split_answered(qa, b)
+    )
+    if left == state.waiting_split:
+        return state
+    state = replace(state, waiting_split=left)
+    autostate.save(kb_dir, state)
+    return state
+
+
 def _answered(
     kb_dir: Path, state: autostate.AutoState, qa: qa_mod.QaClient
 ) -> tuple[autostate.AutoState, bool]:
@@ -252,9 +296,7 @@ def _claim_pick(
     """The first candidate this Dev wins the claim on; raises `_Early("idle")`
     when other Devs hold every ready ticket."""
     held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
-    candidates = picker.dev_candidates(
-        hub, root, repo_id, skip=state.skipped, held=held
-    )
+    candidates = picker.dev_candidates(hub, root, repo_id, skip=_skip(state), held=held)
     for task in candidates:
         try:
             if task.skill not in CLAIMED_SKILLS or claims.claim(task.arg):
@@ -276,7 +318,7 @@ def _still_ready_here(
     whole plan: the same client-side routing test as the pick."""
     stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(
-        t.us_id == ticket and t.status == "ready" and t.target_repo in (None, repo_id)
+        t.us_id == ticket and picker.runnable_here(t, repo_id)
         for t in (*stories, *unparented)
     )
 
@@ -311,7 +353,7 @@ def _task_for(
     if cfg.kind == "ba":
         return picker.pick_ba(root, kb_dir, skip=state.skipped)
     if claims is None:
-        return picker.pick_dev(hub, root, cfg.repo_id, skip=state.skipped)
+        return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
 
 
@@ -340,8 +382,16 @@ def _settle(
         )
         autostate.save(kb_dir, done)
         return "ran"
+    if result.kind == "blocked-split":
+        bugs = tuple(dict.fromkeys((*state.waiting_split, *map(str, result.ids))))
+        autostate.save(
+            kb_dir, replace(state, task=None, attempts=0, waiting_split=bugs)
+        )
+        logger.info("%s needs a split by the BA; not picking it again", bugs[-1])
+        return "ran"
     if result.kind == "blocked-qa":
-        autostate.save(kb_dir, replace(state, waiting_on=result.ids))
+        ids = cast("tuple[int, ...]", result.ids)  # parse_result: ints for blocked-qa
+        autostate.save(kb_dir, replace(state, waiting_on=ids))
         logger.info("blocked on questions %s", list(result.ids))
         return "waiting"
     if result.reason.startswith("ci-red"):
@@ -447,6 +497,8 @@ def run_once(
         if published is not None:
             return published
         state = autostate.load(kb_dir)  # the check may have cleared its mark
+    if state.waiting_split:
+        state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)

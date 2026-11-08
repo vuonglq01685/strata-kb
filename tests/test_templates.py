@@ -3443,7 +3443,9 @@ def test_ba_bug_report_hard_rules():
 def test_ba_bug_report_does_not_run_story_only_gates():
     for name in _full_forms("ba-bug-report"):
         text = _normalised(_read_init_template(name))
-        assert "/sa-ticket-ground" not in text, name
+        assert "/sa-ticket-ground" not in text.replace(
+            "/sa-ticket-ground --scope", ""
+        ), name
         assert "Maturity review" not in text, name
 
 
@@ -3776,6 +3778,59 @@ def test_bug_skill_writes_the_target_repo_header():
         assert "> Target repo: <repo-id>" in text, name
 
 
+def test_ba_bug_report_proposes_first_responder_and_splits_with_child_of():
+    for name in _full_forms("ba-bug-report"):
+        text = _normalised(_read_init_template(name))
+        for needle in (
+            "/sa-ticket-ground --scope",
+            "`Repos: 0`",
+            "The SA proposes",
+            "digits-only",
+            "`BUG-<n>.<repo-id>` is never counted",
+            "## `--child-of BUG-<n>`",
+            "Split proposal for BUG-<n>:",
+            "`stopped`",
+            "split into child bugs",
+            "> Kind: parent bug",
+            "docs/tickets/PARENT-BUG-TEMPLATE.md",
+            "`Own fix`",
+            "**Split decision:**",
+            "> Parent bug: <BUG-id> @ rev",
+            "`parent_markdown`",
+            "`children_markdown`",
+            "Write files only",
+            "answer_rev=N+1",
+            "`Own fix blocked by:`",
+            "`## Dependencies`",
+            "`kb claim list --json`",
+            "`stop_reason`",
+            "`ticket_id`",
+            "`> Target repo:`",
+            "answer_rev=None",
+            "ticket_sections=[]",
+        ):
+            assert needle in text, f"{name} missing {needle}"
+        assert "never guess it from the symptom" not in text, name
+        assert "## Auto mode" not in text, name
+
+
+def test_ba_bug_report_command_copy_carries_child_of():
+    text = _normalised(_read_init_template("claude-command-ba-bug-report.md"))
+    assert 'argument-hint: "[what broke | --child-of BUG-<n>]"' in text
+    for needle in (
+        "--child-of BUG-<n>",
+        "> Kind: parent bug",
+        "`Own fix`",
+        "> Parent bug: <BUG-id> @ rev",
+        "digits-only",
+        "Split proposal for BUG-<n>:",
+        "`stopped`",
+        "Write files only",
+        "/sa-ticket-ground --scope",
+    ):
+        assert needle in text, needle
+
+
 def test_sa_ticket_ground_first_grounding_is_the_qualified_own_code_doc():
     text = _normalised(_read_init_template("claude-skill-sa-ticket-ground.md"))
     assert "first entry is always this qualified `<repo-id>:<repo-id>-code`" in text
@@ -3792,3 +3847,13 @@ def test_no_template_looks_up_a_ticket_branch_by_prefix_or_substring():
             assert 'branch --list "*<' not in text, f.name
             assert "'auto/<ticket-id>*'" not in text, f.name
             assert "'auto/<mission-id>*'" not in text, f.name
+
+
+def test_dev_fix_bug_commits_the_split_proposal_and_reads_waiting():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "`docs/impl/<BUG-id>/` on the bug's branch" in text, name
+        assert "open or waiting" in text, name
+    command = _normalised(_read_init_template("claude-command-dev-fix-bug.md"))
+    assert "missing question: ask it, then stop" in command
+    assert "stop again" not in command.replace("waiting question: stop again", "")

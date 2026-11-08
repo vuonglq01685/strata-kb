@@ -340,6 +340,23 @@ steps no longer reproduce the wrong result. `/dev-fix-bug BUG-<n>` runs:
 5. **Handover**: `/dev-handover` with bug rules; the reproduction test and root cause
    replace the design and plan.
 
+### Bugs across repos
+
+You are the first responder when the bug's `> Target repo:` is your repo. If the root cause also sits in another repo, propose a split.
+
+1. Write a `## Child bug proposal` in `docs/impl/<id>/rootcause.md`: one child per repo, the blockers, and whether your repo has an `Own fix`.
+2. Ask `Split proposal for BUG-<n>: <one line>` on the hub.
+3. The run stops your claim (`--stopped "split into child bugs"`) and ends `AUTO-RESULT: blocked-split BUG-<n>`.
+
+Run `/dev-fix-bug BUG-<n>` again later. It reads the hub first.
+
+- Parent bug now: you do the own fix, once its blockers are done.
+- Question answered, no split: keep fixing.
+- Question still open or waiting: the claim is stopped again and the run waits.
+- No question: it asks.
+
+Each child bug goes to the Dev of its repo. The parent bug is done when every child is done and, with `Own fix: yes`, your own fix is done. A `-svc` entry for `BUG-<n>` means the own fix only.
+
 ## 3.5 Several Devs on one repo: claims
 
 A **ticket claim** on the hub keeps two Devs off the same ticket.

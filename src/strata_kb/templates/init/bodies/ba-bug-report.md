@@ -9,7 +9,8 @@ skill for a defect in something already live, and for a production hotfix
 (`> Type: hotfix`). New behaviour is a story — use `/ba-ticket-author`.
 
 An optional argument gives what broke directly; no argument = ask for it
-during Intake.
+during Intake. `--child-of BUG-<n>` instead turns that bug into a parent
+bug: see `## --child-of BUG-<n>` below, not the six steps.
 
 **Hub access — MCP first.** Reach the hub through the `strata-kb` MCP
 tools (`kb_search`, `kb_get_section`, `kb_context_new`, `kb_ticket_lint`)
@@ -48,16 +49,17 @@ a denial to report. Stop only when the MCP tool fails too.
    story's `> Parent mission:` line onto the bug — the lint rejects it.
 3. **Draft** — start from `docs/tickets/BUG-TEMPLATE.md` (the installed
    copy of the bug template). Take the next free `BUG-<n>`: the highest
-   `BUG-<n>.md` under `tickets/bugs/` plus one, `BUG-1` when the folder is
-   empty or absent. Save the draft as `tickets/bugs/BUG-<n>.md`; the H1 is
+   digits-only `BUG-<n>.md` stem under `tickets/bugs/` plus one, `BUG-1`
+   when the folder is empty or absent. A child stem `BUG-<n>.<repo-id>` is
+   never counted. Save the draft as `tickets/bugs/BUG-<n>.md`; the H1 is
    `# BUG-<n> — <one-line symptom>`. Fill every section from the Intake
    answers only: Summary, Environment, Pre-conditions, Steps to reproduce
    (a numbered list, one action per step, at least one), Expected result,
    Actual result, Attachments, Impact, Open questions. Header lines:
    `> Type: bug|hotfix`, `> Severity: S1|S2|S3|S4`, `> Revision: 1`,
    `> Related ticket: <id|none>`, `> Target repo: <repo-id>` (header block
-   only, like `> Type:`): ask the BA which dev repo the fix lands in and
-   write that repo id; the BA chooses, never guess it from the symptom.
+   only, like `> Type:`): the first responder, from step 3a below: the BA
+   accepts the SA's proposal or picks another repo; write that repo id.
    When the BA says the hub has only one dev repo, the line may be left
    out: the hub routes an untargeted bug to it. Copy each
    screenshot the BA gives you
@@ -67,6 +69,12 @@ a denial to report. Stop only when the MCP tool fails too.
    relative to the bug's own folder: no absolute path, no `..`, no
    `http(s)://` image. Every missing fact is `OPEN(<owner>)` in the text
    with a matching `## Open questions` row naming its owner.
+   **3a. First responder** (after Intake, before the draft) — run
+   `/sa-ticket-ground --scope "<symptoms>"` as a separate run (read-only;
+   it returns a `## Repo scope` table and `Repos: <n>`). The SA proposes
+   the repo whose `-code` evidence matches the symptom as the first
+   responder; the BA accepts it or picks another. `Repos: 0` keeps the
+   old rule: ask the BA which dev repo, never invent one.
 4. **Ground** — optional. When the expected result comes from a standard
    or an acceptance criterion, find the section with `kb_search` (CLI
    fallback `kb query "<text>" --kind kb`, pass `kinds=["kb"]`), present
@@ -94,6 +102,53 @@ a denial to report. Stop only when the MCP tool fails too.
    ticket set, open questions and their owners) so the BA can verify.
    Never commit or push.
 
+## `--child-of BUG-<n>`
+
+Turns `tickets/bugs/BUG-<n>.md` into a parent bug with one child bug file
+per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
+
+1. Read `tickets/bugs/BUG-<n>.md` and the proposal: the open Q&A question
+   `Split proposal for BUG-<n>:` (`kb_question_list(ticket=BUG-<n>)`), or
+   text the BA pastes. It holds the `## Child bug proposal` table and the
+   `Own fix: yes|no` and `Own fix blocked by:` lines.
+2. Check the first responder's claim in `kb claim list --json`: `state`
+   must be `stopped` and `stop_reason` `split into child bugs`. Still active → stop and ask the Dev
+   to stop it. Do not edit before.
+3. The BA accepts, edits or rejects the proposal.
+4. On accept, with N the current `> Revision:`:
+   - In `BUG-<n>.md` set `> Kind: parent bug` and `> Revision: N+1`.
+   - Add `## Split` from `docs/tickets/PARENT-BUG-TEMPLATE.md`: the own row
+     (Child = `BUG-<n>`, Repo = the bug's `> Target repo:`, `Own fix`
+     yes|no, AC `-`, `Blocked by` = the proposal's `Own fix blocked by:`
+     value, `-` when it says `-`) and one row `BUG-<n>.<repo-id>` per child
+     (`Own fix` `-`, AC `-`, `Blocked by` and `Why` from its proposal row:
+     the Blocked by column and the Root cause).
+   - Append a `## Change log` row (trigger `scope`, Affected = the child
+     ids) and a `**Split decision:**` line.
+   - Write each child `tickets/bugs/BUG-<n>.<repo-id>.md` from
+     `docs/tickets/BUG-TEMPLATE.md`: `> Type:` and `> Severity:` copied
+     from the parent, `> Revision: 1`, `> Related ticket: BUG-<n>`,
+     `> Target repo: <repo-id>`, `> Parent bug: <BUG-id> @ rev N+1`, the
+     root cause and reproduction from the proposal, and a `## Dependencies`
+     section holding the `- Blocked by:` bullet as in its split row (`None`
+     when empty); the lint reads that bullet only under that heading. Its
+     Attachments is its own folder or `N/A — <reason>`.
+   - Lint every child with `kb_ticket_lint` `parent_markdown` (the parent
+     file) and `ticket_id` = the child id, then the parent with `children_markdown` and `ticket_id`. Fix
+     until `DoR: PASS`.
+   - The lint leaves each child's `## Definition of Ready` unticked. The BA
+     ticks every box (in auto mode `/ba-answer-questions` does, from the
+     child's text). Do not answer before every child's Definition of Ready
+     is fully ticked; until then the question stays open.
+   - Then answer the proposal question: `kb_question_answer(id, answer,
+     answered_by, ticket_sections=<child ids>, answer_rev=N+1)`. Reads
+     stay unanswered until every child is published at rev ≥ N+1.
+5. On reject: change no file; answer the question with `answer_rev=None`
+   and `ticket_sections=[]` (answered at once; the Dev continues).
+6. Write files only. Never commit or publish: the BA commits, then runs
+   `kb publish`; a child whose Definition of Ready is not ticked stays off
+   the hub.
+
 ## Hard rules
 
 - Never invent steps, values or error text. A missing fact is
@@ -116,5 +171,7 @@ a denial to report. Stop only when the MCP tool fails too.
 - The agent's output is a draft; the BA publishes it. Never push to Jira.
 - Lint must report `DoR: PASS` before handover; report remaining warnings
   to the BA — do not hand over a failing ticket silently.
+- `--child-of` writes files only; it never commits, publishes or edits
+  while the first responder's claim is active.
 - English template headings are never localized; write the ticket body in
   the BA's working language.

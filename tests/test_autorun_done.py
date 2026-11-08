@@ -24,6 +24,7 @@ def test_to_json_carries_unparented():
             "target_repo": None,
             "is_parent": False,
             "parent": "",
+            "own_fix_ready": False,
         }
     ]
     assert to_json([], [])["unparented"] == []
@@ -125,3 +126,26 @@ def test_all_done_ba_counts_parent():
         False,
         "P1 in progress",
     )
+
+
+def _own_fix(target: str, status: str = "in progress") -> StoryStatus:
+    return StoryStatus(
+        "BUG-7", "", "t", status, ("1/1 done", "own fix pending"), (), target, True
+    )
+
+
+def test_all_done_waits_for_pending_own_fix():
+    parent = _own_fix("api")
+    assert all_done([], [parent], ba=False, repo_id="api") == (
+        False,
+        "BUG-7 in progress",
+    )
+    # another repo's Dev has nothing of its own to wait for
+    assert all_done([S("US1", "done")], [parent], ba=False, repo_id="web") == (
+        True,
+        "all 1 tickets done",
+    )
+    done = StoryStatus(
+        "BUG-7", "", "t", "done", ("1/1 done", "own fix done"), (), "api", True
+    )
+    assert all_done([S("US1", "done")], [done], ba=False, repo_id="api")[0]

@@ -46,6 +46,14 @@ Changes and Q&A work at the parent story. Phase 4 of cross-repo stories.
 - **Pre-merge re-check.** `dev-handover` re-lists questions and compares the hub ticket's `> Revision:` with the implemented one before a PR or merge; Auto ends `blocked-qa Q<id>` or `failed ticket-revised <ticket-id>`.
 - **Upgrade.** The Q&A store gains three nullable columns on first open; no action needed. Upgrade the hub, then run `kb init` in the BA and Dev repos to get the skills. The guides (en, vi) cover all of it.
 
+Bugs across repos. Phase 5 of cross-repo stories.
+
+- **Parent bug.** `> Kind: parent bug` with a `## Split` table: one own row (`Own fix: yes|no`) and child rows `BUG-<n>.<repo>`. Child bugs pin `> Parent bug: BUG-<n> @ rev N`, `> Target repo:` and `- Blocked by:`. Template `docs/tickets/PARENT-BUG-TEMPLATE.md`. `kb ticket lint` no longer rejects it.
+- **Roll-up.** A parent bug is done when every child is done and, with `Own fix: yes`, its own fix is done (a `-svc` entry for the bug id means the own fix only). Plan status shows `k/N done` and `own fix done|pending`; the first-responder repo gets `dev-fix-bug BUG-<n>` for the own fix.
+- **Split proposal.** The Dev writes `## Child bug proposal`, asks `Split proposal for BUG-<n>: …`, stops the claim and ends `AUTO-RESULT: blocked-split BUG-<n>`; the run resumes once the bug is a parent bug or the question is answered.
+- **BA side.** `/ba-bug-report` has the SA propose the first responder and takes `--child-of BUG-<n>`; `/ba-answer-questions` has a `### Split proposals` part.
+- **Upgrade.** Upgrade the hub, then run `kb init` in the BA and Dev repos to get the skills. The guides (en, vi) cover it.
+
 ## 1.34.5 — 2026-11-05
 
 `kb ingest` takes a Markdown file: it goes straight to L3 after the heading rules, and the L3 fix loop checks drafts against the Markdown source.

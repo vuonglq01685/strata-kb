@@ -847,3 +847,44 @@ def test_mission_time_parent_with_planned_children_publishes(
     report = run_plan(tmp_path)
     assert report.skipped == []
     assert US1 in report.published
+
+
+# --- parent bugs ---
+
+
+def _bug_family_repo(root: Path, parent_rows: str | None = None) -> None:
+    from tests.test_ticketlint_family import bug_family, bug_parent_text
+
+    texts = bug_family()
+    if parent_rows is not None:
+        texts["BUG-12"] = bug_parent_text(rows=parent_rows)
+    tickets = {f"bugs/{i}.md": t.replace("- [ ] ", "- [x] ") for i, t in texts.items()}
+    write_repo(root, {}, tickets)
+    folder = root / "tickets" / "bugs" / "BUG-12"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "toast.png").write_bytes(_PNG)
+
+
+def test_planingest_publishes_parent_bug_and_children(tmp_path: Path):
+    _bug_family_repo(tmp_path)
+    report = run_plan(tmp_path)
+    assert report.skipped == []
+    assert sorted(report.published) == ["BUG-12", "BUG-12.api", "BUG-12.web"]
+    raw = doc_file(tmp_path, "tickets.raw.md")
+    assert all(f"## {i} " in raw for i in ("BUG-12", "BUG-12.api", "BUG-12.web"))
+    # the parent bug's image ships like any bug's
+    assert f"assets/{_sha(_PNG)}.png" in raw and "BUG-12/toast.png" not in raw
+
+
+def test_planingest_fails_closed_on_bad_parent_bug(tmp_path: Path):
+    _bug_family_repo(tmp_path)
+    run_plan(tmp_path)
+    doc_dir = tmp_path / ".kb" / "demo-plan"
+    before = tree(doc_dir)
+    no_own = "| BUG-12.api | api | - | - | - | data |\n"
+    _bug_family_repo(tmp_path, parent_rows=no_own)
+    with pytest.raises(planingest.PlanIngestError) as exc:
+        run_plan(tmp_path)
+    assert str(exc.value).startswith("parent bug BUG-12 fails lint: ")
+    assert str(exc.value).endswith(" — nothing published")
+    assert tree(doc_dir) == before

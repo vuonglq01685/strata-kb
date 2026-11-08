@@ -124,11 +124,6 @@ def test_parent_with_acceptance_criteria_is_error():
     )
 
 
-def test_parent_bug_not_supported():
-    r = storylint.lint_parent(parent(kind="parent bug"), kids(), parent_id=PID)
-    assert errors(r) == "parent bug is not supported yet (phase 5)"
-
-
 def test_missing_kind_revision_and_headings_are_errors():
     out = errors(storylint.lint_parent("# T\n\n## Split\n", {}, parent_id=PID))
     assert "Kind" in out and "Revision" in out and "## User Story" in out
@@ -409,3 +404,136 @@ def test_change_log_newest_row_naming_a_gone_child_is_an_error():
     assert f"change-log row 3: Affected '{gone}' is not a child in the split" in errors(
         r
     )
+
+
+# --- parent bug: an own-fix row plus child bugs, no ACs ---
+
+BID = "BUG-7"
+BAPI = f"{BID}.api"
+BWEB = f"{BID}.web"
+OWN = f"| {BID} | api | - | - | yes | first responder fixes it |\n"
+BROWS = (
+    OWN
+    + f"| {BAPI} | api | - | - | - | data |\n"
+    + f"| {BWEB} | web | - | {BAPI} | - | ui |\n"
+)
+
+
+def parent_bug(rows: str = BROWS) -> str:
+    text = parent(rows=rows, kind="parent bug").replace(PID, BID)
+    return text.replace(f"## User Story\n{STORY}\n\n", "")
+
+
+def child_bug(cid: str, repo: str, blocked: str = "None", pin: str = BID) -> str:
+    return (
+        f"# {cid} — x\n> Type: bug\n> Revision: 1\n> Parent bug: {pin} @ rev 1\n"
+        f"> Target repo: {repo}\n\n## Summary\nx\n\n"
+        f"## Dependencies\n- Blocked by: {blocked}\n"
+    )
+
+
+def bug_kids() -> dict[str, str | None]:
+    return {
+        BAPI: child_bug(BAPI, "api"),
+        BWEB: child_bug(BWEB, "web", blocked=BAPI),
+    }
+
+
+def test_parent_bug_lints():
+    r = storylint.lint_parent(parent_bug(), bug_kids(), parent_id=BID)
+    assert r.passed, errors(r)
+    own = storylint.own_row(storylint.parse_split(parent_bug()), BID)
+    assert own is not None and own.own_fix == "yes"
+    for cid, text in bug_kids().items():
+        assert (
+            storylint.lint_bug_child_against_parent(text, cid, parent_bug(), BID) == []
+        )
+
+
+def test_parent_bug_needs_exactly_one_own_row():
+    rows = BROWS.removeprefix(OWN)
+    out = errors(storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID))
+    assert (
+        f"parent bug needs exactly one split row for {BID} itself (its own fix)" in out
+    )
+
+
+def test_parent_bug_duplicate_own_row():
+    out = errors(
+        storylint.lint_parent(parent_bug(OWN + BROWS), bug_kids(), parent_id=BID)
+    )
+    assert "exactly one split row" in out
+
+
+def test_parent_bug_own_fix_value():
+    rows = BROWS.replace("| yes |", "| maybe |")
+    out = errors(storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID))
+    assert f"split row {BID}: Own fix must be yes or no" in out
+    ok = BROWS.replace("| yes |", "| no |")
+    assert storylint.lint_parent(parent_bug(ok), bug_kids(), parent_id=BID).passed
+
+
+def test_parent_bug_child_rows_need_own_fix_dash():
+    rows = BROWS.replace(
+        f"| {BAPI} | api | - | - | - |", f"| {BAPI} | api | - | - | yes |"
+    )
+    out = errors(storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID))
+    assert f"split child '{BAPI}': Own fix must be -" in out
+
+
+def test_parent_bug_split_has_no_acs():
+    rows = BROWS.replace(f"| {BAPI} | api | - |", f"| {BAPI} | api | AC1 |")
+    out = errors(storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID))
+    assert "a parent bug's split has no ACs" in out
+
+
+def test_parent_bug_child_rules_and_missing_file():
+    bad_id = BROWS.replace(BWEB, "BUG-9.web")
+    out = errors(storylint.lint_parent(parent_bug(bad_id), bug_kids(), parent_id=BID))
+    assert "not 'BUG-7.<repo>'" in out
+    gone = {**bug_kids(), BWEB: None}
+    out = errors(storylint.lint_parent(parent_bug(), gone, parent_id=BID))
+    assert f"split child '{BWEB}' has no ticket file" in out
+    assert BID not in out.replace("BUG-7.", "").replace("BUG-7 itself", "")
+    cyc = BROWS.replace(f"| {BAPI} | api | - | - |", f"| {BAPI} | api | - | {BWEB} |")
+    assert "dependency cycle" in errors(
+        storylint.lint_parent(parent_bug(cyc), bug_kids(), parent_id=BID)
+    )
+
+
+def test_child_bug_pin_and_target_must_match():
+    p = parent_bug()
+    wrong_pin = child_bug(BAPI, "api", pin="BUG-8")
+    out = storylint.lint_bug_child_against_parent(wrong_pin, BAPI, p, BID)
+    assert any("> Parent bug: BUG-7" in i.message for i in out)
+    wrong_target = child_bug(BAPI, "web")
+    out = storylint.lint_bug_child_against_parent(wrong_target, BAPI, p, BID)
+    assert any("'> Target repo:' differs" in i.message for i in out)
+    wrong_block = child_bug(BWEB, "web", blocked="None")
+    out = storylint.lint_bug_child_against_parent(wrong_block, BWEB, p, BID)
+    assert any("Blocked by" in i.message for i in out)
+    assert any(
+        "not found" in i.message
+        for i in storylint.lint_bug_child_against_parent(wrong_pin, BAPI, None, BID)
+    )
+
+
+def test_parent_bug_pin_is_parsed():
+    text = "# BUG-7.api\n> Type: bug\n> Parent bug: BUG-7 @ rev 2\n"
+    assert ticket.parent_story_pin(text) == ("BUG-7", 2)
+
+
+def test_planparents_covers_parent_bug():
+    from strata_kb import planparents
+
+    assert planparents.is_parent(parent_bug()) and planparents.is_parent_bug(
+        parent_bug()
+    )
+    assert planparents.is_parent(parent()) and not planparents.is_parent_bug(parent())
+
+
+def test_parent_bug_own_row_blocked_by_children_lints():
+    own = f"| {BID} | api | - | {BAPI}, {BWEB} | yes | waits for both |\n"
+    rows = own + BROWS.removeprefix(OWN)
+    r = storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID)
+    assert r.passed, errors(r)

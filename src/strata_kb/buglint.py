@@ -4,7 +4,7 @@
 `> Type: hotfix`; the CLI and MCP wrappers need no change. Heading, fill,
 context, revision and DoR checks are `lintcore` / `planrev` /
 `ticketlint` primitives; this module holds what is specific to the bug
-contract (docs/superpowers/specs/2026-10-14-bug-hotfix-ticket-design.md).
+contract (a child bug, `> Parent bug:`, also checks its parent's split row) (docs/superpowers/specs/2026-10-14-bug-hotfix-ticket-design.md).
 
 `attachment_images` and `image_problems` are public: `kb plan-ingest`
 validates the same images before copying them.
@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from strata_kb import acquality, lintcore, mdmask, planrev, ticket
+from strata_kb import acquality, lintcore, mdmask, planrev, storylint, ticket
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport
 
@@ -178,6 +178,7 @@ def lint(
     fail_on_stale: bool = False,
     ticket_id: str | None = None,
     load_mission: Callable[[str], str | None] | None = None,
+    load_ticket: Callable[[str], str | None] | None = None,
 ) -> LintReport:
     # missions_dir / load_mission are accepted for call-compatibility with
     # ticketlint.lint: a bug has no parent mission to resolve.
@@ -203,4 +204,9 @@ def lint(
     issues += lintcore.check_recommended_sections(text, ticket.BUG_RECOMMENDED_HEADINGS)
     issues += lintcore.check_dor_checklist(text)
     issues += planrev.check_revision(text)
+    if (pin := ticket.parent_story_pin(text)) is not None and stem is not None:
+        # a child bug: its parent bug's split row must agree with it
+        issues += storylint.lint_bug_child_against_parent(
+            text, stem, load_ticket(pin[0]) if load_ticket else None, pin[0]
+        )
     return LintReport(issues=issues)

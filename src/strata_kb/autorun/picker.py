@@ -78,6 +78,8 @@ def _ba_tasks(data: dict) -> Iterator[Task]:
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
+    # bugs have their own skill (ba-bug-report); the story author must not touch them
+    rows = tuple(s for s in rows if not s["us_id"].startswith("BUG-"))
     for s in rows:
         if s["status"] == "draft" and not s.get("is_parent"):
             yield Task("ba-ticket-author", f"--amend {s['us_id']}")
@@ -137,6 +139,14 @@ def plan_next(
     return planstatus.next_from_hub(hub, for_repo=for_repo)
 
 
+def runnable_here(t: StoryStatus, repo_id: str) -> bool:
+    """`t` is a ticket this Dev may build (dependencies aside): a ready row routed
+    here or untargeted, or a parent bug's own fix routed here."""
+    if t.own_fix_ready:
+        return t.target_repo == repo_id
+    return not t.is_parent and t.status == "ready" and t.target_repo in (None, repo_id)
+
+
 def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     """Ready tickets routed to `repo_id` whose dependencies are done. `done`
     spans every repo's rows: a dependency may be built elsewhere. A ready row
@@ -145,12 +155,7 @@ def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     done = {t.us_id for t in (*stories, *unparented) if t.status == "done"}
 
     def ready(t: StoryStatus) -> bool:
-        return (
-            not t.is_parent
-            and t.status == "ready"
-            and t.target_repo in (None, repo_id)
-            and all(d in done for d in t.depends_on)
-        )
+        return runnable_here(t, repo_id) and all(d in done for d in t.depends_on)
 
     for u in unparented:
         if ready(u) and u.us_id.startswith("BUG-"):

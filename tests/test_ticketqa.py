@@ -686,6 +686,41 @@ def test_parent_answer_without_change_is_answered(family_hub, store):
     assert list_questions(family_hub, store, status="all")[0][1] == "answered"
 
 
+def test_question_on_child_bug_goes_to_parent_bug(
+    fed_hub: Path, tmp_path: Path, run_git
+):
+    from tests.test_planingest import _bug_family_repo, run_plan
+
+    ba = tmp_path / "ba-one"
+    _bug_family_repo(ba)
+    run_plan(ba)
+    entry = make_fed_entry(
+        fed_hub / "federation",
+        "ba-one",
+        "ba-one-plan",
+        title=f"ba-one {planingest.TITLE_SUFFIX}",
+        tags=["plan", "generated"],
+    )
+    shutil.rmtree(entry / "ba-one-plan")
+    shutil.copytree(ba / ".kb" / "demo-plan", entry / "ba-one-plan")
+    manifest = entry / "ba-one-plan" / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace("demo-plan", "ba-one-plan"),
+        encoding="utf-8",
+    )
+    run_git(fed_hub, "add", "-A")
+    run_git(fed_hub, "commit", "-m", "publish bugs")
+    hub = HubHandle(root=fed_hub)
+    store = QaStore(tmp_path / "qa" / "qa.db")
+
+    q = ask_question(hub, store, f"{REPO}:BUG-12.web", "Which build?", "dev1")
+    assert (q.repo, q.ticket, q.asked_from) == (REPO, "BUG-12", "BUG-12.web")
+    # the parent bug takes child ids as its answer sections, like a parent story
+    with pytest.raises(QaError, match="parent question: ticket_sections"):
+        answer_question(hub, store, q.id, "4.2", "ba1", 2, ["## Summary"])
+    answer_question(hub, store, q.id, "4.2", "ba1", 2, ["BUG-12.web"])
+
+
 # --- old answers on a ticket that later became a parent ----------------------
 
 

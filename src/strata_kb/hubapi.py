@@ -44,6 +44,7 @@ def _story(row: dict) -> StoryStatus:
         target_repo=row.get("target_repo"),
         is_parent=row.get("is_parent", False),
         parent=row.get("parent", ""),
+        own_fix_ready=row.get("own_fix_ready", False),
     )
 
 

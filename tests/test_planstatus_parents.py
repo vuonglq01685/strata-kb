@@ -27,7 +27,7 @@ from tests.test_planstatus import _mirror
 from tests.test_planstatus_routing import _dev
 
 GOLDEN = Path(__file__).parent / "data" / "planstatus_golden.json"
-NEW_KEYS = {"is_parent": False, "parent": ""}
+NEW_KEYS = {"is_parent": False, "parent": "", "own_fix_ready": False}
 
 
 def _plan_json(hub: HubHandle) -> dict:
@@ -282,3 +282,135 @@ def test_planned_child_reads_to_draft(build):
     assert rows[WEB].status == "to-draft"
     assert rows[WEB].reasons == ("child not written yet",)
     assert (rows[US1].status, rows[US1].reasons) == ("in progress", ("0/2 done",))
+
+
+# --- parent bugs: the own-fix row is not a child here (Task 2 rolls it up) ---
+
+
+def _bug_parent(own_fix: str = "yes") -> str:
+    from tests.test_ticketlint_family import bug_parent_text
+
+    return bug_parent_text().replace("| yes |", f"| {own_fix} |", 1)
+
+
+def test_family_rows_of_a_parent_bug_has_no_row_for_the_parent_itself():
+    parent = missionnext.StoryStatus("BUG-12", "", "Bug", "x", ())
+    facts = planparents.Facts(written=frozenset(), dor={}, done=frozenset())
+    rows = planparents.family_rows(parent, _bug_parent(), facts)
+    assert [r.us_id for r in rows] == ["BUG-12", "BUG-12.api", "BUG-12.web"]
+    assert [r.parent for r in rows] == ["", "BUG-12", "BUG-12"]
+
+
+def test_done_parents_of_a_parent_bug_needs_its_own_fix():
+    done = {"BUG-12.api", "BUG-12.web"}
+    yes, no = _bug_parent(), _bug_parent("no")
+    assert planparents.done_parents({"BUG-12": no}, done) == {"BUG-12"}
+    assert planparents.done_parents({"BUG-12": no}, {"BUG-12.api"}) == set()
+    assert planparents.done_parents({"BUG-12": yes}, done) == set()
+    assert planparents.done_parents({"BUG-12": yes}, done, {"BUG-12"}) == {"BUG-12"}
+
+
+# --- parent bugs: roll-up of the children plus the own fix ---
+PID = "BUG-12"
+BUG_API, BUG_WEB = f"{PID}.api", f"{PID}.web"
+
+
+@pytest.fixture
+def bug_build(fed_hub: Path, tmp_path: Path):
+    """`make(done=, own_fix=)` → hub with the published parent bug BUG-12
+    (own fix routed to `api`) and its two child bugs."""
+    from tests.test_ticketlint_family import bug_family
+
+    def make(
+        done: dict[str, tuple[str, ...]] | None = None,
+        own_fix: str = "yes",
+        own_blocked: str = "-",
+    ):
+        texts = bug_family()
+        texts[PID] = (
+            texts[PID]
+            .replace("| - | yes |", f"| {own_blocked} | {own_fix} |", 1)
+            .replace("> Kind: parent bug\n", "> Kind: parent bug\n> Target repo: api\n")
+        )
+        tickets = {
+            f"bugs/{i}.md": t.replace("- [ ] ", "- [x] ") for i, t in texts.items()
+        }
+        root = tmp_path / "ba-x"
+        write_repo(root, {}, tickets)
+        folder = root / "tickets" / "bugs" / PID
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "toast.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        planingest.run(root, root / ".kb", "demo", root / "missions", root / "tickets")
+        _mirror(fed_hub, root, "ba-x")
+        for repo in ("api", "web"):
+            _dev(fed_hub, repo, (done or {}).get(repo, ()))
+        return HubHandle(root=fed_hub)
+
+    return make
+
+
+KIDS_DONE = {"api": (BUG_API,), "web": (BUG_WEB,)}
+
+
+def test_own_fix_done_alone_does_not_finish_parent_bug(bug_build):
+    rows = _rows(bug_build(done={"api": (PID,)}))
+    assert rows[PID].status != "done"
+    assert "0/2 done" in rows[PID].reasons and "own fix done" in rows[PID].reasons
+
+
+def test_own_fix_no_needs_children_only(bug_build):
+    rows = _rows(bug_build(done=KIDS_DONE, own_fix="no"))
+    assert rows[PID].status == "done"
+    assert rows[PID].reasons == ("2/2 done",)
+    assert not rows[PID].own_fix_ready
+
+
+def test_parent_bug_done_when_children_and_own_fix_done(bug_build):
+    rows = _rows(bug_build(done={"api": (BUG_API, PID), "web": (BUG_WEB,)}))
+    assert (rows[PID].status, rows[PID].reasons) == (
+        "done",
+        ("2/2 done", "own fix done"),
+    )
+    assert rows[PID].target_repo == "api" and rows[PID].is_parent
+
+
+def test_own_fix_ready_after_blockers_done(bug_build):
+    hub = bug_build(own_blocked=BUG_WEB)
+    pending = _rows(hub)[PID]
+    assert pending.reasons == ("0/2 done", "own fix pending")
+    assert not pending.own_fix_ready
+
+
+@pytest.mark.parametrize(
+    ("done", "ready"),
+    [
+        ({"api": (BUG_API,)}, False),
+        (KIDS_DONE, True),
+        ({"api": (BUG_API, PID), "web": (BUG_WEB,)}, False),  # fix already done
+    ],
+)
+def test_own_fix_ready_follows_its_blockers(bug_build, done, ready):
+    assert _rows(bug_build(done=done, own_blocked=BUG_WEB))[PID].own_fix_ready is ready
+
+
+def test_own_fix_without_blockers_is_ready_at_once(bug_build):
+    assert _rows(bug_build())[PID].own_fix_ready
+
+
+def _lint_errors(hub: HubHandle, pid: str) -> list[str]:
+    from strata_kb.familyhub import lint
+    from tests.test_ticketlint_family import bug_family
+
+    texts = bug_family(pid)
+    report = lint(texts[pid], hub, ticket_id=pid, load_ticket=texts.get)
+    return [str(i) for i in report.issues]
+
+
+def test_published_parent_bug_may_be_done_in_svc(bug_build):
+    hub = bug_build(done={"api": (PID,)})
+    assert not [e for e in _lint_errors(hub, PID) if "already implemented" in e]
+
+
+def test_done_bug_not_on_hub_cannot_become_parent(bug_build):
+    hub = bug_build(done={"api": ("BUG-99",)})
+    assert any("already implemented" in e for e in _lint_errors(hub, "BUG-99"))

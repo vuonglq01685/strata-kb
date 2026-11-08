@@ -19,7 +19,7 @@ from typing import Literal
 
 from strata_kb.llm import RunnerError, _extract_reply
 
-Kind = Literal["done", "blocked-qa", "failed", "usage-limit"]
+Kind = Literal["done", "blocked-qa", "blocked-split", "failed", "usage-limit"]
 
 RESULT_PREFIX = "AUTO-RESULT: "
 AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
@@ -31,7 +31,8 @@ MAX_SLUG = 60
 @dataclass(frozen=True)
 class TaskResult:
     kind: Kind
-    ids: tuple[int, ...] = ()
+    # blocked-qa: question ids (int); blocked-split: the bug id ("BUG-7")
+    ids: tuple[int | str, ...] = ()
     reason: str = ""
 
 
@@ -51,6 +52,8 @@ def parse_result(reply: str) -> TaskResult:
         parts = [p.strip() for p in rest.split(",")]
         if parts and all(re.fullmatch(r"Q\d+", p) for p in parts):
             return TaskResult("blocked-qa", tuple(int(p[1:]) for p in parts))
+    if word == "blocked-split" and re.fullmatch(r"BUG-\d+", rest):
+        return TaskResult("blocked-split", (rest,))
     return TaskResult("failed", (), f"bad result line: {lines[-1][:200]}")
 
 
@@ -73,9 +76,10 @@ in this environment, or it cannot reach the hub): use its MCP tool instead. A \
 blocked CLI is not a reason to fail while the MCP tool works.
 
 End your reply with exactly one line, and make it the last line, in one of \
-these three forms:
+these four forms:
 AUTO-RESULT: done
 AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]
+AUTO-RESULT: blocked-split BUG-<n>
 AUTO-RESULT: failed <reason>
 """
     )

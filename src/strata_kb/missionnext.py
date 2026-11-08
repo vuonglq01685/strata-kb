@@ -59,7 +59,11 @@ class StoryStatus:
     target_repo: str | None = None  # Dev repo the ticket is built in; None = unknown
     is_parent: bool = False  # a parent story: rolled-up status, never worked on itself
     parent: str = ""  # a child ticket's parent story id
+    own_fix_ready: bool = False  # a parent bug whose own fix a Dev may build now
 
+
+OWN_FIX_DONE = "own fix done"  # reasons of a parent bug with `Own fix: yes`
+OWN_FIX_PENDING = "own fix pending"
 
 ParsedMission = tuple[str | None, list[Story], DecisionTable]
 
