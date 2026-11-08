@@ -1436,10 +1436,17 @@ def test_dev_fix_bug_proposes_child_bugs(template):
 
 def test_dev_fix_bug_split_re_entry_and_result_line():
     text = _normal(_raw("bodies/dev-fix-bug.md"))
-    assert "`## Child bug proposal` and the claim is `stopped`" in text
-    assert "own-fix run" in text and "re-take" in text
-    assert "answered" in text and "rejected the split" in text
+    assert "`## Child bug proposal` → decide from the hub, not from the claim" in text
+    assert "`> Kind: parent bug`" in text and "own-fix run" in text
+    assert "rejected the split" in text and "proposal but no question yet" in text
+    assert "`stopped`" not in text.split("## Auto mode")[0].split("Re-entry is")[1]
     assert "- `AUTO-RESULT: blocked-split BUG-<n>`" in text
+
+
+def test_dev_fix_bug_split_question_is_exempt_from_question_format():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    assert text.count("starts exactly `Split proposal for <BUG-id>: <one line>`") == 2
+    assert text.count("Question format does not apply") == 2
 
 
 def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():

@@ -123,7 +123,10 @@ a denial to report. Stop only when the MCP tool fails too.
    `Own fix: yes|no — <what this repo still fixes>` and a line `Own fix
    blocked by: <child ids|->`. Record it on the hub:
    `kb_question_ask(ticket=<BUG-id>, question="Split proposal for <BUG-id>:
-   <one line>", asked_by, context=<the table and the two lines>, blocks="")`.
+   <one line>", asked_by, context=<the table and the two lines>, blocks="")`;
+   the question starts exactly `Split proposal for <BUG-id>: <one line>` and
+   the Auto Question format does not apply to it (the runner matches that
+   prefix).
    Then `kb claim update <BUG-id> --stopped "split into child bugs"` and
    STOP: tell the Dev to ask the BA to run `/ba-bug-report --child-of
    <BUG-id>`. Never create a ticket; never edit the bug file.
@@ -172,15 +175,20 @@ Re-entry is derived, never stored:
 - present, `Root cause:` empty and three or more rows of the hypothesis
   log failed → STOP and raise the architecture question with the Dev;
   never a fourth hypothesis without that conversation.
-- `rootcause.md` has `## Child bug proposal` and the claim is `stopped` →
-  the proposal was already made: STOP again, do not ask again. An own-fix
-  run (the bug is now a parent bug and the runner yields `dev-fix-bug
-  <BUG-id>`) re-takes the claim (`kb claim take <BUG-id>`; it goes active)
-  and fixes only the own-fix part named in the parent's own split row,
-  then proceeds as usual. The BA rejected the split when the `Split
-  proposal for <BUG-id>:` question reads answered and the bug stays a
-  plain bug: read the answer as for any answered question and keep
-  fixing in this repo.
+- `rootcause.md` has `## Child bug proposal` → decide from the hub, not
+  from the claim (Intake's take made it active). Each step is safe to repeat.
+  Fetch the bug (`kb_ticket_fetch`):
+  1. it reads `> Kind: parent bug` → the own-fix run: fix only the part named
+     in the parent's own split row, then the normal handover, so its `-svc`
+     history marks the own fix done;
+  2. still a plain bug and its `Split proposal for <BUG-id>:` question is
+     answered → the BA rejected the split: read the answer as for any
+     answered question and keep fixing in this repo;
+  3. still plain and the question is open → still waiting: run
+     `kb claim update <BUG-id> --stopped "split into child bugs"` again,
+     then STOP, do not ask again;
+  4. a proposal but no question yet → ask it, stop the claim as in step 3,
+     then STOP.
 - `Root cause:` filled → `root cause ✅`; `fix ✅` once the reproduction
   test and the full suite pass on the branch; no PR yet → Fix, then
   Handover. A fix that failed cleared `Root cause:` (step 4), so this
@@ -295,7 +303,7 @@ Ask one decision per question: two decisions are two questions. Name no internal
 - **Intake: "create the branch once the Dev agrees"; a hotfix — "ask the Dev which production line to branch from"** → branch at once, from the base above. The production line is `hotfix_base`, or `main` when it is empty.
 - **Intake: a stale pinned citation — "the Dev decides"; a `broken` one is a STOP, a blocker for the BA** → `broken` and a failed `kb ticket check` are real blockers. For `stale`, read both versions: when the difference does not touch the bug's Expected result, continue on the pinned text and log both sides in an Auto decision line; otherwise it is a real blocker.
 - **Reproduce: "Report to the BA what was tried and what is missing; ask for a sharper bug"** → ask through a BA question that says what was tried and what is missing. No fix is written for a bug you cannot reproduce.
-- **Root cause elsewhere: "ask the BA to run /ba-bug-report --child-of"** → write the `## Child bug proposal`, record the `Split proposal for <BUG-id>:` question, run `kb claim update <BUG-id> --stopped "split into child bugs"`, and end `AUTO-RESULT: blocked-split <BUG-id>`. On re-entry with the proposal already made and the claim `stopped`, end it again without asking again.
+- **Root cause elsewhere: "ask the BA to run /ba-bug-report --child-of"** → write the `## Child bug proposal`, record the question (its text starts exactly `Split proposal for <BUG-id>: <one line>`; the Question format does not apply to it), run `kb claim update <BUG-id> --stopped "split into child bugs"`, and end `AUTO-RESULT: blocked-split <BUG-id>`. On re-entry with a proposal already there, follow the four Re-entry cases for it; a case that waits ends `blocked-split` again without a second question.
 - **Fix: three failed hypotheses — "question the architecture with the Dev"** → there is no Dev to ask. Record in `docs/impl/<BUG-id>/rootcause.md` what each attempt revealed and what looks shared, coupled or stateful, make no fourth attempt, and end `AUTO-RESULT: failed architecture <BUG-id>`.
 - **Handover: "The Dev opens the PR and merges"** → `dev-handover` does both under its own Auto mode, with these bug rules unchanged. For a `hotfix`, rule (d)'s production line is the `hotfix_base` above, `main` when it is empty.
 - **Re-entry: a hotfix with no branch — "ask the Dev for it first"** → the production line comes from `hotfix_base`; never ask.

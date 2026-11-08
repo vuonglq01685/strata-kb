@@ -18,7 +18,9 @@ finished phases.
 Root cause in another repo: append `## Child bug proposal` to
 `rootcause.md`, record a `Split proposal for <BUG-id>:` question on the hub,
 run `kb claim update <BUG-id> --stopped "split into child bugs"` and stop;
-the BA runs `/ba-bug-report --child-of`. Never create a ticket. Auto mode
+the BA runs `/ba-bug-report --child-of`. Never create a ticket. Re-entry with a proposal present is decided from the
+hub (parent bug: own-fix run; answered question: split rejected; open or
+missing question: stop again), not from the claim. Auto mode
 ends `AUTO-RESULT: blocked-split BUG-<n>`.
 
 *Counterpart in the superpowers plugin: `superpowers:systematic-debugging`
