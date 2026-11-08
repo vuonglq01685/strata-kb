@@ -1498,6 +1498,13 @@ def test_dev_fix_bug_split_question_is_exempt_from_question_format():
     assert text.count("Question format does not apply") == 2
 
 
+def test_dev_fix_bug_auto_split_bullet_commits_and_pushes_proposal_before_stopping():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    bullet = text.split('**Root cause elsewhere: "ask the BA')[1].split("\n- ")[0]
+    commit = bullet.index("commit and push `docs/impl/<BUG-id>/` on the bug's branch")
+    assert bullet.index("record the question") < commit < bullet.index("--stopped")
+
+
 def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():
     text = _dev_text("dev-handover")
     assert "report the `Q<id>` to the orchestrator" in text

@@ -352,7 +352,7 @@ Run `/dev-fix-bug BUG-<n>` again later. It reads the hub first.
 
 - Parent bug now: you do the own fix, once its blockers are done.
 - Question answered, no split: keep fixing.
-- Question still open: the claim is stopped again and the run waits.
+- Question still open or waiting: the claim is stopped again and the run waits.
 - No question: it asks.
 
 Each child bug goes to the Dev of its repo. The parent bug is done when every child is done and, with `Own fix: yes`, your own fix is done. A `-svc` entry for `BUG-<n>` means the own fix only.

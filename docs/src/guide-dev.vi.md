@@ -338,7 +338,7 @@ Sau đó chạy lại `/dev-fix-bug BUG-<n>`. Nó đọc hub trước.
 
 - Giờ là parent bug: bạn làm phần tự sửa, khi các blocker đã xong.
 - Câu hỏi đã được trả lời, không tách: tiếp tục sửa.
-- Câu hỏi còn mở: claim lại được dừng và lượt chạy chờ.
+- Câu hỏi còn mở hoặc đang chờ: claim lại được dừng và lượt chạy chờ.
 - Chưa có câu hỏi: nó hỏi.
 
 Mỗi child bug thuộc Dev của repo đó. Parent bug xong khi mọi child xong và, nếu `Own fix: yes`, phần tự sửa của bạn cũng xong. Một mục `-svc` cho `BUG-<n>` chỉ có nghĩa là phần tự sửa đã xong.
