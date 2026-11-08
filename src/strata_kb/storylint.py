@@ -276,7 +276,7 @@ def lint_parent(
     issues += _check_shape(parent_text, bug=bug)
     all_rows = parse_split(parent_text)
     if bug:
-        issues += _check_own_rows(all_rows, parent_id)
+        issues += _check_own_rows(all_rows, parent_id, parent_text)
     # the own-fix row is not a child: no child id, no ticket file
     rows = [r for r in all_rows if not (bug and r.child == parent_id)]
     issues += _check_split_table(rows, parent_id, parent_text)
@@ -292,9 +292,28 @@ def lint_parent(
     return LintReport(issues)
 
 
-def _check_own_rows(rows: list[SplitRow], parent_id: str) -> list[Issue]:
+def _check_own_rows(
+    rows: list[SplitRow], parent_id: str, parent_text: str
+) -> list[Issue]:
     own = [r for r in rows if r.child == parent_id]
     issues: list[Issue] = []
+    if ticket.parent_story_pin(parent_text) is not None:
+        # one level only: a child bug's cause elsewhere is a sibling on its parent
+        issues.append(
+            _err(
+                f"{parent_id} is a child bug and cannot be a parent bug — "
+                "add a sibling child to its parent's split"
+            )
+        )
+    target = ticket.target_header(parent_text)
+    issues += [
+        _err(
+            f"split row {r.child}: Repo '{r.repo}' differs from the bug's "
+            f"'> Target repo:' '{target or ''}'"
+        )
+        for r in own
+        if r.repo != target
+    ]
     if len(own) != 1:
         issues.append(
             _err(

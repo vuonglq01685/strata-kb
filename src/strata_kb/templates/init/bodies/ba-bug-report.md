@@ -105,7 +105,9 @@ a denial to report. Stop only when the MCP tool fails too.
 ## `--child-of BUG-<n>`
 
 Turns `tickets/bugs/BUG-<n>.md` into a parent bug with one child bug file
-per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
+per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split. On a
+child bug it adds sibling children to that child's parent bug instead (one
+level only).
 
 1. Read `tickets/bugs/BUG-<n>.md` and the proposal: the open Q&A question
    `Split proposal for BUG-<n>:` (`kb_question_list(ticket=BUG-<n>)`), or
@@ -143,6 +145,21 @@ per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
    - Then answer the proposal question: `kb_question_answer(id, answer,
      answered_by, ticket_sections=<child ids>, answer_rev=N+1)`. Reads
      stay unanswered until every child is published at rev ≥ N+1.
+   - `BUG-<n>` is itself a child bug (its header reads `> Parent bug:
+     <parent-id> @ rev M`): never make it a parent bug (the lint refuses a
+     nested split). Amend `<parent-id>` instead, with N its current
+     `> Revision:`: set `> Revision: N+1`, add one split row
+     `<parent-id>.<repo-id>` per proposed sibling as above, set the `Blocked
+     by` of `BUG-<n>`'s own split row to the proposal's `Own fix blocked
+     by:` value, and append a `## Change log` row (trigger `scope`, Affected
+     = the new siblings and `BUG-<n>`). Write each sibling file as above,
+     pinned `> Parent bug: <parent-id> @ rev N+1`. In `BUG-<n>.md` bump
+     `> Revision:`, pin `@ rev N+1` and update its `- Blocked by:` bullet.
+     `Own fix: no` → `BUG-<n>` has nothing left to fix: cancel it as for
+     any cancelled child (remove its split row, delete its file, say so in
+     the change-log row). Lint and tick as above; answer with
+     `ticket_sections` = the new siblings plus `BUG-<n>` when kept, and
+     `answer_rev=N+1`.
 5. On reject: change no file; answer the question with `answer_rev=None`
    and `ticket_sections=[]` (answered at once; the Dev continues).
 6. Write files only. Never commit or publish: the BA commits, then runs

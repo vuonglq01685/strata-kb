@@ -421,6 +421,9 @@ BROWS = (
 
 def parent_bug(rows: str = BROWS) -> str:
     text = parent(rows=rows, kind="parent bug").replace(PID, BID)
+    text = text.replace(
+        "> Kind: parent bug\n", "> Kind: parent bug\n> Target repo: api\n"
+    )
     return text.replace(f"## User Story\n{STORY}\n\n", "")
 
 
@@ -537,3 +540,23 @@ def test_parent_bug_own_row_blocked_by_children_lints():
     rows = own + BROWS.removeprefix(OWN)
     r = storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID)
     assert r.passed, errors(r)
+
+
+def test_parent_bug_own_row_repo_must_match_target_repo():
+    rows = BROWS.replace(OWN, f"| {BID} | web | - | - | yes | first responder |\n")
+    out = errors(storylint.lint_parent(parent_bug(rows), bug_kids(), parent_id=BID))
+    assert (
+        f"split row {BID}: Repo 'web' differs from the bug's '> Target repo:' 'api'"
+        in out
+    )
+    no_target = parent_bug().replace("> Target repo: api\n", "")
+    out = errors(storylint.lint_parent(no_target, bug_kids(), parent_id=BID))
+    assert f"split row {BID}: Repo 'api' differs" in out
+
+
+def test_child_bug_cannot_become_a_parent_bug():
+    pinned = parent_bug().replace(
+        "> Revision: 1\n", "> Revision: 1\n> Parent bug: BUG-6 @ rev 1\n"
+    )
+    out = errors(storylint.lint_parent(pinned, bug_kids(), parent_id=BID))
+    assert f"{BID} is a child bug and cannot be a parent bug" in out

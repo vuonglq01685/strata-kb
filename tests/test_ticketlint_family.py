@@ -114,7 +114,9 @@ def bug_parent_text(pid: str = "BUG-12", rows: str | None = None) -> str:
         "|---|---|---|---|---|---|\n"
     )
     text = _bug(title=f"# {pid} — export fails") + split
-    return text.replace("> Type: bug\n", "> Type: bug\n> Kind: parent bug\n", 1)
+    return text.replace(
+        "> Type: bug\n", "> Type: bug\n> Kind: parent bug\n> Target repo: api\n", 1
+    )
 
 
 def bug_child_text(cid: str, repo: str, blocked: str = "None", pid: str = "BUG-12"):
