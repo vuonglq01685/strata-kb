@@ -282,3 +282,27 @@ def test_planned_child_reads_to_draft(build):
     assert rows[WEB].status == "to-draft"
     assert rows[WEB].reasons == ("child not written yet",)
     assert (rows[US1].status, rows[US1].reasons) == ("in progress", ("0/2 done",))
+
+
+# --- parent bugs: the own-fix row is not a child here (Task 2 rolls it up) ---
+
+
+def _bug_parent(own_fix: str = "yes") -> str:
+    from tests.test_ticketlint_family import bug_parent_text
+
+    return bug_parent_text().replace("| yes |", f"| {own_fix} |", 1)
+
+
+def test_family_rows_of_a_parent_bug_has_no_row_for_the_parent_itself():
+    parent = missionnext.StoryStatus("BUG-12", "", "Bug", "x", ())
+    facts = planparents.Facts(written=frozenset(), dor={}, done=frozenset())
+    rows = planparents.family_rows(parent, _bug_parent(), facts)
+    assert [r.us_id for r in rows] == ["BUG-12", "BUG-12.api", "BUG-12.web"]
+    assert [r.parent for r in rows] == ["", "BUG-12", "BUG-12"]
+
+
+def test_done_parents_of_a_parent_bug_rolls_up_from_children_alone():
+    text = _bug_parent("no")
+    done = {"BUG-12.api", "BUG-12.web"}
+    assert planparents.done_parents({"BUG-12": text}, done) == {"BUG-12"}
+    assert planparents.done_parents({"BUG-12": text}, {"BUG-12.api"}) == set()

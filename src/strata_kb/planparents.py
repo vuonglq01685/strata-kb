@@ -53,12 +53,17 @@ class Facts:
     refusal: Callable[[str | None], str | None] = lambda _target: None
 
 
+def _children(text: str, parent_id: str) -> list[storylint.SplitRow]:
+    """Split rows minus a parent bug's own-fix row (Task 2 rolls that in)."""
+    return [r for r in storylint.parse_split(text) if r.child != parent_id]
+
+
 def done_parents(parents: dict[str, str], done: Iterable[str]) -> set[str]:
     """Ids of the parents whose split children are all in `done`."""
     done = set(done)
     out = set()
     for pid, text in parents.items():
-        split = storylint.parse_split(text)
+        split = _children(text, pid)
         if split and all(r.child in done for r in split):
             out.add(pid)
     return out
@@ -68,7 +73,7 @@ def family_rows(
     parent: missionnext.StoryStatus, text: str, facts: Facts
 ) -> list[missionnext.StoryStatus]:
     """The parent row followed by one row per split row."""
-    split = storylint.parse_split(text)
+    split = _children(text, parent.us_id)
     ids = {r.child for r in split}
     mission = facts.mission_texts.get(parent.mission_id)
     inherited = (

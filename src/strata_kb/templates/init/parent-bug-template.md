@@ -8,12 +8,12 @@
 sections below) plus a `## Split` table. Its own fix is the split row whose
 Child is this bug's id: the first repo to take BUG-<n> fixes that row; the
 other repos get child bugs `BUG-<n>.<repo-id>` (a later one for the same repo
-`BUG-<n>.<repo-id>.<n>`, n >= 2). Each child bug carries
+`BUG-<n>.<repo-id>.<k>`, k >= 2). Each child bug carries
 `> Parent bug: BUG-<n> @ rev <N>`, `> Target repo: <repo-id>` and a
 `- Blocked by:` line under `## Dependencies` that match its split row.
 No ACs anywhere in the split. -->
-<!-- Optional header line `> Target repo: <repo-id>`: the dev repo the fix
-lands in. -->
+<!-- Header line `> Target repo: <repo-id>`: the dev repo the fix lands in
+(the own-fix row's repo; required on a child bug). -->
 
 <!-- Header lines. `> Type:` is `bug`, or `hotfix` for a fix that ships
 ahead of the next planned release, from the production line. `> Severity:`
