@@ -78,6 +78,8 @@ def _ba_tasks(data: dict) -> Iterator[Task]:
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
+    # bugs have their own skill (ba-bug-report); the story author must not touch them
+    rows = tuple(s for s in rows if not s["us_id"].startswith("BUG-"))
     for s in rows:
         if s["status"] == "draft" and not s.get("is_parent"):
             yield Task("ba-ticket-author", f"--amend {s['us_id']}")

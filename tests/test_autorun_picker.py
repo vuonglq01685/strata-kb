@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from strata_kb import planstatus
-from strata_kb.autorun.picker import Task, dev_candidates, pick_ba, pick_dev
+from strata_kb.autorun.picker import Task, _ba_tasks, dev_candidates, pick_ba, pick_dev
 from strata_kb.errors import KbError
 from strata_kb.missionnext import StoryStatus
 
@@ -638,3 +638,16 @@ def test_picker_skips_own_fix_without_a_target(tmp_path: Path, monkeypatch):
     _workflow(tmp_path)
     _hub(monkeypatch, [], [_parent_bug(None)])
     assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]
+
+
+def test_ba_tasks_never_author_bug_rows():
+    data = {
+        "stories": [],
+        "next": None,
+        "unparented": [
+            {"us_id": "BUG-7.web", "status": "draft", "reasons": []},
+            {"us_id": "BUG-8", "status": "to-draft", "reasons": []},
+            {"us_id": "M-x-US1", "status": "draft", "reasons": []},
+        ],
+    }
+    assert [t.arg for t in _ba_tasks(data)] == ["--amend M-x-US1"]

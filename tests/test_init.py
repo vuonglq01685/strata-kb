@@ -3584,3 +3584,9 @@ def test_cli_init_next_steps_name_the_bug_skills(tmp_path: Path):
     dev = runner.invoke(app, ["init", str(tmp_path / "dev"), "--kind", "dev"])
     assert dev.exit_code == 0, dev.output
     assert "/dev-fix-bug" in dev.output
+
+
+def test_parent_bug_template_change_log_affected_is_child_ids():
+    text = initcmd.read_template("parent-bug-template.md")
+    assert "Affected is the child ids" in text
+    assert "Affected is section names" not in text

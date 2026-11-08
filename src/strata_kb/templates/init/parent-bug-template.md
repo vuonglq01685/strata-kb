@@ -102,7 +102,7 @@ block as a story), `## Technical grounding` (SA-owned, `kb ticket check`),
 ## Change log
 <!-- Append-only: one row per revision >= 2, in order; bump `> Revision:` under
 the title in the same edit. Trigger is one or more of kb-context,
-architecture, scope, delivery (comma-separated). Affected is section names, or `-`.
+architecture, scope, delivery (comma-separated). Affected is the child ids (not section names), or `-`.
 Review holds who reviewed the amendment (a name), or `-`;
 amendments are not recorded in Review record. -->
 | Rev | Date | Trigger | What changed | Affected | Review |

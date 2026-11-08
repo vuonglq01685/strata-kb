@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import planstatus, ticket, ticketlint
+from strata_kb import planstatus, ticket, ticketfetch, ticketlint
 from strata_kb.doctor import Issue
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
@@ -25,6 +25,16 @@ CLAIM_NOTE = "claim check skipped (needs the hub API)"
 
 def _err(message: str) -> Issue:
     return Issue("error", message)
+
+
+def _on_hub_as_parent_bug(hub: HubHandle, ticket_id: str) -> bool:
+    """The hub already publishes `ticket_id` as a parent bug."""
+    try:
+        _, doc, l3 = ticketfetch.find(hub, ticket_id)
+        section = ticketfetch.read_section(l3, doc, ticket_id)
+    except ticketfetch.TicketFetchError:  # includes TicketNotOnHub
+        return False
+    return ticket.ticket_kind(ticketfetch.source_text(section)) == "parent bug"
 
 
 def hub_issues(
@@ -48,7 +58,9 @@ def hub_issues(
     issues = [
         _err(f"ticket id {ticket_id} is already published by {r}") for r in holders
     ]
-    if parent:
+    # a parent bug's own fix lands in a -svc history after the parent is
+    # published; only a newly made parent must not be done already
+    if parent and not _on_hub_as_parent_bug(hub, ticket_id):
         cache: dict[str, set[str] | None] = {}
         if any(
             ticket_id in (planstatus.done_for(hub, fed.meta.repo_id, cache) or ())

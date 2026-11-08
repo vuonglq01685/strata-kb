@@ -3847,3 +3847,13 @@ def test_no_template_looks_up_a_ticket_branch_by_prefix_or_substring():
             assert 'branch --list "*<' not in text, f.name
             assert "'auto/<ticket-id>*'" not in text, f.name
             assert "'auto/<mission-id>*'" not in text, f.name
+
+
+def test_dev_fix_bug_commits_the_split_proposal_and_reads_waiting():
+    for name in _full_forms("dev-fix-bug"):
+        text = _normalised(_read_init_template(name))
+        assert "`docs/impl/<BUG-id>/` on the bug's branch" in text, name
+        assert "open or waiting" in text, name
+    command = _normalised(_read_init_template("claude-command-dev-fix-bug.md"))
+    assert "missing question: ask it, then stop" in command
+    assert "stop again" not in command.replace("waiting question: stop again", "")

@@ -395,3 +395,22 @@ def test_own_fix_ready_follows_its_blockers(bug_build, done, ready):
 
 def test_own_fix_without_blockers_is_ready_at_once(bug_build):
     assert _rows(bug_build())[PID].own_fix_ready
+
+
+def _lint_errors(hub: HubHandle, pid: str) -> list[str]:
+    from strata_kb.familyhub import lint
+    from tests.test_ticketlint_family import bug_family
+
+    texts = bug_family(pid)
+    report = lint(texts[pid], hub, ticket_id=pid, load_ticket=texts.get)
+    return [str(i) for i in report.issues]
+
+
+def test_published_parent_bug_may_be_done_in_svc(bug_build):
+    hub = bug_build(done={"api": (PID,)})
+    assert not [e for e in _lint_errors(hub, PID) if "already implemented" in e]
+
+
+def test_done_bug_not_on_hub_cannot_become_parent(bug_build):
+    hub = bug_build(done={"api": ("BUG-99",)})
+    assert any("already implemented" in e for e in _lint_errors(hub, "BUG-99"))

@@ -127,8 +127,10 @@ a denial to report. Stop only when the MCP tool fails too.
    the question starts exactly `Split proposal for <BUG-id>: <one line>` and
    the Auto Question format does not apply to it (the runner matches that
    prefix).
-   Then `kb claim update <BUG-id> --stopped "split into child bugs"` and
-   STOP: tell the Dev to ask the BA to run `/ba-bug-report --child-of
+   Commit `docs/impl/<BUG-id>/` on the bug's branch (`fix/<BUG-id>` or
+   `hotfix/<BUG-id>`, as for the reproduction commit) and push it, so the
+   proposal survives the runner moving on. Then `kb claim update <BUG-id>
+   --stopped "split into child bugs"` and STOP: tell the Dev to ask the BA to run `/ba-bug-report --child-of
    <BUG-id>`. Never create a ticket; never edit the bug file.
 4. **Fix** — one change at the root cause, not at the symptom, with
    nothing bundled in. The reproduction test now passes; then run the full
@@ -184,7 +186,8 @@ Re-entry is derived, never stored:
   2. still a plain bug and its `Split proposal for <BUG-id>:` question is
      answered → the BA rejected the split: read the answer as for any
      answered question and keep fixing in this repo;
-  3. still plain and the question is open → still waiting: run
+  3. still plain and the question is open or waiting (an accepted split reads
+     `waiting` until the children publish) → still waiting: run
      `kb claim update <BUG-id> --stopped "split into child bugs"` again,
      then STOP, do not ask again;
   4. a proposal but no question yet → ask it, stop the claim as in step 3,
