@@ -428,8 +428,19 @@ def test_ba_answer_questions_routes_a_split_proposal_to_child_of():
         "accepted by: agent, reviewer agreed",
         "**Split decision:**",
         "leave the bug unsplit",
+        "re-check each child bug's Definition of Ready boxes",
+        "AUTO-RESULT: failed dor-unticked <child-id>",
+        "reviewer objected: <reason>; decided again",
+        "writes no `**Split decision:**` line and edits no parent",
     ):
         assert needle in auto, needle
+    assert "(a split proposal: see `### Split proposals`)" in off
+    assert "the BA ticks each child's Definition of Ready before publishing" in _normal(
+        _raw("bodies/ba-bug-report.md")
+    )
+    assert "ticks each child's Definition of Ready" in _normal(
+        read_template("claude-command-ba-bug-report.md")
+    )
     cmd = _normal(read_template("claude-command-ba-answer-questions.md"))
     assert "Split proposal for BUG-" in cmd
     assert "/ba-bug-report --child-of" in cmd

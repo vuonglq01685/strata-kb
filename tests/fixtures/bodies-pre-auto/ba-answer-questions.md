@@ -180,7 +180,7 @@ files are for the BA to commit and publish, as step 5 says.
 - Every answer is the BA's; never answer a question yourself, never guess
   at a missing fact.
 - One amendment per ticket, Revision N+1, one change-log row, Trigger
-  `question` (`question, architecture` when step 3's re-ground applies).
+  `question` (a split proposal: see `### Split proposals`) (`question, architecture` when step 3's re-ground applies).
   Never use `question` outside this skill's amendments.
 - Do not record any answer for a ticket whose Definition of Ready is not
   fully ticked.

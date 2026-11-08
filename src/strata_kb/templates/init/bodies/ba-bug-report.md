@@ -141,8 +141,10 @@ per repo. Use it after the Dev ran `/dev-fix-bug` and proposed a split.
      stay unanswered until every child is published at rev ≥ N+1.
 5. On reject: change no file; answer the question with `answer_rev=None`
    and `ticket_sections=[]` (answered at once; the Dev continues).
-6. Write files only. Never commit or publish: the BA commits, then runs
-   `kb publish`.
+6. Write files only. Never commit or publish: the BA ticks each child's
+   Definition of Ready before publishing (the lint leaves the boxes
+   unticked), otherwise the children stay off the hub; then the BA commits
+   and runs `kb publish`.
 
 ## Hard rules
 
