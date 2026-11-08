@@ -407,7 +407,8 @@ def test_single_ticket_grounded_on_two_repos_can_pass_the_gate(
         ("web", "web-code"): doc("web-code", "def1234", "svc.web"),
     }
     report = ticketcheck.check(text, load_doc=lambda r, d: docs.get((r, d)))
-    assert [i.message for i in report.issues if i.level == "error"] == []
+    assert report.passed, report.render("Grounding")
+    assert not [i for i in report.issues if i.message.startswith("[web] ")]
     assert any(n.startswith("[web] ") for n in report.notes)
 
 

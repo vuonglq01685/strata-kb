@@ -2124,7 +2124,8 @@ def test_sa_ticket_multi_repo_grounds_each_line_in_its_own_repo(name):
         "the build repo first",
         "prefix every id or path that belongs to a later repo with `<repo-id>:`",
         "An unqualified line belongs to the first entry",
-        "a line that names two repos is a gate error",
+        "A line that names two repos, or puts a `<repo-id>:` id beside an unqualified one",
+        "is a gate error, and so is a `<repo-id>:` that is not on the `Grounded on:` line",
         "`kb ticket check` checks each line in its own repo's document",
     ]:
         assert needle in t, needle

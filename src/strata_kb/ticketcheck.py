@@ -650,6 +650,14 @@ def check(
 
 
 _Entry = tuple[str | None, str, str]
+_NO_SERVICE = (
+    "no `svc.<name>` on the `Service:` line — which service does this ticket touch?"
+)
+_COMPOSE_MISSING = (
+    "Volumes:/Healthchecks:/Devices: lines missing — "
+    "re-ground on a -code revision that carries them"
+)
+_WHOLE_TICKET_WARNINGS = frozenset({_NO_SERVICE, _COMPOSE_MISSING})
 # `<repo-id>:svc.<name>` — the repo-id grammar of GROUNDED_ON_RE.
 _QUALIFIED_RE = re.compile(
     r"(?<![\w./:-])(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*)"
@@ -697,12 +705,13 @@ def _check_each_repo(
     *,
     load_doc: LoadDoc,
     heading: str,
+    keep: Callable[[str | None, Issue], bool] = lambda repo, issue: True,
     **kwargs,
 ) -> tuple[list[Issue], list[str]]:
     """Run `check()` once per `-code` entry on a copy of `text` grounded on
     that entry alone; `rewrite(repo, lines)` blanks the other repos' lines in
-    place, so reported line numbers stay true to the file. Issues and notes
-    come back tagged `[<repo>] `."""
+    place, so reported line numbers stay true to the file. Issues `keep`
+    accepts and all notes come back tagged `[<repo>] `."""
     lines = text.splitlines()
     grounded_at = _grounded_at(cast(_Section, _parse_section(text, heading)))
     issues: list[Issue] = []
@@ -716,15 +725,34 @@ def _check_each_repo(
         report = check(sub, load_doc=load_doc, heading=heading, **kwargs)
         tag = f"[{repo or doc_id}] "
         issues.extend(
-            dataclasses.replace(i, message=tag + i.message) for i in report.issues
+            dataclasses.replace(i, message=tag + i.message)
+            for i in report.issues
+            if keep(repo, i)
         )
         notes.extend(tag + n for n in report.notes)
     return issues, notes
 
 
-def _outside_code(line: str) -> str:
-    """`line` with every backticked span blanked to spaces (same length)."""
-    return CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), line)
+_REPO_ID = r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*"
+# What may follow a ticket line's `<repo>:` qualifier: a section id, or (for a
+# repo on the Grounded-on line) a path — `src/app.ts`, `package.json`; never
+# `6379` or the `//` of a URL.
+_QUALIFIED_ID = rf"(?={ID_RE.pattern})"
+_QUALIFIED_ID_OR_PATH = rf"(?={ID_RE.pattern}|[\w.-]*[/.]\w)"
+# Any `<repo>:<section-id>` — catches a repo missing from the Grounded-on line.
+_ANY_QUALIFIER_RE = re.compile(rf"(?<![\w./:-])(?P<repo>{_REPO_ID}):{_QUALIFIED_ID}")
+
+
+def _mask_code(line: str, lead: re.Pattern[str]) -> str:
+    """`line` with every backticked span blanked to spaces (same length),
+    except a span that starts with a `lead` qualifier (`` `web:src/a.ts` ``):
+    `web:6379` inside a command is no qualifier."""
+
+    def blank(m: re.Match[str]) -> str:
+        span = m.group(0)
+        return span if lead.match(span[1:]) else " " * len(span)
+
+    return CODE_SPAN_RE.sub(blank, line)
 
 
 def _check_ticket_multi(
@@ -733,12 +761,28 @@ def _check_ticket_multi(
     """Ticket kept as one across repos (the BA rejected a split) whose
     `Grounded on:` lists several `-code` docs: each line is checked by
     `check()` against its own repo's document. A line qualifies its ids or
-    paths `<repo>:`; an unqualified line belongs to the first entry."""
+    paths `<repo>:`; an unqualified line belongs to the first entry; a line
+    that mixes repos (two qualifiers, or a qualifier beside an unqualified
+    id) is an error."""
     section = cast(_Section, _parse_section(text, heading))  # parsed by check()
+    listed = [e[0] for e in entries]
+    if None in listed or len(set(listed)) < len(listed):
+        return LintReport(
+            [
+                Issue(
+                    "error",
+                    "'Grounded on:' lists several -code docs: write each as "
+                    "`<repo-id>:<repo-id>-code @ <revision>`, one per repo "
+                    f"(line {_grounded_at(section) + 1})",
+                )
+            ],
+            [],
+        )
+    repos_on_line = cast(list[str], listed)
     lines = text.splitlines()
-    named = [re.escape(e[0]) for e in entries if e[0]]
-    qualifier = re.compile(rf"(?<![\w./:-])({'|'.join(named) or '(?!)'}):(?=\S)")
-    first_repo = entries[0][0]
+    alternation = "|".join(re.escape(r) for r in repos_on_line)
+    qualifier = re.compile(rf"(?<![\w./:-])({alternation}):{_QUALIFIED_ID_OR_PATH}")
+    first_repo = repos_on_line[0]
     # text line index -> (owner, owner's line, qualifiers stripped)
     owned: dict[int, tuple[str | None, str]] = {}
     labels: dict[int, str] = {}  # top-level field line -> its bare `- <Field>:`
@@ -749,8 +793,34 @@ def _check_ticket_multi(
         at = section.first_line - 1 + i
         if not visible[:1].isspace() and (m := FIELD_RE.match(visible)):
             labels[at] = f"- {m.group('field')}:"
-        prose = _outside_code(visible)  # `web:6379` in a command is no qualifier
-        repos = list(dict.fromkeys(q.group(1) for q in qualifier.finditer(prose)))
+        owned[at] = (None, labels.get(at, ""))  # no repo keeps a bad line
+        prose = _mask_code(visible, qualifier)
+        quals = list(qualifier.finditer(prose))
+        unknown = [
+            q.group("repo")
+            for q in _ANY_QUALIFIER_RE.finditer(prose)
+            if q.group("repo") not in repos_on_line
+        ]
+        if unknown:
+            issues.append(
+                Issue(
+                    "error",
+                    f"repo '{unknown[0]}' is not on the 'Grounded on:' line "
+                    f"(line {at + 1})",
+                )
+            )
+            continue
+        ends = {q.end() for q in quals}
+        repos = list(dict.fromkeys(q.group(1) for q in quals))
+        if quals and section.field_of_line[i] != "Files":
+            # an id beside a qualifier means the first repo; `src/api.py` is a path
+            bare = [
+                m
+                for m in ID_RE.finditer(prose)
+                if m.start() not in ends and prose[m.start() - 1 : m.start()] != "/"
+            ]
+            if bare:
+                repos = list(dict.fromkeys([first_repo, *repos]))
         if len(repos) > 1:
             issues.append(
                 Issue(
@@ -759,10 +829,9 @@ def _check_ticket_multi(
                     f"repo its own line or sub-bullet (line {at + 1})",
                 )
             )
-            owned[at] = (None, labels.get(at, ""))
             continue
         raw = lines[at]
-        for q in reversed(list(qualifier.finditer(_outside_code(raw)))):
+        for q in reversed(list(qualifier.finditer(_mask_code(raw, qualifier)))):
             raw = raw[: q.start()] + raw[q.end() :]
         owned[at] = (repos[0] if repos else first_repo, raw)
 
@@ -770,8 +839,12 @@ def _check_ticket_multi(
         for at, (owner, own_line) in owned.items():
             sub_lines[at] = own_line if owner == repo else labels.get(at, "")
 
+    def keep(repo: str | None, issue: Issue) -> bool:
+        # Whole-ticket warnings: the first repo's run reports them once.
+        return repo == first_repo or issue.message not in _WHOLE_TICKET_WARNINGS
+
     more, notes = _check_each_repo(
-        text, entries, rewrite, load_doc=load_doc, heading=heading, **kwargs
+        text, entries, rewrite, load_doc=load_doc, heading=heading, keep=keep, **kwargs
     )
     return LintReport(issues + more, notes)
 
@@ -1034,7 +1107,7 @@ def _check_service_present(
     issues.append(
         Issue(
             "warning",
-            "no `svc.<name>` on the `Service:` line — which service does this ticket touch?",
+            _NO_SERVICE,
         )
     )
 
@@ -1485,7 +1558,7 @@ def _check_compose_facts(
         issues.append(
             Issue(
                 "warning",
-                "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them",
+                _COMPOSE_MISSING,
                 code=UNVERIFIED,
             )
         )

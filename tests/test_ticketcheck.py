@@ -2691,6 +2691,7 @@ def test_two_repo_ticket_each_id_resolves_in_its_own_doc():
     )
     report = _ticket_check(text)
     assert errors(report) == [], report.render("Grounding")
+    assert not [w for w in warnings(report) if w.startswith("[web] ")], warnings(report)
     assert any(
         n.startswith("[demo] ") and "demo-code read from" in n for n in notes(report)
     )
@@ -2743,3 +2744,57 @@ def test_two_repo_ticket_repo_name_inside_a_command_is_no_qualifier():
     )
     report = _ticket_check(text)
     assert errors(report) == [], report.render("Grounding")
+
+
+def test_two_repo_ticket_backticked_qualifier_counts():
+    text = _ticket_multi("- Service:", "  - `demo:svc.api`", "  - `web:svc.web`")
+    report = _ticket_check(text)
+    assert errors(report) == [], report.render("Grounding")
+
+
+def test_two_repo_ticket_qualifier_beside_an_unqualified_id_errors():
+    text = _ticket_multi("- Volumes: svc.api — none; web:svc.web — none")
+    at = next(i for i, ln in enumerate(text.splitlines(), 1) if "web:svc.web" in ln)
+    assert (
+        f"line names several repos (demo, web) — give each repo its own line "
+        f"or sub-bullet (line {at})"
+    ) in errors(_ticket_check(text))
+
+
+def test_two_repo_ticket_qualified_path_is_not_read_as_an_unqualified_id():
+    text = _ticket_multi(
+        "- Service: svc.api", "- Files:", "  - web:src/api.py", "  - `web:src/x.ts`"
+    )
+    assert not [m for m in errors(_ticket_check(text)) if "several repos" in m]
+
+
+def test_two_repo_ticket_repo_missing_from_grounded_on_errors():
+    text = _ticket_multi("- Service:", "  - demo:svc.api", "  - admin:svc.api")
+    at = next(i for i, ln in enumerate(text.splitlines(), 1) if "admin:" in ln)
+    assert f"repo 'admin' is not on the 'Grounded on:' line (line {at})" in errors(
+        _ticket_check(text)
+    )
+
+
+@pytest.mark.parametrize(
+    "grounded",
+    [
+        f"demo-code @ {_R1}, web:web-code @ {_R2}",
+        f"demo:demo-code @ {_R1}, demo:demo2-code @ {_R2}",
+    ],
+)
+def test_two_repo_ticket_entries_must_name_distinct_repos(grounded):
+    report = _ticket_check(_ticket_multi("- Service: svc.api", grounded=grounded))
+    assert errors(report) == [
+        "'Grounded on:' lists several -code docs: write each as "
+        "`<repo-id>:<repo-id>-code @ <revision>`, one per repo (line 7)"
+    ]
+
+
+def test_two_repo_ticket_whole_ticket_warnings_come_once_from_the_first_repo():
+    report = _ticket_check(_ticket_multi("- Service: svc.api"))
+    assert not [w for w in warnings(report) if w.startswith("[web] ")], warnings(report)
+    report = _ticket_check(_ticket_multi("- Service: web:svc.web"))
+    assert [w for w in warnings(report) if "no `svc.<name>`" in w] == [
+        "[demo] " + ticketcheck._NO_SERVICE
+    ]
