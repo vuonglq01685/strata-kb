@@ -985,6 +985,7 @@ _DEV_GATES = {
         "question the architecture with the Dev",
         "The Dev opens the PR and merges",
         "ask the Dev for it first",
+        "ask the BA to run /ba-bug-report --child-of",
         "never merge",
     ],
 }
@@ -1411,6 +1412,34 @@ def test_dev_fix_bug_checks_for_finished_work_before_it_branches():
     assert text.index("Already finished") < text.index("The branch and its base")
     assert "A local `fix/<BUG-id>`" in text
     assert "`git switch fix/<BUG-id>`" in text
+
+
+_CHILD_BUG_NEEDLES = (
+    "## Child bug proposal",
+    "Split proposal for <BUG-id>:",
+    '--stopped "split into child bugs"',
+    "AUTO-RESULT: blocked-split",
+    "/ba-bug-report --child-of",
+    "Never create a ticket",
+)
+
+
+@pytest.mark.parametrize(
+    "template",
+    ["bodies/dev-fix-bug.md", "claude-command-dev-fix-bug.md"],
+)
+def test_dev_fix_bug_proposes_child_bugs(template):
+    text = _normal(_raw(template))
+    for needle in _CHILD_BUG_NEEDLES:
+        assert needle in text, (template, needle)
+
+
+def test_dev_fix_bug_split_re_entry_and_result_line():
+    text = _normal(_raw("bodies/dev-fix-bug.md"))
+    assert "`## Child bug proposal` and the claim is `stopped`" in text
+    assert "own-fix run" in text and "re-take" in text
+    assert "answered" in text and "rejected the split" in text
+    assert "- `AUTO-RESULT: blocked-split BUG-<n>`" in text
 
 
 def test_dev_handover_reports_a_stale_blocker_to_the_orchestrator():

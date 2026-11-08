@@ -116,6 +116,17 @@ a denial to report. Stop only when the MCP tool fails too.
    line, filled only when a hypothesis is proven) and `Evidence:`
    (`file:line` references). A hypothesis that fails is logged as failed
    and the next one starts from what it taught you, not from a guess.
+   Root cause wholly or partly in another dev repo → ask the BA to run
+   /ba-bug-report --child-of: append `## Child bug proposal` to
+   `rootcause.md` with a table `| Child | Repo | Root cause | Reproduction |
+   Blocked by |` (one row per repo, child id `<BUG-id>.<repo-id>`), a line
+   `Own fix: yes|no — <what this repo still fixes>` and a line `Own fix
+   blocked by: <child ids|->`. Record it on the hub:
+   `kb_question_ask(ticket=<BUG-id>, question="Split proposal for <BUG-id>:
+   <one line>", asked_by, context=<the table and the two lines>, blocks="")`.
+   Then `kb claim update <BUG-id> --stopped "split into child bugs"` and
+   STOP: tell the Dev to ask the BA to run `/ba-bug-report --child-of
+   <BUG-id>`. Never create a ticket; never edit the bug file.
 4. **Fix** — one change at the root cause, not at the symptom, with
    nothing bundled in. The reproduction test now passes; then run the full
    suite and linters (`cmd.test` and `cmd.lint` from `-code §cmd.*`, or
@@ -161,6 +172,15 @@ Re-entry is derived, never stored:
 - present, `Root cause:` empty and three or more rows of the hypothesis
   log failed → STOP and raise the architecture question with the Dev;
   never a fourth hypothesis without that conversation.
+- `rootcause.md` has `## Child bug proposal` and the claim is `stopped` →
+  the proposal was already made: STOP again, do not ask again. An own-fix
+  run (the bug is now a parent bug and the runner yields `dev-fix-bug
+  <BUG-id>`) re-takes the claim (`kb claim take <BUG-id>`; it goes active)
+  and fixes only the own-fix part named in the parent's own split row,
+  then proceeds as usual. The BA rejected the split when the `Split
+  proposal for <BUG-id>:` question reads answered and the bug stays a
+  plain bug: read the answer as for any answered question and keep
+  fixing in this repo.
 - `Root cause:` filled → `root cause ✅`; `fix ✅` once the reproduction
   test and the full suite pass on the branch; no PR yet → Fix, then
   Handover. A fix that failed cleared `Root cause:` (step 4), so this
