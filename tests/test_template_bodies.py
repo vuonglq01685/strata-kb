@@ -440,6 +440,14 @@ def test_ba_answer_questions_routes_a_split_proposal_to_child_of():
         in off
     )
     assert "the question stays open until every child is fully ticked" in off
+    assert (
+        "after the re-check passes, call `kb_question_answer(id, answer, answered_by, ticket_sections=<the child ids>, answer_rev=<the parent bug's revision>)` from this run"
+        in off
+    )
+    assert (
+        "Apart from that resume, do not call `kb_question_answer` for it yourself"
+        in off
+    )
     bug = _normal(_raw("bodies/ba-bug-report.md"))
     assert bug.index("every child's Definition of Ready is fully ticked") < bug.index(
         "answer the proposal question: `kb_question_answer"

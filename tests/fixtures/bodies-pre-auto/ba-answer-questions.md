@@ -169,12 +169,14 @@ and, once every child's Definition of Ready is ticked, answers the question
 with `answer_rev` = the parent's new revision and `ticket_sections` = the
 child ids; the question stays open until every child is fully ticked. When
 `auto/qa-parked/<BUG-id>` exists, merge that draft and continue with the
-Definition of Ready re-check; do not run `--child-of` again (the parked
-draft already holds the parent and the children; a stale draft, one whose
+Definition of Ready re-check; do not run `--child-of` again, and after the
+re-check passes, call `kb_question_answer(id, answer, answered_by,
+ticket_sections=<the child ids>, answer_rev=<the parent bug's revision>)`
+from this run (`--child-of` is the only other caller, and it is not run here;
+the parked draft already holds the parent and the children; a stale draft, one whose
 parent `> Revision:` is not above the default branch's, is ignored). On a
 conflict run `git merge --abort` and start fresh. On reject it answers with
-`answer_rev=None` and `ticket_sections=[]`, and the bug stays unsplit. Do not
-call `kb_question_answer` for it yourself, and skip steps 3-4 for it. The
+`answer_rev=None` and `ticket_sections=[]`, and the bug stays unsplit. Apart from that resume, do not call `kb_question_answer` for it yourself, and skip steps 3-4 for it. The
 files are for the BA to commit and publish, as step 5 says.
 
 ## Hard rules
