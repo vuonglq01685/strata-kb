@@ -49,9 +49,9 @@ Changes and Q&A work at the parent story. Phase 4 of cross-repo stories.
 
 Bugs across repos. Phase 5 of cross-repo stories.
 
-- **Parent bug.** `> Kind: parent bug` with a `## Split` table: one own row (`Own fix: yes|no`) and child rows `BUG-<n>.<repo>`. Child bugs pin `> Parent bug: BUG-<n> @ rev N`, `> Target repo:` and `- Blocked by:`. Template `docs/tickets/PARENT-BUG-TEMPLATE.md`. `kb ticket lint` no longer rejects it.
+- **Parent bug.** `> Kind: parent bug` with a `## Split` table: one own row (`Own fix: yes|no`) and child rows `BUG-<n>.<repo>`. Child bugs pin `> Parent bug: BUG-<n> @ rev N`, `> Target repo:` and `- Blocked by:`. Template `docs/tickets/PARENT-BUG-TEMPLATE.md`. `kb ticket lint` no longer rejects it, and errors when the own row's `Repo` differs from the bug's `> Target repo:`.
 - **Roll-up.** A parent bug is done when every child is done and, with `Own fix: yes`, its own fix is done (a `-svc` entry for the bug id means the own fix only). Plan status shows `k/N done` and `own fix done|pending`; the first-responder repo gets `dev-fix-bug BUG-<n>` for the own fix.
-- **Split proposal.** The Dev writes `## Child bug proposal`, asks `Split proposal for BUG-<n>: …`, stops the claim and ends `AUTO-RESULT: blocked-split BUG-<n>`; the run resumes once the bug is a parent bug or the question is answered.
+- **Split proposal.** The Dev writes `## Child bug proposal`, asks `Split proposal for BUG-<n>: …`, stops the claim and ends `AUTO-RESULT: blocked-split BUG-<n>`; the run resumes once the bug is a parent bug or the question is answered. Splits are one level deep: a child bug whose cause lies in a third repo proposes a sibling child on its parent and ends `AUTO-RESULT: blocked-split BUG-<n>.<repo>`; `kb ticket lint` errors when a child bug is made a parent bug. An own-fix run stops when the own row says `Own fix: no` or its `Blocked by` children are not done.
 - **BA side.** `/ba-bug-report` has the SA propose the first responder and takes `--child-of BUG-<n>`; `/ba-answer-questions` has a `### Split proposals` part.
 - **Upgrade.** Upgrade the hub, then run `kb init` in the BA and Dev repos to get the skills. The guides (en, vi) cover it.
 

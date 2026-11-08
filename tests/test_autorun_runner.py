@@ -1383,6 +1383,37 @@ def test_blocked_split_newer_open_proposal_keeps_the_skip(env, monkeypatch):
     assert seen[-1] == (BUG.key,)
 
 
+def test_blocked_split_child_bug_waits_on_its_own_id(env, monkeypatch):
+    # a child bug proposes a sibling on its parent: never a parent row itself,
+    # so only the answered proposal (listed under the child id) lifts the skip
+    kid = Task("dev-fix-bug", "BUG-7.web")
+    seen: list = []
+
+    def pick(h, root, repo_id, skip=()):
+        seen.append(tuple(skip))
+        return None if kid.key in skip else kid
+
+    monkeypatch.setattr(picker, "pick_dev", pick)
+    monkeypatch.setattr(
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: ([], [_bug_row()], []),
+    )
+    proposal = {**_proposal("waiting"), "ticket": "BUG-7.web"}
+    proposal["question"] = "Split proposal for BUG-7.web: a sibling in api"
+    qa = SplitQa([proposal])
+    script = Script(TaskResult("blocked-split", ("BUG-7.web",)), TaskResult("done"))
+    assert once(env, script, qa=qa) == "ran"
+    assert autostate.load(env[1]).waiting_split == ("BUG-7.web",)
+    assert once(env, script, qa=qa) == "idle"
+    assert seen[-1] == (kid.key,)
+
+    proposal["state"] = "answered"
+    assert once(env, script, qa=qa) == "ran"
+    assert seen[-1] == ()
+    assert script.prompts[1].startswith("/dev-fix-bug BUG-7.web")
+
+
 class OwnClaimClient:
     """A hub claim double: BUG-7 is the runner's own claim; it stays held once stopped."""
 

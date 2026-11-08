@@ -26,12 +26,15 @@ AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
 DEFAULT_TIMEOUT = 4 * 3600
 MAX_REASON = 500
 MAX_SLUG = 60
+# BUG-<n>, or a child bug BUG-<n>.<repo-id>[.<k>] (ticket.CHILD_ID_RE's shape)
+_SPLIT_BUG = r"BUG-\d+(?:\.[A-Za-z0-9][A-Za-z0-9_-]*(?:\.(?:[2-9]|[1-9]\d+))?)?"
 
 
 @dataclass(frozen=True)
 class TaskResult:
     kind: Kind
-    # blocked-qa: question ids (int); blocked-split: the bug id ("BUG-7")
+    # blocked-qa: question ids (int); blocked-split: the bug id ("BUG-7", or a
+    # child bug "BUG-7.web" proposing a sibling child on its parent)
     ids: tuple[int | str, ...] = ()
     reason: str = ""
 
@@ -52,7 +55,7 @@ def parse_result(reply: str) -> TaskResult:
         parts = [p.strip() for p in rest.split(",")]
         if parts and all(re.fullmatch(r"Q\d+", p) for p in parts):
             return TaskResult("blocked-qa", tuple(int(p[1:]) for p in parts))
-    if word == "blocked-split" and re.fullmatch(r"BUG-\d+", rest):
+    if word == "blocked-split" and re.fullmatch(_SPLIT_BUG, rest):
         return TaskResult("blocked-split", (rest,))
     return TaskResult("failed", (), f"bad result line: {lines[-1][:200]}")
 
@@ -79,7 +82,7 @@ End your reply with exactly one line, and make it the last line, in one of \
 these four forms:
 AUTO-RESULT: done
 AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]
-AUTO-RESULT: blocked-split BUG-<n>
+AUTO-RESULT: blocked-split <bug-id>
 AUTO-RESULT: failed <reason>
 """
     )

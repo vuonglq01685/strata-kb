@@ -1489,7 +1489,57 @@ def test_dev_fix_bug_split_re_entry_and_result_line():
     assert "`> Kind: parent bug`" in text and "own-fix run" in text
     assert "rejected the split" in text and "proposal but no question yet" in text
     assert "`stopped`" not in text.split("## Auto mode")[0].split("Re-entry is")[1]
-    assert "- `AUTO-RESULT: blocked-split BUG-<n>`" in text
+    assert "- `AUTO-RESULT: blocked-split <BUG-id>`" in text
+    assert "`BUG-7.web` for a child bug that proposes a sibling child" in text
+
+
+_OWN_FIX_RE_ENTRY_NEEDLES = (
+    "Read the bug's own split row (Child = `<BUG-id>`) first",
+    "`Own fix: no` → nothing to fix in this repo",
+    '--stopped "own fix: no"',
+    "row's `Blocked by` not yet `done` in `kb_mission_next`",
+    '--stopped "waiting for child bugs"',
+)
+_SIBLING_NEEDLES = (
+    "A child bug (its header reads `> Parent bug: <parent-id> @ rev N`) gets no "
+    "children of its own",
+    "sibling children on that parent, child id `<parent-id>.<repo-id>`",
+    "the question keeps this bug's own id",
+    "a child bug whose parent's split now lists the proposed siblings",
+)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/strata_kb/templates/init/bodies/dev-fix-bug.md",
+        "tests/fixtures/bodies-pre-auto/dev-fix-bug.md",
+    ],
+)
+def test_dev_fix_bug_own_fix_re_entry_checks_and_sibling_split(path):
+    text = _normal(Path(path).read_text(encoding="utf-8"))
+    for needle in (*_OWN_FIX_RE_ENTRY_NEEDLES, *_SIBLING_NEEDLES):
+        assert _normal(needle) in text, (path, needle)
+    # the checks come before the own fix itself
+    assert text.index("`Own fix: no` → nothing") < text.index(
+        "Otherwise fix only the part named in that row"
+    )
+
+
+def test_dev_fix_bug_auto_own_fix_stop_ends_done():
+    text = _normal(_auto_section("bodies/dev-fix-bug.md"))
+    assert (
+        "An own-fix run that stops (`Own fix: no`, or its `Blocked by` children "
+        "not done) ends `AUTO-RESULT: done`" in text
+    )
+
+
+def test_ba_bug_report_child_of_a_child_bug_adds_siblings():
+    text = _normal(_raw("bodies/ba-bug-report.md"))
+    assert "is itself a child bug" in text
+    assert "never make it a parent bug (the lint refuses a nested split)" in text
+    assert "Amend `<parent-id>` instead" in text
+    assert "`Own fix: no` → `BUG-<n>` has nothing left to fix: cancel it" in text
 
 
 def test_dev_fix_bug_split_question_is_exempt_from_question_format():

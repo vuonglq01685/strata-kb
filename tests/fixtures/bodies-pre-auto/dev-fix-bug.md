@@ -121,7 +121,12 @@ a denial to report. Stop only when the MCP tool fails too.
    `rootcause.md` with a table `| Child | Repo | Root cause | Reproduction |
    Blocked by |` (one row per repo, child id `<BUG-id>.<repo-id>`), a line
    `Own fix: yes|no — <what this repo still fixes>` and a line `Own fix
-   blocked by: <child ids|->`. Record it on the hub:
+   blocked by: <child ids|->`. A child bug (its header reads `> Parent bug:
+   <parent-id> @ rev N`) gets no children of its own: its proposal names
+   sibling children on that parent, child id `<parent-id>.<repo-id>` (or
+   `<parent-id>.<repo-id>.2` when the parent's split already has that
+   repo), and the BA amends the parent's split; the question keeps this
+   bug's own id. Record it on the hub:
    `kb_question_ask(ticket=<BUG-id>, question="Split proposal for <BUG-id>:
    <one line>", asked_by, context=<the table and the two lines>, blocks="")`;
    the question starts exactly `Split proposal for <BUG-id>: <one line>` and
@@ -180,12 +185,22 @@ Re-entry is derived, never stored:
 - `rootcause.md` has `## Child bug proposal` → decide from the hub, not
   from the claim (Intake's take made it active). Each step is safe to repeat.
   Fetch the bug (`kb_ticket_fetch`):
-  1. it reads `> Kind: parent bug` → the own-fix run: fix only the part named
-     in the parent's own split row, then the normal handover, so its `-svc`
-     history marks the own fix done;
+  1. it reads `> Kind: parent bug` → the own-fix run. Read the bug's own
+     split row (Child = `<BUG-id>`) first. `Own fix: no` → nothing to fix
+     in this repo, the child bugs carry the whole fix: run `kb claim update
+     <BUG-id> --stopped "own fix: no"` and STOP. Any child bug in that
+     row's `Blocked by` not yet `done` in `kb_mission_next` (`kb mission
+     next --from-hub`) → the own fix waits for it: run `kb claim update
+     <BUG-id> --stopped "waiting for child bugs"` and STOP; re-run
+     `/dev-fix-bug <BUG-id>` once they are done. Otherwise fix only the part
+     named in that row, then the normal handover, so its `-svc` history
+     marks the own fix done;
   2. still a plain bug and its `Split proposal for <BUG-id>:` question is
-     answered → the BA rejected the split: read the answer as for any
-     answered question and keep fixing in this repo;
+     answered → for a child bug whose parent's split now lists the proposed
+     siblings, the BA accepted: fix only what its `Own fix:` line names, once
+     every child bug in its `- Blocked by:` reads `done` (otherwise stop the
+     claim and STOP as in case 1); else the BA rejected the split: read the
+     answer as for any answered question and keep fixing in this repo;
   3. still plain and the question is open or waiting (an accepted split reads
      `waiting` until the children publish) → still waiting: run
      `kb claim update <BUG-id> --stopped "split into child bugs"` again,

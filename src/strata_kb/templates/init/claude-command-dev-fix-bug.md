@@ -20,9 +20,12 @@ Root cause in another repo: append `## Child bug proposal` to
 commit and push `docs/impl/<BUG-id>/` on the bug's branch, run
 `kb claim update <BUG-id> --stopped "split into child bugs"` and stop;
 the BA runs `/ba-bug-report --child-of`. Never create a ticket. Re-entry with a proposal present is decided from the
-hub (parent bug: own-fix run; answered question: split rejected; open or
-waiting question: stop again; missing question: ask it, then stop), not from the claim. Auto mode
-ends `AUTO-RESULT: blocked-split BUG-<n>`.
+hub (parent bug: own-fix run, none when `Own fix: no` and only once its
+`Blocked by` child bugs are done; answered question: split rejected, or a
+child bug's sibling split accepted; open or waiting question: stop again;
+missing question: ask it, then stop), not from the claim. A child bug never
+gets children of its own: it proposes sibling children on its parent. Auto mode
+ends `AUTO-RESULT: blocked-split <BUG-id>`.
 
 *Counterpart in the superpowers plugin: `superpowers:systematic-debugging`
 — same Iron Law and phases, inside the strata-kb flow.*

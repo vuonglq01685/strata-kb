@@ -44,9 +44,11 @@ def test_parse_blocked_ids():
     assert parse_result("AUTO-RESULT: blocked-qa Q12,Q13").ids == (12, 13)
 
 
-def test_parse_blocked_split():
-    assert parse_result("AUTO-RESULT: blocked-split BUG-7") == TaskResult(
-        "blocked-split", ("BUG-7",)
+@pytest.mark.parametrize("bug", ["BUG-7", "BUG-7.web", "BUG-7.payments-api.2"])
+def test_parse_blocked_split(bug):
+    # a child bug (BUG-7.web) ends with its own id when it proposes a sibling
+    assert parse_result(f"AUTO-RESULT: blocked-split {bug}") == TaskResult(
+        "blocked-split", (bug,)
     )
 
 
@@ -57,6 +59,9 @@ def test_parse_blocked_split():
         "AUTO-RESULT: blocked-split 7",
         "AUTO-RESULT: blocked-split BUG-x",
         "AUTO-RESULT: blocked-split BUG-7,BUG-8",
+        "AUTO-RESULT: blocked-split BUG-7.",
+        "AUTO-RESULT: blocked-split BUG-7.web.1",
+        "AUTO-RESULT: blocked-split BUG-7.web.api",
     ],
 )
 def test_parse_blocked_split_bad_id_is_failed(line):

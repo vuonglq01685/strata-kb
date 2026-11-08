@@ -27,5 +27,6 @@ proposal for BUG-<n>:` question, requires the first responder's claim to be
 `stopped` (`split into child bugs`, read with `kb claim list --json`),
 sets `> Kind: parent bug`, adds
 `## Split` (own row with `Own fix`, one row per child) and writes child
-bugs (`- Blocked by:` under `## Dependencies`) with `> Parent bug: <BUG-id> @ rev N+1`. Write files only: never
+bugs (`- Blocked by:` under `## Dependencies`) with `> Parent bug: <BUG-id> @ rev N+1`. On a child bug it
+never nests: it adds sibling children to that child's parent bug instead. Write files only: never
 commit or publish. It answers the question only after every child's Definition of Ready is ticked (the BA ticks them; the lint leaves them unticked), or the children stay off the hub.
