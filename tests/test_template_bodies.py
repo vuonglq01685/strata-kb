@@ -412,6 +412,29 @@ def test_ba_answer_questions_command_copy_carries_the_parent_flow():
         assert needle in n, needle
 
 
+def test_ba_answer_questions_routes_a_split_proposal_to_child_of():
+    n = _normal(_raw("bodies/ba-answer-questions.md"))
+    off = n[: n.index("## Auto mode")]
+    for needle in (
+        "Split proposal for BUG-",
+        "/ba-bug-report --child-of <BUG-id>",
+        "before any amend runs",
+        "the normal answer-record rules (Definition of Ready stop, change-log row, `kb_ticket_lint` step) do not apply",
+        "`--child-of` records the answer",
+    ):
+        assert needle in off, needle
+    auto = n[n.index("## Auto mode") :]
+    for needle in (
+        "accepted by: agent, reviewer agreed",
+        "**Split decision:**",
+        "leave the bug unsplit",
+    ):
+        assert needle in auto, needle
+    cmd = _normal(read_template("claude-command-ba-answer-questions.md"))
+    assert "Split proposal for BUG-" in cmd
+    assert "/ba-bug-report --child-of" in cmd
+
+
 # --- dev skills: BA questions, resume, and dev-sa (ticket Q&A, Dev side) -------
 
 HUB_ONLY_ERROR = "Q&A needs the shared hub server — point MCP at it (kb mcp-setup)"
@@ -915,6 +938,7 @@ _BA_GATES = {
         "ask them to re-check and re-tick",
         "never commits, pushes or publishes",
         "The BA accepts with `kb_question_confirm_blocks`",
+        'Split proposal: "The BA accepts, edits or rejects"',
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }

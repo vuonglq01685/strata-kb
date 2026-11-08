@@ -54,6 +54,12 @@ record with `ticket_sections=<the child ids in the new parent row's
 Affected>` and `answer_rev=<the new parent revision>` (no change needed:
 `answer_rev` None and `[]`); when any amended or new (`.n`) child's Definition of Ready box stays unticked, record no answer.
 
+Split proposal: a question whose text starts `Split proposal for BUG-` is not
+amended or recorded here (no Definition of Ready stop, no change-log row,
+no `kb_ticket_lint` step of this skill). Run `/ba-bug-report --child-of
+<BUG-id>`, before any amend: it writes the parent and child bugs and answers
+the question (reject: `answer_rev` None and `[]`).
+
 End every response with `## Next step` (an ordered list, option 1 is the
 next step in flow) and a `State:` line: `State: questions <n>/<m> answered ·
 tickets amended <n> · publish <✅ on the hub|⬜ waiting for commit and

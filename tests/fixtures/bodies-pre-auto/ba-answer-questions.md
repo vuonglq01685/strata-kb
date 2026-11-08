@@ -52,6 +52,12 @@ a denial to report. Stop only when the MCP tool fails too.
    behaviour, amend the ticket under `ba-ticket-author`'s amend
    rules (`## Amend mode` of that skill) — all questions of that ticket in
    one amendment: one amendment per ticket, never one per question.
+   A question whose text starts `Split proposal for BUG-` goes to
+   `### Split proposals` here (`/ba-bug-report --child-of <BUG-id>`), before
+   any amend runs: the normal amend and
+   the normal answer-record rules (Definition of Ready stop, change-log row,
+   `kb_ticket_lint` step) do not apply to it, because `--child-of` records
+   the answer.
    A parent question goes to `### Amend a parent story` here, before any
    amend runs (see "Parent-story questions" below); the bullets that follow
    are for a non-parent ticket; the resume rule (resume the unpublished N+1,
@@ -151,6 +157,19 @@ A question whose ticket is a parent story is worked on the parent file; its
   answer_rev=<the new parent revision>)`.
 - The Definition of Ready stop applies to each amended or new child (`.n`
   too): when any child's box stays unticked, record no answer.
+
+### Split proposals
+
+A question whose text starts `Split proposal for BUG-<n>:` is the Dev's
+proposal to split a bug across repos; the ticket id is the bug id. Run
+`/ba-bug-report --child-of BUG-<n>` in this run: it reads the proposal from
+the question, checks the Dev's claim, and the BA accepts, edits or rejects
+it. On accept it writes the parent bug and the child bug files, lints them
+and answers the question with `answer_rev` = the parent's new revision and
+`ticket_sections` = the child ids. On reject it answers with
+`answer_rev=None` and `ticket_sections=[]`, and the bug stays unsplit. Do not
+call `kb_question_answer` for it yourself, and skip steps 3-4 for it. The
+files are for the BA to commit and publish, as step 5 says.
 
 ## Hard rules
 
