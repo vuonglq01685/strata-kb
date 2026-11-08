@@ -229,12 +229,28 @@ def test_held_by_others_excludes_mine(kb_dir):
 
 def test_held_by_others_excludes_claims_this_machine_holds_a_token_for(kb_dir):
     client = FakeClient()
-    client.held_rows = [claim_dict("US1", id=3), claim_dict("US2", id=8)]
+    client.held_rows = [
+        claim_dict("US1", id=3),
+        claim_dict("US2", id=8, state="stopped"),
+    ]
     claims = make(kb_dir, client)
-    claims._local.put("US2", 8, "tok")  # our own (e.g. stopped) claim
+    claims._local.put("US2", 8, "tok")  # our own stopped claim
     assert claims.held_by_others(None) == {"US1"}
     claims._local.put("US1", 99, "tok")  # a token for another claim id is not ours
     assert claims.held_by_others(None) == {"US1"}
+
+
+def test_held_by_others_keeps_our_own_claim_that_waits_on_a_pr(kb_dir, monkeypatch):
+    monkeypatch.setattr(ghrest, "origin_slug", lambda root: ("o", "other/repo"))
+    client = FakeClient()
+    client.held_rows = [
+        claim_dict("US1", id=3, phase="publishing", pr="https://github.com/o/r/pull/9"),
+        claim_dict("US2", id=8, state="stopped"),
+    ]
+    claims = make(kb_dir, client)
+    claims._local.put("US1", 3, "tok")
+    claims._local.put("US2", 8, "tok")
+    assert claims.held_by_others(None) == {"US1"}  # only the stopped one is freed
 
 
 def review_row(pr="https://github.com/o/r/pull/12") -> dict:
