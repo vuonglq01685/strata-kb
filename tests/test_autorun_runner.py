@@ -1337,3 +1337,103 @@ def test_blocked_split_survives_restart(env, monkeypatch):
     assert autostate.load(env[1]).waiting_split == ("BUG-7",)
     assert once(env, Script()) == "idle"
     assert seen[-1] == (BUG.key,)
+
+
+class SplitQa(FakeQa):
+    """FakeQa whose `list` returns scripted question rows."""
+
+    def __init__(self, rows):
+        super().__init__()
+        self.rows = rows
+
+    def list(self, status="open", repo="", ticket=""):
+        return [q for q in self.rows if not ticket or q["ticket"] == ticket]
+
+
+def _proposal(state: str, qid: int = 5) -> dict:
+    return {
+        "id": qid,
+        "ticket": "BUG-7",
+        "state": state,
+        "question": "Split proposal for BUG-7: two children",
+    }
+
+
+def test_blocked_split_rejected_proposal_lifts_the_skip(env, monkeypatch):
+    seen = _split_env(env, monkeypatch, [_bug_row()])  # the row never becomes parent
+    qa = SplitQa([_proposal("waiting")])
+    script = Script(TaskResult("blocked-split", ("BUG-7",)), TaskResult("done"))
+    once(env, script, qa=qa)
+    assert once(env, script, qa=qa) == "idle"  # still waiting for the BA
+    assert seen[-1] == (BUG.key,)
+
+    qa.rows[:] = [_proposal("answered")]
+    assert once(env, script, qa=qa) == "ran"  # BA rejected: the Dev reads the answer
+    assert seen[-1] == ()
+    assert autostate.load(env[1]).waiting_split == ()
+
+
+def test_blocked_split_newer_open_proposal_keeps_the_skip(env, monkeypatch):
+    seen = _split_env(env, monkeypatch, [_bug_row()])
+    qa = SplitQa([_proposal("answered", 5), _proposal("waiting", 9)])
+    autostate.save(
+        env[1], autostate.AutoState(None, 0, (), None, "", waiting_split=("BUG-7",))
+    )
+    assert once(env, Script(), qa=qa) == "idle"
+    assert seen[-1] == (BUG.key,)
+
+
+class OwnClaimClient:
+    """A hub claim double: BUG-7 is the runner's own claim; it stays held once stopped."""
+
+    def __init__(self):
+        self.state, self.calls, self.taken = "active", [], False
+
+    def _row(self):
+        return {
+            "id": 7,
+            "ticket": "BUG-7",
+            "holder": "me@m1",
+            "phase": "claimed",
+            "state": self.state,
+            "pr": "",
+        }
+
+    def held(self, repo="", ticket=""):
+        return [self._row()] if self.taken else []
+
+    def take(self, ticket, holder, claim_token=None):
+        self.calls.append(("take", ticket, claim_token))
+        self.taken = True
+        return self._row(), "tok"
+
+    def update(self, claim_id, claim_token, **fields):
+        self.calls.append(("update", fields))
+        self.state = fields.get("state", self.state)
+        return self._row()
+
+
+def test_blocked_split_own_fix_retakes_the_stopped_claim(env, monkeypatch):
+    from strata_kb.autorun.claims import RunnerClaims
+
+    root, kb_dir, *_ = env
+    rows = [_bug_row()]
+    # the claims path runs the real `dev_candidates`, not the patched `pick_dev`
+    monkeypatch.setattr(
+        planstatus, "next_from_hub", lambda h, repo=None, for_repo=None: ([], rows, [])
+    )
+    monkeypatch.setattr(picker, "_has_test_workflow", lambda r: True)
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    client = OwnClaimClient()
+    claims = RunnerClaims(root, kb_dir, client, "me@m1")  # type: ignore[arg-type]
+    script = Script(TaskResult("blocked-split", ("BUG-7",)), TaskResult("done"))
+
+    assert once(env, script, claims=claims) == "ran"
+    client.state = "stopped"  # the skill stopped the claim; it never expires
+    assert once(env, script, claims=claims) == "idle"  # plain bug: skipped
+
+    rows[:] = [_bug_row(is_parent=True, own_fix_ready=True)]
+    assert once(env, script, claims=claims) == "ran"
+    assert script.prompts[1].startswith("/dev-fix-bug BUG-7")
+    assert client.state == "active"  # re-taken with the saved token and resumed
+    assert ("take", "BUG-7", "tok") in client.calls

@@ -222,17 +222,38 @@ def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     return (*state.skipped, *(f"dev-fix-bug:{b}" for b in state.waiting_split))
 
 
+def _split_answered(qa: qa_mod.QaClient, bug: str) -> bool:
+    """The BA answered the bug's latest `Split proposal for <bug>:` question (e.g.
+    rejected the split): the Dev's next run reads the answer."""
+    try:
+        rows = qa.list(status="all", ticket=bug)
+    except KbError as exc:
+        logger.warning("split question of %s not read: %s", bug, exc)
+        return False
+    prefix = f"Split proposal for {bug}:"
+    mine = [q for q in rows if str(q.get("question", "")).startswith(prefix)]
+    return bool(mine) and max(mine, key=lambda q: q["id"]).get("state") == "answered"
+
+
 def _split_done(
-    kb_dir: Path, hub: HubHandle | hubapi.HubApi, state: autostate.AutoState
+    kb_dir: Path,
+    hub: HubHandle | hubapi.HubApi,
+    qa: qa_mod.QaClient,
+    state: autostate.AutoState,
 ) -> autostate.AutoState:
-    """Drop bugs whose hub row now reads `is_parent`: the BA split them."""
+    """Drop bugs the BA has dealt with: the hub row reads `is_parent` (split), or
+    the split proposal is answered (accepted, edited or rejected)."""
     try:
         stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     except KbError as exc:
         logger.warning("plan not read for split check: %s", exc)
         return state
     parents = {t.us_id for t in (*stories, *unparented) if t.is_parent}
-    left = tuple(b for b in state.waiting_split if b not in parents)
+    left = tuple(
+        b
+        for b in state.waiting_split
+        if b not in parents and not _split_answered(qa, b)
+    )
     if left == state.waiting_split:
         return state
     state = replace(state, waiting_split=left)
@@ -477,7 +498,7 @@ def run_once(
             return published
         state = autostate.load(kb_dir)  # the check may have cleared its mark
     if state.waiting_split:
-        state = _split_done(kb_dir, hub, state)
+        state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)

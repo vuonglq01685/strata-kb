@@ -227,6 +227,16 @@ def test_held_by_others_excludes_mine(kb_dir):
     assert make(kb_dir, client).held_by_others(None) == {"US1", "US2", "US3"}
 
 
+def test_held_by_others_excludes_claims_this_machine_holds_a_token_for(kb_dir):
+    client = FakeClient()
+    client.held_rows = [claim_dict("US1", id=3), claim_dict("US2", id=8)]
+    claims = make(kb_dir, client)
+    claims._local.put("US2", 8, "tok")  # our own (e.g. stopped) claim
+    assert claims.held_by_others(None) == {"US1"}
+    claims._local.put("US1", 99, "tok")  # a token for another claim id is not ours
+    assert claims.held_by_others(None) == {"US1"}
+
+
 def review_row(pr="https://github.com/o/r/pull/12") -> dict:
     return claim_dict("US1", phase="review", pr=pr)
 
