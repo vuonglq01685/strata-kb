@@ -146,8 +146,7 @@ def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
 
     def ready(t: StoryStatus) -> bool:
         return (
-            not t.is_parent
-            and t.status == "ready"
+            (t.own_fix_ready or (not t.is_parent and t.status == "ready"))
             and t.target_repo in (None, repo_id)
             and all(d in done for d in t.depends_on)
         )

@@ -609,3 +609,26 @@ def test_ba_parent_mission_blocker_still_plans_the_mission():
         "next": None,
     }
     assert list(_ba_tasks(data)) == [Task("ba-mission-plan", "--amend M-x")]
+
+
+def _parent_bug(target: str | None, ready: bool = True) -> StoryStatus:
+    return StoryStatus(
+        "BUG-7",
+        "",
+        "t",
+        "in progress",
+        ("1/2 done", "own fix pending"),
+        (),
+        target,
+        is_parent=True,
+        own_fix_ready=ready,
+    )
+
+
+def test_picker_yields_own_fix_to_first_responder_only(tmp_path: Path, monkeypatch):
+    _workflow(tmp_path)
+    _hub(monkeypatch, [], [_parent_bug(REPO)])
+    assert pick_dev(None, tmp_path, REPO) == Task("dev-fix-bug", "BUG-7")  # type: ignore[arg-type]
+    assert pick_dev(None, tmp_path, "other-repo") is None  # type: ignore[arg-type]
+    _hub(monkeypatch, [], [_parent_bug(REPO, ready=False)])
+    assert pick_dev(None, tmp_path, REPO) is None  # type: ignore[arg-type]

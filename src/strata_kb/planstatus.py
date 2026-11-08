@@ -424,7 +424,12 @@ def _plan_repo(
                 answered = True
                 if r.child in ds:
                     merged.add(r.child)
-    merged |= planparents.done_parents(parents, merged)
+    # a parent bug's own `-svc` entry is its own fix, not the roll-up
+    own_done = frozenset(
+        pid for pid, x in parents.items() if planparents.is_parent_bug(x)
+    ) & frozenset(merged)
+    merged -= own_done
+    merged |= planparents.done_parents(parents, merged, own_done)
     done_of.update({pid: pid in merged for pid in parents})
     results = missionnext.statuses(parsed, drafted, merged if answered else None)
     results = [
@@ -439,6 +444,7 @@ def _plan_repo(
         titles=ticket_titles,
         targets=targets,
         unknown=frozenset(unknown),
+        own_done=own_done,
         refusal=routing.refusal,
     )
     results = planparents.expand(results, parents, facts)

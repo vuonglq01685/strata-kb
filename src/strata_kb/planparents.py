@@ -49,6 +49,7 @@ class Facts:
     titles: dict[str, str] = field(default_factory=dict)  # ticket id -> title
     targets: dict[str, str | None] = field(default_factory=dict)  # child -> routed repo
     unknown: frozenset[str] = frozenset()  # ids whose done nothing could answer
+    own_done: frozenset[str] = frozenset()  # parent bugs whose own fix is done
     demoted: dict[str, str] = field(default_factory=dict)  # id -> demotion reason
     refusal: Callable[[str | None], str | None] = lambda _target: None
 
@@ -58,13 +59,28 @@ def _children(text: str, parent_id: str) -> list[storylint.SplitRow]:
     return [r for r in storylint.parse_split(text) if r.child != parent_id]
 
 
-def done_parents(parents: dict[str, str], done: Iterable[str]) -> set[str]:
-    """Ids of the parents whose split children are all in `done`."""
-    done = set(done)
+def _own_fix(text: str, parent_id: str) -> storylint.SplitRow | None:
+    """The own-fix row of a parent bug that fixes something itself."""
+    if not is_parent_bug(text):
+        return None
+    row = storylint.own_row(storylint.parse_split(text), parent_id)
+    return row if row and row.own_fix.strip().lower() == "yes" else None
+
+
+def done_parents(
+    parents: dict[str, str], done: Iterable[str], own_done: Iterable[str] = ()
+) -> set[str]:
+    """Ids of the parents whose split children are all in `done`, and whose own
+    fix (a parent bug with `Own fix: yes`) is in `own_done`."""
+    done, own_done = set(done), set(own_done)
     out = set()
     for pid, text in parents.items():
         split = _children(text, pid)
-        if split and all(r.child in done for r in split):
+        if (
+            split
+            and all(r.child in done for r in split)
+            and (_own_fix(text, pid) is None or pid in own_done)
+        ):
             out.add(pid)
     return out
 
@@ -91,7 +107,9 @@ def family_rows(
         )
         kids.append(_child(parent, row, deps, inherited, facts))
     done = sum(k.status == "done" for k in kids)
-    if kids and done == len(kids):
+    own = _own_fix(text, parent.us_id)
+    own_done = parent.us_id in facts.own_done
+    if kids and done == len(kids) and (own is None or own_done):
         status = "done"
     elif any(k.status == "blocked" for k in kids) and not any(
         k.status == "ready" for k in kids
@@ -103,9 +121,20 @@ def family_rows(
         parent,
         status=status,
         # the mission's open decisions stay visible: the BA amends the mission
-        reasons=(f"{done}/{len(kids)} done", *inherited),
-        target_repo=None,
+        reasons=(
+            f"{done}/{len(kids)} done",
+            *(
+                (missionnext.OWN_FIX_DONE if own_done else missionnext.OWN_FIX_PENDING,)
+                if own
+                else ()
+            ),
+            *inherited,
+        ),
+        target_repo=facts.targets.get(parent.us_id) if own else None,
         is_parent=True,
+        own_fix_ready=bool(
+            own and not own_done and all(b in facts.done for b in own.blocked_by)
+        ),
     )
     return [head, *kids]
 

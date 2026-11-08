@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from strata_kb.missionnext import StoryStatus
+from strata_kb.missionnext import OWN_FIX_PENDING, StoryStatus
 
 # BA reports these first: they say more than "US3 ready" does.
 _BA_FIRST = frozenset({"to-draft", "draft", "blocked"})
@@ -26,7 +26,12 @@ def all_done(
     yet. A Dev (`repo_id` given) counts only rows routed to its repo or not routed yet."""
     tickets = [*stories, *unparented]
     if not ba:  # a parent is rolled up from its children: no Dev work of its own
-        tickets = [t for t in tickets if not t.is_parent]
+        # ...except a parent bug's own fix, pending for its target repo
+        tickets = [
+            t
+            for t in tickets
+            if not t.is_parent or (t.target_repo and OWN_FIX_PENDING in t.reasons)
+        ]
     if repo_id and not ba:
         tickets = [t for t in tickets if t.target_repo in (repo_id, None)]
     if not tickets:

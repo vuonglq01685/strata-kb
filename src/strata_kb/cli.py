@@ -4271,8 +4271,13 @@ def mission_next(
     mission_texts = {m[0]: t for m, t in zip(parsed, texts, strict=True) if m[0]}
     parents = {t: x for t, x in ticket_texts.items() if planparents.is_parent(x)}
     demoted = planrev.demotions(mission_texts, ticket_texts, parents=parents)
+    own_done = frozenset(  # a parent bug's own `-svc` entry is its own fix
+        pid for pid, x in parents.items() if planparents.is_parent_bug(x)
+    ) & frozenset(done or ())
     if done is not None:  # a parent is done when its children are
-        done = done | planparents.done_parents(parents, done)
+        done = (done - own_done) | planparents.done_parents(
+            parents, done - own_done, own_done
+        )
     results = missionnext.statuses(parsed, drafted, done, demoted)
     unparented: list[missionnext.StoryStatus] = []
     if parents:
@@ -4283,6 +4288,7 @@ def mission_next(
             mission_texts=mission_texts,
             titles={t: planparents.title_of(x) for t, x in ticket_texts.items()},
             demoted=demoted,
+            own_done=own_done,
         )
         in_mission = {r.us_id for r in results}
         results = planparents.expand(results, parents, facts)
