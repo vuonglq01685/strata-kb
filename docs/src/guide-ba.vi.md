@@ -297,6 +297,18 @@ khi `DoR: PASS`. Bug bỏ qua maturity review và technical grounding.
 - **Phần của bạn.** Tick Definition of Ready sau khi đọc bản nháp (agent không bao giờ tick),
   commit bug cùng thư mục của nó và publish. Sau đó Dev chạy `/dev-fix-bug BUG-<n>`.
 
+### Bug trải trên nhiều repo
+
+Một bug có thể cần sửa ở hai dev repo. Khi đó nó thành **parent bug**, mỗi repo có một child bug.
+
+- **Repo phản hồi đầu tiên.** SA đọc bằng chứng trong code và đề xuất repo nào xem bug trước. Agent ghi vào `> Target repo:`. Chỉ Dev của repo đó thấy `/dev-fix-bug BUG-<n>`.
+- **Đề xuất tách.** Dev thấy nguyên nhân gốc nằm cả ở repo khác. Dev viết `## Child bug proposal` trong `rootcause.md`, hỏi `Split proposal for BUG-<n>: <một dòng>` và lượt chạy kết thúc `blocked-split BUG-<n>`. Claim của Dev được dừng lại, không mất.
+- **Bạn trả lời.** Trong `/ba-answer-questions`, đề xuất nằm ở mục `### Split proposals`. Muốn chấp nhận, chạy `/ba-bug-report --child-of BUG-<n>`. Lệnh này viết lại `BUG-<n>` thành `> Kind: parent bug` có bảng `## Split` và tạo các file child `BUG-<n>.<repo>`. Bạn tick DoR của từng child. Sau đó agent trả lời với revision mới và id các child. Muốn từ chối, trả lời mà không đổi gì.
+- **`Own fix`.** Dòng riêng của parent ghi `yes` khi repo đó cũng tự sửa một phần. Cột `Blocked by` của dòng này cho biết nó chờ child nào.
+- **Xong.** Parent bug xong khi mọi child xong và, nếu `Own fix: yes`, phần tự sửa cũng xong. Hub hiển thị `k/N done` và `own fix done|pending`.
+
+Mẫu: `docs/tickets/PARENT-BUG-TEMPLATE.md`.
+
 ## 3.6 Trả lời câu hỏi của Dev
 
 Khi thiết kế hay lập kế hoạch cho một ticket, Dev có thể hỏi một câu hỏi nghiệp vụ quyết
@@ -523,8 +535,7 @@ chủ, id `Blocked by` có trong split, không có vòng) và revision. Trên ch
 tiêu đề so với parent trong cùng thư mục. Id ticket trùng ở bất kỳ đâu dưới
 `tickets/`, hoặc id ticket trùng id mission, là lỗi. Với `--hub`, một id đã được repo BA khác
 publish, hoặc parent đã xong trong `-svc` của một dev repo, cũng là lỗi. Cổng CI còn lint từng parent trong
-mọi thư mục mà PR chạm tới, nên xóa một child làm parent thất bại. `kb ticket lint` từ chối
-`> Kind: parent bug` (chưa hỗ trợ).
+mọi thư mục mà PR chạm tới, nên xóa một child làm parent thất bại. `kb ticket lint` kiểm tra parent bug theo cùng cách (xem "Bug trải trên nhiều repo" ở 3.5).
 
 **Publish thất bại là không publish gì.** `kb plan-ingest` và `kb publish` publish parent mà
 không cần DoR. Khi bất kỳ parent nào không qua lint, không có gì được publish và hub giữ kế
