@@ -562,19 +562,24 @@ def check(
     if grounded is None:
         return LintReport(issues, notes)
     repo, doc_id, rev, line = grounded
-    if heading == SERVICES_HEADING:
-        code_entries = _code_entries(section)
-        if len(code_entries) >= 2:
-            return _check_services_multi(
-                text,
-                code_entries,
-                load_doc=load_doc,
-                load_decisions=load_decisions,
-                load_drift=load_drift,
-                load_at=load_at,
-                load_missions=load_missions,
-                load_ticket=load_ticket,
-            )
+    code_entries = _code_entries(section)
+    if len(code_entries) >= 2:
+        multi = (
+            _check_services_multi
+            if heading == SERVICES_HEADING
+            else _check_ticket_multi
+        )
+        return multi(
+            text,
+            code_entries,
+            load_doc=load_doc,
+            heading=heading,
+            load_decisions=load_decisions,
+            load_drift=load_drift,
+            load_at=load_at,
+            load_missions=load_missions,
+            load_ticket=load_ticket,
+        )
 
     try:
         doc = load_doc(repo, doc_id)
@@ -645,6 +650,14 @@ def check(
 
 
 _Entry = tuple[str | None, str, str]
+_NO_SERVICE = (
+    "no `svc.<name>` on the `Service:` line — which service does this ticket touch?"
+)
+_COMPOSE_MISSING = (
+    "Volumes:/Healthchecks:/Devices: lines missing — "
+    "re-ground on a -code revision that carries them"
+)
+_WHOLE_TICKET_WARNINGS = frozenset({_NO_SERVICE, _COMPOSE_MISSING})
 # `<repo-id>:svc.<name>` — the repo-id grammar of GROUNDED_ON_RE.
 _QUALIFIED_RE = re.compile(
     r"(?<![\w./:-])(?P<repo>[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*)"
@@ -653,7 +666,7 @@ _QUALIFIED_RE = re.compile(
 
 
 def _code_entries(section: _Section) -> list[_Entry]:
-    """The distinct `-code` entries of the mission's `Grounded on:` line."""
+    """The distinct `-code` entries of the section's `Grounded on:` line."""
     for i, line in enumerate(section.lines):
         if section.field_of_line[i] == "Grounded on" and not line[:1].isspace():
             return list(
@@ -676,8 +689,168 @@ def _services_span(text: str) -> tuple[int, int]:
     return start, end
 
 
+def _grounded_at(section: _Section) -> int:
+    """0-based text line index of the section's `Grounded on:` line."""
+    return next(
+        section.first_line - 1 + i
+        for i, ln in enumerate(section.lines)
+        if section.field_of_line[i] == "Grounded on" and not ln[:1].isspace()
+    )
+
+
+def _check_each_repo(
+    text: str,
+    entries: list[_Entry],
+    rewrite: Callable[[str | None, list[str]], None],
+    *,
+    load_doc: LoadDoc,
+    heading: str,
+    keep: Callable[[str | None, Issue], bool] = lambda repo, issue: True,
+    **kwargs,
+) -> tuple[list[Issue], list[str]]:
+    """Run `check()` once per `-code` entry on a copy of `text` grounded on
+    that entry alone; `rewrite(repo, lines)` blanks the other repos' lines in
+    place, so reported line numbers stay true to the file. Issues `keep`
+    accepts and all notes come back tagged `[<repo>] `."""
+    lines = text.splitlines()
+    grounded_at = _grounded_at(cast(_Section, _parse_section(text, heading)))
+    issues: list[Issue] = []
+    notes: list[str] = []
+    for repo, doc_id, rev in entries:
+        label = f"{repo}:{doc_id}" if repo else doc_id
+        sub_lines = list(lines)
+        sub_lines[grounded_at] = f"- Grounded on: {label} @ {rev}"
+        rewrite(repo, sub_lines)
+        sub = "\n".join(sub_lines)
+        report = check(sub, load_doc=load_doc, heading=heading, **kwargs)
+        tag = f"[{repo or doc_id}] "
+        issues.extend(
+            dataclasses.replace(i, message=tag + i.message)
+            for i in report.issues
+            if keep(repo, i)
+        )
+        notes.extend(tag + n for n in report.notes)
+    return issues, notes
+
+
+_REPO_ID = r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*"
+# What may follow a ticket line's `<repo>:` qualifier: a section id, or (for a
+# repo on the Grounded-on line) a path — `src/app.ts`, `package.json`; never
+# `6379` or the `//` of a URL.
+_QUALIFIED_ID = rf"(?={ID_RE.pattern})"
+_QUALIFIED_ID_OR_PATH = rf"(?={ID_RE.pattern}|[\w.-]*[/.]\w)"
+# Any `<repo>:<section-id>` — catches a repo missing from the Grounded-on line.
+_ANY_QUALIFIER_RE = re.compile(rf"(?<![\w./:-])(?P<repo>{_REPO_ID}):{_QUALIFIED_ID}")
+
+
+def _mask_code(line: str, lead: re.Pattern[str]) -> str:
+    """`line` with every backticked span blanked to spaces (same length),
+    except a span that starts with a `lead` qualifier (`` `web:src/a.ts` ``):
+    `web:6379` inside a command is no qualifier."""
+
+    def blank(m: re.Match[str]) -> str:
+        span = m.group(0)
+        return span if lead.match(span[1:]) else " " * len(span)
+
+    return CODE_SPAN_RE.sub(blank, line)
+
+
+def _check_ticket_multi(
+    text: str, entries: list[_Entry], *, load_doc: LoadDoc, heading: str, **kwargs
+) -> LintReport:
+    """Ticket kept as one across repos (the BA rejected a split) whose
+    `Grounded on:` lists several `-code` docs: each line is checked by
+    `check()` against its own repo's document. A line qualifies its ids or
+    paths `<repo>:`; an unqualified line belongs to the first entry; a line
+    that mixes repos (two qualifiers, or a qualifier beside an unqualified
+    id) is an error."""
+    section = cast(_Section, _parse_section(text, heading))  # parsed by check()
+    listed = [e[0] for e in entries]
+    if None in listed or len(set(listed)) < len(listed):
+        return LintReport(
+            [
+                Issue(
+                    "error",
+                    "'Grounded on:' lists several -code docs: write each as "
+                    "`<repo-id>:<repo-id>-code @ <revision>`, one per repo "
+                    f"(line {_grounded_at(section) + 1})",
+                )
+            ],
+            [],
+        )
+    repos_on_line = cast(list[str], listed)
+    lines = text.splitlines()
+    alternation = "|".join(re.escape(r) for r in repos_on_line)
+    qualifier = re.compile(rf"(?<![\w./:-])({alternation}):{_QUALIFIED_ID_OR_PATH}")
+    first_repo = repos_on_line[0]
+    # text line index -> (owner, owner's line, qualifiers stripped)
+    owned: dict[int, tuple[str | None, str]] = {}
+    labels: dict[int, str] = {}  # top-level field line -> its bare `- <Field>:`
+    issues: list[Issue] = []
+    for i, visible in enumerate(section.lines):
+        if section.field_of_line[i] == "Grounded on" or not visible.strip():
+            continue
+        at = section.first_line - 1 + i
+        if not visible[:1].isspace() and (m := FIELD_RE.match(visible)):
+            labels[at] = f"- {m.group('field')}:"
+        owned[at] = (None, labels.get(at, ""))  # no repo keeps a bad line
+        prose = _mask_code(visible, qualifier)
+        quals = list(qualifier.finditer(prose))
+        unknown = [
+            q.group("repo")
+            for q in _ANY_QUALIFIER_RE.finditer(prose)
+            if q.group("repo") not in repos_on_line
+        ]
+        if unknown:
+            issues.append(
+                Issue(
+                    "error",
+                    f"repo '{unknown[0]}' is not on the 'Grounded on:' line "
+                    f"(line {at + 1})",
+                )
+            )
+            continue
+        ends = {q.end() for q in quals}
+        repos = list(dict.fromkeys(q.group(1) for q in quals))
+        if quals and section.field_of_line[i] != "Files":
+            # an id beside a qualifier means the first repo; `src/api.py` is a path
+            bare = [
+                m
+                for m in ID_RE.finditer(prose)
+                if m.start() not in ends and prose[m.start() - 1 : m.start()] != "/"
+            ]
+            if bare:
+                repos = list(dict.fromkeys([first_repo, *repos]))
+        if len(repos) > 1:
+            issues.append(
+                Issue(
+                    "error",
+                    f"line names several repos ({', '.join(repos)}) — give each "
+                    f"repo its own line or sub-bullet (line {at + 1})",
+                )
+            )
+            continue
+        raw = lines[at]
+        for q in reversed(list(qualifier.finditer(_mask_code(raw, qualifier)))):
+            raw = raw[: q.start()] + raw[q.end() :]
+        owned[at] = (repos[0] if repos else first_repo, raw)
+
+    def rewrite(repo: str | None, sub_lines: list[str]) -> None:
+        for at, (owner, own_line) in owned.items():
+            sub_lines[at] = own_line if owner == repo else labels.get(at, "")
+
+    def keep(repo: str | None, issue: Issue) -> bool:
+        # Whole-ticket warnings: the first repo's run reports them once.
+        return repo == first_repo or issue.message not in _WHOLE_TICKET_WARNINGS
+
+    more, notes = _check_each_repo(
+        text, entries, rewrite, load_doc=load_doc, heading=heading, keep=keep, **kwargs
+    )
+    return LintReport(issues + more, notes)
+
+
 def _check_services_multi(
-    text: str, entries: list[_Entry], *, load_doc: LoadDoc, **kwargs
+    text: str, entries: list[_Entry], *, load_doc: LoadDoc, heading: str, **kwargs
 ) -> LintReport:
     """Mission whose `Grounded on:` lists several `-code` docs: each row is
     checked by `check()` against its own repo's document. Rows qualify the
@@ -693,11 +866,6 @@ def _check_services_multi(
         start + i for i, ln in enumerate(section.lines) if ln.lstrip().startswith("|")
     ]
     rows = table[2:]
-    grounded_at = next(
-        start + i
-        for i, ln in enumerate(section.lines)
-        if section.field_of_line[i] == "Grounded on" and not ln[:1].isspace()
-    )
     repos = {e[0]: e for e in entries}
     first_repo = entries[0][0]
     by_repo: dict[str | None, dict[int, str]] = {e[0]: {} for e in entries}
@@ -758,21 +926,14 @@ def _check_services_multi(
         cells[2] = deps if deps.strip(" ,") else " — "
         by_repo[owner][at] = "|" + "|".join(cells) + "|"
 
-    notes: list[str] = []
-    for repo, doc_id, rev in entries:
-        label = f"{repo}:{doc_id}" if repo else doc_id
-        sub_lines = list(lines)
-        sub_lines[grounded_at] = f"- Grounded on: {label} @ {rev}"
+    def rewrite(repo: str | None, sub_lines: list[str]) -> None:
         for at in rows:
             sub_lines[at] = by_repo[repo].get(at, "")
-        sub = "\n".join(sub_lines)
-        report = check(sub, load_doc=load_doc, heading=SERVICES_HEADING, **kwargs)
-        tag = f"[{repo or doc_id}] "
-        issues.extend(
-            dataclasses.replace(i, message=tag + i.message) for i in report.issues
-        )
-        notes.extend(tag + n for n in report.notes)
-    return LintReport(issues, notes)
+
+    more, notes = _check_each_repo(
+        text, entries, rewrite, load_doc=load_doc, heading=heading, **kwargs
+    )
+    return LintReport(issues + more, notes)
 
 
 def _judge_drift(
@@ -822,27 +983,19 @@ def _grounded_on(
         if section.field_of_line[i] != "Grounded on" or line[:1].isspace():
             continue
         lineno = section.first_line + i
-        if heading == SERVICES_HEADING:
-            # Mission section: the SA may list several `<repo>:<doc> @ <rev>`
-            # entries on one line (the -code and -svc docs); ground on the
-            # -code entry, else the first — same rule as missionnext.grounded_doc.
-            entries = grounded_entries(line)
-            if not entries:
-                issues.append(
-                    Issue(
-                        "error",
-                        "'Grounded on:' must read `Grounded on: <repo-id>:<doc-id> @ "
-                        f"<revision>` (revision = the -code manifest's `revision`) "
-                        f"(line {lineno})",
-                    )
-                )
-                return None
-            repo, doc, rev = next(
-                (e for e in entries if e[1].endswith("-code")), entries[0]
-            )
-            return repo, doc, rev, lineno
-        m = GROUNDED_ON_RE.match(line.strip())
-        if m is None:
+        # The SA may list several `<repo>:<doc> @ <rev>` entries on one line:
+        # a mission's `-code` and `-svc` docs, or a cross-repo ticket's
+        # `-code` docs (a ticket grounds on `-code` only); ground on the -code
+        # entry, else the first — same rule as missionnext.grounded_doc.
+        # check() fans out over several -code entries.
+        entries = grounded_entries(line)
+        if (
+            heading != SERVICES_HEADING
+            and len(entries) > 1
+            and not all(e[1].endswith("-code") for e in entries)
+        ):
+            entries = []  # a ticket's list names `-code` docs only
+        if not entries:
             issues.append(
                 Issue(
                     "error",
@@ -852,7 +1005,10 @@ def _grounded_on(
                 )
             )
             return None
-        return m.group("repo"), m.group("doc"), m.group("rev").lower(), lineno
+        repo, doc, rev = next(
+            (e for e in entries if e[1].endswith("-code")), entries[0]
+        )
+        return repo, doc, rev, lineno
     issues.append(
         Issue(
             "error",
@@ -951,7 +1107,7 @@ def _check_service_present(
     issues.append(
         Issue(
             "warning",
-            "no `svc.<name>` on the `Service:` line — which service does this ticket touch?",
+            _NO_SERVICE,
         )
     )
 
@@ -1402,7 +1558,7 @@ def _check_compose_facts(
         issues.append(
             Issue(
                 "warning",
-                "Volumes:/Healthchecks:/Devices: lines missing — re-ground on a -code revision that carries them",
+                _COMPOSE_MISSING,
                 code=UNVERIFIED,
             )
         )

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb import kbcontext, ticketlint
+from strata_kb import kbcontext, models, ticketcheck, ticketlint
 from strata_kb.familyhub import lint
 from tests.test_ticketlint import (
     REFS,
@@ -372,6 +372,44 @@ def _two_repo_ticket(block: str, extra: str = "") -> str:
 def test_single_ticket_grounded_on_two_repos_warns(fed_hub: Path, golden_block: str):
     report = lint(_two_repo_ticket(golden_block), _hub(fed_hub))
     assert WARN_TWO in _warnings(report)
+
+
+def test_single_ticket_grounded_on_two_repos_can_pass_the_gate(
+    fed_hub: Path, golden_block: str
+):
+    """Reject keeps one ticket: lint warns, but `kb ticket check` checks each
+    line in its own repo's `-code` and can pass (BA Guide 3.10)."""
+    text = _two_repo_ticket(golden_block).replace(
+        "- Service: svc.airspace-service\n",
+        "- Service:\n  - svc.airspace-service\n  - web:svc.web\n",
+    )
+    assert WARN_TWO in _warnings(lint(text, _hub(fed_hub)))
+
+    def doc(doc_id: str, rev: str, *ids: str) -> ticketcheck.LoadedDoc:
+        sections = [
+            models.SectionEntry(id=i, title=i, file="g", status="reviewed") for i in ids
+        ]
+        manifest = models.Manifest(
+            id=doc_id, title=doc_id, revision=rev, sections=sections
+        )
+        return ticketcheck.LoadedDoc(
+            manifest, f"fake/{doc_id}", lambda g: None, lambda g: None
+        )
+
+    docs = {
+        ("demo", "demo-code"): doc(
+            "demo-code",
+            "c12b24f",
+            "svc.airspace-service",
+            "db.restrictive_airspace",
+            "cmd.test",
+        ),
+        ("web", "web-code"): doc("web-code", "def1234", "svc.web"),
+    }
+    report = ticketcheck.check(text, load_doc=lambda r, d: docs.get((r, d)))
+    assert report.passed, report.render("Grounding")
+    assert not [i for i in report.issues if i.message.startswith("[web] ")]
+    assert any(n.startswith("[web] ") for n in report.notes)
 
 
 def test_child_grounded_on_two_repos_does_not_warn(fed_hub: Path, golden_block: str):
