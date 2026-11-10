@@ -225,7 +225,7 @@ def test_cloud_warnings_for_on_count_dev_repos(kb_dir, hub_api):
 
     warnings = switch.warnings_for_on(kb_dir, "")
 
-    assert any("admin" in w for w in warnings)
+    assert any("required check" in w for w in warnings)
     assert any("one Dev repo per hub" in w and "lists 2" in w for w in warnings)
 
 

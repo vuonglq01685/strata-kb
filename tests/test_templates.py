@@ -3940,3 +3940,17 @@ def test_auto_commands_are_allowed():
         and not any(fnmatchcase(f"Bash({cmd})", pat) for pat in allow)
     ]
     assert not missing, missing
+
+
+def test_ticket_lint_runs_ticket_check_for_ready():
+    run_script = _lint_dispatch_run_script(_read_init_template("kb-ticket-lint.yml"))
+    code = "\n".join(
+        line for line in run_script.splitlines() if not line.strip().startswith("#")
+    )
+    loop = code.split('done < "$RUNNER_TEMP/changed.nul"')[0].rsplit(
+        "while IFS= read -r -d '' f", 1
+    )[1]
+    assert 'kb ticket check "$f" --hub "$STRATA_KB_HUB" --json' in loop
+    assert "missionnext.dor_ticked" in loop
+    assert loop.index("dor_ticked") < loop.index("kb ticket check")
+    assert "Grounding" in code and "${{" not in run_script

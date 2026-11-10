@@ -484,7 +484,7 @@ Check each answer with a fresh-context reviewer (the question, the cited source,
 2. Commit the changed files (stage them by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
 3. Open the PR with `kb pr open --title "<ticket-id>: <short description>" --body "<what changed and why>"`.
 4. Wait for the checks with `kb pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`), fix it, commit, `git push origin HEAD`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
-5. Every check green: `kb pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `kb pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
+5. Every check green: `kb pr merge --squash --delete-branch`. When the merge is refused for want of an approving review, do not retry: end `AUTO-RESULT: blocked-review <pr-url>`; a human reviews it. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
 6. After the merge, `kb-publish-request.yml` on `main` publishes the change: do not run `kb publish` by hand. If the repo has no `.github/workflows/kb-publish-request.yml`, run `kb publish` once.
 
 ### Result line
@@ -493,4 +493,5 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done` — the ticket is merged (and published by the branch rule's last step), or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.
+- `AUTO-RESULT: blocked-review <pr-url>` — the merge needs an approving review the agent may not give; a human reviews and merges the PR. Write no text after it.
 - `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `ac-quality <ticket-id>`, `blocked-by-mission <row id>`, `no-folder <us-id>`, or `lint <ticket-id>` when `kb_ticket_lint` will not reach `DoR: PASS` after the review rounds. The reason goes on the same line.

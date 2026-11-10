@@ -124,8 +124,8 @@ jobs:
           {
             echo "### DoR lint results"
             echo
-            echo "| File | Verdict | Errors | Warnings |"
-            echo "|---|---|---|---|"
+            echo "| File | Verdict | Errors | Warnings | Grounding |"
+            echo "|---|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           while IFS= read -r -d '' f; do
             count=$((count + 1))
@@ -154,9 +154,22 @@ jobs:
               status=1
             fi
             cat "$RUNNER_TEMP/report.json"
-            python - "$f" "$verdict" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+            # Grounding runs only for a ticket whose Definition of Ready is
+            # fully ticked (the code's own rule, missionnext.dor_ticked).
+            grounding="-"
+            if [ "$cmd" = "kb ticket lint" ] &&
+              python -c 'import sys; from strata_kb import missionnext; sys.exit(not missionnext.dor_ticked(open(sys.argv[1], encoding="utf-8").read()))' "$f"; then
+              if kb ticket check "$f" --hub "$STRATA_KB_HUB" --json > "$RUNNER_TEMP/ground.json"; then
+                grounding="PASS"
+              else
+                grounding="FAIL"
+                status=1
+              fi
+              cat "$RUNNER_TEMP/ground.json"
+            fi
+            python - "$f" "$verdict" "$grounding" <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, os, sys
-          path, verdict = sys.argv[1], sys.argv[2]
+          path, verdict, grounding = sys.argv[1], sys.argv[2], sys.argv[3]
           try:
               report = json.load(open(os.environ["RUNNER_TEMP"] + "/report.json"))
           except ValueError:
@@ -164,7 +177,7 @@ jobs:
                   "errors": ["lint exited without a JSON report — see the log above"],
                   "warnings": [],
               }
-          print(f"| `{path}` | {verdict} | {len(report['errors'])} | {len(report['warnings'])} |")
+          print(f"| `{path}` | {verdict} | {len(report['errors'])} | {len(report['warnings'])} | {grounding} |")
           for message in report["errors"]:
               print(f"::error file={path}::{message}", file=sys.stderr)
           PY
