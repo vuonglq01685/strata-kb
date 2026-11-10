@@ -94,7 +94,10 @@ Sprint 1 is the cheap foundation:
   `num_turns`, `duration_ms`, `is_error`, `subtype`. Missing keys → `None`
   (older CLI, plain-text stdout). `TaskResult` gains an optional `meta` field
   (frozen dataclass, default empty) — callers that ignore it keep working.
-- Runner appends one JSON line per task run to `.kb/auto/runs.jsonl`:
+- One JSON line per `run_task` call — main loop **and** `QaThread` runs —
+  appended to `.kb/auto/runs.jsonl` (written inside `run_task` from a context
+  the caller passes; Q&A runs record `skill: ba-answer-questions` and their
+  attempt). Each line is a single `O_APPEND` write, safe across threads:
   `schema: 1`, `run_id` (uuid4), `started_at`, `ended_at` (UTC ISO),
   `skill`, `arg`, `attempt`, `outcome` (TaskResult.kind), `reason`, `ids`,
   `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`,
@@ -117,8 +120,13 @@ Sprint 1 is the cheap foundation:
   no loop). Not an auto task → exit 0, no output.
 - Any internal error → exit 0, no output, one line to the auto log (a broken
   guard must not wedge a session; `parse_result` still catches it after).
-- `claude-settings-auto.json` (ba + dev) adds this as a second Stop hook,
-  before the usage ingest. `merge_settings` union keeps existing hooks.
+- `claude-settings-auto.json` (ba + dev) adds this as its **own** Stop hook
+  group (never inside the usage-ingest group: `merge_settings` skips a group
+  whose command already exists, so upgraded repos would never get it). Order
+  does not matter; Claude Code runs matching hooks in parallel.
+- Nested `claude -p` processes are not tasks: `llm.Runner` (used by
+  `kb summarize` / `kb ingest`) drops `STRATA_KB_AUTO_TASK` from the child
+  env, so the guard never blocks a summary.
 
 ### G4. Allowlist gaps (G11)
 
@@ -131,10 +139,12 @@ Sprint 1 is the cheap foundation:
 
 ### G5. `kb ticket check` in CI
 
-- `kb-ticket-lint.yml` (BA): for each changed ticket whose front matter says
-  `status: ready`, also run `kb ticket check "$f" --hub "$STRATA_KB_HUB"
+- `kb-ticket-lint.yml` (BA): for each changed ticket that is ready — every
+  `## Definition of Ready` box ticked, the same rule `missionnext` uses (reuse
+  it; tickets carry no `status:` field) — also run `kb ticket check "$f" --hub "$STRATA_KB_HUB"
   --json`; FAIL fails the job and adds a column to the step summary table.
-  Tickets not `ready` are skipped (grounding is not required before ready).
+  Tickets not ready are skipped (grounding is not required before ready).
+  Parent tickets follow `missionnext`'s own handling (builder's call).
 - Same job, same job name — no new required check to provision.
 - `kb-pr-lint.yml` (dev) is unchanged: no hub, no token, by design.
 
@@ -145,7 +155,7 @@ Sprint 1 is the cheap foundation:
   2. `git switch -c kb/upgrade-<version>` from the default branch;
   3. run the same code path as a re-run `kb init` (no `--force`);
   4. nothing changed → delete the branch, print "already current", exit 0;
-  5. commit `chore: kb upgrade to <version>`, push, `kb pr create` with the
+  5. commit `chore: kb upgrade to <version>`, push, `kb pr open` with the
      `InitReport` (created/updated/skipped) as the body. Never merges.
   `--no-pr` stops after the commit.
 - Not in the auto allowlist (`kb init*` is already denied; add
