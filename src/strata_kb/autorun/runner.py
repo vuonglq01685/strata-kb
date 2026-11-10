@@ -235,11 +235,14 @@ def _review_check(
     kb_dir: Path,
     state: autostate.AutoState,
     view_pr=ghrest.view_pr,
-    claims: RunnerClaims | None = None,
 ) -> autostate.AutoState:
-    """Drop parked PRs a human dealt with: merged counts as `done`; closed
-    unmerged is forgotten; open, or unreadable, stays parked."""
-    kept, merged = [], None
+    """Drop parked PRs a human dealt with: closed unmerged is forgotten; open,
+    or unreadable, stays parked. Merged: a ticket skill (CLAIMED_SKILLS) is
+    queued as the current task, because its `done` includes `kb publish`, which
+    its "Already finished" path runs; other skills count `done`. A merged ticket
+    stays parked while another task is current, and only one is queued per
+    turn; it is queued when the task slot is free."""
+    kept, merged, queued = [], None, state.task
     for entry in state.waiting_review:
         key, _, url = entry.partition(" ")
         number = url.rpartition("/pull/")[2]
@@ -250,8 +253,12 @@ def _review_check(
             kept.append(entry)
             continue
         if pr_state == "MERGED":
-            merged = key
-            _publishing(claims, key)
+            if _ticket_of(key) is None:
+                merged = key
+            elif queued is None:
+                queued = key
+            else:
+                kept.append(entry)
         elif pr_state == "CLOSED":
             logger.warning("parked PR %s of %s closed without merging", url, key)
         else:
@@ -261,18 +268,11 @@ def _review_check(
     state = replace(state, waiting_review=tuple(kept))
     if merged is not None:
         state = replace(state, last_done=merged, same_pick=0)
+    if state.task is None and queued is not None:
+        logger.info("%s was merged; running it again to publish", queued)
+        state = replace(state, task=queued, attempts=0)
     autostate.save(kb_dir, state)
     return state
-
-
-def _publishing(claims: RunnerClaims | None, key: str) -> None:
-    ticket = _ticket_of(key)
-    if claims is None or not ticket:
-        return
-    try:
-        claims.phase(ticket, "publishing")
-    except KbError as exc:
-        logger.warning("claim on %s not moved to publishing: %s", ticket, exc)
 
 
 def _split_answered(qa: qa_mod.QaClient, bug: str) -> bool:
@@ -561,7 +561,7 @@ def run_once(
     if state.waiting_split:
         state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_review:
-        state = _review_check(root, kb_dir, state, ghrest.view_pr, claims)
+        state = _review_check(root, kb_dir, state, ghrest.view_pr)
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)

@@ -1569,22 +1569,51 @@ def test_parked_task_is_skipped_by_pick(env, monkeypatch):
     assert TASK.key in skips[-1]
 
 
-def test_parked_merged_counts_done(env, monkeypatch):
+def test_parked_merged_ticket_is_run_again_to_publish(env, monkeypatch):
     seen = _view(monkeypatch, "MERGED")
     _park(env)
-    once(env, Script())
+    script = Script(TaskResult("done"))
+    assert once(env, script) == "ran"
+    assert script.prompts[0].startswith(f"/{TASK.skill} {TASK.arg}")
     state = autostate.load(env[1])
-    assert (state.last_done, state.waiting_review) == (TASK.key, ())
+    assert (state.task, state.last_done, state.waiting_review) == (None, TASK.key, ())
     assert seen == ["42"]
 
 
-def test_parked_merged_moves_claim_to_publishing(cenv, monkeypatch):
+def test_parked_merged_ticket_is_queued_not_done(env, monkeypatch):
     _view(monkeypatch, "MERGED")
-    _park(cenv, f"dev-implement-ticket:US1 {PR_URL}")
-    claims = FakeClaims()
-    # the task run afterwards is M-x-US3, so only _review_check can touch US1
-    once(cenv, Script(TaskResult("done")), claims=claims)
-    assert ("phase", "US1", "publishing") in claims.of("phase")
+    _park(env)
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert (state.task, state.attempts, state.last_done) == (TASK.key, 0, None)
+    assert state.waiting_review == ()
+
+
+def test_parked_merged_ticket_waits_while_another_task_runs(env, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    autostate.save(
+        env[1],
+        autostate.AutoState(
+            "dev-implement-ticket:US9", 0, (), None, "", waiting_review=(PARKED,)
+        ),
+    )
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert state.task == "dev-implement-ticket:US9"
+    assert state.waiting_review == (PARKED,)
+
+
+def test_parked_merged_test_workflow_counts_done(env, monkeypatch):
+    seen = _view(monkeypatch, "MERGED")
+    key = "dev-test-workflow:"
+    _park(env, f"{key} {PR_URL}")
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert (state.task, state.last_done, state.waiting_review) == (None, key, ())
+    assert seen == ["42"]
 
 
 def test_parked_closed_is_dropped(env, monkeypatch, caplog):
@@ -1643,9 +1672,7 @@ def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
 def test_ba_parked_task_is_not_picked_again(env, monkeypatch):
     _view(monkeypatch, "OPEN")
     skips: list = []
-    monkeypatch.setattr(
-        picker, "pick_ba", lambda root, kb, skip=(): skips.append(skip)
-    )
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): skips.append(skip))
     _park(env, f"ba-ticket-author:US1 {PR_URL}")
     once(env, Script(), cfg=cfg_of("ba"))
     assert "ba-ticket-author:US1" in skips[-1]
