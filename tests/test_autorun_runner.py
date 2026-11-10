@@ -1159,7 +1159,7 @@ class FlakyPhase(FakeClaims):
     def phase(self, ticket, phase, pr=""):
         if phase == self.failing_phase:
             raise KbError("hub unreachable")
-        return super().phase(ticket, phase)
+        return super().phase(ticket, phase, pr)
 
 
 def test_transient_publishing_error_still_settles_done(cenv, caplog):
@@ -1518,7 +1518,6 @@ def test_blocked_review_parks_without_attempt(env):
 
 
 def test_blocked_review_entry_is_deduped(env):
-    _park(env)
     autostate.save(
         env[1],
         autostate.AutoState(TASK.key, 0, (), None, "", waiting_review=(PARKED,)),
@@ -1549,8 +1548,9 @@ def test_parked_merged_counts_done(env, monkeypatch):
 
 def test_parked_merged_moves_claim_to_publishing(cenv, monkeypatch):
     _view(monkeypatch, "MERGED")
-    _park(cenv, f"US1 {PR_URL}")
+    _park(cenv, f"dev-implement-ticket:US1 {PR_URL}")
     claims = FakeClaims()
+    # the task run afterwards is M-x-US3, so only _review_check can touch US1
     once(cenv, Script(TaskResult("done")), claims=claims)
     assert ("phase", "US1", "publishing") in claims.of("phase")
 
@@ -1592,7 +1592,6 @@ def test_blocked_review_sets_review_phase_with_pr(cenv):
 
 def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
     _view(monkeypatch, "OPEN")
-    _park(cenv, f"US1 {PR_URL}")
     claims = FakeClaims()
     autostate.save(
         cenv[1],
