@@ -448,25 +448,73 @@ human review. A ticket the agent misreads goes straight to `main` and to the hub
 `kb auto on` prints this itself: "Auto mode merges pull requests as admin, with no
 review. Turn it on only for a repo where that is acceptable."
 
-It merges with `kb pr merge` (GitHub REST), using the rights of your `gh` login;
-`--admin` is accepted for `gh` compatibility and changes nothing. If that login is a
-repo admin and branch protection does not include administrators, those merges bypass
-the protection. So, before you run it, the repo owner **must** enable GitHub branch
-protection on `main`:
-
-- block force pushes and deletions;
-- **include administrators**;
-- keep the CI check as a **required status check**: the `test-<lang>` job(s) of
-  `kb-test.yml` (or of the workflow carrying the `kb-test` marker). Branch protection
-  picks checks by job name. Without a required check, "green CI" is only a convention
-  the agent follows;
-- do **not** require approving reviews: the agent cannot approve its own PR, and the
-  merge is then refused. If you require reviews anyway, exclude administrators from that
-  rule and accept that the agent bypasses it on `main`.
+It merges with `kb pr merge` (GitHub REST), using the rights of your `gh` login. There is no admin override. Before you run it, the repo owner **must** set up GitHub branch protection on `main` that implements the merge policy below: `kb auto run` and `kb doctor` refuse until GitHub itself enforces it.
 
 The deny list also cannot see the current branch: the agent's working tree must never
 sit on `main` with commits on it. The skills branch first; the runner does not guard it.
 The runner never uses `--dangerously-skip-permissions` or `bypassPermissions`.
+
+### Merge policy
+
+`kb auto run` starts only when GitHub would not let the agent merge without the required checks and a code-owner review, and would not let it bypass that protection. It reads the settings through the GitHub REST API with the agent's own login. Each refusal ends with `see "Merge policy" in the Dev guide`, which points here.
+
+**What must hold on the default branch.**
+
+- Each of these is a required status check: `pr-lint` and every job of `kb-test.yml` (the `test-<lang>` jobs; before `kb-test.yml` exists, `pr-lint` alone). Branch protection picks checks by job name; the `"test-python"` in the sample stands for your own `test-<lang>` jobs.
+- Code-owner review is required. Approving reviews are not: `required_approving_review_count` is `0`, so a PR that touches no code-owned path merges when the checks are green.
+- `.github/CODEOWNERS` exists and no `@OWNER` placeholder is left (see the owner step below).
+- Force pushes and deletions are blocked.
+
+**Identity rule.** The check passes with either of these:
+
+1. The agent's login is **not an admin** of the repo (it is a bot or a plain collaborator). Protection then binds it by default.
+2. The login is an admin, and the required checks and code-owner review come only from protection that login cannot bypass. A **ruleset** counts only if `current_user_can_bypass` is `never` (when GitHub omits that field: an empty `bypass_actors`). **Classic** branch protection counts only for an admin, with `enforce_admins` on and no pull-request-review bypass allowances.
+
+A non-admin login on classic-only protection is refused: it cannot read the review settings. A non-admin bot must therefore use a **ruleset**. Any GitHub read error refuses too (fail closed).
+
+**Ruleset sample.** Settings, Rules, Rulesets, New branch ruleset (or `POST /repos/<owner>/<repo>/rulesets` as the owner):
+
+```json
+{
+  "name": "main: merge policy",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "bypass_actors": [],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          { "context": "pr-lint" },
+          { "context": "test-python" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Owner step: CODEOWNERS.** `kb init` writes `.github/CODEOWNERS` once and never rewrites it. Replace every `@OWNER` with a real GitHub user or team (for example `@acme/maintainers`), commit it to the default branch, and let that person or team review. GitHub ignores a rule whose owner does not exist, so an unreplaced placeholder protects nothing and the run refuses.
+
+**PRs that wait for a human.** CODEOWNERS covers the workflows, `.claude/**`, `docs/pr-review-rubric*.md`, `docs/tdd-exemptions.md` and CODEOWNERS itself. A PR that touches one of them cannot merge without the owner's review, so the task ends `AUTO-RESULT: blocked-review <pr-url>`. The loop parks that ticket (`waiting_review`) and keeps going with the next work; once you have reviewed and merged the PR, the task counts as done (a PR closed unmerged drops it, and the picker may choose it again). The first Dev task, `dev-test-workflow`, writes `kb-test.yml` under `.github/workflows/`, so it always needs this review.
+
+**Existing repos: `kb upgrade`.** A repo scaffolded before this release needs the new CODEOWNERS, workflows and settings. Run `kb upgrade` in the repo (a human runs it; the auto agent may not). It refreshes the scaffold on a new branch and opens a PR; it **never merges**, so you review and merge it by hand. `kb upgrade --no-pr` stops after the commit (no push, no PR). It prints `already current` when there is nothing to change.
+
+**Residual risk.** An admin token can still edit the ruleset. Only the permission allowlist (it does not allow `gh api`) stops the agent from doing so. The hardening is to run the agent as a **non-admin bot identity** with a ruleset it cannot bypass.
 
 ## 4.2 Set up once
 
@@ -495,7 +543,8 @@ The runner never uses `--dangerously-skip-permissions` or `bypassPermissions`.
 `kb auto run` refuses, and prints every reason, when the switch is off, `.kb/config.yaml`
 or `.claude/settings.json` is untracked or dirty, `auto.enabled: true` is missing from the
 default branch's copy of the config, `intake:` is empty, or the hub registry cannot be
-read, does not list this repo, or lacks `auto_merge: true` for it. Exit codes: `0` done,
+read, does not list this repo, or lacks `auto_merge: true` for it, or the merge policy is not
+enforced on GitHub (Merge policy, 4.1). Exit codes: `0` done,
 `2` stopped, `1` refused or error, `130` interrupted.
 
 ## 4.4 What it does and when it stops
@@ -537,9 +586,13 @@ process carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `ru
 (`status` still works), so a task can neither flip the switch nor start a second loop.
 
 The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT: done`,
-`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` or `AUTO-RESULT: failed <reason>`, and nothing
-after it. A missing or malformed line counts as a failed attempt (`no result line`,
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`, `AUTO-RESULT: blocked-review <pr-url>` or
+`AUTO-RESULT: failed <reason>`, and nothing after it. A missing or malformed line counts as a failed attempt (`no result line`,
 `bad result line`). A skill you write for the runner must end the same way.
+
+When a task ends `AUTO-RESULT: blocked-review <pr-url>`, the PR touches code-owned paths and waits for a human (see Merge policy in 4.1); the loop parks the ticket and carries on.
+
+Every task run appends one line to `.kb/auto/runs.jsonl` (git-ignored): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (the result kind), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` and `log`. A write failure only warns; it never fails the task. A Stop hook keeps a task from ending its turn before it has printed its `AUTO-RESULT` line.
 
 ## 4.5 Claude Code cloud
 
@@ -555,7 +608,7 @@ is left alone.
 The session branch cannot push to the default branch. When the default branch's switch is
 off, `/kb-auto run` opens an `auto/switch` PR that flips only `auto.enabled`, waits for green
 checks, and then **merges that PR itself, telling you first**, with
-`kb pr merge auto/switch --squash --admin --delete-branch`. The same branch-protection
+`kb pr merge auto/switch --squash --delete-branch`. The same branch-protection
 advice as in 4.1 applies: that merge has no review either. `/kb-auto run` is re-runnable: it
 removes a leftover local `auto/switch` worktree and branch itself. A switch PR left open by a
 failed run (red checks, merge error) and its remote `auto/switch` branch must be closed and

@@ -184,9 +184,9 @@ and the few that differ per assistant.
 `ba` and `dev` repos can run unattended (`/kb-auto`, `kb auto`). **Read the
 Automation modes section of the [BA](docs/src/guide-ba.en.md) or
 [Dev](docs/src/guide-dev.en.md) guide before turning it on:** an unattended run
-merges its own pull requests with the rights of your `gh` login (`--admin` changes
-nothing) and publishes with no human review, and it needs branch protection on
-`main` first; see Automation modes, Security.
+merges its own pull requests with the rights of your `gh` login and publishes with no
+human review, and it needs branch protection on `main` first (`kb auto run` refuses
+until the merge policy is set up); see Automation modes, Security, Merge policy.
 
 ---
 

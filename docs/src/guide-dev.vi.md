@@ -435,23 +435,73 @@ publish lên hub mà không có ai review. Một ticket mà agent hiểu sai s�
 và vào hub. `kb auto on` tự in cảnh báo này: "Auto mode merges pull requests as admin,
 with no review. Turn it on only for a repo where that is acceptable."
 
-Nó merge bằng `kb pr merge` (GitHub REST), dùng quyền của tài khoản `gh` của bạn; `--admin`
-được chấp nhận cho tương thích với `gh` và không đổi gì. Nếu tài khoản đó là admin của repo
-và branch protection không bao gồm administrators, các lần merge đó vượt qua protection.
-Vì vậy, trước khi chạy, chủ repo **phải** bật GitHub branch protection trên `main`:
-
-- chặn force push và xóa nhánh;
-- **bao gồm administrators**;
-- giữ check CI là **required status check**: job(s) `test-<lang>` của `kb-test.yml` (hoặc
-  của workflow mang marker `kb-test`). Branch protection chọn check theo tên job. Nếu
-  không có check bắt buộc, "green CI" chỉ là quy ước mà agent tự tuân theo;
-- **đừng** bắt buộc review chấp thuận: agent không thể tự approve PR của mình, và merge
-  khi đó bị từ chối. Nếu bạn vẫn bắt buộc review, hãy loại administrators khỏi quy tắc đó
-  và chấp nhận rằng agent vượt qua nó trên `main`.
+Nó merge bằng `kb pr merge` (GitHub REST), dùng quyền của tài khoản `gh` của bạn. Không có chế độ ép merge bằng quyền admin. Trước khi chạy, chủ repo **phải** thiết lập GitHub branch protection trên `main` theo merge policy dưới đây: `kb auto run` và `kb doctor` từ chối cho tới khi chính GitHub áp dụng nó.
 
 Danh sách từ chối cũng không nhìn thấy nhánh hiện tại: working tree của agent không bao
 giờ được đứng trên `main` khi đã có commit. Các skill tạo nhánh trước; runner không canh
 việc này. Runner không bao giờ dùng `--dangerously-skip-permissions` hay `bypassPermissions`.
+
+### Merge policy
+
+`kb auto run` chỉ khởi động khi GitHub không cho agent merge nếu thiếu các check bắt buộc và review của code owner, và không cho nó vượt qua protection đó. Nó đọc các thiết lập qua GitHub REST API bằng chính tài khoản của agent. Mỗi lý do từ chối kết thúc bằng `see "Merge policy" in the Dev guide`, trỏ về đây.
+
+**Điều gì phải đúng trên nhánh mặc định.**
+
+- Mỗi mục sau là một required status check: `pr-lint` và mọi job của `kb-test.yml` (các job `test-<lang>`; khi `kb-test.yml` chưa có thì chỉ cần `pr-lint`). Branch protection chọn check theo tên job; `"test-python"` trong ví dụ là chỗ cho các job `test-<lang>` của bạn.
+- Bắt buộc có review của code owner. Review chấp thuận thì không: `required_approving_review_count` là `0`, nên PR không đụng tới đường dẫn nào có owner sẽ merge khi check xanh.
+- `.github/CODEOWNERS` tồn tại và không còn placeholder `@OWNER` (xem bước owner bên dưới).
+- Chặn force push và xóa nhánh.
+
+**Quy tắc về danh tính.** Kiểm tra đạt khi một trong hai điều sau đúng:
+
+1. Tài khoản của agent **không phải admin** của repo (bot hoặc collaborator thường). Protection khi đó ràng buộc nó theo mặc định.
+2. Tài khoản là admin, và các check bắt buộc cùng review của code owner chỉ đến từ protection mà tài khoản đó không thể vượt qua. **Ruleset** chỉ được tính nếu `current_user_can_bypass` là `never` (khi GitHub không trả trường đó: `bypass_actors` rỗng). Branch protection **classic** chỉ được tính cho admin, với `enforce_admins` bật và không có bypass allowance cho review pull request.
+
+Tài khoản không phải admin mà chỉ có protection classic bị từ chối: nó không đọc được thiết lập review. Vì vậy bot không phải admin phải dùng **ruleset**. Mọi lỗi khi đọc từ GitHub cũng bị từ chối (fail closed).
+
+**Ví dụ ruleset.** Settings, Rules, Rulesets, New branch ruleset (hoặc `POST /repos/<owner>/<repo>/rulesets` bằng tài khoản chủ repo):
+
+```json
+{
+  "name": "main: merge policy",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "bypass_actors": [],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "require_code_owner_review": true,
+        "dismiss_stale_reviews_on_push": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          { "context": "pr-lint" },
+          { "context": "test-python" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Bước của chủ repo: CODEOWNERS.** `kb init` ghi `.github/CODEOWNERS` một lần và không bao giờ ghi đè. Thay mọi `@OWNER` bằng một user hoặc team GitHub thật (ví dụ `@acme/maintainers`), commit lên nhánh mặc định, và để người hoặc team đó review. GitHub bỏ qua quy tắc có owner không tồn tại, nên placeholder chưa thay không bảo vệ gì và lượt chạy bị từ chối.
+
+**PR phải chờ con người.** CODEOWNERS bao gồm các workflow, `.claude/**`, `docs/pr-review-rubric*.md`, `docs/tdd-exemptions.md` và chính CODEOWNERS. PR đụng tới một trong số đó không merge được nếu thiếu review của owner, nên task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`. Vòng lặp đỗ (park) ticket đó (`waiting_review`) và tiếp tục việc kế tiếp; sau khi bạn review và merge PR, task được tính là xong (PR bị đóng mà không merge thì task bị bỏ khỏi danh sách đỗ và có thể được chọn lại). Task Dev đầu tiên, `dev-test-workflow`, viết `kb-test.yml` trong `.github/workflows/`, nên luôn cần lần review này.
+
+**Repo có sẵn: `kb upgrade`.** Repo được scaffold trước bản này cần CODEOWNERS, workflow và thiết lập mới. Chạy `kb upgrade` trong repo (con người chạy; agent auto không được). Nó làm mới scaffold trên một nhánh mới và mở PR; nó **không bao giờ merge**, nên bạn tự review và merge. `kb upgrade --no-pr` dừng sau commit (không push, không PR). Nó in `already current` khi không có gì để đổi.
+
+**Rủi ro còn lại.** Token admin vẫn có thể sửa ruleset. Chỉ allowlist quyền (không cho `gh api`) mới ngăn agent làm vậy. Cách củng cố là chạy agent bằng **danh tính bot không phải admin** với ruleset mà nó không thể vượt qua.
 
 ## 4.2 Thiết lập một lần
 
@@ -480,7 +530,8 @@ việc này. Runner không bao giờ dùng `--dangerously-skip-permissions` hay 
 `kb auto run` từ chối, và in mọi lý do, khi công tắc tắt, `.kb/config.yaml` hoặc
 `.claude/settings.json` chưa được theo dõi hay đang bẩn, `auto.enabled: true` thiếu trong
 bản config của nhánh mặc định, `intake:` rỗng, hoặc registry của hub không đọc được,
-không liệt kê repo này, hoặc thiếu `auto_merge: true` cho nó. Mã thoát: `0` xong, `2`
+không liệt kê repo này, hoặc thiếu `auto_merge: true` cho nó, hoặc merge policy chưa được
+áp dụng trên GitHub (Merge policy, 4.1). Mã thoát: `0` xong, `2`
 đã dừng, `1` bị từ chối hoặc lỗi, `130` bị ngắt.
 
 ## 4.4 Nó làm gì và khi nào dừng
@@ -523,9 +574,13 @@ claim trên hub và chọn lại. `kb ticket fetch` cảnh báo `<id> targets <x
 thứ hai: từ lúc đó ticket không có target bị chặn.
 
 Prompt của runner yêu cầu mỗi task kết thúc câu trả lời bằng một dòng: `AUTO-RESULT: done`,
-`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` hoặc `AUTO-RESULT: failed <reason>`, và không có
+`AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]`, `AUTO-RESULT: blocked-review <pr-url>` hoặc `AUTO-RESULT: failed <reason>`, và không có
 gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần thử thất bại (`no result line`,
 `bad result line`). Skill bạn tự viết cho runner phải kết thúc theo cùng cách.
+
+Khi một task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`, PR đó đụng tới đường dẫn có owner và chờ con người (xem Merge policy ở 4.1); vòng lặp đỗ ticket và đi tiếp.
+
+Mỗi lượt chạy task thêm một dòng vào `.kb/auto/runs.jsonl` (git bỏ qua): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (loại kết quả), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` và `log`. Ghi lỗi chỉ cảnh báo, không làm task thất bại. Một Stop hook không cho task kết thúc lượt trước khi nó in dòng `AUTO-RESULT`.
 
 ## 4.5 Claude Code cloud
 
@@ -540,7 +595,7 @@ là tin cậy trong `~/.claude.json`; các khóa khác được giữ nguyên v�
 
 Nhánh của phiên không push được lên nhánh mặc định. Khi công tắc của nhánh mặc định tắt,
 `/kb-auto run` mở một PR `auto/switch` chỉ đổi `auto.enabled`, chờ check xanh, rồi **tự
-merge PR đó, báo cho bạn trước**, bằng `kb pr merge auto/switch --squash --admin --delete-branch`.
+merge PR đó, báo cho bạn trước**, bằng `kb pr merge auto/switch --squash --delete-branch`.
 Lời khuyên branch protection ở 4.1 áp dụng y nguyên: lần merge đó cũng không có review.
 `/kb-auto run` chạy lại được: nó tự gỡ worktree và nhánh `auto/switch` cục bộ còn sót. PR
 chuyển công tắc bị bỏ mở sau một lượt chạy thất bại (check đỏ, lỗi merge) và nhánh

@@ -72,8 +72,8 @@ A ticket ships only when every box of its `## Definition of Ready` is ticked. Wi
 repos run on their own, on your machine, until every ticket on the hub is done. An
 unattended run merges its own pull requests and publishes to the hub with no human review.
 Read the guide's Automation section before turning it on, and enable GitHub branch
-protection on `main` first (block force pushes, include administrators, keep the `lint`
-check required, and do not require approving reviews: the agent cannot approve its own PR).
+protection on `main` first: the merge policy (required checks, code-owner review, no bypass
+for the agent). `kb auto run` refuses until it is set up; see "Merge policy" in the guide.
 
 - Automation modes: https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-ba.en.md#4-automation-modes
 - Security, read this first: https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-ba.en.md#41-security-read-this-first
