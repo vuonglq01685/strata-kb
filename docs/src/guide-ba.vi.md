@@ -623,8 +623,7 @@ Developer](guide-dev.vi.md#4-các-chế-độ-tự-động-hóa).
 Danh sách từ chối quyền mà `kb init` ghi ra (6.5) chỉ là phòng thủ nhiều lớp, không phải ranh
 giới. Một lượt chạy không người giám sát tự merge pull request của chính nó và publish lên
 hub mà không có ai review. Một ticket mà agent hiểu sai sẽ đi thẳng vào `main` và vào hub.
-`kb auto on` tự in cảnh báo này: "Auto mode merges pull requests as admin, with no review.
-Turn it on only for a repo where that is acceptable."
+`kb auto on` tự in cảnh báo này (bằng tiếng Anh): "Auto mode merges its own pull requests once every required check is green; pull requests that touch code-owned paths wait for a human review. Set up the merge policy in the guide first."
 
 Nó merge bằng `kb pr merge` (GitHub REST), dùng quyền của tài khoản `gh` của bạn. Không có chế độ ép merge bằng quyền admin. Trước khi chạy, chủ repo **phải** thiết lập GitHub branch protection trên `main` theo merge policy dưới đây: `kb auto run` và `kb doctor` từ chối cho tới khi chính GitHub áp dụng nó.
 
@@ -639,15 +638,12 @@ skill hiện giả định nhánh mặc định là `main`.
 
 **Điều gì phải đúng trên nhánh mặc định.**
 
-- Mỗi mục sau là một required status check: `lint` (job của `kb-ticket-lint.yml`).
+- `lint` (job của `kb-ticket-lint.yml`) là một required status check.
 - Bắt buộc có review của code owner. Review chấp thuận thì không: `required_approving_review_count` là `0`, nên PR không đụng tới đường dẫn nào có owner sẽ merge khi check xanh.
 - `.github/CODEOWNERS` tồn tại và không còn placeholder `@OWNER` (xem bước owner bên dưới).
-- Chặn force push và xóa nhánh.
+- Chặn force push và xóa nhánh (khuyến nghị; `kb` không kiểm tra điều này).
 
-**Quy tắc về danh tính.** Kiểm tra đạt khi một trong hai điều sau đúng:
-
-1. Tài khoản của agent **không phải admin** của repo (bot hoặc collaborator thường). Protection khi đó ràng buộc nó theo mặc định.
-2. Tài khoản là admin, và các check bắt buộc cùng review của code owner chỉ đến từ protection mà tài khoản đó không thể vượt qua. **Ruleset** chỉ được tính nếu `current_user_can_bypass` là `never` (khi GitHub không trả trường đó: `bypass_actors` rỗng). Branch protection **classic** chỉ được tính cho admin, với `enforce_admins` bật và không có bypass allowance cho review pull request.
+**Quy tắc về danh tính.** Với mọi tài khoản, admin hay không, chỉ protection mà tài khoản đó không thể vượt qua mới được tính. **Ruleset** chỉ được tính nếu `current_user_can_bypass` là `never` (khi GitHub không trả trường đó: `bypass_actors` có mặt và rỗng). Bot nằm trong `bypass_actors` bị từ chối. Branch protection **classic** chỉ được tính cho tài khoản admin, với `enforce_admins` bật và không có bypass allowance cho review pull request.
 
 Tài khoản không phải admin mà chỉ có protection classic bị từ chối: nó không đọc được thiết lập review. Vì vậy bot không phải admin phải dùng **ruleset**. Mọi lỗi khi đọc từ GitHub cũng bị từ chối (fail closed).
 
@@ -688,7 +684,7 @@ Tài khoản không phải admin mà chỉ có protection classic bị từ ch�
 
 **Bước của chủ repo: CODEOWNERS.** `kb init` ghi `.github/CODEOWNERS` một lần và không bao giờ ghi đè. Thay mọi `@OWNER` bằng một user hoặc team GitHub thật (ví dụ `@acme/maintainers`), commit lên nhánh mặc định, và để người hoặc team đó review. GitHub bỏ qua quy tắc có owner không tồn tại, nên placeholder chưa thay không bảo vệ gì và lượt chạy bị từ chối.
 
-**PR phải chờ con người.** CODEOWNERS bao gồm các workflow, `.claude/**`, `docs/pr-review-rubric*.md`, `docs/tdd-exemptions.md` và chính CODEOWNERS. PR đụng tới một trong số đó không merge được nếu thiếu review của owner, nên task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`. Vòng lặp đỗ (park) ticket đó (`waiting_review`) và tiếp tục việc kế tiếp; sau khi bạn review và merge PR, task được tính là xong (PR bị đóng mà không merge thì task bị bỏ khỏi danh sách đỗ và có thể được chọn lại). 
+**PR phải chờ con người.** CODEOWNERS bao gồm `.github/CODEOWNERS`, `.github/workflows/`, `.claude/settings.json`, `.claude/agents/`, `.claude/skills/`, `.claude/commands/`, `docs/review-rubric.md` và `docs/review-rubric.local.md`. PR đụng tới một trong số đó không merge được nếu thiếu review của owner, nên task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`. Vòng lặp đỗ (park) ticket đó (`waiting_review`) và tiếp tục việc kế tiếp; sau khi bạn review và merge PR, task được tính là xong (PR bị đóng mà không merge thì task bị bỏ khỏi danh sách đỗ và có thể được chọn lại).
 
 **Repo có sẵn: `kb upgrade`.** Repo được scaffold trước bản này cần CODEOWNERS, workflow và thiết lập mới. Chạy `kb upgrade` trong repo (con người chạy; agent auto không được). Nó làm mới scaffold trên một nhánh mới và mở PR; nó **không bao giờ merge**, nên bạn tự review và merge. `kb upgrade --no-pr` dừng sau commit (không push, không PR). Nó in `already current` khi không có gì để đổi.
 
@@ -755,7 +751,7 @@ gì sau nó. Dòng thiếu hoặc sai dạng được tính là một lần th�
 
 Khi một task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`, PR đó đụng tới đường dẫn có owner và chờ con người (xem Merge policy ở 4.1); vòng lặp đỗ ticket và đi tiếp.
 
-Mỗi lượt chạy task thêm một dòng vào `.kb/auto/runs.jsonl` (git bỏ qua): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (loại kết quả), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` và `log`. Ghi lỗi chỉ cảnh báo, không làm task thất bại. Một Stop hook không cho task kết thúc lượt trước khi nó in dòng `AUTO-RESULT`.
+Mỗi lượt chạy task thêm một dòng vào `.kb/auto/runs.jsonl` (git bỏ qua): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (loại kết quả), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` và `log`. Ghi lỗi chỉ cảnh báo, không làm task thất bại. Một Stop hook nhắc task một lần khi câu trả lời không kết thúc bằng một dòng `AUTO-RESULT:` hợp lệ. Nó không bao giờ chặn hai lần và không bao giờ chặn ngoài task auto.
 
 ## 4.5 Claude Code cloud
 

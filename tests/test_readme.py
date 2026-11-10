@@ -606,3 +606,24 @@ def test_child_guides_document_the_l3_ai_fix():
         assert "_l3fix.yaml" in flat, lang
         assert "kb l3 lint" in flat, lang
         assert "kb l3 fix on" in flat, lang
+
+
+GUIDES = [f"guide-{k}.{lang}.md" for k in ("ba", "dev") for lang in ("en", "vi")]
+
+
+def test_guides_quote_the_kb_auto_on_warning():
+    from strata_kb.autorun.switch import ADMIN_WARNING
+
+    for name in GUIDES:
+        assert ADMIN_WARNING in _normalised(_doc(name)), name
+
+
+def test_guides_have_the_merge_policy_heading_the_refusals_point_to():
+    from strata_kb.autorun.ghpolicy import _Guard
+
+    for name in GUIDES:
+        kind = "ba" if "-ba." in name else "dev"
+        tail = _Guard(kind).tail
+        guide = "BA" if kind == "ba" else "Dev"
+        title = re.search(r'see "([^"]+)" in the ' + guide, tail).group(1)
+        assert f"### {title} " in _doc(name), name

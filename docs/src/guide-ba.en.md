@@ -623,8 +623,7 @@ while the switch is off. The Dev side is in the
 The permission deny list that `kb init` writes (6.5) is defence in depth, not a boundary.
 An unattended run merges its own pull requests and publishes to the hub with no human
 review. A ticket the agent misreads goes straight to `main` and to the hub. `kb auto on`
-prints this itself: "Auto mode merges pull requests as admin, with no review. Turn it on
-only for a repo where that is acceptable."
+prints this itself: "Auto mode merges its own pull requests once every required check is green; pull requests that touch code-owned paths wait for a human review. Set up the merge policy in the guide first."
 
 It merges with `kb pr merge` (GitHub REST), using the rights of your `gh` login. There is no admin override. Before you run it, the repo owner **must** set up GitHub branch protection on `main` that implements the merge policy below: `kb auto run` and `kb doctor` refuse until GitHub itself enforces it.
 
@@ -639,15 +638,12 @@ currently assume `main` as the default branch.
 
 **What must hold on the default branch.**
 
-- Each of these is a required status check: `lint` (the job of `kb-ticket-lint.yml`).
+- `lint` (the job of `kb-ticket-lint.yml`) is a required status check.
 - Code-owner review is required. Approving reviews are not: `required_approving_review_count` is `0`, so a PR that touches no code-owned path merges when the checks are green.
 - `.github/CODEOWNERS` exists and no `@OWNER` placeholder is left (see the owner step below).
-- Force pushes and deletions are blocked.
+- Force pushes and deletions are blocked (recommended; `kb` does not check it).
 
-**Identity rule.** The check passes with either of these:
-
-1. The agent's login is **not an admin** of the repo (it is a bot or a plain collaborator). Protection then binds it by default.
-2. The login is an admin, and the required checks and code-owner review come only from protection that login cannot bypass. A **ruleset** counts only if `current_user_can_bypass` is `never` (when GitHub omits that field: an empty `bypass_actors`). **Classic** branch protection counts only for an admin, with `enforce_admins` on and no pull-request-review bypass allowances.
+**Identity rule.** For any login, admin or not, only protection that the login cannot bypass counts. A **ruleset** counts only if `current_user_can_bypass` is `never` (when GitHub omits that field: `bypass_actors` present and empty). A bot listed in `bypass_actors` is refused. **Classic** branch protection counts only for an admin login, with `enforce_admins` on and no pull-request-review bypass allowances.
 
 A non-admin login on classic-only protection is refused: it cannot read the review settings. A non-admin bot must therefore use a **ruleset**. Any GitHub read error refuses too (fail closed).
 
@@ -688,7 +684,7 @@ A non-admin login on classic-only protection is refused: it cannot read the revi
 
 **Owner step: CODEOWNERS.** `kb init` writes `.github/CODEOWNERS` once and never rewrites it. Replace every `@OWNER` with a real GitHub user or team (for example `@acme/maintainers`), commit it to the default branch, and let that person or team review. GitHub ignores a rule whose owner does not exist, so an unreplaced placeholder protects nothing and the run refuses.
 
-**PRs that wait for a human.** CODEOWNERS covers the workflows, `.claude/**`, `docs/pr-review-rubric*.md`, `docs/tdd-exemptions.md` and CODEOWNERS itself. A PR that touches one of them cannot merge without the owner's review, so the task ends `AUTO-RESULT: blocked-review <pr-url>`. The loop parks that ticket (`waiting_review`) and keeps going with the next work; once you have reviewed and merged the PR, the task counts as done (a PR closed unmerged drops it, and the picker may choose it again). 
+**PRs that wait for a human.** CODEOWNERS covers `.github/CODEOWNERS`, `.github/workflows/`, `.claude/settings.json`, `.claude/agents/`, `.claude/skills/`, `.claude/commands/`, `docs/review-rubric.md` and `docs/review-rubric.local.md`. A PR that touches one of them cannot merge without the owner's review, so the task ends `AUTO-RESULT: blocked-review <pr-url>`. The loop parks that ticket (`waiting_review`) and keeps going with the next work; once you have reviewed and merged the PR, the task counts as done (a PR closed unmerged drops it, and the picker may choose it again).
 
 **Existing repos: `kb upgrade`.** A repo scaffolded before this release needs the new CODEOWNERS, workflows and settings. Run `kb upgrade` in the repo (a human runs it; the auto agent may not). It refreshes the scaffold on a new branch and opens a PR; it **never merges**, so you review and merge it by hand. `kb upgrade --no-pr` stops after the commit (no push, no PR). It prints `already current` when there is nothing to change.
 
@@ -756,7 +752,7 @@ The runner's prompt asks each task to end its reply with one line: `AUTO-RESULT:
 
 When a task ends `AUTO-RESULT: blocked-review <pr-url>`, the PR touches code-owned paths and waits for a human (see Merge policy in 4.1); the loop parks the ticket and carries on.
 
-Every task run appends one line to `.kb/auto/runs.jsonl` (git-ignored): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (the result kind), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` and `log`. A write failure only warns; it never fails the task. A Stop hook keeps a task from ending its turn before it has printed its `AUTO-RESULT` line.
+Every task run appends one line to `.kb/auto/runs.jsonl` (git-ignored): `schema`, `run_id`, `started_at`, `ended_at`, `skill`, `arg`, `attempt`, `outcome` (the result kind), `reason`, `ids`, `session_id`, `cost_usd`, `turns`, `duration_ms`, `head_before`, `head_after` and `log`. A write failure only warns; it never fails the task. A Stop hook nudges a task once when its reply does not end with a valid `AUTO-RESULT:` line. It never blocks twice and never outside an auto task.
 
 ## 4.5 Claude Code cloud
 
