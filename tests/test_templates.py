@@ -2275,6 +2275,7 @@ def test_pr_review_rubric_is_wired_into_dev_kind_only():
     assert initcmd.DEV_TEMPLATES["docs/pr-review-rubric.md"] == "pr-review-rubric.md"
     assert initcmd.DEV_LOCAL_OVERRIDES == {
         "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+        ".github/CODEOWNERS": "codeowners-dev",
     }
     for kind in ("hub", "child", "ba"):
         assert "docs/pr-review-rubric.md" not in initcmd.expected_files(kind), kind

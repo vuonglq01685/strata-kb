@@ -3595,3 +3595,42 @@ def test_parent_bug_template_change_log_affected_is_child_ids():
     text = initcmd.read_template("parent-bug-template.md")
     assert "Affected is the child ids" in text
     assert "Affected is section names" not in text
+
+
+# --- CODEOWNERS: created once, never refreshed -------------------------------
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_init_scaffolds_codeowners(tmp_path: Path, kind: str):
+    initcmd.init_repo(tmp_path, kind)
+    text = (tmp_path / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    assert initcmd.CODEOWNERS_PLACEHOLDER == "@OWNER"
+    assert initcmd.CODEOWNERS_PLACEHOLDER in text
+    assert "/.github/workflows/" in text
+
+
+def test_init_codeowners_covers_kind_specific_paths(tmp_path: Path):
+    initcmd.init_repo(tmp_path / "ba", "ba")
+    initcmd.init_repo(tmp_path / "dev", "dev")
+    ba = (tmp_path / "ba" / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    dev = (tmp_path / "dev" / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    for p in ("/docs/review-rubric.md", "/docs/review-rubric.local.md"):
+        assert p in ba
+    for p in (
+        "/docs/pr-review-rubric.md",
+        "/docs/pr-review-rubric.local.md",
+        "/docs/tdd-exemptions.md",
+    ):
+        assert p in dev
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_reinit_never_refreshes_codeowners(tmp_path: Path, kind: str):
+    initcmd.init_repo(tmp_path, kind)
+    co = tmp_path / ".github" / "CODEOWNERS"
+    co.write_text("* @me\n", encoding="utf-8")
+
+    report = initcmd.init_repo(tmp_path, kind)
+
+    assert co.read_text(encoding="utf-8") == "* @me\n"
+    assert any(e.startswith(".github/CODEOWNERS") for e in report.skipped)

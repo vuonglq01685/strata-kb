@@ -168,7 +168,11 @@ BA_TEMPLATES: dict[str, str] = {
 BA_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/review-rubric.local.md": "review-rubric-local-stub.md",
     "docs/ac-quality.local.md": "ac-quality-local-stub.md",
+    ".github/CODEOWNERS": "codeowners-ba",
 }
+
+# Owner token in the scaffolded .github/CODEOWNERS; the user replaces it.
+CODEOWNERS_PLACEHOLDER = "@OWNER"
 
 
 # A template whose last line is this directive is a stub: its own frontmatter
@@ -223,6 +227,7 @@ def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
 # without losing the stack-specific ones it wrote.
 DEV_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+    ".github/CODEOWNERS": "codeowners-dev",
 }
 
 
