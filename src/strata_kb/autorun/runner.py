@@ -404,7 +404,7 @@ def _task_for(
             raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
-        return picker.pick_ba(root, kb_dir, skip=state.skipped)
+        return picker.pick_ba(root, kb_dir, skip=_skip(state))
     if claims is None:
         return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)

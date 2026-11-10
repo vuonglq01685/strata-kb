@@ -1638,3 +1638,14 @@ def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
     )
     once(cenv, Script(), qa=FakeQa({12: "waiting"}), claims=claims)
     assert {c[1] for c in claims.of("beat")} == {"US1", "US2"}
+
+
+def test_ba_parked_task_is_not_picked_again(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    skips: list = []
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(): skips.append(skip)
+    )
+    _park(env, f"ba-ticket-author:US1 {PR_URL}")
+    once(env, Script(), cfg=cfg_of("ba"))
+    assert "ba-ticket-author:US1" in skips[-1]
