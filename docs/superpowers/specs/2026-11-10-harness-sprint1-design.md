@@ -1,6 +1,6 @@
 # Harness sprint 1 — unattended-safe merge, run record, result contract (design)
 
-Date: 2026-11-10 · Size: project (six independent parts) · Version: 1.35.0 → 1.36.0
+Date: 2026-11-10 · Size: project (seven parts) · Version: 1.35.0 → 1.36.0
 
 Part of the roadmap "Strata as the outer harness for Claude Code": Claude Code
 is the inner harness (tool loop, permissions, subagents); Strata is the outer
@@ -21,6 +21,7 @@ Sprint 1 is the cheap foundation:
 4. Skills stop failing on commands the auto allowlist forgot.
 5. Ticket grounding is checked in CI, not only by the agent.
 6. Running ba/dev repos can take these changes (`kb upgrade`, option **A**).
+7. A PR that needs a human review parks the task instead of stopping the loop.
 
 ## Decisions made by the owner
 
@@ -30,6 +31,11 @@ Sprint 1 is the cheap foundation:
   `CODEOWNERS` forces a human review on sensitive paths. Rejected: A (a human
   approves every PR — the loop would run at human speed) and B (a separate
   reviewer bot — a second token and App to manage).
+- **Identity: accept both** a non-admin bot and an admin token behind
+  no-bypass protection (G1). Rejected: non-admin only (cloud auto mode
+  impossible), admin + ruleset only (no hardening path).
+- **Review wait: park** (`blocked-review`, G7). Rejected: stop the loop (every
+  dev repo would halt on its first task).
 - **Upgrade path A.** A human runs `kb upgrade`; it opens a PR and never
   merges. Rejected: B (runner opens upgrade PRs itself) — the upgrade PR
   touches `CODEOWNERS`-protected paths, so a human reviews it either way.
@@ -55,36 +61,69 @@ Sprint 1 is the cheap foundation:
 
 ### G1. Merge policy C — refuse to run when GitHub would let the agent bypass
 
-- `runner.preflight` adds refusals (same list-of-reasons style as today):
-  - token is admin on the repo: `GET /repos/{o}/{r}` → `permissions.admin` is
-    true. Reason names the fix: use a token without admin (fine-grained PAT /
-    App with `contents:write`, `pull_requests:write`, `checks:read`).
-  - the default branch's effective rules
-    (`GET /repos/{o}/{r}/rules/branches/{default}`) lack a
-    `required_status_checks` rule containing the kind's gate job(s):
-    dev → `pr-lint`; ba → `lint` (job of `kb-ticket-lint`). Job names are the
-    frozen ones the workflow files already pin.
-  - a GitHub API failure is a refusal too ("could not read …: <why>"), never
-    a silent pass: unattended means fail closed.
-- Bypass detection: the rules endpoint does not say who may bypass. Builder
-  checks `GET /repos/{o}/{r}/rulesets` + each ruleset's `bypass_actors`
-  (readable without admin? — verify; if not readable, fall back to the admin
-  check alone and say so in the doctor output).
+**Identity rule (owner's call: accept both).** `GET /repos/{o}/{r}` →
+`permissions.admin` reflects the *user's* role, not the token's grant, so a
+PAT made by an admin owner still reads `admin: true`, and in Claude Code cloud
+the session acts as the owner. Preflight therefore passes in either case:
+
+- **non-admin identity** (machine user or GitHub App, write but not admin) and
+  the default branch requires the kind's checks; or
+- **admin identity** and the default branch is protected in a way an admin
+  cannot bypass: a ruleset with an empty `bypass_actors`, or classic
+  protection with `enforce_admins: true`; plus required checks and code-owner
+  review. An admin token can read all of this, so it is checked, not assumed.
+  Residual risk, stated in the guides: an admin token can still edit the
+  ruleset; only the allowlist (no `gh api`) stops the agent from doing so.
+  A non-admin bot identity is the documented hardening.
+
+What preflight checks (`ghrest.api`, refusal reasons in today's style):
+
+- Required checks on the default branch, read from the ruleset
+  (`GET /repos/{o}/{r}/rules/branches/{b}`) or classic protection
+  (`GET /repos/{o}/{r}/branches/{b}` → `protection.required_status_checks`;
+  admin: `/branches/{b}/protection`). Either source counts.
+  - dev → `pr-lint`, plus every job of `.github/workflows/kb-test.yml` once
+    that file exists on the default branch (before it exists, the first task
+    is `dev-test-workflow`, so `pr-lint` alone is enough). *Builder's call
+    recorded: "tests green" is part of C.*
+  - ba → `lint` (job of `kb-ticket-lint`).
+- Code-owner review required (`pull_request.require_code_owner_review` in the
+  ruleset, or `required_pull_request_reviews.require_code_owner_reviews`).
+  Required approvals may be 0.
+- `.github/CODEOWNERS` exists on the default branch and has no `@OWNER`
+  placeholder left (GitHub ignores those lines, so the review would silently
+  not apply).
+- Admin identity only: no bypass (above).
+- Any GitHub API failure, or a missing `permissions` block, is a refusal
+  ("could not read …: <why>"), never a silent pass: unattended means fail
+  closed.
+
+Everything else in G1:
+
 - `kb doctor` reports the same findings as issues, with the fix text.
 - `kb init` (ba and dev) scaffolds `.github/CODEOWNERS` as **created once,
-  never refreshed** (like the local-overrides files): lines for
-  `.github/workflows/**`, `.claude/settings.json`, `.claude/agents/**`, and the
+  never refreshed** (like the local-overrides files), covering
+  `.github/CODEOWNERS`, `.github/workflows/**`, `.claude/settings.json`,
+  `.claude/agents/**`, `.claude/skills/**`, `.claude/commands/**`, and the
   repo's rubric/exemption files (`pr-review-rubric.md`, `tdd-exemptions.md`
   wherever init puts them). Owner placeholder `@OWNER` plus a comment telling
-  the human to set it; `doctor` flags a placeholder still present.
-- Docs: a ruleset JSON sample (required PR, required checks, code-owner review
-  on, required approvals 0, no bypass actors) in the BA and Dev guides (en +
-  vi), applied once by a human admin. The runner never applies it — that would
-  need the admin right C forbids.
+  the human to set it.
+- Docs (BA + Dev guides, en + vi): replace the classic-protection
+  "include administrators" advice with the C setup: a ruleset JSON sample
+  (required PR, required checks, code-owner review, approvals 0, no bypass
+  actors), the identity rule above and its residual risk. Applied once by a
+  human admin; the runner never applies it.
 - Skills: drop the "`--admin` when refused for want of a review" sentence from
-  `bodies/dev-handover.md`, `ba-ticket-author.md`, `dev-test-workflow.md`,
-  `kb-auto.md` (and the matching `claude-command-*.md` copies). A merge refused
-  for want of a review ends `AUTO-RESULT: failed merge-needs-review <pr-url>`.
+  `bodies/dev-handover.md`, `ba-ticket-author.md`, `dev-test-workflow.md` and
+  the inline copies `claude-command-dev-handover.md`,
+  `claude-skill-ba-ticket-author.md`. A merge refused for want of a review
+  ends `AUTO-RESULT: blocked-review <pr-url>` (G7).
+- `bodies/kb-auto.md`: step 9 drops `--admin` (no-op today), step 2 drops
+  "admin-merged"; a merge refused for want of a review stops the switch with a
+  message telling the owner to review and merge `auto/switch`, then re-run.
+- `autorun/switch.py` `ADMIN_WARNING`: reword — auto mode merges its own PRs
+  when every required check is green; PRs touching code-owned paths wait for a
+  human.
 - Allowlist: add deny `Bash(gh pr merge*--admin*)` and
   `Bash(kb pr merge*--admin*)`.
 
@@ -115,7 +154,7 @@ Sprint 1 is the cheap foundation:
   When `STRATA_KB_AUTO_TASK=1` and the last assistant message in the
   transcript does not end with a valid `AUTO-RESULT:` line (reuse
   `claude.parse_result`; anything but "no result line"/"bad result line"
-  passes), print `{"decision": "block", "reason": "<the four allowed forms>"}`.
+  passes), print `{"decision": "block", "reason": "<the allowed result forms, incl. blocked-review>"}`.
 - When `stop_hook_active` is true in the payload, never block (one nudge only;
   no loop). Not an auto task → exit 0, no output.
 - Any internal error → exit 0, no output, one line to the auto log (a broken
@@ -161,6 +200,24 @@ Sprint 1 is the cheap foundation:
 - Not in the auto allowlist (`kb init*` is already denied; add
   `Bash(kb upgrade*)` to deny as well).
 
+### G7. `blocked-review` — a PR that waits for a human (owner's call: park)
+
+PRs touching code-owned paths cannot merge unattended. The first Dev task,
+`dev-test-workflow`, always is one (it writes `.github/workflows/kb-test.yml`).
+
+- New result form `AUTO-RESULT: blocked-review <pr-url>` (`parse_result`,
+  `prompt_for`, the Stop guard's list, the "Auto mode" sections of skills
+  that merge).
+- `_settle`: no attempt counted; the task and PR url are saved in a new
+  `state.json` field `waiting_review` (additive, default empty — an old state
+  file loads unchanged; `tests-gate/regression` covers it).
+- Each loop turn, before picking: for each parked PR, `kb pr view` →
+  merged → the task counts as done (same path as `done`); closed unmerged →
+  drop it and log a warning (picker may re-pick); still open → keep waiting.
+- Picker skips a task whose PR is parked. When nothing else is pickable, the
+  loop waits like `blocked-qa` (`wait_for_change` / sleep), never exits.
+- `kb auto status` lists parked PRs.
+
 ## Non-goals
 
 - Verifying "done" in the runner (P1, sprint 2).
@@ -183,7 +240,8 @@ Sprint 1 is the cheap foundation:
 - No new Python dependency.
 - Backward compatible: repos not yet upgraded keep running until their next
   `kb auto run` preflight, which then refuses with the fix text (this is the
-  intended forcing function). `state.json` schema unchanged.
+  intended forcing function). `state.json` gains only the additive
+  `waiting_review` field (G7).
 - Template text is pinned by `tests/test_templates.py` and
   `tests/test_template_bodies.py`; update the canon with the change.
 - Docs en + vi.
@@ -201,7 +259,8 @@ Sprint 1 is the cheap foundation:
 
 - Exact shape of `TaskResult.meta` and where the runner writes the record
   (around `_settle`, once per `run_task` call).
-- Whether ruleset `bypass_actors` is readable with a non-admin token (G1).
+- Live-check against GitHub before relying on it: `permissions` shape for
+  App installation tokens; code-owner review enforced with approvals 0.
 - Exact allow patterns for G4.
 - Where the CODEOWNERS owner placeholder check lives in `doctor`.
 - `tests/fake_claude.py`: emit `session_id`, `total_cost_usd`, `num_turns`,
@@ -220,4 +279,11 @@ Sprint 1 is the cheap foundation:
   change → branch + commit (+ PR faked); user permissions survive.
 - templates: `--admin` sentence gone from all bodies and command copies; new
   deny rules present; Stop hook order; CODEOWNERS created once.
-- `kb-ticket-lint.yml`: `ticket check` step runs only for `status: ready`.
+- `kb-ticket-lint.yml`: `ticket check` step runs only for ready tickets.
+- preflight: admin + ruleset with bypass actor → refusal; admin + empty
+  bypass → pass; classic protection accepted; CODEOWNERS missing or
+  placeholder → refusal; dev with `kb-test.yml` but its jobs not required →
+  refusal.
+- `blocked-review`: parse; parked PR merged → done; closed → dropped; open →
+  waiting, loop does not exit; old `state.json` loads.
+- `llm.Runner` child env has no `STRATA_KB_AUTO_TASK`.
