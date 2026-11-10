@@ -1393,7 +1393,8 @@ def _permitted(command: str, allow: list[str], deny: list[str]) -> bool:
 
 
 # Denied by the settings template since harness sprint 1 task 5; the bodies drop
-# the `--admin` form in task 8.
+# the `--admin` form in task 8. Task 8 deletes this exemption and the
+# self-expiry assert in the test below.
 ADMIN_MERGE_EXEMPT = {"kb pr merge --squash --admin --delete-branch"}
 
 
@@ -1404,6 +1405,12 @@ def test_dev_auto_commands_are_inside_the_allowlist(template):
     allow, deny = _allow_deny()
     section = _auto_section(template)
     seen = 0
+    # Self-expiring: fails once Task 8 removes the `--admin` form from every body.
+    assert any(
+        ADMIN_MERGE_EXEMPT.issubset({c.strip() for c in s.split(" && ")})
+        for body in BASE.joinpath("bodies").iterdir()
+        for s in re.findall(r"`([^`\n]+)`", body.read_text(encoding="utf-8"))
+    )
     for span in re.findall(r"`([^`\n]+)`", section):
         for command in span.split(" && "):
             command = command.strip()

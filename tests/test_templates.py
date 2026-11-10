@@ -3870,6 +3870,7 @@ EXEMPT: dict[str, str] = {
     "kb init": "denied on purpose; " + _HUMAN_SETUP,
     "kb init --kind ba": "denied on purpose; " + _HUMAN_SETUP,
     "mkdir -p": "bare mention of the command, no path",
+    "kb diff": "named only in a 'Do NOT use' line",
 }
 
 
@@ -3904,7 +3905,12 @@ def test_auto_settings_stop_guard_own_group():
 
 
 def _auto_body_commands() -> list[tuple[str, str]]:
-    """`kb ...` / `mkdir ...` spans in every body that has an `## Auto mode` section."""
+    """`kb ...` / `mkdir ...` spans, split on ` && `, wrapped lines joined.
+
+    Whole bodies that have an `## Auto mode` section are scanned, not only that
+    section: auto mode runs the whole pipeline, and `kb get` / `mkdir` sit in
+    its steps.
+    """
     import re
 
     out: list[tuple[str, str]] = []
@@ -3913,9 +3919,10 @@ def _auto_body_commands() -> list[tuple[str, str]]:
         text = body.read_text(encoding="utf-8")
         if not re.search(r"^## Auto mode$", text, re.M):
             continue
-        for span in re.findall(r"`([^`\n]+)`", text):
-            if re.match(r"(kb |mkdir )", span):
-                out.append((body.name, span))
+        for span in re.findall(r"`([^`]+)`", text):
+            for cmd in " ".join(span.split()).split(" && "):
+                if re.match(r"(kb |mkdir )", cmd):
+                    out.append((body.name, cmd))
     return out
 
 
