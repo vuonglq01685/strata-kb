@@ -241,8 +241,9 @@ The runner starts this skill as `/ba-answer-questions <ticket-id>` for one ticke
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. The `## Next step` block comes before it; the result line follows it and nothing follows the result line: no code fence, no markdown, no closing remark. It has one of three forms:
+End the reply with exactly one line, and make it the last line. The `## Next step` block comes before it; the result line follows it and nothing follows the result line: no code fence, no markdown, no closing remark. It has one of four forms:
 
 - `AUTO-RESULT: done` — every open question of the named ticket is answered and the PR is merged, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which is the one that answers.
+- `AUTO-RESULT: blocked-review <pr-url>` — the merge was refused for want of an approving review (the merging step reports it); a human reviews and merges the PR. Write no text after it.
 - `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `dor-unticked <ticket-id>` for every ticket-level stop (a Definition of Ready box unticked, `kb ticket check` still failing after the re-ground, `kb_ticket_lint` never passing), `qa-needs-hub-server`, or `hub-refused <Q<id>>` when the hub refuses a recorded answer. The reason goes on the same line.

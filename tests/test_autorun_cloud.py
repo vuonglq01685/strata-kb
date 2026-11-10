@@ -229,7 +229,7 @@ def test_cloud_warnings_for_on_count_dev_repos(kb_dir, hub_api):
     assert any("one Dev repo per hub" in w and "lists 2" in w for w in warnings)
 
 
-def test_cloud_warnings_for_on_one_dev_is_just_the_admin_line(kb_dir, hub_api):
+def test_cloud_warnings_for_on_one_dev_is_just_the_merge_policy_line(kb_dir, hub_api):
     (kb_dir / "config.yaml").write_text(GOOD, encoding="utf-8", newline="\n")
     hub_api(**{"/api/registry/entry": entry()})
     assert len(switch.warnings_for_on(kb_dir, "")) == 1

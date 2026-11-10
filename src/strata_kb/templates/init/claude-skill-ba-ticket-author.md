@@ -503,7 +503,7 @@ Check each answer with a fresh-context reviewer (the question, the cited source,
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of four forms:
 
 - `AUTO-RESULT: done` — the ticket is merged (and published by the branch rule's last step), or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.

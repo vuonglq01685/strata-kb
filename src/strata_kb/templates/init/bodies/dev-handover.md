@@ -287,7 +287,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 ### Result line
 
-You run as the last phase of `/dev-implement-ticket` or `/dev-fix-bug`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-handover <ticket-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+You run as the last phase of `/dev-implement-ticket` or `/dev-fix-bug`, which ends the task: report your outcome to it in plain words, with the reason when you stopped. When the runner started you directly as `/dev-handover <ticket-id>`, end the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of four forms:
 
 - `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a stale citation changes an AC, or a question blocks this ticket, and the BA must settle it.

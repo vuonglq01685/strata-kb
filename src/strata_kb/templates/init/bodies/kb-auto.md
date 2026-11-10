@@ -137,7 +137,7 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
       `auto/switch` branch on GitHub before a re-run.
    9. `kb pr merge auto/switch --squash --delete-branch`. When the merge is
       refused for want of an approving review, run cleanup, tell the owner to
-      review and merge `auto/switch`, then re-run `/kb-auto`, and stop. After
+      review and merge `auto/switch`, then re-run `/kb-auto run`, and stop. After
       any other error, run `kb pr view auto/switch --json` before you stop: a merged PR
       is a success. On a real failure run cleanup and stop; the PR stays
       open, so tell the owner to close it and delete the remote `auto/switch`

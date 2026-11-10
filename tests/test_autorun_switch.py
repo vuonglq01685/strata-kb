@@ -106,7 +106,7 @@ def test_warnings_mention_merge_policy_and_two_devs(tmp_path, fed_hub):
     assert any("one Dev" in w for w in warnings)
 
 
-def test_warnings_one_dev_only_admin_line(tmp_path, fed_hub):
+def test_warnings_one_dev_only_merge_policy_line(tmp_path, fed_hub):
     _registry(fed_hub, {"o/dev-a": "dev", "o/ba": "ba"})
     warnings = warnings_for_on(_kb(tmp_path, "kind: dev\n"), str(fed_hub))
     assert len(warnings) == 1 and "required check" in warnings[0]

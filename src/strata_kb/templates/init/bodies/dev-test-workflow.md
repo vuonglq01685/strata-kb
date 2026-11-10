@@ -135,7 +135,7 @@ The runner starts this skill as `/dev-test-workflow` when no workflow in `.githu
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of four forms:
 
 - `AUTO-RESULT: done` — the workflow is merged and its check was green on its own PR, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which asks the BA nothing.
