@@ -74,9 +74,12 @@ class Runner:
             cmd = [self.executable, "--model", self.model, "-s"]
         if prompt in cmd:
             raise RunnerError("prompt must travel on stdin, not argv")
-        env = None
+        from strata_kb.autorun.claude import AUTO_TASK_ENV  # late: claude imports llm
+
+        # a nested run must not inherit the auto-task flag (it would trip the guard)
+        env = {k: v for k, v in os.environ.items() if k != AUTO_TASK_ENV}
         if self.name == "claude" and self.effort == "high":
-            env = os.environ | {"MAX_THINKING_TOKENS": str(thinking_budget(prompt))}
+            env["MAX_THINKING_TOKENS"] = str(thinking_budget(prompt))
         try:
             proc = subprocess.run(
                 cmd,
