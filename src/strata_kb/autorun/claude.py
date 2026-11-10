@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from strata_kb.llm import RunnerError, _extract_reply, envelope_meta
+from strata_kb.llm import AUTO_TASK_ENV, RunnerError, _extract_reply, envelope_meta
 
 Kind = Literal[
     "done", "blocked-qa", "blocked-split", "blocked-review", "failed", "usage-limit"
@@ -34,7 +34,6 @@ RESULT_FORMS = (
     "AUTO-RESULT: failed <reason>",
 )
 _PR_URL = re.compile(r"https://\S+/pull/\d+")
-AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
 DEFAULT_TIMEOUT = 4 * 3600
 MAX_REASON = 500
 MAX_SLUG = 60

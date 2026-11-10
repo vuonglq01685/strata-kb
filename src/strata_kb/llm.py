@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from strata_kb.errors import KbError
 from strata_kb.models import LLMConfig
 
+# set on `kb auto run` task sessions; a nested runner must not inherit it
+AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
+
 # `claude -p` has no public effort flag; a thinking budget is the closest
 # supported knob for effort=high (best-effort). It scales with the prompt: a
 # fixed 31,999 per section would pay the same for a two-line section as for a
@@ -74,8 +77,6 @@ class Runner:
             cmd = [self.executable, "--model", self.model, "-s"]
         if prompt in cmd:
             raise RunnerError("prompt must travel on stdin, not argv")
-        from strata_kb.autorun.claude import AUTO_TASK_ENV  # late: claude imports llm
-
         # a nested run must not inherit the auto-task flag (it would trip the guard)
         env = {k: v for k, v in os.environ.items() if k != AUTO_TASK_ENV}
         if self.name == "claude" and self.effort == "high":
