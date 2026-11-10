@@ -640,6 +640,7 @@ skill hiện giả định nhánh mặc định là `main`.
 
 - `lint` (job của `kb-ticket-lint.yml`) là một required status check.
 - Bắt buộc có review của code owner. Review chấp thuận thì không: `required_approving_review_count` là `0`, nên PR không đụng tới đường dẫn nào có owner sẽ merge khi check xanh.
+- Approval cũ bị bỏ khi có commit mới được push (ruleset `dismiss_stale_reviews_on_push`; classic `dismiss_stale_reviews`). Thiếu thiết lập này thì review của code owner không được tính, vì approval cũ sẽ che cả các commit sau chưa được review.
 - `.github/CODEOWNERS` tồn tại và không còn placeholder `@OWNER` (xem bước owner bên dưới).
 - Chặn force push và xóa nhánh (khuyến nghị; `kb` không kiểm tra điều này).
 
@@ -664,7 +665,7 @@ Tài khoản không phải admin mà chỉ có protection classic bị từ ch�
       "parameters": {
         "required_approving_review_count": 0,
         "require_code_owner_review": true,
-        "dismiss_stale_reviews_on_push": false,
+        "dismiss_stale_reviews_on_push": true,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false
       }

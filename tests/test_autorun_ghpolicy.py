@@ -22,7 +22,7 @@ def _file(text: str) -> dict:
     return {"content": base64.b64encode(text.encode()).decode(), "encoding": "base64"}
 
 
-def _rules(contexts=("lint",), owner=True, ruleset_id=7) -> list[dict]:
+def _rules(contexts=("lint",), owner=True, ruleset_id=7, dismiss=True) -> list[dict]:
     return [
         {
             "type": "required_status_checks",
@@ -34,7 +34,10 @@ def _rules(contexts=("lint",), owner=True, ruleset_id=7) -> list[dict]:
         {
             "type": "pull_request",
             "ruleset_id": ruleset_id,
-            "parameters": {"require_code_owner_review": owner},
+            "parameters": {
+                "require_code_owner_review": owner,
+                "dismiss_stale_reviews_on_push": dismiss,
+            },
         },
     ]
 
@@ -89,7 +92,10 @@ def test_policy_ok_admin_no_bypass():
 def test_policy_ok_classic_enforce_admins():
     prot = {
         "required_status_checks": {"contexts": ["lint"]},
-        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "required_pull_request_reviews": {
+            "require_code_owner_reviews": True,
+            "dismiss_stale_reviews": True,
+        },
         "enforce_admins": {"enabled": True},
     }
     assert _run(_routes(admin=True, rules=[], protection=prot)) == []
@@ -108,7 +114,10 @@ def test_case_a_empty_bypass_ruleset_without_checks_refused():
     # checks + review sit in classic protection without enforce_admins
     prot = {
         "required_status_checks": {"contexts": ["lint"]},
-        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "required_pull_request_reviews": {
+            "require_code_owner_reviews": True,
+            "dismiss_stale_reviews": True,
+        },
         "enforce_admins": {"enabled": False},
     }
     rules = [{"type": "deletion", "ruleset_id": 7}]
@@ -167,6 +176,7 @@ def test_admin_classic_review_bypass_allowance_refused():
         "required_status_checks": {"contexts": ["lint"]},
         "required_pull_request_reviews": {
             "require_code_owner_reviews": True,
+            "dismiss_stale_reviews": True,
             "bypass_pull_request_allowances": {"users": [{"login": "x"}]},
         },
         "enforce_admins": {"enabled": True},
@@ -217,6 +227,23 @@ def test_codeowners_placeholder_refused():
 def test_code_owner_review_off_refused():
     (msg,) = _run(_routes(rules=_rules(owner=False)))
     assert "code-owner review is not required" in msg
+
+
+def test_ruleset_code_owner_review_without_dismiss_stale_refused():
+    (msg,) = _run(_routes(rules=_rules(dismiss=False)))
+    assert "code-owner review is not required" in msg
+    assert "dismiss_stale_reviews_on_push" in msg
+
+
+def test_classic_code_owner_review_without_dismiss_stale_refused():
+    prot = {
+        "required_status_checks": {"contexts": ["lint"]},
+        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "enforce_admins": {"enabled": True},
+    }
+    (msg,) = _run(_routes(admin=True, rules=[], protection=prot))
+    assert "code-owner review is not required" in msg
+    assert "dismiss_stale_reviews" in msg
 
 
 def test_api_error_fails_closed():
@@ -289,7 +316,10 @@ def test_nonadmin_ruleset_with_unprotected_branch_body_ok():
 def test_admin_full_classic_plus_deletion_only_bypassable_ruleset_ok():
     prot = {
         "required_status_checks": {"contexts": ["lint"]},
-        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "required_pull_request_reviews": {
+            "require_code_owner_reviews": True,
+            "dismiss_stale_reviews": True,
+        },
         "enforce_admins": {"enabled": True},
     }
     routes = _routes(

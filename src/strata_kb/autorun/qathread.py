@@ -12,7 +12,7 @@ import logging
 import threading
 from pathlib import Path
 
-from strata_kb import gitio
+from strata_kb import ghrest, gitio
 from strata_kb.autorun import claude, runlog
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.qa import QaClient
@@ -136,6 +136,8 @@ class QaThread:
         if self._skip_ticks:
             self._skip_ticks -= 1
             return False
+        if self._review_pending():
+            return False
         try:
             ticket = _next_ticket(self._qa.list("open", repo=self._repo), self.parked)
             if ticket is None:
@@ -149,6 +151,28 @@ class QaThread:
         )
         self._proc_thread.start()
         return True
+
+    def _review_pending(self) -> bool:
+        """True while a review-parked PR is open (or unreadable): another answer
+        would branch off `auto/qa` and could merge the unreviewed change. A merged
+        or closed PR is forgotten and its ticket unparked."""
+        with self._lock:
+            prs = dict(self._review_prs)
+        pending = False
+        for ticket, url in prs.items():
+            try:
+                state = ghrest.view_pr(self._root, url.rpartition("/pull/")[2])["state"]
+            except (KbError, KeyError, TypeError) as exc:
+                logger.warning("review PR %s of %s not read: %s", url, ticket, exc)
+                pending = True
+                continue
+            if state in ("MERGED", "CLOSED"):
+                with self._lock:
+                    self._review_prs.pop(ticket, None)
+                    self._parked.discard(ticket)
+            else:
+                pending = True
+        return pending
 
     def _fresh_worktree(self) -> None:
         """Recreate the worktree on `auto/qa` from the default branch as the

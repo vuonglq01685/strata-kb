@@ -461,6 +461,7 @@ The runner never uses `--dangerously-skip-permissions` or `bypassPermissions`.
 
 - Each of these is a required status check: `pr-lint` and every job of `kb-test.yml` (the `test-<lang>` jobs; before `kb-test.yml` exists, `pr-lint` alone). Branch protection picks checks by job name; the `"test-python"` in the sample stands for your own `test-<lang>` jobs.
 - Code-owner review is required. Approving reviews are not: `required_approving_review_count` is `0`, so a PR that touches no code-owned path merges when the checks are green.
+- Stale approvals are dismissed when new commits are pushed (ruleset `dismiss_stale_reviews_on_push`; classic `dismiss_stale_reviews`). Without it a code-owner review does not count, because an old approval would cover later, unreviewed commits.
 - `.github/CODEOWNERS` exists and no `@OWNER` placeholder is left (see the owner step below).
 - Force pushes and deletions are blocked (recommended; `kb` does not check it).
 
@@ -485,7 +486,7 @@ A non-admin login on classic-only protection is refused: it cannot read the revi
       "parameters": {
         "required_approving_review_count": 0,
         "require_code_owner_review": true,
-        "dismiss_stale_reviews_on_push": false,
+        "dismiss_stale_reviews_on_push": true,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false
       }

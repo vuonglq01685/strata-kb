@@ -100,12 +100,24 @@ def _ruleset_contexts(rules: list[dict]) -> set[str]:
     }
 
 
-def _ruleset_code_owner(rules: list[dict]) -> bool:
-    return any(
-        r.get("type") == "pull_request"
-        and (r.get("parameters") or {}).get("require_code_owner_review")
-        for r in rules
-    )
+def _ruleset_code_owner(rules: list[dict], notes: list[str]) -> bool:
+    """A code-owner review counts only with stale approvals dismissed on push:
+    else the agent could push unreviewed commits after an approval."""
+    found = False
+    for r in rules:
+        params = r.get("parameters") or {}
+        if r.get("type") != "pull_request" or not params.get(
+            "require_code_owner_review"
+        ):
+            continue
+        if params.get("dismiss_stale_reviews_on_push") is True:
+            found = True
+        else:
+            notes.append(
+                "code-owner review needs dismiss_stale_reviews_on_push on "
+                f"(ruleset {r.get('ruleset_id')})"
+            )
+    return found
 
 
 def _bypass_why(detail: Any) -> str | None:
@@ -149,7 +161,7 @@ def _count_rulesets(
             notes.append(f"ruleset {name}: {why}")
             continue
         contexts |= _ruleset_contexts(group)
-        owner = owner or _ruleset_code_owner(group)
+        owner = _ruleset_code_owner(group, notes) or owner
     return contexts, owner
 
 
@@ -172,7 +184,13 @@ def _count_classic(classic: dict, admin: bool, notes: list[str]) -> _Counted:
         notes.append("classic protection: bypass_pull_request_allowances is not empty")
     else:
         contexts = _classic_contexts(classic.get("required_status_checks") or {})
-        return contexts, bool(reviews.get("require_code_owner_reviews"))
+        owner = bool(reviews.get("require_code_owner_reviews"))
+        if owner and reviews.get("dismiss_stale_reviews") is not True:
+            notes.append(
+                "code-owner review needs dismiss_stale_reviews on in classic protection"
+            )
+            owner = False
+        return contexts, owner
     return set(), False
 
 

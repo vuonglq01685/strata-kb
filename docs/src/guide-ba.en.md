@@ -640,6 +640,7 @@ currently assume `main` as the default branch.
 
 - `lint` (the job of `kb-ticket-lint.yml`) is a required status check.
 - Code-owner review is required. Approving reviews are not: `required_approving_review_count` is `0`, so a PR that touches no code-owned path merges when the checks are green.
+- Stale approvals are dismissed when new commits are pushed (ruleset `dismiss_stale_reviews_on_push`; classic `dismiss_stale_reviews`). Without it a code-owner review does not count, because an old approval would cover later, unreviewed commits.
 - `.github/CODEOWNERS` exists and no `@OWNER` placeholder is left (see the owner step below).
 - Force pushes and deletions are blocked (recommended; `kb` does not check it).
 
@@ -664,7 +665,7 @@ A non-admin login on classic-only protection is refused: it cannot read the revi
       "parameters": {
         "required_approving_review_count": 0,
         "require_code_owner_review": true,
-        "dismiss_stale_reviews_on_push": false,
+        "dismiss_stale_reviews_on_push": true,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false
       }

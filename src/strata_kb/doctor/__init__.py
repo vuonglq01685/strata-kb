@@ -87,8 +87,7 @@ def policy_issues(kb_dir: Path, kind: str) -> list[Issue]:
         enabled = True  # unreadable config is reported elsewhere; stay strict
     level = "error" if enabled else "warning"
     return [
-        Issue(level, text)
-        for text in ghpolicy.refusals(kb_dir.resolve().parent, kind)
+        Issue(level, text) for text in ghpolicy.refusals(kb_dir.resolve().parent, kind)
     ]
 
 
