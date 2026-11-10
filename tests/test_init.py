@@ -3634,3 +3634,13 @@ def test_reinit_never_refreshes_codeowners(tmp_path: Path, kind: str):
 
     assert co.read_text(encoding="utf-8") == "* @me\n"
     assert any(e.startswith(".github/CODEOWNERS") for e in report.skipped)
+
+
+@pytest.mark.parametrize("name", ["codeowners-ba", "codeowners-dev"])
+def test_codeowners_template_placeholder_only_on_rule_lines(name: str):
+    lines = initcmd.read_template(name).splitlines()
+    for ln in (x for x in lines if x.startswith("#")):
+        assert initcmd.CODEOWNERS_PLACEHOLDER not in ln
+    rules = [x for x in lines if x.strip() and not x.startswith("#")]
+    assert rules
+    assert all(initcmd.CODEOWNERS_PLACEHOLDER in x for x in rules)

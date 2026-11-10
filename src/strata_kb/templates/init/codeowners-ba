@@ -1,6 +1,7 @@
 # Sensitive paths: changes here need a human review (merge policy C lets the
 # agent merge its own PRs only when required checks are green).
-# Replace @OWNER with a GitHub user or team (e.g. @acme/maintainers).
+# Replace the placeholder owner on each rule below with a GitHub user or
+# team (e.g. @acme/maintainers).
 # GitHub ignores lines whose owner does not exist, so an unreplaced
 # placeholder protects nothing. `kb init` creates this file once and never
 # rewrites it.
