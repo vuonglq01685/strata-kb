@@ -3857,3 +3857,78 @@ def test_dev_fix_bug_commits_the_split_proposal_and_reads_waiting():
     command = _normalised(_read_init_template("claude-command-dev-fix-bug.md"))
     assert "missing question: ask it, then stop" in command
     assert "stop again" not in command.replace("waiting question: stop again", "")
+
+
+# --- auto settings template (harness sprint 1, task 5) -----------------------
+
+AUTO_SETTINGS = "claude-settings-auto.json"
+GUARD_CMD = "kb guard stop --hook-stdin"
+# Deliberate allowlist gaps: command -> reason.
+_HUMAN_SETUP = "setup advice shown to the human; the agent never runs it"
+EXEMPT: dict[str, str] = {
+    "kb mcp-setup": _HUMAN_SETUP,
+    "kb init": "denied on purpose; " + _HUMAN_SETUP,
+    "kb init --kind ba": "denied on purpose; " + _HUMAN_SETUP,
+    "mkdir -p": "bare mention of the command, no path",
+}
+
+
+def _auto_settings() -> dict:
+    import json
+
+    return json.loads(
+        resources.files("strata_kb")
+        .joinpath("templates/init", AUTO_SETTINGS)
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_auto_settings_deny_admin_merge():
+    deny = _auto_settings()["permissions"]["deny"]
+
+    for entry in (
+        "Bash(gh pr merge*--admin*)",
+        "Bash(kb pr merge*--admin*)",
+        "Bash(kb upgrade*)",
+    ):
+        assert entry in deny
+
+
+def test_auto_settings_stop_guard_own_group():
+    groups = _auto_settings()["hooks"]["Stop"]
+
+    guard = [g for g in groups if any(h["command"] == GUARD_CMD for h in g["hooks"])]
+    assert len(guard) == 1
+    assert [h["command"] for h in guard[0]["hooks"]] == [GUARD_CMD]
+    assert guard[0]["hooks"][0]["timeout"] == 10
+
+
+def _auto_body_commands() -> list[tuple[str, str]]:
+    """`kb ...` / `mkdir ...` spans in every body that has an `## Auto mode` section."""
+    import re
+
+    out: list[tuple[str, str]] = []
+    bodies = resources.files("strata_kb").joinpath("templates/init/bodies")
+    for body in sorted(bodies.iterdir(), key=lambda p: p.name):
+        text = body.read_text(encoding="utf-8")
+        if not re.search(r"^## Auto mode$", text, re.M):
+            continue
+        for span in re.findall(r"`([^`\n]+)`", text):
+            if re.match(r"(kb |mkdir )", span):
+                out.append((body.name, span))
+    return out
+
+
+def test_auto_commands_are_allowed():
+    from fnmatch import fnmatchcase
+
+    allow = _auto_settings()["permissions"]["allow"]
+    commands = _auto_body_commands()
+    assert commands
+    missing = [
+        (name, cmd)
+        for name, cmd in commands
+        if cmd not in EXEMPT
+        and not any(fnmatchcase(f"Bash({cmd})", pat) for pat in allow)
+    ]
+    assert not missing, missing

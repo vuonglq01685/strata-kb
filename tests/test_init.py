@@ -2400,19 +2400,24 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
         )
         # Stop ingests the main transcript (and sweeps subagents, holding
         # back each one's last call); SubagentStop stores that last call.
+        usage = ["kb usage ingest-transcript --hook-stdin"]
+        expected = {
+            "Stop": usage + ["kb guard stop --hook-stdin"],
+            "SubagentStop": usage,
+        }
         for event in ("Stop", "SubagentStop"):
             commands = [
                 hook["command"]
                 for group in settings["hooks"][event]
                 for hook in group["hooks"]
             ]
-            assert commands == ["kb usage ingest-transcript --hook-stdin"], (
+            assert commands == expected[event], (
                 kind,
                 event,
             )
         # Same command, timeout and status message: the two events differ
-        # only in which payload they send.
-        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"], kind
+        # only in which payload they send (Stop also carries the result guard).
+        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"][:1], kind
 
 
 def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
