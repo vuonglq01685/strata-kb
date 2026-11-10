@@ -66,3 +66,16 @@ def test_cli_guard_stop_bad_json_exits_zero_silently(tmp_path):
         env=AUTO,
     )
     assert res.exit_code == 0 and res.stdout == ""
+
+
+def test_cli_guard_stop_prints_the_block_decision(tmp_path):
+    res = CliRunner().invoke(
+        app,
+        ["guard", "stop", "--hook-stdin", "--kb-dir", str(tmp_path / ".kb")],
+        input=json.dumps({"last_assistant_message": "all done"}),
+        env=AUTO,
+    )
+    assert res.exit_code == 0
+    assert json.loads(res.stdout) == guard.stop_decision(
+        {"last_assistant_message": "all done"}, AUTO
+    )

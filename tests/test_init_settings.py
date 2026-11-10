@@ -16,7 +16,7 @@ from strata_kb.initcmd import (
 )
 
 USAGE_CMD = "kb usage ingest-transcript --hook-stdin"
-GUARD_CMD = "kb guard stop --hook-stdin"
+GUARD_CMD = "kb guard stop --hook-stdin || true"
 
 
 def _settings(target: Path) -> dict:

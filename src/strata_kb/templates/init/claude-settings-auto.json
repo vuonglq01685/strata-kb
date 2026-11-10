@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "kb guard stop --hook-stdin",
+            "command": "kb guard stop --hook-stdin || true",
             "timeout": 10
           }
         ]

@@ -3863,7 +3863,7 @@ def test_dev_fix_bug_commits_the_split_proposal_and_reads_waiting():
 # --- auto settings template (harness sprint 1, task 5) -----------------------
 
 AUTO_SETTINGS = "claude-settings-auto.json"
-GUARD_CMD = "kb guard stop --hook-stdin"
+GUARD_CMD = "kb guard stop --hook-stdin || true"
 # Deliberate allowlist gaps: command -> reason.
 _HUMAN_SETUP = "setup advice shown to the human; the agent never runs it"
 EXEMPT: dict[str, str] = {

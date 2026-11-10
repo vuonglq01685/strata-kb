@@ -2402,7 +2402,7 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
         # back each one's last call); SubagentStop stores that last call.
         usage = ["kb usage ingest-transcript --hook-stdin"]
         expected = {
-            "Stop": usage + ["kb guard stop --hook-stdin"],
+            "Stop": usage + ["kb guard stop --hook-stdin || true"],
             "SubagentStop": usage,
         }
         for event in ("Stop", "SubagentStop"):
