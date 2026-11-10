@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
@@ -153,6 +154,16 @@ def test_run_task_exception_is_logged_and_frees_the_slot(repo, caplog):
         settle(qt)
     assert "claude missing" in caplog.text
     assert qt.tick() is True
+
+
+def test_answer_records_run(repo):
+    runner = Runner(TaskResult("done"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    assert qt.tick() is True
+    settle(qt)
+    row = json.loads((repo[1] / "auto" / "runs.jsonl").read_text().splitlines()[0])
+    assert row["skill"] == "ba-answer-questions"
 
 
 def test_usage_limit_skips_one_tick(repo, caplog):

@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 from strata_kb import gitio
-from strata_kb.autorun import claude
+from strata_kb.autorun import claude, runlog
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.qa import QaClient
 from strata_kb.errors import KbError
@@ -173,9 +173,11 @@ class QaThread:
         logger.warning("Q&A parked %s; draft on %s", ticket, branch)
 
     def _answer(self, ticket: str) -> None:
+        wt = self.worktree
+        started_at, head_before = runlog.stamp(), runlog.head(wt)
         try:
             result = self._run_task(
-                self.worktree,
+                wt,
                 claude.prompt_for(SKILL, ticket, "ba"),
                 log_dir=autostate.log_dir(self._kb_dir),
             )
@@ -183,6 +185,17 @@ class QaThread:
             logger.warning("Q&A answer crashed: %s", exc)
             self._record(False, f"answer crashed: {exc}")
             return
+        runlog.append(
+            self._kb_dir,
+            skill=SKILL,
+            arg=ticket,
+            attempt=0,
+            result=result,
+            started_at=started_at,
+            ended_at=runlog.stamp(),
+            head_before=head_before,
+            head_after=runlog.head(wt),
+        )
         if result.kind == "done":
             logger.info("Q&A answer done")
             self._record(True)

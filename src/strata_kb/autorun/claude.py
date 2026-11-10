@@ -12,12 +12,13 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from strata_kb.llm import RunnerError, _extract_reply
+from strata_kb.llm import RunnerError, _extract_reply, envelope_meta
 
 Kind = Literal["done", "blocked-qa", "blocked-split", "failed", "usage-limit"]
 
@@ -37,6 +38,8 @@ class TaskResult:
     # child bug "BUG-7.web" proposing a sibling child on its parent)
     ids: tuple[int | str, ...] = ()
     reason: str = ""
+    # run facts for runs.jsonl; out of ==/hash so a result still compares by verdict
+    meta: Mapping[str, object] = field(default_factory=dict, compare=False, hash=False)
 
 
 def parse_result(reply: str) -> TaskResult:
@@ -95,7 +98,7 @@ def _slug(prompt: str) -> str:
 
 def _write_log(
     log_dir: Path, prompt: str, stdout: str, stderr: str, code: int | str, secs: float
-) -> None:
+) -> Path:
     log_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{datetime.now():%Y%m%d-%H%M%S}-{_slug(prompt)}"
     path = log_dir / f"{stem}.log"
@@ -108,6 +111,7 @@ def _write_log(
         f"=== STDERR ===\n{stderr}\nexit={code} duration={secs:.1f}s\n"
     )
     path.write_text(body, encoding="utf-8", newline="\n")
+    return path
 
 
 # Narrow on purpose: "context limit" or "file size limit" is a hard failure,
@@ -118,9 +122,13 @@ _USAGE_LIMIT = re.compile(
 )
 
 
-def _error(message: str) -> TaskResult:
+def _error(message: str, meta: Mapping[str, object]) -> TaskResult:
     kind: Kind = "usage-limit" if _USAGE_LIMIT.search(message) else "failed"
-    return TaskResult(kind, (), message[:MAX_REASON])
+    return TaskResult(kind, (), message[:MAX_REASON], meta)
+
+
+def _meta(stdout: str, log: Path) -> dict[str, object]:
+    return {**envelope_meta(stdout), "log": str(log)}
 
 
 def run_task(
@@ -161,12 +169,19 @@ def run_task(
             env={**os.environ, AUTO_TASK_ENV: "1"},
         )
     except subprocess.TimeoutExpired:
-        _write_log(log_dir, prompt, "", "", "timeout", time.monotonic() - start)
-        return TaskResult("failed", (), f"timed out after {timeout}s")
+        log = _write_log(log_dir, prompt, "", "", "timeout", time.monotonic() - start)
+        return TaskResult("failed", (), f"timed out after {timeout}s", _meta("", log))
     except OSError as exc:
-        _write_log(log_dir, prompt, "", str(exc), "oserror", time.monotonic() - start)
-        return TaskResult("failed", (), f"cannot run {executable}: {exc}"[:MAX_REASON])
-    _write_log(
+        log = _write_log(
+            log_dir, prompt, "", str(exc), "oserror", time.monotonic() - start
+        )
+        return TaskResult(
+            "failed",
+            (),
+            f"cannot run {executable}: {exc}"[:MAX_REASON],
+            _meta("", log),
+        )
+    log = _write_log(
         log_dir,
         prompt,
         proc.stdout,
@@ -174,6 +189,7 @@ def run_task(
         proc.returncode,
         time.monotonic() - start,
     )
+    meta = _meta(proc.stdout, log)
     try:
         reply, problem = _extract_reply("claude", proc.stdout), ""
     except RunnerError as exc:
@@ -183,5 +199,5 @@ def run_task(
             f"{problem} {proc.stderr.strip()}".strip() or f"exit {proc.returncode}"
         )
     if problem:
-        return _error(problem)
-    return parse_result(reply)
+        return _error(problem, meta)
+    return replace(parse_result(reply), meta=meta)

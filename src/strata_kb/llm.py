@@ -117,6 +117,28 @@ def _extract_reply(name: str, stdout: str) -> str:
     return result.strip()
 
 
+_META_KEYS = (
+    "session_id",
+    "total_cost_usd",
+    "num_turns",
+    "duration_ms",
+    "is_error",
+    "subtype",
+)
+
+
+def envelope_meta(stdout: str) -> dict[str, object]:
+    """Run facts from a `claude -p` JSON envelope; a missing key, or stdout that
+    is no JSON object, gives None. Never raises."""
+    try:
+        envelope = json.loads(stdout)
+    except ValueError:
+        envelope = None
+    if not isinstance(envelope, dict):
+        envelope = {}
+    return {key: envelope.get(key) for key in _META_KEYS}
+
+
 def detect_runner(cli_choice: str | None, config: LLMConfig) -> Runner | None:
     """Resolve the runner: CLI flag > index.yaml config > auto-detect.
 

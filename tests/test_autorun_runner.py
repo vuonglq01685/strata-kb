@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -105,6 +106,16 @@ def test_switch_off_stops_at_task_boundary(env):
     assert once(env, script, cfg=off) == "stopped"
     assert autostate.load(env[1]).stop_reason == "switched off"
     assert len(script.prompts) == 1  # the second run never started
+
+
+def test_run_once_records_run(env):
+    script = Script(TaskResult("done", meta={"session_id": "s"}))
+    once(env, script)
+    lines = (env[1] / "auto" / "runs.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert (row["skill"], row["arg"]) == (TASK.skill, TASK.arg)
+    assert (row["attempt"], row["outcome"], row["session_id"]) == (0, "done", "s")
 
 
 def test_waiting_question_does_not_resume(env):

@@ -270,3 +270,42 @@ def test_missing_executable_is_failed(tmp_path):
 def test_parse_ticket_revised_is_failed_with_reason():
     result = parse_result("AUTO-RESULT: failed ticket-revised US3")
     assert (result.kind, result.reason) == ("failed", "ticket-revised US3")
+
+
+def test_meta_kept_from_envelope(fake_claude, tmp_path):
+    fake_claude.script(
+        {
+            "type": "result",
+            "result": "x\nAUTO-RESULT: done",
+            "session_id": "s1",
+            "total_cost_usd": 0.5,
+            "num_turns": 7,
+            "duration_ms": 1200,
+        }
+    )
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
+    assert result.meta["session_id"] == "s1"
+    assert result.meta["total_cost_usd"] == 0.5
+    assert result.meta["num_turns"] == 7
+    assert Path(str(result.meta["log"])).exists()
+
+
+def test_meta_missing_fields_are_none(fake_claude, tmp_path):
+    fake_claude.script("fine\nAUTO-RESULT: done")
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
+    assert result.kind == "done"
+    assert result.meta["session_id"] is None
+
+
+def test_timeout_meta_has_log(tmp_path, monkeypatch):
+    import subprocess
+
+    from strata_kb.autorun import claude
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("claude", 5)
+
+    monkeypatch.setattr(claude.subprocess, "run", boom)
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs", timeout=5)
+    assert Path(str(result.meta["log"])).exists()
+    assert result.meta["session_id"] is None

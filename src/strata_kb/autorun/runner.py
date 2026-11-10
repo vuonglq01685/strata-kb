@@ -16,7 +16,7 @@ from typing import Literal, cast
 import yaml
 
 from strata_kb import claimclient, cloud, gitio, hubapi
-from strata_kb.autorun import claude, picker, publishwatch
+from strata_kb.autorun import claude, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
@@ -555,6 +555,8 @@ def run_once(
         beat.start(ticket)
     started = now()
     ref = _remember_branch(root)
+    started_at, head_before = runlog.stamp(), runlog.head(root)
+    head_after = None
     try:
         try:
             result = run_task(
@@ -564,10 +566,22 @@ def run_once(
             )
         except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
             result = claude.TaskResult("failed", (), f"runner error: {exc}")
+        head_after = runlog.head(root)
     finally:
         _restore_branch(root, ref)
         if beat is not None:
             beat.stop()
+    runlog.append(
+        kb_dir,
+        skill=task.skill,
+        arg=task.arg,
+        attempt=state.attempts,
+        result=result,
+        started_at=started_at,
+        ended_at=runlog.stamp(),
+        head_before=head_before,
+        head_after=head_after,
+    )
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
     if claims is not None and ticket:
         if beat is not None and beat.lost:
