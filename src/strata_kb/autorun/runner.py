@@ -587,13 +587,22 @@ def run_once(
     if task is None:
         if qa_thread is not None and qa_thread.only_parked_left():
             parked = sorted(qa_thread.parked)
+            prs = qa_thread.review_prs
+            drafts = [PARKED_PREFIX + t for t in parked if t not in prs]
+            hint = []
+            if drafts:
+                hint.append("Drafts are on " + ", ".join(drafts) + ".")
+            if prs:
+                hint.append(
+                    "Awaiting a human review: " + ", ".join(sorted(prs.values())) + "."
+                )
             return _stop(
                 kb_dir,
                 state,
                 "parked: " + ", ".join(parked),
-                "Drafts are on "
-                + ", ".join(PARKED_PREFIX + t for t in parked)
-                + ". Fix the ticket, then run `kb auto run` to resume.",
+                " ".join(hint)
+                + (" Fix the ticket, then" if drafts else " Once reviewed,")
+                + " run `kb auto run` to resume.",
             )
         if state.skipped:
             return _stop(

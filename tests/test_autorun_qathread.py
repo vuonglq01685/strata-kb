@@ -334,6 +334,26 @@ def test_dor_unticked_parks_the_launched_ticket_without_counting(repo):
     assert qt.failed_twice is False
 
 
+def test_answer_blocked_review_parks_without_failure(repo, monkeypatch, caplog):
+    pr = "https://github.com/o/r/pull/7"
+    runner = Runner(TaskResult("blocked-review", (pr,)))
+    runner.release.set()
+    qt, qa, _ = make(repo, qa=FakeQa(open_=((2, "T-a"),)), runner=runner)
+    pushed = []
+    monkeypatch.setattr(gitio, "push_branch", lambda *a, **k: pushed.append(a))
+    with caplog.at_level(logging.WARNING):
+        assert _tick_and_settle(qt)
+    assert "waits for a human review" in caplog.text and pr in caplog.text
+    qa.open_ = [(2, "T-a"), (3, "T-b")]
+    assert _tick_and_settle(qt)  # T-b runs; T-a is never re-answered
+    assert qt.parked == {"T-a", "T-b"} and qt.failed_twice is False
+    assert qt.review_prs["T-a"] == pr and pushed == []
+    assert [c[1].splitlines()[0] for c in runner.calls] == [
+        "/ba-answer-questions T-a",
+        "/ba-answer-questions T-b",
+    ]
+
+
 def test_parked_ticket_is_skipped_next_tick(repo):
     qt, qa, runner = _parking(repo)
     _tick_and_settle(qt)

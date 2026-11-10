@@ -798,8 +798,9 @@ def test_run_lock_is_released_after_an_exception(tmp_path):
 class ParkedQaThread:
     failed_twice = False
 
-    def __init__(self, only_parked: bool = True, parked=("T-a",)):
+    def __init__(self, only_parked: bool = True, parked=("T-a",), review_prs=None):
         self.parked = frozenset(parked)
+        self.review_prs = dict(review_prs or {})
         self._only_parked = only_parked
 
     def only_parked_left(self) -> bool:
@@ -815,6 +816,15 @@ def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
     assert autostate.load(env[1]).stop_reason == "parked: T-a"
     assert "auto/qa-parked/T-a" in caplog.text
     assert script.prompts == []
+
+
+def test_review_parked_stop_hint_names_the_pr(env, monkeypatch, caplog):
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    pr = "https://github.com/o/r/pull/7"
+    parked = ParkedQaThread(review_prs={"T-a": pr})
+    with caplog.at_level(logging.ERROR):
+        assert once(env, Script(), cfg=cfg_of("ba"), qa_thread=parked) == "stopped"
+    assert pr in caplog.text and "Drafts are on" not in caplog.text
 
 
 def test_parked_stop_lists_every_ticket_sorted(env, monkeypatch):

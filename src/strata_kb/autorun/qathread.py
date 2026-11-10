@@ -59,6 +59,7 @@ class QaThread:
         self._failures = 0  # consecutive answers that did not end `done`
         self._stop_reason = ""
         self._parked: set[str] = set()  # tickets whose answer stopped on dor-unticked
+        self._review_prs: dict[str, str] = {}  # parked ticket -> PR awaiting review
 
     @property
     def worktree(self) -> Path:
@@ -84,6 +85,12 @@ class QaThread:
     def parked(self) -> frozenset[str]:
         with self._lock:
             return frozenset(self._parked)
+
+    @property
+    def review_prs(self) -> dict[str, str]:
+        """Parked tickets whose PR waits for a human review, by PR url."""
+        with self._lock:
+            return dict(self._review_prs)
 
     def only_parked_left(self) -> bool:
         """True when every open question is on a parked ticket (and there is one).
@@ -198,6 +205,15 @@ class QaThread:
         )
         if result.kind == "done":
             logger.info("Q&A answer done")
+            self._record(True)
+            return
+        if result.kind == "blocked-review":
+            # The PR already holds the work: park without a draft branch.
+            pr = str(result.ids[0])
+            logger.warning("Q&A answer for %s waits for a human review: %s", ticket, pr)
+            with self._lock:
+                self._parked.add(ticket)
+                self._review_prs[ticket] = pr
             self._record(True)
             return
         logger.warning("Q&A answer %s: %s", result.kind, result.reason)
