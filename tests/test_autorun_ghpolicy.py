@@ -48,7 +48,7 @@ def _routes(admin=False, rules=None, protection=None, **extra) -> dict:
     }
     if protection is not None:
         key = f"repos/{SLUG}/branches/{B}" + ("/protection" if admin else "")
-        r[key] = protection
+        r[key] = protection if admin else {"protection": protection}
     r.update(extra)
     return r
 
@@ -92,9 +92,86 @@ def test_admin_with_bypass_actor_refused():
     routes = _routes(
         admin=True, **{f"repos/{SLUG}/rulesets/7": {"bypass_actors": [{"actor_id": 5}]}}
     )
-    (msg,) = _run(routes)
-    assert "an admin can bypass the protection on main" in msg
-    assert 'see "Merge policy" in the BA guide' in msg
+    out = _run(routes)
+    assert any("can be bypassed by this identity (ruleset 7" in m for m in out)
+    assert all('see "Merge policy" in the BA guide' in m for m in out)
+
+
+def test_case_a_empty_bypass_ruleset_without_checks_refused():
+    # checks + review sit in classic protection without enforce_admins
+    prot = {
+        "required_status_checks": {"contexts": ["lint"]},
+        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "enforce_admins": {"enabled": False},
+    }
+    rules = [{"type": "deletion", "ruleset_id": 7}]
+    out = _run(_routes(admin=True, rules=rules, protection=prot))
+    assert any("enforce_admins is off" in m for m in out)
+    assert any("'lint' is not required" in m for m in out)
+    assert any("code-owner review is not required" in m for m in out)
+
+
+def test_case_b_enforce_admins_only_with_bypassable_ruleset_refused():
+    prot = {"enforce_admins": {"enabled": True}}
+    routes = _routes(
+        admin=True,
+        protection=prot,
+        **{
+            f"repos/{SLUG}/rulesets/7": {
+                "bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5}]
+            }
+        },
+    )
+    out = _run(routes)
+    assert any("bypass_actors is not empty" in m for m in out)
+    assert any("'lint' is not required" in m for m in out)
+    assert any("code-owner review is not required" in m for m in out)
+
+
+def test_nonadmin_bypassable_ruleset_refused():
+    routes = _routes(
+        **{
+            f"repos/{SLUG}/rulesets/7": {
+                "name": "p",
+                "current_user_can_bypass": "always",
+            }
+        }
+    )
+    out = _run(routes)
+    assert any("(ruleset p: current_user_can_bypass=always)" in m for m in out)
+    assert any("'lint' is not required" in m for m in out)
+
+
+def test_can_bypass_never_beats_bypass_actors():
+    detail = {"current_user_can_bypass": "never", "bypass_actors": [{"actor_id": 1}]}
+    assert _run(_routes(**{f"repos/{SLUG}/rulesets/7": detail})) == []
+
+
+def test_ruleset_404_counts_for_nothing():
+    routes = _routes()
+    del routes[f"repos/{SLUG}/rulesets/7"]
+    out = _run(routes)
+    assert any("not readable, 404" in m for m in out)
+    assert any("'lint' is not required" in m for m in out)
+
+
+def test_admin_classic_review_bypass_allowance_refused():
+    prot = {
+        "required_status_checks": {"contexts": ["lint"]},
+        "required_pull_request_reviews": {
+            "require_code_owner_reviews": True,
+            "bypass_pull_request_allowances": {"users": [{"login": "x"}]},
+        },
+        "enforce_admins": {"enabled": True},
+    }
+    out = _run(_routes(admin=True, rules=[], protection=prot))
+    assert any("bypass_pull_request_allowances" in m for m in out)
+
+
+def test_nonadmin_classic_only_says_use_a_ruleset():
+    prot = {"required_status_checks": {"contexts": ["lint"]}}
+    out = _run(_routes(rules=[], protection=prot))
+    assert any("cannot be verified without a ruleset, use a ruleset" in m for m in out)
 
 
 def test_missing_required_job_refused():
@@ -153,3 +230,42 @@ def test_refusal_lists_every_missing_piece():
     del routes[f"repos/{SLUG}/contents/.github/CODEOWNERS?ref={B}"]
     out = _run(routes)
     assert len(set(out)) >= 3
+
+
+def test_repo_404_is_a_refusal():
+    (msg,) = _run({})
+    assert msg.startswith("could not read the repository")
+
+
+def test_contents_decode_error_is_a_refusal():
+    path = f"repos/{SLUG}/contents/.github/CODEOWNERS?ref={B}"
+    (msg,) = _run(_routes(**{path: {"content": "!!!notbase64", "encoding": "base64"}}))
+    assert "could not read .github/CODEOWNERS" in msg
+
+
+@pytest.mark.parametrize("body", ["", "# only a comment\n\n"])
+def test_codeowners_without_a_rule_refused(body):
+    path = f"repos/{SLUG}/contents/.github/CODEOWNERS?ref={B}"
+    (msg,) = _run(_routes(**{path: _file(body)}))
+    assert "has no owner rule" in msg
+
+
+KB_TEST = f"repos/{SLUG}/contents/.github/workflows/kb-test.yml?ref={B}"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "kind", "needle"),
+    [
+        ({f"repos/{SLUG}/rules/branches/{B}": {"message": "x"}}, "ba", "the rulesets"),
+        ({f"repos/{SLUG}/rules/branches/{B}": ["x"]}, "ba", "the rulesets"),
+        ({f"repos/{SLUG}/rulesets/7": ["x"]}, "ba", "ruleset 7"),
+        ({KB_TEST: _file("- a\n- b\n")}, "dev", "kb-test.yml"),
+        ({KB_TEST: _file("jobs: [a, b]\n")}, "dev", "kb-test.yml"),
+        ({KB_TEST: _file("just text\n")}, "dev", "kb-test.yml"),
+        ({f"repos/{SLUG}": ["x"]}, "ba", "token permissions"),
+    ],
+)
+def test_unexpected_shapes_are_refusals_not_crashes(overrides, kind, needle):
+    routes = _routes(rules=_rules(contexts=("lint", "pr-lint")), **overrides)
+    out = _run(routes, kind=kind)
+    assert out and any(needle in m for m in out)

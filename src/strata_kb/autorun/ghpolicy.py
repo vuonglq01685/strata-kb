@@ -19,6 +19,8 @@ REQUIRED_JOBS = {"dev": ("pr-lint",), "ba": ("lint",)}
 KB_TEST_WORKFLOW = ".github/workflows/kb-test.yml"
 _GUIDE = {"dev": "Dev", "ba": "BA"}
 _READ_ERRORS = (KbError, OSError, ValueError, yaml.YAMLError)
+_SHAPE_ERRORS = (AttributeError, TypeError, KeyError)  # an unexpected response shape
+_Counted = tuple[set[str], bool]  # (required contexts, code-owner review on)
 _FAIL = object()  # a guarded read failed (its refusal is already recorded)
 
 
@@ -37,6 +39,9 @@ class _Guard:
             return fn()
         except _READ_ERRORS as exc:
             self.refuse(f"could not read {what}: {exc}")
+            return _FAIL
+        except _SHAPE_ERRORS:
+            self.refuse(f"could not read {what}: unexpected response")
             return _FAIL
 
 
@@ -67,7 +72,10 @@ def _file(api: Callable, root: Path, slug: str, path: str, branch: str) -> str |
 
 
 def _job_names(text: str) -> list[str]:
-    jobs = (yaml.safe_load(text) or {}).get("jobs") or {}
+    doc = yaml.safe_load(text)
+    jobs = doc.get("jobs") if isinstance(doc, dict) else None
+    if not isinstance(jobs, dict):
+        raise ValueError("unexpected response: no `jobs` mapping")
     return [str((job or {}).get("name") or key) for key, job in jobs.items()]
 
 
@@ -100,22 +108,79 @@ def _ruleset_code_owner(rules: list[dict]) -> bool:
     )
 
 
-def _bypassable(api, root, slug, rules, classic) -> bool:
-    """Admin identity only: can an admin bypass the protection?"""
-    if (classic.get("enforce_admins") or {}).get("enabled"):
-        return False
-    ids = {
-        (r["ruleset_id"], r.get("ruleset_source_type"), r.get("ruleset_source"))
-        for r in rules
-        if "ruleset_id" in r
-    }
-    if not ids:
-        return True
-    for rid, source_type, source in sorted(ids, key=str):
-        base = f"orgs/{source}" if source_type == "Organization" else f"repos/{slug}"
-        if (_get(api, root, f"{base}/rulesets/{rid}") or {}).get("bypass_actors") != []:
-            return True
-    return False
+def _bypass_why(detail: Any) -> str | None:
+    """Why this identity can bypass the ruleset; None = it cannot."""
+    if detail is None:
+        return "not readable, 404"
+    if not isinstance(detail, dict):
+        raise ValueError("unexpected response")
+    can = detail.get("current_user_can_bypass")
+    if can is not None:
+        return None if can == "never" else f"current_user_can_bypass={can}"
+    actors = detail.get("bypass_actors")
+    if not isinstance(actors, list):
+        return "cannot tell who can bypass"
+    return "bypass_actors is not empty" if actors else None
+
+
+def _count_rulesets(
+    g: _Guard, api: Callable, root: Path, slug: str, branch: str, rules: Any
+) -> _Counted:
+    """Contexts and code-owner review from rulesets this identity cannot bypass."""
+    if not isinstance(rules, list):
+        raise ValueError("unexpected response")
+    by_id: dict[Any, list[dict]] = {}
+    for rule in rules:
+        by_id.setdefault(rule.get("ruleset_id"), []).append(rule)
+    contexts: set[str] = set()
+    owner = False
+    for rid, group in by_id.items():
+        path = f"repos/{slug}/rulesets/{rid}"
+        detail = g(
+            f"ruleset {rid}", lambda p=path: _get(api, root, p, none_on_404=True)
+        )
+        if detail is _FAIL:
+            continue
+        why = g(f"ruleset {rid}", lambda d=detail: _bypass_why(d))
+        if why is _FAIL:
+            continue
+        if why:
+            name = detail.get("name", rid) if isinstance(detail, dict) else rid
+            g.refuse(
+                f"branch protection on {branch} can be bypassed by this identity "
+                f"(ruleset {name}: {why})"
+            )
+            continue
+        contexts |= _ruleset_contexts(group)
+        owner = owner or _ruleset_code_owner(group)
+    return contexts, owner
+
+
+def _count_classic(g: _Guard, classic: dict, admin: bool, branch: str) -> _Counted:
+    """Classic protection counts only for an admin with enforce_admins on and
+    no review-bypass allowance; a non-admin cannot read the review settings."""
+    if not classic:
+        return set(), False
+    if not admin:
+        g.refuse(
+            f"classic protection on {branch}: code-owner review cannot be "
+            "verified without a ruleset, use a ruleset"
+        )
+        return set(), False
+    reviews = classic.get("required_pull_request_reviews") or {}
+    allow = reviews.get("bypass_pull_request_allowances") or {}
+    if not (classic.get("enforce_admins") or {}).get("enabled"):
+        why = "enforce_admins is off"
+    elif any(allow.get(k) for k in ("users", "teams", "apps")):
+        why = "bypass_pull_request_allowances is not empty"
+    else:
+        contexts = _classic_contexts(classic.get("required_status_checks") or {})
+        return contexts, bool(reviews.get("require_code_owner_reviews"))
+    g.refuse(
+        f"branch protection on {branch} can be bypassed by this identity "
+        f"(classic protection: {why})"
+    )
+    return set(), False
 
 
 def refusals(root: Path, kind: str, api: Callable = ghrest.api) -> list[str]:
@@ -145,21 +210,32 @@ def refusals(root: Path, kind: str, api: Callable = ghrest.api) -> list[str]:
 
     def read_classic() -> dict:
         data = _get(api, root, prot_path, none_on_404=True) or {}
+        if not isinstance(data, dict):
+            raise ValueError("unexpected response")
         return data if admin else data.get("protection") or {}
 
     classic = g(f"the branch protection of {branch}", read_classic)
     if rules is not _FAIL and classic is not _FAIL:
-        _check_protection(g, api, root, (slug, branch, kind, admin), rules, classic)
+        counted = g(
+            f"the rulesets of {branch}",
+            lambda: _count_rulesets(g, api, root, slug, branch, rules),
+        )
+        if counted is not _FAIL:
+            classic_counted = _count_classic(g, classic, admin, branch)
+            contexts = counted[0] | classic_counted[0]
+            owner = counted[1] or classic_counted[1]
+            _check_protection(g, api, root, (slug, branch, kind), contexts, owner)
     _check_codeowners(g, api, root, slug, branch)
     return g.out
 
 
-def _required_jobs(g, api, root, slug, branch, kind):
+def _required_jobs(
+    g: _Guard, api: Callable, root: Path, slug: str, branch: str, kind: str
+) -> list[str]:
     jobs = list(REQUIRED_JOBS.get(kind, ()))
     if kind != "dev":
         return jobs
-    read = lambda: _file(api, root, slug, KB_TEST_WORKFLOW, branch)  # noqa: E731
-    text = g(KB_TEST_WORKFLOW, read)
+    text = g(KB_TEST_WORKFLOW, lambda: _file(api, root, slug, KB_TEST_WORKFLOW, branch))
     if text is _FAIL:
         return []
     if text is None:  # first task is dev-test-workflow: pr-lint alone suffices
@@ -168,24 +244,25 @@ def _required_jobs(g, api, root, slug, branch, kind):
     return [] if names is _FAIL else jobs + [n for n in names if n not in jobs]
 
 
-def _check_protection(g, api, root, ctx, rules, classic) -> None:
-    slug, branch, kind, admin = ctx
-    contexts = _ruleset_contexts(rules) | _classic_contexts(
-        classic.get("required_status_checks") or {}
-    )
+def _check_protection(
+    g: _Guard,
+    api: Callable,
+    root: Path,
+    where: tuple[str, str, str],
+    contexts: set[str],
+    owner: bool,
+) -> None:
+    slug, branch, kind = where
     for job in _required_jobs(g, api, root, slug, branch, kind):
         if not _is_required(job, contexts):
             g.refuse(f"required check '{job}' is not required on {branch}")
-    reviews = classic.get("required_pull_request_reviews") or {}
-    if not (_ruleset_code_owner(rules) or reviews.get("require_code_owner_reviews")):
+    if not owner:
         g.refuse(f"code-owner review is not required on {branch}")
-    if admin:
-        bypass = g("the rulesets", lambda: _bypassable(api, root, slug, rules, classic))
-        if bypass is True:
-            g.refuse(f"an admin can bypass the protection on {branch}")
 
 
-def _check_codeowners(g, api, root, slug, branch) -> None:
+def _check_codeowners(
+    g: _Guard, api: Callable, root: Path, slug: str, branch: str
+) -> None:
     path = initcmd.CODEOWNERS_PATH
     text = g(path, lambda: _file(api, root, slug, path, branch))
     if text is _FAIL:
@@ -193,8 +270,9 @@ def _check_codeowners(g, api, root, slug, branch) -> None:
     if text is None:
         g.refuse(f"{path} does not exist on {branch}")
         return
-    lines = (ln.strip() for ln in text.splitlines())
-    if any(
-        initcmd.CODEOWNERS_PLACEHOLDER in ln for ln in lines if not ln.startswith("#")
-    ):
+    lines = [ln for ln in (x.strip() for x in text.splitlines()) if ln]
+    rules = [ln for ln in lines if not ln.startswith("#")]
+    if not rules:
+        g.refuse(f"{path} has no owner rule on {branch}")
+    elif any(initcmd.CODEOWNERS_PLACEHOLDER in ln for ln in rules):
         g.refuse(f"{path} still has the {initcmd.CODEOWNERS_PLACEHOLDER} placeholder")
