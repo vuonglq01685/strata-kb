@@ -3954,3 +3954,11 @@ def test_ticket_lint_runs_ticket_check_for_ready():
     assert "missionnext.dor_ticked" in loop
     assert loop.index("dor_ticked") < loop.index("kb ticket check")
     assert "Grounding" in code and "${{" not in run_script
+
+
+@pytest.mark.parametrize("name", ["codeowners-ba", "codeowners-dev"])
+def test_codeowners_header_says_owner_is_not_the_agent_login(name):
+    text = (
+        resources.files("strata_kb").joinpath("templates/init", name).read_text("utf-8")
+    )
+    assert "other than the\n# login the agent runs as" in text

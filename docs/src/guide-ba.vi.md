@@ -685,6 +685,8 @@ Tài khoản không phải admin mà chỉ có protection classic bị từ ch�
 
 **Bước của chủ repo: CODEOWNERS.** `kb init` ghi `.github/CODEOWNERS` một lần và không bao giờ ghi đè. Thay mọi `@OWNER` bằng một user hoặc team GitHub thật (ví dụ `@acme/maintainers`), commit lên nhánh mặc định, và để người hoặc team đó review. GitHub bỏ qua quy tắc có owner không tồn tại, nên placeholder chưa thay không bảo vệ gì và lượt chạy bị từ chối.
 
+**Owner không được là tài khoản mà agent dùng.** GitHub không bao giờ cho tác giả PR tự approve, và một phiên cloud hành động bằng tài khoản mà token của nó thuộc về. Hãy ghi trong CODEOWNERS một người hoặc team khác tài khoản mà runner dùng. Chủ repo làm một mình cần một reviewer thứ hai, hoặc một danh tính bot không phải admin cho agent.
+
 **PR phải chờ con người.** CODEOWNERS bao gồm `.github/CODEOWNERS`, `.github/workflows/`, `.claude/settings.json`, `.claude/agents/`, `.claude/skills/`, `.claude/commands/`, `docs/review-rubric.md` và `docs/review-rubric.local.md`. PR đụng tới một trong số đó không merge được nếu thiếu review của owner, nên task kết thúc bằng `AUTO-RESULT: blocked-review <pr-url>`. Vòng lặp đỗ (park) ticket đó (`waiting_review`) và tiếp tục việc kế tiếp; sau khi bạn review và merge PR, task được tính là xong (PR bị đóng mà không merge thì task bị bỏ khỏi danh sách đỗ và có thể được chọn lại).
 
 **Repo có sẵn: `kb upgrade`.** Repo được scaffold trước bản này cần CODEOWNERS, workflow và thiết lập mới. Chạy `kb upgrade` trong repo (con người chạy; agent auto không được). Nó làm mới scaffold trên một nhánh mới và mở PR; nó **không bao giờ merge**, nên bạn tự review và merge. `kb upgrade --no-pr` dừng sau commit (không push, không PR). Nó in `already current` khi không có gì để đổi.
