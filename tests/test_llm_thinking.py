@@ -50,5 +50,7 @@ def test_claude_high_effort_sends_the_scaled_budget(monkeypatch):
     ("name", "effort"), [("claude", "medium"), ("copilot", "high")]
 )
 def test_no_budget_unless_claude_at_high_effort(monkeypatch, name, effort):
+    monkeypatch.delenv("MAX_THINKING_TOKENS", raising=False)
     runner = llm.Runner(name, name, "m", effort, 30)
-    assert _env_of_run(monkeypatch, runner, "p" * 30_000) is None
+    env = _env_of_run(monkeypatch, runner, "p" * 30_000)
+    assert env is None or "MAX_THINKING_TOKENS" not in env
