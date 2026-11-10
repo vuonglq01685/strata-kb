@@ -26,9 +26,9 @@ Sprint 1 is the cheap foundation:
 ## Decisions made by the owner
 
 - **Merge policy C.** The agent may merge its own PR, but only when every
-  required check is green. Enforcement lives on GitHub: the runner's token has
-  no admin right, the default branch's ruleset allows no bypass, and
-  `CODEOWNERS` forces a human review on sensitive paths. Rejected: A (a human
+  required check is green. Enforcement lives on GitHub: protection on the
+  default branch that the runner's identity cannot bypass (see the identity
+  rule in G1), and `CODEOWNERS` forcing a human review on sensitive paths. Rejected: A (a human
   approves every PR — the loop would run at human speed) and B (a separate
   reviewer bot — a second token and App to manage).
 - **Identity: accept both** a non-admin bot and an admin token behind
