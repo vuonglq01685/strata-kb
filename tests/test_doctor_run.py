@@ -63,9 +63,13 @@ def test_usage_hooks_are_checked_for_ba_and_dev_only(git_kb, fed_hub, kind, chec
     assert any("SubagentStop" in i.message for i in result.issues) is checked
 
 
-def test_doctor_reports_policy_refusals(git_kb, fed_hub, monkeypatch):
+@pytest.mark.parametrize(("enabled", "level"), [(True, "error"), (False, "warning")])
+def test_doctor_reports_policy_refusals(git_kb, fed_hub, monkeypatch, enabled, level):
     kb = git_kb["kb"]
-    (kb / "config.yaml").write_text("kind: dev\nrepo_id: demo\n", encoding="utf-8")
+    (kb / "config.yaml").write_text(
+        f"kind: dev\nrepo_id: demo\nauto:\n  enabled: {str(enabled).lower()}\n",
+        encoding="utf-8",
+    )
     calls = []
     monkeypatch.setattr(
         doctor.ghpolicy,
@@ -73,7 +77,7 @@ def test_doctor_reports_policy_refusals(git_kb, fed_hub, monkeypatch):
         lambda root, kind: calls.append(kind) or ["no CODEOWNERS; see the guide"],
     )
     result = doctor.run(kb, HubHandle(root=fed_hub))
-    assert "[error] no CODEOWNERS; see the guide" in _messages(result)
+    assert f"[{level}] no CODEOWNERS; see the guide" in _messages(result)
     assert calls == ["dev"]
 
 

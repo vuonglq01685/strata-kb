@@ -78,6 +78,20 @@ def local_issues(kb_dir: Path, handle: HubHandle | None) -> list[Issue]:
     return issues
 
 
+def policy_issues(kb_dir: Path, kind: str) -> list[Issue]:
+    """The merge-policy refusals of a ba/dev repo: `error` when auto mode is on
+    (the run would refuse to start), else `warning` (an offline repo stays usable)."""
+    try:
+        enabled = config_mod.load_config(kb_dir).auto.enabled
+    except (*_CONFIG_READ_ERRORS, OSError):
+        enabled = True  # unreadable config is reported elsewhere; stay strict
+    level = "error" if enabled else "warning"
+    return [
+        Issue(level, text)
+        for text in ghpolicy.refusals(kb_dir.resolve().parent, kind)
+    ]
+
+
 def run(
     kb_dir: Path, handle: HubHandle, *, context_text: str | None = None
 ) -> DoctorResult:
@@ -125,10 +139,7 @@ def run(
             repo_id = None
 
     if cfg_kind in ("ba", "dev"):
-        issues += [
-            Issue("error", text)
-            for text in ghpolicy.refusals(kb_dir.resolve().parent, cfg_kind)
-        ]
+        issues += policy_issues(kb_dir, cfg_kind)
         issues += check_usage_log(kb_dir)
         issues += check_usage_hooks(kb_dir.resolve().parent)
     if cfg_kind == "hub":
