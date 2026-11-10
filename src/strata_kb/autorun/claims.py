@@ -116,9 +116,10 @@ class RunnerClaims:
             return True
         return self.phase(ticket, "claimed")
 
-    def phase(self, ticket: str, phase: str) -> bool:
-        """Move the claim to `phase`; False when it was lost."""
-        return self._update(ticket, phase=phase)
+    def phase(self, ticket: str, phase: str, pr: str = "") -> bool:
+        """Move the claim to `phase` (with its `pr`, which keeps a PR phase from
+        expiring); False when it was lost."""
+        return self._update(ticket, phase=phase, **({"pr": pr} if pr else {}))
 
     def beat(self, ticket: str) -> bool:
         """Heartbeat. False only when the claim is lost; any other error is a

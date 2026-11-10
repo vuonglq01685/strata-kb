@@ -34,6 +34,8 @@ class AutoState:
     publish_retry: str | None = None
     # bugs a Dev asked the BA to split: not re-picked until their row is a parent
     waiting_split: tuple[str, ...] = ()
+    # "<task key> <pr url>": PRs on code-owned paths parked for a human review
+    waiting_review: tuple[str, ...] = ()
 
 
 def _empty() -> AutoState:
@@ -79,6 +81,9 @@ def _parse(raw: object) -> AutoState:
     split = raw.get("waiting_split", [])
     if not isinstance(split, list) or not all(isinstance(k, str) for k in split):
         raise ValueError("waiting_split must be a list of strings")
+    review = raw.get("waiting_review", [])
+    if not isinstance(review, list) or not all(isinstance(k, str) for k in review):
+        raise ValueError("waiting_review must be a list of strings")
     return AutoState(
         task,
         attempts,
@@ -90,6 +95,7 @@ def _parse(raw: object) -> AutoState:
         tuple(skipped),
         publish_retry,
         tuple(split),
+        tuple(review),
     )
 
 

@@ -125,6 +125,7 @@ def test_status_defaults_and_empty_state_fields(tmp_path):
         "stop_reason": None,
         "skipped": [],
         "waiting_split": [],
+        "waiting_review": [],
         "running": None,
         "default_branch": None,  # no git repo under tmp_path
         "cloud": False,
@@ -242,3 +243,10 @@ def test_status_reports_running_pid_and_default_branch(tmp_path):
         got = status(kb)
     assert got["running"] == os.getpid() and got["default_branch"] == "main"
     assert status(kb)["running"] is None
+
+
+def test_status_lists_waiting_review(tmp_path):
+    _kb(tmp_path, "kind: dev\n")
+    entry = "dev-implement-ticket:US1 https://github.com/o/r/pull/3"
+    save(tmp_path, AutoState(None, 0, (), None, "", waiting_review=(entry,)))
+    assert status(tmp_path)["waiting_review"] == [entry]

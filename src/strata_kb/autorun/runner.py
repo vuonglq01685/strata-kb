@@ -15,7 +15,7 @@ from typing import Literal, cast
 
 import yaml
 
-from strata_kb import claimclient, cloud, gitio, hubapi
+from strata_kb import claimclient, cloud, ghrest, gitio, hubapi
 from strata_kb.autorun import claude, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -219,7 +219,57 @@ def _check_done(
 
 def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     """Task keys the pick passes over: done-but-repicked, and bugs awaiting a split."""
-    return (*state.skipped, *(f"dev-fix-bug:{b}" for b in state.waiting_split))
+    parked = (e.partition(" ")[0] for e in state.waiting_review)
+    return (
+        *state.skipped,
+        *(f"dev-fix-bug:{b}" for b in state.waiting_split),
+        *parked,
+    )
+
+
+def _review_check(
+    root: Path,
+    kb_dir: Path,
+    state: autostate.AutoState,
+    view_pr=ghrest.view_pr,
+    claims: RunnerClaims | None = None,
+) -> autostate.AutoState:
+    """Drop parked PRs a human dealt with: merged counts as `done`; closed
+    unmerged is forgotten; open, or unreadable, stays parked."""
+    kept, merged = [], None
+    for entry in state.waiting_review:
+        key, _, url = entry.partition(" ")
+        number = url.rpartition("/pull/")[2]
+        try:
+            pr_state = view_pr(root, number)["state"]
+        except KbError as exc:
+            logger.warning("parked PR %s not read: %s", url, exc)
+            kept.append(entry)
+            continue
+        if pr_state == "MERGED":
+            merged = key
+            _publishing(claims, key)
+        elif pr_state == "CLOSED":
+            logger.warning("parked PR %s of %s closed without merging", url, key)
+        else:
+            kept.append(entry)
+    if len(kept) == len(state.waiting_review):
+        return state
+    state = replace(state, waiting_review=tuple(kept))
+    if merged is not None:
+        state = replace(state, last_done=merged, same_pick=0)
+    autostate.save(kb_dir, state)
+    return state
+
+
+def _publishing(claims: RunnerClaims | None, key: str) -> None:
+    ticket = _ticket_of(key)
+    if claims is None or not ticket:
+        return
+    try:
+        claims.phase(ticket, "publishing")
+    except KbError as exc:
+        logger.warning("claim on %s not moved to publishing: %s", ticket, exc)
 
 
 def _split_answered(qa: qa_mod.QaClient, bug: str) -> bool:
@@ -389,6 +439,14 @@ def _settle(
         )
         logger.info("%s needs a split by the BA; not picking it again", bugs[-1])
         return "ran"
+    if result.kind == "blocked-review":
+        entry = f"{state.task} {result.ids[0]}"
+        review = tuple(dict.fromkeys((*state.waiting_review, entry)))
+        autostate.save(
+            kb_dir, replace(state, task=None, attempts=0, waiting_review=review)
+        )
+        logger.info("%s waits for a human review of %s", state.task, result.ids[0])
+        return "ran"
     if result.kind == "blocked-qa":
         ids = cast("tuple[int, ...]", result.ids)  # parse_result: ints for blocked-qa
         autostate.save(kb_dir, replace(state, waiting_on=ids))
@@ -499,6 +557,8 @@ def run_once(
         state = autostate.load(kb_dir)  # the check may have cleared its mark
     if state.waiting_split:
         state = _split_done(kb_dir, hub, qa, state)
+    if state.waiting_review:
+        state = _review_check(root, kb_dir, state, ghrest.view_pr, claims)
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
@@ -602,19 +662,26 @@ def _claim_lost(
 def _after_task(claims: RunnerClaims, ticket: str, result: claude.TaskResult) -> None:
     """A finished task is `publishing` (held until its PR merges); one blocked on
     questions is `waiting-qa`. Any other result leaves the phase the task set."""
-    phase = {"done": "publishing", "blocked-qa": "waiting-qa"}.get(result.kind)
+    phase = {
+        "done": "publishing",
+        "blocked-qa": "waiting-qa",
+        "blocked-review": "review",
+    }.get(result.kind)
     if phase is None:
         return
+    pr = str(result.ids[0]) if result.kind == "blocked-review" else ""
     try:
-        claims.phase(ticket, phase)
+        claims.phase(ticket, phase, pr=pr)
     except KbError as exc:  # transient: the result must still settle
         logger.warning("claim on %s not moved to %s: %s", ticket, phase, exc)
 
 
 def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> None:
     """Keep the claim alive while the loop waits on questions."""
-    ticket = _ticket_of(state.task)
-    if claims is not None and ticket:
+    if claims is None:
+        return
+    keys = (state.task, *(e.partition(" ")[0] for e in state.waiting_review))
+    for ticket in dict.fromkeys(filter(None, map(_ticket_of, keys))):
         claims.beat(ticket)
 
 

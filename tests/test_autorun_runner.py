@@ -895,8 +895,10 @@ class FakeClaims:
         self.calls.append(("begin", ticket))
         return True
 
-    def phase(self, ticket, phase):
-        self.calls.append(("phase", ticket, phase))
+    def phase(self, ticket, phase, pr=""):
+        self.calls.append(
+            ("phase", ticket, phase, pr) if pr else ("phase", ticket, phase)
+        )
         return True
 
     def beat(self, ticket):
@@ -1154,7 +1156,7 @@ class FlakyPhase(FakeClaims):
         super().__init__()
         self.failing_phase = failing_phase
 
-    def phase(self, ticket, phase):
+    def phase(self, ticket, phase, pr=""):
         if phase == self.failing_phase:
             raise KbError("hub unreachable")
         return super().phase(ticket, phase)
@@ -1479,3 +1481,129 @@ def test_blocked_split_own_fix_retakes_the_stopped_claim(env, monkeypatch):
     assert script.prompts[1].startswith("/dev-fix-bug BUG-7")
     assert client.state == "active"  # re-taken with the saved token and resumed
     assert ("take", "BUG-7", "tok") in client.calls
+
+
+# --- blocked-review -----------------------------------------------------------
+
+PR_URL = "https://github.com/o/r/pull/42"
+PARKED = f"{TASK.key} {PR_URL}"
+
+
+def _park(env, *entries):
+    autostate.save(
+        env[1],
+        autostate.AutoState(None, 0, (), None, "", waiting_review=entries or (PARKED,)),
+    )
+
+
+def _view(monkeypatch, state=None, error=None):
+    seen: list = []
+
+    def view_pr(root, ref):
+        seen.append(ref)
+        if error:
+            raise error
+        return {"state": state}
+
+    monkeypatch.setattr(runner_mod.ghrest, "view_pr", view_pr)
+    return seen
+
+
+def test_blocked_review_parks_without_attempt(env):
+    script = Script(TaskResult("blocked-review", (PR_URL,)))
+    assert once(env, script) == "ran"
+    state = autostate.load(env[1])
+    assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
+    assert state.waiting_review == (PARKED,)
+
+
+def test_blocked_review_entry_is_deduped(env):
+    _park(env)
+    autostate.save(
+        env[1],
+        autostate.AutoState(TASK.key, 0, (), None, "", waiting_review=(PARKED,)),
+    )
+    once(env, Script(TaskResult("blocked-review", (PR_URL,))))
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+
+
+def test_parked_task_is_skipped_by_pick(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    skips: list = []
+    monkeypatch.setattr(
+        picker, "pick_dev", lambda h, root, repo_id, skip=(): skips.append(skip)
+    )
+    _park(env)
+    assert once(env, Script()) == "idle"
+    assert TASK.key in skips[-1]
+
+
+def test_parked_merged_counts_done(env, monkeypatch):
+    seen = _view(monkeypatch, "MERGED")
+    _park(env)
+    once(env, Script())
+    state = autostate.load(env[1])
+    assert (state.last_done, state.waiting_review) == (TASK.key, ())
+    assert seen == ["42"]
+
+
+def test_parked_merged_moves_claim_to_publishing(cenv, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    _park(cenv, f"US1 {PR_URL}")
+    claims = FakeClaims()
+    once(cenv, Script(TaskResult("done")), claims=claims)
+    assert ("phase", "US1", "publishing") in claims.of("phase")
+
+
+def test_parked_closed_is_dropped(env, monkeypatch, caplog):
+    _view(monkeypatch, "CLOSED")
+    _park(env)
+    once(env, Script())
+    state = autostate.load(env[1])
+    assert (state.last_done, state.waiting_review) == (None, ())
+    assert "closed without merging" in caplog.text
+
+
+def test_parked_view_error_keeps_waiting(env, monkeypatch, caplog):
+    _view(monkeypatch, error=KbError("gh down"))
+    _park(env)
+    once(env, Script())
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+    assert "gh down" in caplog.text
+
+
+def test_only_parked_left_is_idle_not_stop(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    monkeypatch.setattr(
+        picker,
+        "pick_dev",
+        lambda h, root, repo_id, skip=(): None if TASK.key in skip else TASK,
+    )
+    _park(env)
+    assert once(env, Script()) == "idle"
+    assert autostate.load(env[1]).stop_reason is None
+
+
+def test_blocked_review_sets_review_phase_with_pr(cenv):
+    claims = FakeClaims()
+    once(cenv, Script(TaskResult("blocked-review", (PR_URL,))), claims=claims)
+    assert claims.of("phase")[-1] == ("phase", "US1", "review", PR_URL)
+
+
+def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    _park(cenv, f"US1 {PR_URL}")
+    claims = FakeClaims()
+    autostate.save(
+        cenv[1],
+        autostate.AutoState(
+            "dev-implement-ticket:US2",
+            0,
+            (12,),
+            None,
+            "",
+            waiting_review=(f"dev-implement-ticket:US1 {PR_URL}",),
+        ),
+    )
+    once(cenv, Script(), qa=FakeQa({12: "waiting"}), claims=claims)
+    assert {c[1] for c in claims.of("beat")} == {"US1", "US2"}
