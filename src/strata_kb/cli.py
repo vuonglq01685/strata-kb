@@ -478,6 +478,26 @@ def init(
     typer.echo(f"  (details: {quickstart_name})")
 
 
+@app.command()
+def upgrade(
+    no_pr: bool = typer.Option(
+        False, "--no-pr", help="Stop after the commit: no push, no PR."
+    ),
+) -> None:
+    """Refresh this ba/dev repo's scaffold on a new branch and open a PR (never merges)."""
+    from strata_kb.upgradecmd import upgrade as run_upgrade
+
+    result = run_upgrade(Path("."), open_pr=not no_pr)
+    if result.branch is None:
+        typer.echo("already current")
+        return
+    typer.echo(
+        f"kb upgrade: {len(result.report.created)} created, "
+        f"{len(result.report.updated)} updated on {result.branch}"
+    )
+    typer.echo(result.pr_url or f"committed on {result.branch} (no PR opened)")
+
+
 @app.command("docker-setup")
 def docker_setup(
     path: Path = typer.Argument(Path("."), help="Repo root (default: current)"),

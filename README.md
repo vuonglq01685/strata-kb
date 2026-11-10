@@ -217,6 +217,7 @@ daily use.
 | Command | Purpose |
 |---|---|
 | `kb init` | Scaffold or refresh a repo of a given kind |
+| `kb upgrade` | Refresh a ba/dev repo's scaffold on a new branch and open a PR (never merges) |
 | `kb docker-setup` | Prepare Docker (hub: `.env`, token, start; child: pull image) |
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3, scaffold L1/L2 |

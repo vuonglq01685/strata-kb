@@ -478,6 +478,13 @@ def checkout(root: Path, name: str) -> None:
         raise GitError(f"checkout {name} failed: {proc.stderr.strip()}")
 
 
+def delete_branch(root: Path, name: str) -> None:
+    """Delete local branch `name` (`branch -D`); it must not be checked out."""
+    proc = _run(root, "branch", "-D", name)
+    if proc.returncode != 0:
+        raise GitError(f"delete branch {name} failed: {proc.stderr.strip()}")
+
+
 def push_branch(
     root: Path,
     branch: str,
