@@ -1720,3 +1720,20 @@ def test_run_once_beat_stops_when_branch_read_raises(cenv, monkeypatch):
     assert once(cenv, script, claims=FakeClaims()) == "ran"
     assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
     assert len(script.prompts) == 1  # an unknown branch does not stop the task
+
+
+def test_merged_parked_ticket_reruns_with_claims_and_ends_publishing(cenv, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    _park(cenv, f"dev-implement-ticket:US1 {PR_URL}")
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US1")
+    kinds = [c[0] for c in claims.calls if c[0] in ("claim", "begin", "phase")]
+    assert kinds == ["claim", "begin", "phase"]  # claim -> PR-phase begin -> done
+    assert claims.of("phase") == [("phase", "US1", "publishing")]
+    state = autostate.load(cenv[1])
+    assert (state.task, state.last_done, state.waiting_review) == (
+        None,
+        "dev-implement-ticket:US1",
+        (),
+    )
