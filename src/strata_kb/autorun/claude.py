@@ -20,9 +20,20 @@ from typing import Literal
 
 from strata_kb.llm import RunnerError, _extract_reply, envelope_meta
 
-Kind = Literal["done", "blocked-qa", "blocked-split", "failed", "usage-limit"]
+Kind = Literal[
+    "done", "blocked-qa", "blocked-split", "blocked-review", "failed", "usage-limit"
+]
 
 RESULT_PREFIX = "AUTO-RESULT: "
+# the line templates prompt_for prints; the Stop-hook guard reuses them
+RESULT_FORMS = (
+    "AUTO-RESULT: done",
+    "AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]",
+    "AUTO-RESULT: blocked-split <bug-id>",
+    "AUTO-RESULT: blocked-review <pr-url>",
+    "AUTO-RESULT: failed <reason>",
+)
+_PR_URL = re.compile(r"https://\S+/pull/\d+")
 AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
 DEFAULT_TIMEOUT = 4 * 3600
 MAX_REASON = 500
@@ -60,6 +71,8 @@ def parse_result(reply: str) -> TaskResult:
             return TaskResult("blocked-qa", tuple(int(p[1:]) for p in parts))
     if word == "blocked-split" and re.fullmatch(_SPLIT_BUG, rest):
         return TaskResult("blocked-split", (rest,))
+    if word == "blocked-review" and _PR_URL.fullmatch(rest):
+        return TaskResult("blocked-review", (rest,))
     return TaskResult("failed", (), f"bad result line: {lines[-1][:200]}")
 
 
@@ -82,11 +95,8 @@ in this environment, or it cannot reach the hub): use its MCP tool instead. A \
 blocked CLI is not a reason to fail while the MCP tool works.
 
 End your reply with exactly one line, and make it the last line, in one of \
-these four forms:
-AUTO-RESULT: done
-AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]
-AUTO-RESULT: blocked-split <bug-id>
-AUTO-RESULT: failed <reason>
+these five forms:
+{chr(10).join(RESULT_FORMS)}
 """
     )
 
