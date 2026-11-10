@@ -2275,6 +2275,7 @@ def test_pr_review_rubric_is_wired_into_dev_kind_only():
     assert initcmd.DEV_TEMPLATES["docs/pr-review-rubric.md"] == "pr-review-rubric.md"
     assert initcmd.DEV_LOCAL_OVERRIDES == {
         "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+        ".github/CODEOWNERS": "codeowners-dev",
     }
     for kind in ("hub", "child", "ba"):
         assert "docs/pr-review-rubric.md" not in initcmd.expected_files(kind), kind
@@ -3857,3 +3858,107 @@ def test_dev_fix_bug_commits_the_split_proposal_and_reads_waiting():
     command = _normalised(_read_init_template("claude-command-dev-fix-bug.md"))
     assert "missing question: ask it, then stop" in command
     assert "stop again" not in command.replace("waiting question: stop again", "")
+
+
+# --- auto settings template (harness sprint 1, task 5) -----------------------
+
+AUTO_SETTINGS = "claude-settings-auto.json"
+GUARD_CMD = "kb guard stop --hook-stdin || true"
+# Deliberate allowlist gaps: command -> reason.
+_HUMAN_SETUP = "setup advice shown to the human; the agent never runs it"
+EXEMPT: dict[str, str] = {
+    "kb mcp-setup": _HUMAN_SETUP,
+    "kb init": "denied on purpose; " + _HUMAN_SETUP,
+    "kb init --kind ba": "denied on purpose; " + _HUMAN_SETUP,
+    "mkdir -p": "bare mention of the command, no path",
+    "kb diff": "named only in a 'Do NOT use' line",
+}
+
+
+def _auto_settings() -> dict:
+    import json
+
+    return json.loads(
+        resources.files("strata_kb")
+        .joinpath("templates/init", AUTO_SETTINGS)
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_auto_settings_deny_admin_merge():
+    deny = _auto_settings()["permissions"]["deny"]
+
+    for entry in (
+        "Bash(gh pr merge*--admin*)",
+        "Bash(kb pr merge*--admin*)",
+        "Bash(kb upgrade*)",
+    ):
+        assert entry in deny
+
+
+def test_auto_settings_stop_guard_own_group():
+    groups = _auto_settings()["hooks"]["Stop"]
+
+    guard = [g for g in groups if any(h["command"] == GUARD_CMD for h in g["hooks"])]
+    assert len(guard) == 1
+    assert [h["command"] for h in guard[0]["hooks"]] == [GUARD_CMD]
+    assert guard[0]["hooks"][0]["timeout"] == 10
+
+
+def _auto_body_commands() -> list[tuple[str, str]]:
+    """`kb ...` / `mkdir ...` spans, split on ` && `, wrapped lines joined.
+
+    Whole bodies that have an `## Auto mode` section are scanned, not only that
+    section: auto mode runs the whole pipeline, and `kb get` / `mkdir` sit in
+    its steps.
+    """
+    import re
+
+    out: list[tuple[str, str]] = []
+    bodies = resources.files("strata_kb").joinpath("templates/init/bodies")
+    for body in sorted(bodies.iterdir(), key=lambda p: p.name):
+        text = body.read_text(encoding="utf-8")
+        if not re.search(r"^## Auto mode$", text, re.M):
+            continue
+        for span in re.findall(r"`([^`]+)`", text):
+            for cmd in " ".join(span.split()).split(" && "):
+                if re.match(r"(kb |mkdir )", cmd):
+                    out.append((body.name, cmd))
+    return out
+
+
+def test_auto_commands_are_allowed():
+    from fnmatch import fnmatchcase
+
+    allow = _auto_settings()["permissions"]["allow"]
+    commands = _auto_body_commands()
+    assert commands
+    missing = [
+        (name, cmd)
+        for name, cmd in commands
+        if cmd not in EXEMPT
+        and not any(fnmatchcase(f"Bash({cmd})", pat) for pat in allow)
+    ]
+    assert not missing, missing
+
+
+def test_ticket_lint_runs_ticket_check_for_ready():
+    run_script = _lint_dispatch_run_script(_read_init_template("kb-ticket-lint.yml"))
+    code = "\n".join(
+        line for line in run_script.splitlines() if not line.strip().startswith("#")
+    )
+    loop = code.split('done < "$RUNNER_TEMP/changed.nul"')[0].rsplit(
+        "while IFS= read -r -d '' f", 1
+    )[1]
+    assert 'kb ticket check "$f" --hub "$STRATA_KB_HUB" --json' in loop
+    assert "missionnext.dor_ticked" in loop
+    assert loop.index("dor_ticked") < loop.index("kb ticket check")
+    assert "Grounding" in code and "${{" not in run_script
+
+
+@pytest.mark.parametrize("name", ["codeowners-ba", "codeowners-dev"])
+def test_codeowners_header_says_owner_is_not_the_agent_login(name):
+    text = (
+        resources.files("strata_kb").joinpath("templates/init", name).read_text("utf-8")
+    )
+    assert "other than the\n# login the agent runs as" in text

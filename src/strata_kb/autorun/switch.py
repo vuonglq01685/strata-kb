@@ -26,8 +26,9 @@ from strata_kb.hub import resolve_hub
 from strata_kb.models import Registry
 
 ADMIN_WARNING = (
-    "Auto mode merges pull requests as admin, with no review. "
-    "Turn it on only for a repo where that is acceptable."
+    "Auto mode merges its own pull requests once every required check is green; "
+    "pull requests that touch code-owned paths wait for a human review. "
+    "Set up the merge policy in the guide first."
 )
 
 
@@ -125,6 +126,7 @@ def status(kb_dir: Path) -> dict:
         "stop_reason": state.stop_reason,
         "skipped": list(state.skipped),
         "waiting_split": list(state.waiting_split),
+        "waiting_review": list(state.waiting_review),
         # For /kb-auto: is a loop alive (OS lock probe), and which branch the
         # switch must be pushed to.
         "running": _running_pid(kb_dir),

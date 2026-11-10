@@ -3,6 +3,18 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.36.0 — 2026-11-10
+
+An unattended run now merges only where GitHub itself enforces the checks and a human review, and every task run leaves a record.
+
+- **Merge policy (G1).** `kb auto run` (and `kb doctor`) refuses to start unless GitHub would not let the agent merge without the required checks (`pr-lint` plus every `kb-test.yml` job for Dev, `lint` for BA) and a code-owner review, nor bypass that protection. It passes only when a ruleset this identity cannot bypass (or, for an admin, classic protection with `enforce_admins` and no review bypass allowances) supplies the required checks and code-owner review. A code-owner review counts only with stale approvals dismissed on push (`dismiss_stale_reviews_on_push` in a ruleset, `dismiss_stale_reviews` in classic protection). Any GitHub read error refuses. `kb init` scaffolds `.github/CODEOWNERS` with an `@OWNER` placeholder you must replace, the `--admin` merge advice and the "include administrators" advice are gone, and the guides (en, vi) have a "Merge policy" section with a ruleset sample. **Existing repos:** run `kb upgrade`, set up the merge policy, and replace `@OWNER`; `kb auto run` now refuses until it is.
+- **Run record (G2).** Every task run, the Q&A thread included, appends one line to `.kb/auto/runs.jsonl`: run id, times, skill, argument, attempt, outcome, session id, cost, turns, duration, HEAD before and after, and the log path.
+- **`AUTO-RESULT` contract (G3).** A Stop hook, `kb guard stop`, nudges a task once when its reply does not end with a valid `AUTO-RESULT:` line. It never blocks twice and never outside an auto task. The hook command ends `|| true`, so a `kb` older than 1.36.0 on the machine (which exits 2 on the unknown command) cannot block a session.
+- **Allowlist gaps (G4).** The auto settings now allow `kb get *` and `mkdir -p docs/impl/*`, deny `--admin` merges and `kb upgrade`, and a test pins that every command the skills use in auto mode is allowed.
+- **`kb ticket check` in CI (G5).** The `lint` job of `kb-ticket-lint.yml` also runs `kb ticket check` on each ready ticket and fails on a FAIL; the job name is unchanged, so no new required check.
+- **`kb upgrade` (G6).** `kb upgrade [--no-pr]` refreshes a ba/dev repo's scaffold on a new branch and opens a PR with the created and updated files. It never merges.
+- **`blocked-review` (G7).** A PR that touches code-owned paths ends the task `AUTO-RESULT: blocked-review <pr-url>`. The loop parks it (`waiting_review`, shown by `kb auto status`) and keeps going; once the PR is merged, a Dev ticket (`dev-implement-ticket`, `dev-fix-bug`) runs again so its skill publishes, and any other task counts done. The BA Q&A thread answers nothing more while its review PR is open. The first Dev task, `dev-test-workflow`, always needs this review.
+
 ## 1.35.0 — 2026-11-05
 
 The hub routes each ticket to the dev repo it is built in, and a Dev runner picks only its own tickets. Phase 1 of cross-repo stories: one ticket is still one repo.

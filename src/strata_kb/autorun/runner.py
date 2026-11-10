@@ -15,8 +15,8 @@ from typing import Literal, cast
 
 import yaml
 
-from strata_kb import claimclient, cloud, gitio, hubapi
-from strata_kb.autorun import claude, picker, publishwatch
+from strata_kb import claimclient, cloud, ghrest, gitio, hubapi
+from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
@@ -127,7 +127,10 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
             "so intake would not merge its publish PRs"
         )
-    return reasons + _old_hub_refusal(cfg)
+    reasons += _old_hub_refusal(cfg)
+    if cfg.kind in ("ba", "dev"):
+        reasons += ghpolicy.refusals(root, cfg.kind)
+    return reasons
 
 
 def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, str]:
@@ -219,7 +222,69 @@ def _check_done(
 
 def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     """Task keys the pick passes over: done-but-repicked, and bugs awaiting a split."""
-    return (*state.skipped, *(f"dev-fix-bug:{b}" for b in state.waiting_split))
+    parked = (e.partition(" ")[0] for e in state.waiting_review)
+    return (
+        *state.skipped,
+        *(f"dev-fix-bug:{b}" for b in state.waiting_split),
+        *parked,
+    )
+
+
+def _own_pr(root: Path, url: str) -> bool:
+    """`url` is a pull request of this repo's `origin`; the number alone is
+    looked up there, so a PR of another repo must never be read as ours."""
+    slug = ghrest.origin_slug(root)[1].lower()
+    return url.partition("://")[2].partition("/")[2].lower().startswith(f"{slug}/pull/")
+
+
+def _review_check(
+    root: Path,
+    kb_dir: Path,
+    state: autostate.AutoState,
+    view_pr=ghrest.view_pr,
+) -> autostate.AutoState:
+    """Drop parked PRs a human dealt with: closed unmerged is forgotten; open,
+    or unreadable, stays parked. Merged: a ticket skill (CLAIMED_SKILLS) is
+    queued as the current task, because its `done` includes `kb publish`, which
+    its "Already finished" path runs; other skills count `done`. A merged ticket
+    stays parked while another task is current, and only one is queued per
+    turn; it is queued when the task slot is free."""
+    kept, merged, queued = [], None, state.task
+    for entry in state.waiting_review:
+        key, _, url = entry.partition(" ")
+        number = url.rpartition("/pull/")[2]
+        try:
+            if not _own_pr(root, url):
+                logger.warning(
+                    "parked PR %s of %s is not in this repo; dropped", url, key
+                )
+                continue
+            pr_state = view_pr(root, number)["state"]
+        except (KbError, KeyError, TypeError) as exc:
+            logger.warning("parked PR %s not read: %s", url, exc)
+            kept.append(entry)
+            continue
+        if pr_state == "MERGED":
+            if _ticket_of(key) is None:
+                merged = key
+            elif queued is None:
+                queued = key
+            else:
+                kept.append(entry)
+        elif pr_state == "CLOSED":
+            logger.warning("parked PR %s of %s closed without merging", url, key)
+        else:
+            kept.append(entry)
+    if len(kept) == len(state.waiting_review):
+        return state
+    state = replace(state, waiting_review=tuple(kept))
+    if merged is not None:
+        state = replace(state, last_done=merged, same_pick=0)
+    if state.task is None and queued is not None:
+        logger.info("%s was merged; running it again to publish", queued)
+        state = replace(state, task=queued, attempts=0)
+    autostate.save(kb_dir, state)
+    return state
 
 
 def _split_answered(qa: qa_mod.QaClient, bug: str) -> bool:
@@ -351,7 +416,7 @@ def _task_for(
             raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
-        return picker.pick_ba(root, kb_dir, skip=state.skipped)
+        return picker.pick_ba(root, kb_dir, skip=_skip(state))
     if claims is None:
         return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
@@ -388,6 +453,14 @@ def _settle(
             kb_dir, replace(state, task=None, attempts=0, waiting_split=bugs)
         )
         logger.info("%s needs a split by the BA; not picking it again", bugs[-1])
+        return "ran"
+    if result.kind == "blocked-review":
+        entry = f"{state.task} {result.ids[0]}"
+        review = tuple(dict.fromkeys((*state.waiting_review, entry)))
+        autostate.save(
+            kb_dir, replace(state, task=None, attempts=0, waiting_review=review)
+        )
+        logger.info("%s waits for a human review of %s", state.task, result.ids[0])
         return "ran"
     if result.kind == "blocked-qa":
         ids = cast("tuple[int, ...]", result.ids)  # parse_result: ints for blocked-qa
@@ -441,7 +514,7 @@ def _remember_branch(root: Path) -> str | None:
     try:
         branch = gitio.current_branch(root)
         return gitio.head_commit(root) if branch == "HEAD" else branch
-    except gitio.GitError:
+    except (gitio.GitError, OSError):
         return None
 
 
@@ -455,7 +528,7 @@ def _restore_branch(root: Path, ref: str | None) -> None:
         if branch == ref or (branch == "HEAD" and gitio.head_commit(root) == ref):
             return
         gitio.checkout(root, ref)
-    except gitio.GitError as exc:
+    except (gitio.GitError, OSError) as exc:
         logger.warning("could not return %s to %s: %s", root, ref, exc)
 
 
@@ -499,6 +572,8 @@ def run_once(
         state = autostate.load(kb_dir)  # the check may have cleared its mark
     if state.waiting_split:
         state = _split_done(kb_dir, hub, qa, state)
+    if state.waiting_review:
+        state = _review_check(root, kb_dir, state, ghrest.view_pr)
     if state.waiting_on:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
@@ -524,13 +599,22 @@ def run_once(
     if task is None:
         if qa_thread is not None and qa_thread.only_parked_left():
             parked = sorted(qa_thread.parked)
+            prs = qa_thread.review_prs
+            drafts = [PARKED_PREFIX + t for t in parked if t not in prs]
+            hint = []
+            if drafts:
+                hint.append("Drafts are on " + ", ".join(drafts) + ".")
+            if prs:
+                hint.append(
+                    "Awaiting a human review: " + ", ".join(sorted(prs.values())) + "."
+                )
             return _stop(
                 kb_dir,
                 state,
                 "parked: " + ", ".join(parked),
-                "Drafts are on "
-                + ", ".join(PARKED_PREFIX + t for t in parked)
-                + ". Fix the ticket, then run `kb auto run` to resume.",
+                " ".join(hint)
+                + (" Fix the ticket, then" if drafts else " Once reviewed,")
+                + " run `kb auto run` to resume.",
             )
         if state.skipped:
             return _stop(
@@ -547,14 +631,16 @@ def run_once(
         state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
+    # read before the heartbeat thread starts: an OSError here must not leak it
+    started_at, head_before = runlog.stamp(), runlog.head(root)
+    started, ref = now(), _remember_branch(root)
     beat = None
     if claims is not None and ticket:
         if not claims.begin(ticket):
             return _claim_lost(kb_dir, state, claims, ticket)
         beat = ClaimBeat(claims, cfg.auto.claim_heartbeat)
         beat.start(ticket)
-    started = now()
-    ref = _remember_branch(root)
+    head_after = None
     try:
         try:
             result = run_task(
@@ -564,10 +650,22 @@ def run_once(
             )
         except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
             result = claude.TaskResult("failed", (), f"runner error: {exc}")
+        head_after = runlog.head(root)
     finally:
-        _restore_branch(root, ref)
         if beat is not None:
             beat.stop()
+        _restore_branch(root, ref)
+    runlog.append(
+        kb_dir,
+        skill=task.skill,
+        arg=task.arg,
+        attempt=state.attempts,
+        result=result,
+        started_at=started_at,
+        ended_at=runlog.stamp(),
+        head_before=head_before,
+        head_after=head_after,
+    )
     logger.info("%s -> %s in %.0fs", task.key, result.kind, now() - started)
     if claims is not None and ticket:
         if beat is not None and beat.lost:
@@ -588,19 +686,26 @@ def _claim_lost(
 def _after_task(claims: RunnerClaims, ticket: str, result: claude.TaskResult) -> None:
     """A finished task is `publishing` (held until its PR merges); one blocked on
     questions is `waiting-qa`. Any other result leaves the phase the task set."""
-    phase = {"done": "publishing", "blocked-qa": "waiting-qa"}.get(result.kind)
+    phase = {
+        "done": "publishing",
+        "blocked-qa": "waiting-qa",
+        "blocked-review": "review",
+    }.get(result.kind)
     if phase is None:
         return
+    pr = str(result.ids[0]) if result.kind == "blocked-review" else ""
     try:
-        claims.phase(ticket, phase)
+        claims.phase(ticket, phase, pr=pr)
     except KbError as exc:  # transient: the result must still settle
         logger.warning("claim on %s not moved to %s: %s", ticket, phase, exc)
 
 
 def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> None:
     """Keep the claim alive while the loop waits on questions."""
-    ticket = _ticket_of(state.task)
-    if claims is not None and ticket:
+    if claims is None:
+        return
+    keys = (state.task, *(e.partition(" ")[0] for e in state.waiting_review))
+    for ticket in dict.fromkeys(filter(None, map(_ticket_of, keys))):
         claims.beat(ticket)
 
 

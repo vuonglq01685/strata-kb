@@ -7,7 +7,12 @@ import pytest
 from typer.testing import CliRunner
 
 from strata_kb.autorun.state import AutoState, save
-from strata_kb.autorun.switch import set_enabled, status, warnings_for_on
+from strata_kb.autorun.switch import (
+    ADMIN_WARNING,
+    set_enabled,
+    status,
+    warnings_for_on,
+)
 from strata_kb.cli import app
 from strata_kb.config import AutoConfig, load_config
 
@@ -86,25 +91,31 @@ def _registry(fed_hub: Path, entries: dict[str, str]) -> None:
     (fed_hub / "federation" / "registry.yaml").write_text("\n".join(lines) + "\n")
 
 
-def test_warnings_mention_admin_merge_and_two_devs(tmp_path, fed_hub):
+def test_admin_warning_mentions_required_checks():
+    assert "every required check is green" in ADMIN_WARNING
+    assert "code-owned" in ADMIN_WARNING and "human review" in ADMIN_WARNING
+    assert "admin" not in ADMIN_WARNING.lower()
+
+
+def test_warnings_mention_merge_policy_and_two_devs(tmp_path, fed_hub):
     _registry(fed_hub, {"o/dev-a": "dev", "o/dev-b": "dev", "o/ba": "ba"})
 
     warnings = warnings_for_on(_kb(tmp_path, "kind: dev\n"), str(fed_hub))
 
-    assert any("admin" in w and "review" in w for w in warnings)
+    assert any("required check" in w and "review" in w for w in warnings)
     assert any("one Dev" in w for w in warnings)
 
 
-def test_warnings_one_dev_only_admin_line(tmp_path, fed_hub):
+def test_warnings_one_dev_only_merge_policy_line(tmp_path, fed_hub):
     _registry(fed_hub, {"o/dev-a": "dev", "o/ba": "ba"})
     warnings = warnings_for_on(_kb(tmp_path, "kind: dev\n"), str(fed_hub))
-    assert len(warnings) == 1 and "admin" in warnings[0]
+    assert len(warnings) == 1 and "required check" in warnings[0]
 
 
 def test_warnings_unreachable_hub_says_registry_not_checked(tmp_path):
     warnings = warnings_for_on(_kb(tmp_path, "kind: dev\n"), "")
     assert any("registry not checked" in w.lower() for w in warnings)
-    assert any("admin" in w for w in warnings)
+    assert any("required check" in w for w in warnings)
 
 
 def test_warnings_broken_config_is_a_line_not_a_crash(tmp_path):
@@ -125,6 +136,7 @@ def test_status_defaults_and_empty_state_fields(tmp_path):
         "stop_reason": None,
         "skipped": [],
         "waiting_split": [],
+        "waiting_review": [],
         "running": None,
         "default_branch": None,  # no git repo under tmp_path
         "cloud": False,
@@ -178,7 +190,7 @@ def test_cli_auto_on_then_off(tmp_path, fed_hub):
     kb = _kb(tmp_path, "kind: dev\n")
     on = runner.invoke(app, ["auto", "on", "--hub", str(fed_hub), "--kb-dir", str(kb)])
     assert on.exit_code == 0, on.output
-    assert "admin" in on.output
+    assert "required check" in on.output
     assert "auto: on" in on.output.splitlines()
     assert "Commit and push .kb/config.yaml" in on.output and "kb auto run" in on.output
     assert load_config(kb).auto.enabled is True
@@ -242,3 +254,10 @@ def test_status_reports_running_pid_and_default_branch(tmp_path):
         got = status(kb)
     assert got["running"] == os.getpid() and got["default_branch"] == "main"
     assert status(kb)["running"] is None
+
+
+def test_status_lists_waiting_review(tmp_path):
+    _kb(tmp_path, "kind: dev\n")
+    entry = "dev-implement-ticket:US1 https://github.com/o/r/pull/3"
+    save(tmp_path, AutoState(None, 0, (), None, "", waiting_review=(entry,)))
+    assert status(tmp_path)["waiting_review"] == [entry]

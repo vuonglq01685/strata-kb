@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -105,6 +106,16 @@ def test_switch_off_stops_at_task_boundary(env):
     assert once(env, script, cfg=off) == "stopped"
     assert autostate.load(env[1]).stop_reason == "switched off"
     assert len(script.prompts) == 1  # the second run never started
+
+
+def test_run_once_records_run(env):
+    script = Script(TaskResult("done", meta={"session_id": "s"}))
+    once(env, script)
+    lines = (env[1] / "auto" / "runs.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert (row["skill"], row["arg"]) == (TASK.skill, TASK.arg)
+    assert (row["attempt"], row["outcome"], row["session_id"]) == (0, "done", "s")
 
 
 def test_waiting_question_does_not_resume(env):
@@ -455,6 +466,28 @@ def test_preflight_names_each_refusal(env, monkeypatch, text, needle):
 
 
 @pytest.mark.usefixtures("no_switch_check")
+def test_preflight_includes_policy_refusals(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    seen = []
+    monkeypatch.setattr(
+        runner_mod.ghpolicy,
+        "refusals",
+        lambda r, kind: seen.append((r, kind)) or ["no code-owner review"],
+    )
+    _write_config(kb_dir, GOOD)
+    assert preflight(root, kb_dir) == ["no code-owner review"]
+    assert seen == [(root, "dev")]
+
+
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_reports_unreachable_hub(env, monkeypatch):
     root, kb_dir, _, _ = env
     monkeypatch.setattr(
@@ -765,8 +798,9 @@ def test_run_lock_is_released_after_an_exception(tmp_path):
 class ParkedQaThread:
     failed_twice = False
 
-    def __init__(self, only_parked: bool = True, parked=("T-a",)):
+    def __init__(self, only_parked: bool = True, parked=("T-a",), review_prs=None):
         self.parked = frozenset(parked)
+        self.review_prs = dict(review_prs or {})
         self._only_parked = only_parked
 
     def only_parked_left(self) -> bool:
@@ -782,6 +816,15 @@ def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
     assert autostate.load(env[1]).stop_reason == "parked: T-a"
     assert "auto/qa-parked/T-a" in caplog.text
     assert script.prompts == []
+
+
+def test_review_parked_stop_hint_names_the_pr(env, monkeypatch, caplog):
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    pr = "https://github.com/o/r/pull/7"
+    parked = ParkedQaThread(review_prs={"T-a": pr})
+    with caplog.at_level(logging.ERROR):
+        assert once(env, Script(), cfg=cfg_of("ba"), qa_thread=parked) == "stopped"
+    assert pr in caplog.text and "Drafts are on" not in caplog.text
 
 
 def test_parked_stop_lists_every_ticket_sorted(env, monkeypatch):
@@ -884,8 +927,10 @@ class FakeClaims:
         self.calls.append(("begin", ticket))
         return True
 
-    def phase(self, ticket, phase):
-        self.calls.append(("phase", ticket, phase))
+    def phase(self, ticket, phase, pr=""):
+        self.calls.append(
+            ("phase", ticket, phase, pr) if pr else ("phase", ticket, phase)
+        )
         return True
 
     def beat(self, ticket):
@@ -1143,10 +1188,10 @@ class FlakyPhase(FakeClaims):
         super().__init__()
         self.failing_phase = failing_phase
 
-    def phase(self, ticket, phase):
+    def phase(self, ticket, phase, pr=""):
         if phase == self.failing_phase:
             raise KbError("hub unreachable")
-        return super().phase(ticket, phase)
+        return super().phase(ticket, phase, pr)
 
 
 def test_transient_publishing_error_still_settles_done(cenv, caplog):
@@ -1468,3 +1513,249 @@ def test_blocked_split_own_fix_retakes_the_stopped_claim(env, monkeypatch):
     assert script.prompts[1].startswith("/dev-fix-bug BUG-7")
     assert client.state == "active"  # re-taken with the saved token and resumed
     assert ("take", "BUG-7", "tok") in client.calls
+
+
+# --- blocked-review -----------------------------------------------------------
+
+PR_URL = "https://github.com/o/r/pull/42"
+PARKED = f"{TASK.key} {PR_URL}"
+
+
+def _park(env, *entries):
+    autostate.save(
+        env[1],
+        autostate.AutoState(None, 0, (), None, "", waiting_review=entries or (PARKED,)),
+    )
+
+
+def _view(monkeypatch, state=None, error=None):
+    seen: list = []
+
+    def view_pr(root, ref):
+        seen.append(ref)
+        if error:
+            raise error
+        return {"state": state}
+
+    monkeypatch.setattr(runner_mod.ghrest, "view_pr", view_pr)
+    monkeypatch.setattr(runner_mod.ghrest, "origin_slug", lambda root: ("h", "o/r"))
+    return seen
+
+
+def test_blocked_review_parks_without_attempt(env):
+    script = Script(TaskResult("blocked-review", (PR_URL,)))
+    assert once(env, script) == "ran"
+    state = autostate.load(env[1])
+    assert (state.task, state.attempts, state.stop_reason) == (None, 0, None)
+    assert state.waiting_review == (PARKED,)
+
+
+def test_blocked_review_entry_is_deduped(env):
+    autostate.save(
+        env[1],
+        autostate.AutoState(TASK.key, 0, (), None, "", waiting_review=(PARKED,)),
+    )
+    once(env, Script(TaskResult("blocked-review", (PR_URL,))))
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+
+
+def test_parked_task_is_skipped_by_pick(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    skips: list = []
+    monkeypatch.setattr(
+        picker, "pick_dev", lambda h, root, repo_id, skip=(): skips.append(skip)
+    )
+    _park(env)
+    assert once(env, Script()) == "idle"
+    assert TASK.key in skips[-1]
+
+
+def test_parked_merged_ticket_is_run_again_to_publish(env, monkeypatch):
+    seen = _view(monkeypatch, "MERGED")
+    _park(env)
+    script = Script(TaskResult("done"))
+    assert once(env, script) == "ran"
+    assert script.prompts[0].startswith(f"/{TASK.skill} {TASK.arg}")
+    state = autostate.load(env[1])
+    assert (state.task, state.last_done, state.waiting_review) == (None, TASK.key, ())
+    assert seen == ["42"]
+
+
+def test_parked_merged_ticket_is_queued_not_done(env, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    _park(env)
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert (state.task, state.attempts, state.last_done) == (TASK.key, 0, None)
+    assert state.waiting_review == ()
+
+
+def test_parked_merged_ticket_waits_while_another_task_runs(env, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    autostate.save(
+        env[1],
+        autostate.AutoState(
+            "dev-implement-ticket:US9", 0, (), None, "", waiting_review=(PARKED,)
+        ),
+    )
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert state.task == "dev-implement-ticket:US9"
+    assert state.waiting_review == (PARKED,)
+
+
+def test_parked_merged_test_workflow_counts_done(env, monkeypatch):
+    seen = _view(monkeypatch, "MERGED")
+    key = "dev-test-workflow:"
+    _park(env, f"{key} {PR_URL}")
+    state = runner_mod._review_check(
+        env[0], env[1], autostate.load(env[1]), runner_mod.ghrest.view_pr
+    )
+    assert (state.task, state.last_done, state.waiting_review) == (None, key, ())
+    assert seen == ["42"]
+
+
+def test_parked_closed_is_dropped(env, monkeypatch, caplog):
+    _view(monkeypatch, "CLOSED")
+    _park(env)
+    once(env, Script())
+    state = autostate.load(env[1])
+    assert (state.last_done, state.waiting_review) == (None, ())
+    assert "closed without merging" in caplog.text
+
+
+def test_parked_view_error_keeps_waiting(env, monkeypatch, caplog):
+    _view(monkeypatch, error=KbError("gh down"))
+    _park(env)
+    once(env, Script())
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+    assert "gh down" in caplog.text
+
+
+def test_only_parked_left_is_idle_not_stop(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    monkeypatch.setattr(
+        picker,
+        "pick_dev",
+        lambda h, root, repo_id, skip=(): None if TASK.key in skip else TASK,
+    )
+    _park(env)
+    assert once(env, Script()) == "idle"
+    assert autostate.load(env[1]).stop_reason is None
+
+
+def test_blocked_review_sets_review_phase_with_pr(cenv):
+    claims = FakeClaims()
+    once(cenv, Script(TaskResult("blocked-review", (PR_URL,))), claims=claims)
+    assert claims.of("phase")[-1] == ("phase", "US1", "review", PR_URL)
+
+
+def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    claims = FakeClaims()
+    autostate.save(
+        cenv[1],
+        autostate.AutoState(
+            "dev-implement-ticket:US2",
+            0,
+            (12,),
+            None,
+            "",
+            waiting_review=(f"dev-implement-ticket:US1 {PR_URL}",),
+        ),
+    )
+    once(cenv, Script(), qa=FakeQa({12: "waiting"}), claims=claims)
+    assert {c[1] for c in claims.of("beat")} == {"US1", "US2"}
+
+
+def test_ba_parked_task_is_not_picked_again(env, monkeypatch):
+    _view(monkeypatch, "OPEN")
+    skips: list = []
+    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): skips.append(skip))
+    _park(env, f"ba-ticket-author:US1 {PR_URL}")
+    once(env, Script(), cfg=cfg_of("ba"))
+    assert "ba-ticket-author:US1" in skips[-1]
+
+
+@pytest.mark.parametrize("bad", [{"no": "state"}, None])
+def test_parked_odd_view_keeps_waiting(env, monkeypatch, caplog, bad):
+    _view(monkeypatch, "OPEN")
+    monkeypatch.setattr(runner_mod.ghrest, "view_pr", lambda root, ref: bad)
+    _park(env)
+    once(env, Script())
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+    assert "not read" in caplog.text
+
+
+def test_parked_url_of_another_repo_is_dropped(env, monkeypatch, caplog):
+    seen = _view(monkeypatch, "MERGED")
+    _park(env, "dev-implement-ticket:US1 https://github.com/x/y/pull/42")
+    once(env, Script())
+    state = autostate.load(env[1])
+    assert (state.waiting_review, state.last_done) == ((), None)
+    assert seen == [] and "not in this repo" in caplog.text
+
+
+def test_run_once_beat_stops_when_head_read_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    monkeypatch.setattr(
+        runner_mod.runlog, "head", lambda root: (_ for _ in ()).throw(OSError("x"))
+    )
+    FakeBeat.events = []
+    with pytest.raises(OSError):
+        once(cenv, Script(TaskResult("done")), claims=FakeClaims())
+    assert FakeBeat.events == []  # the heartbeat thread never started
+
+
+def test_run_once_beat_stops_when_branch_read_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+
+    def boom(root):
+        raise OSError("x")
+
+    monkeypatch.setattr(runner_mod.gitio, "current_branch", boom)
+    script = Script(TaskResult("done"))
+    assert once(cenv, script, claims=FakeClaims()) == "ran"
+    assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
+    assert len(script.prompts) == 1  # an unknown branch does not stop the task
+
+
+def test_merged_parked_ticket_reruns_with_claims_and_ends_publishing(cenv, monkeypatch):
+    _view(monkeypatch, "MERGED")
+    _park(cenv, f"dev-implement-ticket:US1 {PR_URL}")
+    claims, script = FakeClaims(), Script(TaskResult("done"))
+    assert once(cenv, script, claims=claims) == "ran"
+    assert script.prompts[0].startswith("/dev-implement-ticket US1")
+    kinds = [c[0] for c in claims.calls if c[0] in ("claim", "begin", "phase")]
+    assert kinds == [
+        "claim",
+        "begin",
+        "phase",
+    ]  # claim -> begin -> _after_task publishing
+    assert claims.of("phase") == [("phase", "US1", "publishing")]
+    state = autostate.load(cenv[1])
+    assert (state.task, state.last_done, state.waiting_review) == (
+        None,
+        "dev-implement-ticket:US1",
+        (),
+    )
+
+
+def test_run_once_beat_stops_when_branch_restore_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    monkeypatch.setattr(runner_mod.gitio, "current_branch", lambda root: "main")
+    calls = []
+
+    def boom(root, ref):
+        calls.append(ref)
+        raise OSError("x")
+
+    monkeypatch.setattr(runner_mod.gitio, "checkout", boom)
+    monkeypatch.setattr(runner_mod, "_remember_branch", lambda root: "other")
+    claims = FakeClaims()
+    assert once(cenv, Script(TaskResult("done")), claims=claims) == "ran"
+    assert calls == ["other"]
+    assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
+    assert claims.of("phase") == [("phase", "US1", "publishing")]

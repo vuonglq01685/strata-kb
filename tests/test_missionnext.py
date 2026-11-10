@@ -494,3 +494,11 @@ def test_a_drafted_story_its_mission_blocks_reads_draft():
     }
     assert by_id["M-platform-US1"].status == "draft"
     assert by_id["M-platform-US1"].reasons == ("Q1 open (owner: Bob)",)
+
+
+def test_dor_ticked_true_only_when_every_box_is_ticked():
+    ticked = "## Definition of Ready\n\n- [x] a\n- [X] b\n"
+    assert missionnext.dor_ticked(ticked)
+    assert not missionnext.dor_ticked(ticked + "- [ ] c\n")
+    assert not missionnext.dor_ticked("# no section\n")
+    assert not missionnext.dor_ticked("## Definition of Ready\n\nnothing\n")

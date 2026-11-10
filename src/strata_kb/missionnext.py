@@ -220,6 +220,13 @@ def dor_counts(text: str) -> tuple[int, int]:
     return (sum(1 for k in marks if k != " "), len(marks))
 
 
+def dor_ticked(text: str) -> bool:
+    """True when the ticket has a Definition of Ready and every box is ticked
+    (the CI gate's "ready" test; `statuses` applies the same rule)."""
+    ticked, total = dor_counts(text)
+    return bool(total) and ticked == total
+
+
 def _mission_order(stories: list[Story]) -> list[Story]:
     """Sequencing row order first, then stories the table omits, in
     backlog order (stable sort on the 'absent' flag)."""

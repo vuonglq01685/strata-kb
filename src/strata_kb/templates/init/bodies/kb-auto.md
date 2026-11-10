@@ -10,7 +10,8 @@ Hard rules:
 - Never pass `--dangerously-skip-permissions`, and never edit
   `.claude/settings.json` or `.kb/config.yaml` by hand — only the CLI does.
 - Show the warnings `kb auto on` prints **verbatim**: they are the owner's
-  security decision (admin merge, no human review, one Dev repo per hub).
+  security decision (self-merge once every required check is green, a human
+  review for code-owned paths, one Dev repo per hub).
 - Never force-push. Never check out or push the default branch from another
   branch on the owner's behalf.
 - Non-zero exit from any `kb auto` command → show its output verbatim and stop.
@@ -77,7 +78,7 @@ pid of a live `kb auto run` in this repo, or `null`), `default_branch`
 
 **`run` on cloud** (`cloud` is true). The session branch is not the default
 branch and cannot push to it, so the switch reaches the default branch through
-an `auto/switch` pull request that this session admin-merges (the owner
+an `auto/switch` pull request that this session merges (the owner
 approved that by running `/kb-auto run`). Stop at the first step that fails.
 1. `kb auto status --json`. When `running` is a pid, say the loop is already
    running and stop. The "must be on the default branch" check does not apply.
@@ -101,8 +102,8 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
       an earlier switch PR is still open: tell the owner to close that PR and
       delete the remote `auto/switch` branch on GitHub, then run `/kb-auto
       run` again, and stop.
-   2. Tell the owner the switch PR will be admin-merged into
-      `<default_branch>`, with no review.
+   2. Tell the owner the switch PR will be merged into `<default_branch>`
+      once every required check is green, unless it needs a review.
    3. `git worktree add .kb/auto/worktrees/switch -b auto/switch FETCH_HEAD`.
    4. The PR flips only `auto.enabled`; it never copies files over the
       default branch, which could revert changes made there since the session
@@ -134,8 +135,10 @@ approved that by running `/kb-auto run`). Stop at the first step that fails.
       checks, run cleanup, and stop; never merge on red or pending checks.
       The PR stays open: tell the owner to close it and delete the remote
       `auto/switch` branch on GitHub before a re-run.
-   9. `kb pr merge auto/switch --squash --admin --delete-branch`. After an
-      error, run `kb pr view auto/switch --json` before you stop: a merged PR
+   9. `kb pr merge auto/switch --squash --delete-branch`. When the merge is
+      refused for want of an approving review, run cleanup, tell the owner to
+      review and merge `auto/switch`, then re-run `/kb-auto run`, and stop. After
+      any other error, run `kb pr view auto/switch --json` before you stop: a merged PR
       is a success. On a real failure run cleanup and stop; the PR stays
       open, so tell the owner to close it and delete the remote `auto/switch`
       branch on GitHub before a re-run.

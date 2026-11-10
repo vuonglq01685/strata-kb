@@ -5,6 +5,7 @@ include directive; the text they share lives once in templates/init/bodies/.
 
 from __future__ import annotations
 
+import json
 import re
 from importlib import resources
 from pathlib import Path
@@ -1086,7 +1087,7 @@ BRANCH_LINES = [
     "kb pr checks --watch",
     "AUTO-RESULT: failed ci-red <pr-url>",
     "kb pr merge --squash --delete-branch",
-    "kb pr merge --squash --admin --delete-branch",
+    "AUTO-RESULT: blocked-review <pr-url>",
     "kb pr view --json",
     "kb-publish-request.yml",
 ]
@@ -1223,11 +1224,12 @@ def _dev_text(name: str) -> str:
     return _normal(_auto_section(f"bodies/{name}.md"))
 
 
-def test_dev_handover_merges_publishes_and_names_the_admin_fallback():
+def test_dev_handover_merges_publishes_and_parks_on_missing_review():
     text = _dev_text("dev-handover")
     for line in DEV_BRANCH_LINES:
         assert line in text, line
-    assert "kb pr merge --squash --admin --delete-branch" in text
+    assert "AUTO-RESULT: blocked-review <pr-url>" in text
+    assert "--admin" not in text
     assert "kb publish" in text
     assert "kb svc note" in text
     assert "up to 2 rounds" in text
@@ -1338,7 +1340,6 @@ def test_dev_test_workflow_body_names_the_workflow_and_its_inputs():
         "git push -u origin HEAD",
         "kb pr checks --watch",
         "kb pr merge --squash --delete-branch",
-        "kb pr merge --squash --admin --delete-branch",
         "AUTO-RESULT: failed ci-red <pr-url>",
     ):
         assert needle in auto, needle
@@ -1390,6 +1391,63 @@ def _permitted(command: str, allow: list[str], deny: list[str]) -> bool:
 
     ok = any(fnmatchcase(command, p) for p in allow)
     return ok and not any(fnmatchcase(command, p) for p in deny)
+
+
+def test_no_admin_merge_anywhere():
+    # The settings deny rules name `--admin` on purpose; every other byte of
+    # every init template must be free of it.
+    for path in Path(str(BASE)).rglob("*"):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if path.name == "claude-settings-auto.json":
+            data = json.loads(text)
+            data["permissions"].pop("deny")
+            text = json.dumps(data)
+        assert "--admin" not in text, path
+
+
+MERGING_BODIES = ("dev-handover", "ba-ticket-author", "dev-test-workflow")
+
+
+@pytest.mark.parametrize("name", MERGING_BODIES)
+def test_merging_bodies_end_blocked_review(name):
+    text = BASE.joinpath("bodies", f"{name}.md").read_text(encoding="utf-8")
+    assert (
+        "AUTO-RESULT: blocked-review <pr-url>"
+        in text.split("\n- `AUTO-RESULT: done`")[1]
+    )
+    assert "do not retry: end `AUTO-RESULT: blocked-review <pr-url>`" in text
+
+
+def test_every_body_that_runs_kb_pr_merge_is_a_merging_body():
+    found = {
+        p.stem
+        for p in Path(str(BASE)).joinpath("bodies").glob("*.md")
+        if "kb pr merge" in p.read_text(encoding="utf-8") and p.stem != "kb-auto"
+    }
+    assert found == set(MERGING_BODIES)
+
+
+# Skills the runner invokes whose PR is merged by the skill itself or by a
+# skill it delegates to: their result list must allow `blocked-review`.
+DELEGATING_BODIES = (
+    "dev-implement-ticket",
+    "dev-fix-bug",
+    "ba-mission-plan",
+    "ba-answer-questions",
+)
+
+
+@pytest.mark.parametrize("name", MERGING_BODIES + DELEGATING_BODIES)
+def test_runner_invoked_result_lists_allow_blocked_review(name):
+    text = BASE.joinpath("bodies", f"{name}.md").read_text(encoding="utf-8")
+    block = text.split("\n- `AUTO-RESULT: done`")[1].split("\n\n")[0]
+    assert "- `AUTO-RESULT: blocked-review <pr-url>`" in "\n" + block
+    words = {"three": 3, "four": 4, "five": 5}
+    head = text.split("\n- `AUTO-RESULT: done`")[0]
+    declared = re.findall(r"one of (\w+) forms", head)[-1]
+    assert words[declared] == block.count("\n- `AUTO-RESULT:") + 1, name
 
 
 @pytest.mark.parametrize("template", ALL_AUTO_FILES)
@@ -1631,13 +1689,13 @@ def test_kb_auto_body_has_cloud_path():
     for needle in (
         "kb auto wait --max 6600",
         "auto/switch",
-        "--admin",
         "`cloud`",
         "kb pr lint",
         "Blocking: No",
         "run_in_background",
         "still running",
         "git worktree remove --force .kb/auto/worktrees/switch",
+        "review and merge `auto/switch`",
     ):
         assert needle in body, needle
 
@@ -1676,7 +1734,8 @@ def test_no_template_calls_gh_pr():
         name
         for name in _templates()
         + [f"bodies/{p.name}" for p in BASE.joinpath("bodies").iterdir()]
-        if call.search(BASE.joinpath(name).read_text(encoding="utf-8"))
+        if not name.startswith("claude-settings-")  # its deny rules name `gh pr merge`
+        and call.search(BASE.joinpath(name).read_text(encoding="utf-8"))
     ]
     assert hits == []
 

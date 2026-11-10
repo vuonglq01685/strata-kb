@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from strata_kb.errors import KbError
 from strata_kb.models import LLMConfig
 
+# set on `kb auto run` task sessions; a nested runner must not inherit it
+AUTO_TASK_ENV = "STRATA_KB_AUTO_TASK"
+
 # `claude -p` has no public effort flag; a thinking budget is the closest
 # supported knob for effort=high (best-effort). It scales with the prompt: a
 # fixed 31,999 per section would pay the same for a two-line section as for a
@@ -74,9 +77,10 @@ class Runner:
             cmd = [self.executable, "--model", self.model, "-s"]
         if prompt in cmd:
             raise RunnerError("prompt must travel on stdin, not argv")
-        env = None
+        # a nested run must not inherit the auto-task flag (it would trip the guard)
+        env = {k: v for k, v in os.environ.items() if k != AUTO_TASK_ENV}
         if self.name == "claude" and self.effort == "high":
-            env = os.environ | {"MAX_THINKING_TOKENS": str(thinking_budget(prompt))}
+            env["MAX_THINKING_TOKENS"] = str(thinking_budget(prompt))
         try:
             proc = subprocess.run(
                 cmd,
@@ -115,6 +119,28 @@ def _extract_reply(name: str, stdout: str) -> str:
     if not isinstance(result, str):
         raise RunnerError("claude: no result in envelope")
     return result.strip()
+
+
+_META_KEYS = (
+    "session_id",
+    "total_cost_usd",
+    "num_turns",
+    "duration_ms",
+    "is_error",
+    "subtype",
+)
+
+
+def envelope_meta(stdout: str) -> dict[str, object]:
+    """Run facts from a `claude -p` JSON envelope; a missing key, or stdout that
+    is no JSON object, gives None. Never raises."""
+    try:
+        envelope = json.loads(stdout)
+    except ValueError:
+        envelope = None
+    if not isinstance(envelope, dict):
+        envelope = {}
+    return {key: envelope.get(key) for key in _META_KEYS}
 
 
 def detect_runner(cli_choice: str | None, config: LLMConfig) -> Runner | None:

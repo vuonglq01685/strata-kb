@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
@@ -153,6 +154,16 @@ def test_run_task_exception_is_logged_and_frees_the_slot(repo, caplog):
         settle(qt)
     assert "claude missing" in caplog.text
     assert qt.tick() is True
+
+
+def test_answer_records_run(repo):
+    runner = Runner(TaskResult("done"))
+    runner.release.set()
+    qt, _, _ = make(repo, runner=runner)
+    assert qt.tick() is True
+    settle(qt)
+    row = json.loads((repo[1] / "auto" / "runs.jsonl").read_text().splitlines()[0])
+    assert row["skill"] == "ba-answer-questions"
 
 
 def test_usage_limit_skips_one_tick(repo, caplog):
@@ -323,6 +334,21 @@ def test_dor_unticked_parks_the_launched_ticket_without_counting(repo):
     assert qt.failed_twice is False
 
 
+def test_answer_blocked_review_parks_without_failure(repo, monkeypatch, caplog):
+    pr = "https://github.com/o/r/pull/7"
+    runner = Runner(TaskResult("blocked-review", (pr,)))
+    runner.release.set()
+    qt, qa, _ = make(repo, qa=FakeQa(open_=((2, "T-a"),)), runner=runner)
+    pushed = []
+    monkeypatch.setattr(gitio, "push_branch", lambda *a, **k: pushed.append(a))
+    with caplog.at_level(logging.WARNING):
+        assert _tick_and_settle(qt)
+    assert "waits for a human review" in caplog.text and pr in caplog.text
+    assert qt.parked == {"T-a"} and qt.failed_twice is False
+    assert qt.review_prs["T-a"] == pr and pushed == []
+    assert [c[1].splitlines()[0] for c in runner.calls] == ["/ba-answer-questions T-a"]
+
+
 def test_parked_ticket_is_skipped_next_tick(repo):
     qt, qa, runner = _parking(repo)
     _tick_and_settle(qt)
@@ -441,3 +467,60 @@ def test_only_parked_left_is_false_while_an_answer_runs(repo):
     assert qt.only_parked_left() is False
     runner.release.set()
     settle(qt)
+
+
+PR7 = "https://github.com/o/r/pull/7"
+
+
+def _review_parked(repo, monkeypatch, pr_state):
+    """A Q&A thread that parked T-a on PR 7; `view_pr` then answers `pr_state`
+    (a dict result, or an exception to raise)."""
+    runner = Runner(TaskResult("blocked-review", (PR7,)))
+    runner.release.set()
+    qt, qa, _ = make(repo, qa=FakeQa(open_=((2, "T-a"),)), runner=runner)
+    assert _tick_and_settle(qt)
+    seen: list = []
+
+    def view_pr(root, ref):
+        seen.append(ref)
+        if isinstance(pr_state, Exception):
+            raise pr_state
+        return pr_state
+
+    monkeypatch.setattr("strata_kb.autorun.qathread.ghrest.view_pr", view_pr)
+    qa.open_ = [(2, "T-a"), (3, "T-b")]
+    return qt, runner, seen
+
+
+def test_no_answer_while_the_review_pr_is_open(repo, monkeypatch):
+    qt, runner, seen = _review_parked(repo, monkeypatch, {"state": "OPEN"})
+    assert qt.tick() is False
+    assert seen == ["7"] and len(runner.calls) == 1
+    assert qt.review_prs == {"T-a": PR7}
+
+
+@pytest.mark.parametrize("pr_state", ["MERGED", "CLOSED"])
+def test_review_pr_settled_unparks_the_ticket(repo, monkeypatch, pr_state):
+    qt, runner, _ = _review_parked(repo, monkeypatch, {"state": pr_state})
+    assert _tick_and_settle(qt)
+    # unparked, so the oldest question (T-a) is answered again
+    assert [c[1].splitlines()[0] for c in runner.calls][1] == "/ba-answer-questions T-a"
+
+
+@pytest.mark.parametrize("bad", [KbError("gh down"), {"no": "state"}])
+def test_review_pr_unreadable_keeps_waiting(repo, monkeypatch, caplog, bad):
+    qt, runner, _ = _review_parked(repo, monkeypatch, bad)
+    with caplog.at_level(logging.WARNING):
+        assert qt.tick() is False
+    assert qt.review_prs == {"T-a": PR7} and len(runner.calls) == 1
+    assert "not read" in caplog.text
+
+
+def test_open_review_pr_wait_is_logged_once(repo, monkeypatch, caplog):
+    qt, _, _ = _review_parked(repo, monkeypatch, {"state": "OPEN"})
+    with caplog.at_level(logging.INFO):
+        qt.tick()
+        qt.tick()
+    waits = [r for r in caplog.records if "waiting for review" in r.getMessage()]
+    assert len(waits) == 1
+    assert "T-a" in waits[0].getMessage() and PR7 in waits[0].getMessage()

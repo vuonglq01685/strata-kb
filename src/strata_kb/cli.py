@@ -110,6 +110,9 @@ usage_app = typer.Typer(
 )
 app.add_typer(usage_app, name="usage")
 
+guard_app = typer.Typer(help="Claude Code hook commands.", hidden=True)
+app.add_typer(guard_app, name="guard", hidden=True)
+
 pr_app = typer.Typer(help="Pull requests: the description gate and REST helpers.")
 app.add_typer(pr_app, name="pr")
 
@@ -473,6 +476,26 @@ def init(
         "dev": "QUICKSTART-DEV.md",
     }.get(resolved, "QUICKSTART.md")
     typer.echo(f"  (details: {quickstart_name})")
+
+
+@app.command()
+def upgrade(
+    no_pr: bool = typer.Option(
+        False, "--no-pr", help="Stop after the commit: no push, no PR."
+    ),
+) -> None:
+    """Refresh this ba/dev repo's scaffold on a new branch and open a PR (never merges)."""
+    from strata_kb.upgradecmd import upgrade as run_upgrade
+
+    result = run_upgrade(Path("."), open_pr=not no_pr)
+    if result.branch is None:
+        typer.echo("already current")
+        return
+    typer.echo(
+        f"kb upgrade: {len(result.report.created)} created, "
+        f"{len(result.report.updated)} updated on {result.branch}"
+    )
+    typer.echo(result.pr_url or f"committed on {result.branch} (no PR opened)")
 
 
 @app.command("docker-setup")
@@ -2154,6 +2177,36 @@ def _usage_ingest(
     finally:
         for note in result.notes:
             _usage_log_error(kb_dir, note)
+
+
+@guard_app.command("stop")
+def guard_stop(
+    hook_stdin: bool = typer.Option(
+        False, "--hook-stdin", help="Read the Stop-hook payload (JSON) from stdin"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+) -> None:
+    """Stop hook: block an auto task from ending without its AUTO-RESULT line."""
+    from strata_kb.autorun import guard
+
+    if not hook_stdin:
+        return
+    # Always exit 0, silent on failure: a non-zero Stop hook would trap the session.
+    try:
+        decision = guard.stop_decision(json.loads(sys.stdin.read()), os.environ)
+        if decision is not None:
+            typer.echo(json.dumps(decision))
+    except Exception as exc:  # noqa: BLE001 -- the hook must absorb every failure
+        log_dir = kb_dir / "auto"
+        if log_dir.is_dir():
+            try:
+                (log_dir / "logs").mkdir(exist_ok=True)
+                with (log_dir / "logs" / "guard.log").open(
+                    "a", encoding="utf-8", newline="\n"
+                ) as f:
+                    f.write(f"guard stop failed: {type(exc).__name__}: {exc}\n")
+            except OSError:
+                pass
 
 
 @usage_app.command("ingest-transcript")

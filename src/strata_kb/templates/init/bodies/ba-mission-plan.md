@@ -376,8 +376,9 @@ Step 5c (Repos per story) never runs in auto mode, because an auto run only sett
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of four forms:
 
 - `AUTO-RESULT: done` — the blockers are settled, the PR is merged, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which does not wait on Dev questions.
+- `AUTO-RESULT: blocked-review <pr-url>` — the merge was refused for want of an approving review (the merging step reports it); a human reviews and merges the PR. Write no text after it.
 - `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `mission-lint <mission-id>` when `kb_mission_lint` will not reach `DoR: PASS`, or `no-blocker <mission-id>` when `kb mission next --json` names no blocker for this mission and no merged `auto/<mission-id>` PR exists. The reason goes on the same line.

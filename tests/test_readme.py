@@ -455,17 +455,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_35_0_everywhere():
+def test_version_is_1_36_0_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.35.0"
+    assert project["project"]["version"] == "1.36.0"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.35.0"]
+    assert [p["version"] for p in own] == ["1.36.0"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.35.0 — 2026-11-05")
+    assert first.startswith("1.36.0 — 2026-11-10")
 
 
 def test_docs_describe_structural_coverage():
@@ -563,7 +563,7 @@ def test_docs_describe_full_auto_mode():
         guide = _doc(f"guide-{g}.en.md")
         for phrase in (
             "branch protection on `main`",
-            "include administrators",
+            "Merge policy",
             "required status check",
             "AUTO-RESULT: done",
             "`failed command-denied <command>`",
@@ -606,3 +606,24 @@ def test_child_guides_document_the_l3_ai_fix():
         assert "_l3fix.yaml" in flat, lang
         assert "kb l3 lint" in flat, lang
         assert "kb l3 fix on" in flat, lang
+
+
+GUIDES = [f"guide-{k}.{lang}.md" for k in ("ba", "dev") for lang in ("en", "vi")]
+
+
+def test_guides_quote_the_kb_auto_on_warning():
+    from strata_kb.autorun.switch import ADMIN_WARNING
+
+    for name in GUIDES:
+        assert ADMIN_WARNING in _normalised(_doc(name)), name
+
+
+def test_guides_have_the_merge_policy_heading_the_refusals_point_to():
+    from strata_kb.autorun.ghpolicy import _Guard
+
+    for name in GUIDES:
+        kind = "ba" if "-ba." in name else "dev"
+        tail = _Guard(kind).tail
+        guide = "BA" if kind == "ba" else "Dev"
+        title = re.search(r'see "([^"]+)" in the ' + guide, tail).group(1)
+        assert f"### {title} " in _doc(name), name

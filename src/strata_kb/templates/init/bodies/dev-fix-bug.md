@@ -330,9 +330,10 @@ Ask one decision per question: two decisions are two questions. Name no internal
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of four forms:
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of five forms:
 
 - `AUTO-RESULT: done` — the PR is merged and `kb publish` has run, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — a BA question blocks the fix: the bug did not reproduce, or a pinned citation is broken. The runner re-runs this task once the questions are answered.
+- `AUTO-RESULT: blocked-review <pr-url>` — `/dev-handover` reports the merge was refused for want of an approving review (do not retry it); a human reviews and merges the PR. Write no text after it.
 - `AUTO-RESULT: blocked-split <BUG-id>` — the root cause lies in another repo: the child bug proposal is written and the claim stopped. `<BUG-id>` is this bug's own id: `BUG-7`, or `BUG-7.web` for a child bug that proposes a sibling child on its parent. The runner waits until the BA splits the bug or rejects the split.
 - `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `architecture <BUG-id>`, `qa-unavailable`, `tests-red`, `merged-without-history <pr-url>`, `claim-lost <BUG-id>`, `claim-error <message>`, or `command-denied <command>`. The reason goes on the same line.

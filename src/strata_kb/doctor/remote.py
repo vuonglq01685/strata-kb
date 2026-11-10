@@ -259,6 +259,7 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
         check_usage_hooks,
         check_usage_log,
         local_issues,
+        policy_issues,
     )
     from strata_kb.doctor.checks.dev import lag_issues
 
@@ -275,6 +276,7 @@ def run(kb_dir: Path, facts: dict[str, Any], hub_label: str) -> DoctorResult:
     repo_id = repo_id_for(kb_dir)
     issues += version_issues(_git_root(kb_dir), facts.get("hub_version"))
     if kind in ("ba", "dev"):
+        issues += policy_issues(kb_dir, kind)
         issues += check_usage_log(kb_dir)
         issues += check_usage_hooks(kb_dir.resolve().parent)
 

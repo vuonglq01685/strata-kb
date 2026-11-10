@@ -132,3 +132,25 @@ def test_log_dir_is_created(tmp_path):
     path = log_dir(tmp_path)
 
     assert path == tmp_path / "auto" / "logs" and path.is_dir()
+
+
+def test_old_state_loads_without_waiting_review(tmp_path):
+    (tmp_path / "auto").mkdir()
+    (tmp_path / "auto" / "state.json").write_text(json.dumps(GOOD), encoding="utf-8")
+    assert load(tmp_path).waiting_review == ()
+
+
+def test_waiting_review_roundtrip(tmp_path):
+    entry = "a:b https://github.com/o/r/pull/1"
+    save(tmp_path, AutoState(None, 0, (), None, "", waiting_review=(entry,)))
+    assert load(tmp_path).waiting_review == (entry,)
+
+
+def test_waiting_review_must_be_strings(tmp_path, caplog):
+    (tmp_path / "auto").mkdir()
+    (tmp_path / "auto" / "state.json").write_text(
+        json.dumps({**GOOD, "waiting_review": [1]}), encoding="utf-8"
+    )
+    with caplog.at_level(logging.WARNING):
+        assert load(tmp_path) == EMPTY
+    assert "state.json" in caplog.text

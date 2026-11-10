@@ -65,6 +65,22 @@ def test_published_ba_repo_is_clean_over_mcp_then_drift_warns(git_kb, hub_worktr
     ) in _msgs(result)
 
 
+@pytest.mark.parametrize(("enabled", "level"), [(True, "error"), (False, "warning")])
+def test_policy_refusals_are_reported_over_mcp(
+    git_kb, hub_worktree, monkeypatch, enabled, level
+):
+    kb = _published_ba(git_kb, hub_worktree)
+    (kb / "config.yaml").write_text(
+        f"kind: ba\nrepo_id: demo-kb\nauto:\n  enabled: {str(enabled).lower()}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "strata_kb.doctor.ghpolicy.refusals", lambda root, kind: ["no CODEOWNERS"]
+    )
+    result = remote.run(kb, _facts(hub_worktree, kb, "ba"), "http://hub")
+    assert (level, "no CODEOWNERS") in _msgs(result)
+
+
 def test_unpublished_repo_warns_over_mcp(git_kb, hub_worktree):
     kb = git_kb["kb"]
     (kb / "config.yaml").write_text("kind: ba\nrepo_id: ghost-kb\n", encoding="utf-8")

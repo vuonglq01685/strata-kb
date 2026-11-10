@@ -2400,19 +2400,24 @@ def test_settings_json_is_scaffolded_for_ba_and_dev(tmp_path: Path):
         )
         # Stop ingests the main transcript (and sweeps subagents, holding
         # back each one's last call); SubagentStop stores that last call.
+        usage = ["kb usage ingest-transcript --hook-stdin"]
+        expected = {
+            "Stop": usage + ["kb guard stop --hook-stdin || true"],
+            "SubagentStop": usage,
+        }
         for event in ("Stop", "SubagentStop"):
             commands = [
                 hook["command"]
                 for group in settings["hooks"][event]
                 for hook in group["hooks"]
             ]
-            assert commands == ["kb usage ingest-transcript --hook-stdin"], (
+            assert commands == expected[event], (
                 kind,
                 event,
             )
         # Same command, timeout and status message: the two events differ
-        # only in which payload they send.
-        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"], kind
+        # only in which payload they send (Stop also carries the result guard).
+        assert settings["hooks"]["SubagentStop"] == settings["hooks"]["Stop"][:1], kind
 
 
 def test_settings_json_is_not_scaffolded_for_hub_or_child(tmp_path: Path):
@@ -3590,3 +3595,52 @@ def test_parent_bug_template_change_log_affected_is_child_ids():
     text = initcmd.read_template("parent-bug-template.md")
     assert "Affected is the child ids" in text
     assert "Affected is section names" not in text
+
+
+# --- CODEOWNERS: created once, never refreshed -------------------------------
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_init_scaffolds_codeowners(tmp_path: Path, kind: str):
+    initcmd.init_repo(tmp_path, kind)
+    text = (tmp_path / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    assert initcmd.CODEOWNERS_PLACEHOLDER == "@OWNER"
+    assert initcmd.CODEOWNERS_PLACEHOLDER in text
+    assert "/.github/workflows/" in text
+
+
+def test_init_codeowners_covers_kind_specific_paths(tmp_path: Path):
+    initcmd.init_repo(tmp_path / "ba", "ba")
+    initcmd.init_repo(tmp_path / "dev", "dev")
+    ba = (tmp_path / "ba" / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    dev = (tmp_path / "dev" / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    for p in ("/docs/review-rubric.md", "/docs/review-rubric.local.md"):
+        assert p in ba
+    for p in (
+        "/docs/pr-review-rubric.md",
+        "/docs/pr-review-rubric.local.md",
+        "/docs/tdd-exemptions.md",
+    ):
+        assert p in dev
+
+
+@pytest.mark.parametrize("kind", ["ba", "dev"])
+def test_reinit_never_refreshes_codeowners(tmp_path: Path, kind: str):
+    initcmd.init_repo(tmp_path, kind)
+    co = tmp_path / ".github" / "CODEOWNERS"
+    co.write_text("* @me\n", encoding="utf-8")
+
+    report = initcmd.init_repo(tmp_path, kind)
+
+    assert co.read_text(encoding="utf-8") == "* @me\n"
+    assert any(e.startswith(".github/CODEOWNERS") for e in report.skipped)
+
+
+@pytest.mark.parametrize("name", ["codeowners-ba", "codeowners-dev"])
+def test_codeowners_template_placeholder_only_on_rule_lines(name: str):
+    lines = initcmd.read_template(name).splitlines()
+    for ln in (x for x in lines if x.startswith("#")):
+        assert initcmd.CODEOWNERS_PLACEHOLDER not in ln
+    rules = [x for x in lines if x.strip() and not x.startswith("#")]
+    assert rules
+    assert all(initcmd.CODEOWNERS_PLACEHOLDER in x for x in rules)

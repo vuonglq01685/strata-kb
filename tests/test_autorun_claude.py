@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from strata_kb.autorun.claude import TaskResult, parse_result, prompt_for, run_task
+from strata_kb.autorun.claude import (
+    RESULT_FORMS,
+    TaskResult,
+    parse_result,
+    prompt_for,
+    run_task,
+)
 from tests.cli_stub import write_cli_stub
 
 FAKE = Path(__file__).with_name("fake_claude.py")
@@ -68,6 +74,30 @@ def test_parse_blocked_split_bad_id_is_failed(line):
     result = parse_result(line)
     assert result.kind == "failed"
     assert result.reason.startswith("bad result line")
+
+
+def test_parse_blocked_review():
+    url = "https://github.com/o/r/pull/12"
+    assert parse_result(f"AUTO-RESULT: blocked-review {url}") == TaskResult(
+        "blocked-review", (url,)
+    )
+
+
+@pytest.mark.parametrize(
+    "rest", ["soon", "", "https://github.com/o/r/issues/12", "https://h/pull/1 x"]
+)
+def test_parse_blocked_review_bad_url(rest):
+    result = parse_result(f"AUTO-RESULT: blocked-review {rest}".strip())
+    assert result.kind == "failed"
+    assert result.reason.startswith("bad result line")
+
+
+def test_prompt_lists_five_forms():
+    prompt = prompt_for("x", "", "dev")
+    assert "one of these five forms" in prompt
+    assert len(RESULT_FORMS) == 5
+    for form in RESULT_FORMS:
+        assert form in prompt
 
 
 def test_missing_line_is_failed():
@@ -270,3 +300,42 @@ def test_missing_executable_is_failed(tmp_path):
 def test_parse_ticket_revised_is_failed_with_reason():
     result = parse_result("AUTO-RESULT: failed ticket-revised US3")
     assert (result.kind, result.reason) == ("failed", "ticket-revised US3")
+
+
+def test_meta_kept_from_envelope(fake_claude, tmp_path):
+    fake_claude.script(
+        {
+            "type": "result",
+            "result": "x\nAUTO-RESULT: done",
+            "session_id": "s1",
+            "total_cost_usd": 0.5,
+            "num_turns": 7,
+            "duration_ms": 1200,
+        }
+    )
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
+    assert result.meta["session_id"] == "s1"
+    assert result.meta["total_cost_usd"] == 0.5
+    assert result.meta["num_turns"] == 7
+    assert Path(str(result.meta["log"])).exists()
+
+
+def test_meta_missing_fields_are_none(fake_claude, tmp_path):
+    fake_claude.script("fine\nAUTO-RESULT: done")
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs")
+    assert result.kind == "done"
+    assert result.meta["session_id"] is None
+
+
+def test_timeout_meta_has_log(tmp_path, monkeypatch):
+    import subprocess
+
+    from strata_kb.autorun import claude
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("claude", 5)
+
+    monkeypatch.setattr(claude.subprocess, "run", boom)
+    result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs", timeout=5)
+    assert Path(str(result.meta["log"])).exists()
+    assert result.meta["session_id"] is None

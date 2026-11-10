@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -207,3 +208,21 @@ def test_run_raises_on_timeout(tmp_path):
     runner = llm.Runner("claude", str(exe), "sonnet-5", "high", 1)
     with pytest.raises(llm.RunnerError):
         runner.run("prompt")
+
+
+@pytest.mark.parametrize("effort", ["high", "low"])
+def test_llm_runner_drops_auto_task_env(monkeypatch, effort):
+    monkeypatch.setenv("STRATA_KB_AUTO_TASK", "1")
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["auto_task"] = (kw.get("env") or os.environ).get("STRATA_KB_AUTO_TASK")
+
+        class P:
+            returncode, stdout, stderr = 0, '{"type": "result", "result": "ok"}', ""
+
+        return P()
+
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    llm.Runner("claude", "x", "m", effort, 1).run("p")
+    assert seen["auto_task"] is None

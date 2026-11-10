@@ -12,8 +12,8 @@ import logging
 import threading
 from pathlib import Path
 
-from strata_kb import gitio
-from strata_kb.autorun import claude
+from strata_kb import ghrest, gitio
+from strata_kb.autorun import claude, runlog
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.qa import QaClient
 from strata_kb.errors import KbError
@@ -59,6 +59,8 @@ class QaThread:
         self._failures = 0  # consecutive answers that did not end `done`
         self._stop_reason = ""
         self._parked: set[str] = set()  # tickets whose answer stopped on dor-unticked
+        self._review_prs: dict[str, str] = {}  # parked ticket -> PR awaiting review
+        self._wait_logged: set[str] = set()  # PR urls whose open wait is logged
 
     @property
     def worktree(self) -> Path:
@@ -84,6 +86,12 @@ class QaThread:
     def parked(self) -> frozenset[str]:
         with self._lock:
             return frozenset(self._parked)
+
+    @property
+    def review_prs(self) -> dict[str, str]:
+        """Parked tickets whose PR waits for a human review, by PR url."""
+        with self._lock:
+            return dict(self._review_prs)
 
     def only_parked_left(self) -> bool:
         """True when every open question is on a parked ticket (and there is one).
@@ -129,6 +137,8 @@ class QaThread:
         if self._skip_ticks:
             self._skip_ticks -= 1
             return False
+        if self._review_pending():
+            return False
         try:
             ticket = _next_ticket(self._qa.list("open", repo=self._repo), self.parked)
             if ticket is None:
@@ -142,6 +152,32 @@ class QaThread:
         )
         self._proc_thread.start()
         return True
+
+    def _review_pending(self) -> bool:
+        """True while a review-parked PR is open (or unreadable): another answer
+        would branch off `auto/qa` and could merge the unreviewed change. A merged
+        or closed PR is forgotten and its ticket unparked."""
+        with self._lock:
+            prs = dict(self._review_prs)
+        pending = False
+        for ticket, url in prs.items():
+            try:
+                state = ghrest.view_pr(self._root, url.rpartition("/pull/")[2])["state"]
+            except (KbError, KeyError, TypeError) as exc:
+                logger.warning("review PR %s of %s not read: %s", url, ticket, exc)
+                pending = True
+                continue
+            if state in ("MERGED", "CLOSED"):
+                with self._lock:
+                    self._review_prs.pop(ticket, None)
+                    self._parked.discard(ticket)
+                self._wait_logged.discard(url)
+            else:
+                pending = True
+                if url not in self._wait_logged:
+                    self._wait_logged.add(url)
+                    logger.info("Q&A waiting for review of %s: %s", ticket, url)
+        return pending
 
     def _fresh_worktree(self) -> None:
         """Recreate the worktree on `auto/qa` from the default branch as the
@@ -173,9 +209,11 @@ class QaThread:
         logger.warning("Q&A parked %s; draft on %s", ticket, branch)
 
     def _answer(self, ticket: str) -> None:
+        wt = self.worktree
+        started_at, head_before = runlog.stamp(), runlog.head(wt)
         try:
             result = self._run_task(
-                self.worktree,
+                wt,
                 claude.prompt_for(SKILL, ticket, "ba"),
                 log_dir=autostate.log_dir(self._kb_dir),
             )
@@ -183,8 +221,28 @@ class QaThread:
             logger.warning("Q&A answer crashed: %s", exc)
             self._record(False, f"answer crashed: {exc}")
             return
+        runlog.append(
+            self._kb_dir,
+            skill=SKILL,
+            arg=ticket,
+            attempt=0,
+            result=result,
+            started_at=started_at,
+            ended_at=runlog.stamp(),
+            head_before=head_before,
+            head_after=runlog.head(wt),
+        )
         if result.kind == "done":
             logger.info("Q&A answer done")
+            self._record(True)
+            return
+        if result.kind == "blocked-review":
+            # The PR already holds the work: park without a draft branch.
+            pr = str(result.ids[0])
+            logger.warning("Q&A answer for %s waits for a human review: %s", ticket, pr)
+            with self._lock:
+                self._parked.add(ticket)
+                self._review_prs[ticket] = pr
             self._record(True)
             return
         logger.warning("Q&A answer %s: %s", result.kind, result.reason)

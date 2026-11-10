@@ -16,6 +16,7 @@ from strata_kb.initcmd import (
 )
 
 USAGE_CMD = "kb usage ingest-transcript --hook-stdin"
+GUARD_CMD = "kb guard stop --hook-stdin || true"
 
 
 def _settings(target: Path) -> dict:
@@ -38,8 +39,8 @@ def test_fresh_repo_gets_allow_deny_and_usage_hooks(tmp_path: Path, kind: str):
     assert "mcp__strata-kb__*" in settings["permissions"]["allow"]
     assert "Bash(git push *main*)" in settings["permissions"]["deny"]
     assert "Edit(.claude/settings.json)" in settings["permissions"]["deny"]
-    for event in ("Stop", "SubagentStop"):
-        assert _commands(settings, event) == [USAGE_CMD]
+    assert _commands(settings, "Stop") == [USAGE_CMD, GUARD_CMD]
+    assert _commands(settings, "SubagentStop") == [USAGE_CMD]
 
 
 @pytest.mark.parametrize("kind", ["ba", "dev"])
@@ -81,7 +82,7 @@ def test_hooks_are_not_duplicated_on_a_second_init(tmp_path: Path):
 
     assert (tmp_path / ".claude" / "settings.json").read_text("utf-8") == first
     assert ".claude/settings.json" in report.skipped
-    assert _commands(_settings(tmp_path), "Stop") == [USAGE_CMD]
+    assert _commands(_settings(tmp_path), "Stop") == [USAGE_CMD, GUARD_CMD]
 
 
 def test_existing_other_hook_is_kept_and_usage_hook_added(tmp_path: Path):
@@ -92,7 +93,20 @@ def test_existing_other_hook_is_kept_and_usage_hook_added(tmp_path: Path):
 
     init_repo(tmp_path, "ba")
 
-    assert _commands(_settings(tmp_path), "Stop") == ["echo mine", USAGE_CMD]
+    assert _commands(_settings(tmp_path), "Stop") == ["echo mine", USAGE_CMD, GUARD_CMD]
+
+
+def test_guard_hook_reaches_existing_settings(tmp_path: Path):
+    path = tmp_path / ".claude" / "settings.json"
+    path.parent.mkdir(parents=True)
+    usage = {"hooks": [{"type": "command", "command": USAGE_CMD}]}
+    path.write_text(json.dumps({"hooks": {"Stop": [usage]}}), encoding="utf-8")
+
+    init_repo(tmp_path, "dev")
+
+    stop = _settings(tmp_path)["hooks"]["Stop"]
+    assert len(stop) == 2
+    assert _commands(_settings(tmp_path), "Stop") == [USAGE_CMD, GUARD_CMD]
 
 
 def test_invalid_json_is_left_alone_with_a_note(tmp_path: Path):
@@ -292,6 +306,8 @@ ALLOW = [
     "Bash(kb status*)",
     "Bash(kb diff *)",
     "Bash(kb plan-ingest*)",
+    "Bash(kb get *)",
+    "Bash(mkdir -p docs/impl/*)",
 ]
 DENY = [
     "Bash(git push *main*)",
@@ -330,6 +346,9 @@ DENY = [
     "Bash(gh repo delete *)",
     "Bash(gh run delete*)",
     "Bash(kb init*)",
+    "Bash(kb upgrade*)",
+    "Bash(gh pr merge*--admin*)",
+    "Bash(kb pr merge*--admin*)",
     "Bash(rm -rf /*)",
     "Edit(.claude/settings.json)",
     "Edit(.claude/settings.local.json)",

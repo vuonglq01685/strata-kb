@@ -130,13 +130,14 @@ The runner starts this skill as `/dev-test-workflow` when no workflow in `.githu
 1. Commit the workflow (stage it by name) with a message `<type>: <description>`, then `git push -u origin HEAD`.
 2. Open the PR with `kb pr open --title "ci: add the kb-test workflow" --body "<the description from the Branch and PR step>"`. Run `kb pr lint` on the body first when you can, so `kb-pr-lint` starts green.
 3. Wait for the checks with `kb pr checks --watch`. The jobs of the test workflow (`kb-test.yml`, or the workflow carrying the `# kb-test:` marker) must be among them, and green. If a check is red, read the failure (`gh run view --log-failed`), fix the workflow, commit, `git push origin HEAD`, and watch again: up to 2 rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
-4. Every check green: `kb pr merge --squash --delete-branch`. Only when the merge is refused for want of an approving review you cannot give, use `kb pr merge --squash --admin --delete-branch` instead, and only after every required check is green. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
+4. Every check green: `kb pr merge --squash --delete-branch`. When the merge is refused for want of an approving review, do not retry: end `AUTO-RESULT: blocked-review <pr-url>`; a human reviews it. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
 5. The workflow lives outside `.kb/`, so there is nothing to `kb publish`.
 
 ### Result line
 
-End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of three forms:
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. The `## Next step` block comes first. It has one of four forms:
 
 - `AUTO-RESULT: done` — the workflow is merged and its check was green on its own PR, or the work was already finished. Write no text after `done`; always give a reason after `failed`.
 - `AUTO-RESULT: blocked-qa Q<id>[,Q<id>...]` — never ends this skill, which asks the BA nothing.
+- `AUTO-RESULT: blocked-review <pr-url>` — the merge needs an approving review the agent may not give; a human reviews and merges the PR. Write no text after it.
 - `AUTO-RESULT: failed <reason>` — anything else: `ci-red <pr-url>` after 2 fix rounds, `tests-red <the failing test names>`, `no-tests`, or `command-denied <command>`. The reason goes on the same line.

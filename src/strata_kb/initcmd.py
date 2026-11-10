@@ -165,10 +165,16 @@ BA_TEMPLATES: dict[str, str] = {
 # BASE rubric at whatever version first scaffolded a repo). Same contract
 # `conventions.scaffold_conventions` gives the dev side's
 # `docs/conventions/<lang>.local.md`.
+CODEOWNERS_PATH = ".github/CODEOWNERS"
+
 BA_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/review-rubric.local.md": "review-rubric-local-stub.md",
     "docs/ac-quality.local.md": "ac-quality-local-stub.md",
+    CODEOWNERS_PATH: "codeowners-ba",
 }
+
+# Owner token in the scaffolded .github/CODEOWNERS; the user replaces it.
+CODEOWNERS_PLACEHOLDER = "@OWNER"
 
 
 # A template whose last line is this directive is a stub: its own frontmatter
@@ -196,14 +202,20 @@ def _init_template_text(name: str) -> str:
 def _scaffold_local_overrides(
     target: Path, report: InitReport, overrides: dict[str, str]
 ) -> None:
-    """Create each `.local.md` override once, then never touch it again.
+    """Create each create-once file (`.local.md` overrides, CODEOWNERS) once,
+    then never touch it again.
     The base file it overrides stays package-owned and keeps being
     refreshed, so a repo receives improved criteria on upgrade without
     losing the local overrides it wrote."""
     for rel, resource_name in overrides.items():
         dest = target / rel
         if dest.exists():
-            report.skipped.append(f"{rel} (local overrides — never refreshed)")
+            label = (
+                "created once — never refreshed"
+                if rel == CODEOWNERS_PATH
+                else "local overrides — never refreshed"
+            )
+            report.skipped.append(f"{rel} ({label})")
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
@@ -213,7 +225,7 @@ def _scaffold_local_overrides(
 
 
 def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
-    """Create the BA repo's `.local.md` override files."""
+    """Create the BA repo's create-once files (`.local.md` overrides, CODEOWNERS)."""
     _scaffold_local_overrides(target, report, BA_LOCAL_OVERRIDES)
 
 
@@ -223,11 +235,12 @@ def scaffold_ba_local_overrides(target: Path, report: InitReport) -> None:
 # without losing the stack-specific ones it wrote.
 DEV_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/pr-review-rubric.local.md": "pr-review-rubric-local-stub.md",
+    CODEOWNERS_PATH: "codeowners-dev",
 }
 
 
 def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
-    """Create the dev repo's `.local.md` override."""
+    """Create the dev repo's create-once files (`.local.md` override, CODEOWNERS)."""
     _scaffold_local_overrides(target, report, DEV_LOCAL_OVERRIDES)
 
 
