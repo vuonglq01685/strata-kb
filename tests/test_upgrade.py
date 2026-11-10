@@ -145,3 +145,52 @@ def test_upgrade_failure_returns_to_original_branch(repo, run_git):
         upgrade(repo, opener=boom)
     assert gitio.current_branch(repo) == base
     assert BRANCH in run_git(repo, "branch")
+
+
+def test_upgrade_gitignored_change_is_no_change(repo, run_git):
+    # a scaffolded path the repo ignores: init recreates it, commit has nothing
+    (repo / ".gitignore").write_text(
+        (repo / ".gitignore").read_text(encoding="utf-8") + "\n.github/prompts/\n",
+        encoding="utf-8",
+    )
+    run_git(repo, "rm", "-r", "-q", "--cached", ".github/prompts")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "ignore prompts")
+    import shutil
+
+    shutil.rmtree(repo / ".github" / "prompts")
+    before = gitio.current_branch(repo)
+    result = upgrade(repo, open_pr=False)
+    assert result.branch is None
+    assert gitio.current_branch(repo) == before
+    assert BRANCH not in run_git(repo, "branch")
+
+
+def test_upgrade_refuses_detached_head(repo, run_git):
+    run_git(repo, "checkout", "-q", "--detach")
+    with pytest.raises(KbError, match="detached"):
+        upgrade(repo, open_pr=False)
+
+
+def test_upgrade_pr_failure_names_next_step(repo, run_git):
+    _stale(repo, run_git)
+
+    def boom(*_a, **_k):
+        raise KbError("gh down")
+
+    with pytest.raises(KbError, match="kb pr open --head"):
+        upgrade(repo, opener=boom)
+
+
+def test_cli_upgrade_current_and_no_pr(repo, run_git, monkeypatch):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    monkeypatch.chdir(repo)
+    out = CliRunner().invoke(app, ["upgrade", "--no-pr"])
+    assert out.exit_code == 0 and "already current" in out.output
+    _stale(repo, run_git)
+    out = CliRunner().invoke(app, ["upgrade", "--no-pr"])
+    assert out.exit_code == 0 and "no PR opened" in out.output
+    assert gitio.current_branch(repo) == BRANCH

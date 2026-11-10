@@ -41,7 +41,12 @@ def _check_preconditions(root: Path, branch: str) -> str:
         raise KbError("kb upgrade is for humans — it is not allowed in an auto task")
     kind = load_config(root / ".kb").kind
     if kind not in (KIND_BA, KIND_DEV):
-        raise KbError(f"kb upgrade supports ba or dev repos only (this repo: {kind})")
+        raise KbError(
+            "kb upgrade supports ba or dev repos only "
+            f"(this repo: {kind or 'no kind recorded'})"
+        )
+    if gitio.current_branch(root) == "HEAD":
+        raise KbError("detached HEAD — check out a branch, then re-run")
     if gitio.is_dirty(root, root):
         raise KbError("uncommitted changes — commit or stash them, then re-run")
     if gitio.rev_exists(root, f"refs/heads/{branch}") or (
@@ -64,23 +69,34 @@ def upgrade(
     base = gitio.default_branch(root)
     start = base if gitio.rev_exists(root, f"refs/heads/{base}") else f"origin/{base}"
     gitio.checkout_branch(root, branch, start)
+    pushed = False
     try:
         # init_repo unions the langs recorded in .kb/config.yaml itself
         report = init_repo(root, kind)
-        if not report.created and not report.updated and not gitio.is_dirty(root, root):
+        title = f"chore: kb upgrade to {__version__}"
+        # An empty commit (changes only in gitignored paths) is "no change" too.
+        if (
+            not report.created and not report.updated and not gitio.is_dirty(root, root)
+        ) or not gitio.commit_all(root, title):
             gitio.checkout(root, original)
             gitio.delete_branch(root, branch)
             return UpgradeResult(None, report, None)
-        title = f"chore: kb upgrade to {__version__}"
-        gitio.commit_all(root, title)
         if not open_pr:
             return UpgradeResult(branch, report, None)
         gitio.push_branch(root, branch, force=False)
+        pushed = True
         url = opener(root, title, _pr_body(report), head=branch, base=base).get("url")
         gitio.checkout(root, original)
         return UpgradeResult(branch, report, url)
     except Exception as exc:
-        gitio.checkout(root, original)
-        raise KbError(
-            f"kb upgrade failed: {exc} — local branch {branch} was kept for you"
-        ) from exc
+        msg = f"kb upgrade failed: {exc} — local branch {branch} was kept for you"
+        if pushed:
+            msg += (
+                f"; it was pushed too: open the PR with `kb pr open --head {branch}` "
+                "or delete the remote branch before re-running"
+            )
+        try:
+            gitio.checkout(root, original)
+        except Exception as restore_exc:  # noqa: BLE001 -- keep the first failure visible
+            msg += f"; also could not return to {original}: {restore_exc}"
+        raise KbError(msg) from exc
