@@ -514,7 +514,7 @@ def _remember_branch(root: Path) -> str | None:
     try:
         branch = gitio.current_branch(root)
         return gitio.head_commit(root) if branch == "HEAD" else branch
-    except gitio.GitError:
+    except (gitio.GitError, OSError):
         return None
 
 
@@ -633,14 +633,13 @@ def run_once(
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
     # read before the heartbeat thread starts: an OSError here must not leak it
     started_at, head_before = runlog.stamp(), runlog.head(root)
+    started, ref = now(), _remember_branch(root)  # before the beat thread starts
     beat = None
     if claims is not None and ticket:
         if not claims.begin(ticket):
             return _claim_lost(kb_dir, state, claims, ticket)
         beat = ClaimBeat(claims, cfg.auto.claim_heartbeat)
         beat.start(ticket)
-    started = now()
-    ref = _remember_branch(root)
     head_after = None
     try:
         try:

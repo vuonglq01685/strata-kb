@@ -1707,3 +1707,16 @@ def test_run_once_beat_stops_when_head_read_raises(cenv, monkeypatch):
     with pytest.raises(OSError):
         once(cenv, Script(TaskResult("done")), claims=FakeClaims())
     assert FakeBeat.events == []  # the heartbeat thread never started
+
+
+def test_run_once_beat_stops_when_branch_read_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+
+    def boom(root):
+        raise OSError("x")
+
+    monkeypatch.setattr(runner_mod.gitio, "current_branch", boom)
+    script = Script(TaskResult("done"))
+    assert once(cenv, script, claims=FakeClaims()) == "ran"
+    assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
+    assert len(script.prompts) == 1  # an unknown branch does not stop the task
