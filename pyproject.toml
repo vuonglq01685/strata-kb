@@ -165,4 +165,5 @@ typeCheckingMode = "basic"
 testpaths = ["tests"]
 markers = [
     "real_embedder: test uses the real default_embedder (fastembed) — skipped by the autouse fixture",
+    "real_ghpolicy: test runs the real ghpolicy.refusals — skips the autouse stub",
 ]

@@ -74,6 +74,17 @@ def _no_publish_check(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_gh_policy_check(request, monkeypatch):
+    """Preflight and doctor call `gh` for the merge-policy check; tests stay
+    hermetic. Mark a test `real_ghpolicy` to run the real function."""
+    if request.node.get_closest_marker("real_ghpolicy"):
+        return
+    from strata_kb.autorun import ghpolicy
+
+    monkeypatch.setattr(ghpolicy, "refusals", lambda *a, **k: [])
+
+
+@pytest.fixture(autouse=True)
 def _no_real_embedder(request, monkeypatch):
     """search() now resolves default_embedder() eagerly on every query — unit tests
     must be hermetic: a dev machine with fastembed must not load/download the real

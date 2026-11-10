@@ -466,6 +466,28 @@ def test_preflight_names_each_refusal(env, monkeypatch, text, needle):
 
 
 @pytest.mark.usefixtures("no_switch_check")
+def test_preflight_includes_policy_refusals(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    seen = []
+    monkeypatch.setattr(
+        runner_mod.ghpolicy,
+        "refusals",
+        lambda r, kind: seen.append((r, kind)) or ["no code-owner review"],
+    )
+    _write_config(kb_dir, GOOD)
+    assert preflight(root, kb_dir) == ["no code-owner review"]
+    assert seen == [(root, "dev")]
+
+
+@pytest.mark.usefixtures("no_switch_check")
 def test_preflight_reports_unreachable_hub(env, monkeypatch):
     root, kb_dir, _, _ = env
     monkeypatch.setattr(

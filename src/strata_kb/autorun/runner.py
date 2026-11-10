@@ -16,7 +16,7 @@ from typing import Literal, cast
 import yaml
 
 from strata_kb import claimclient, cloud, ghrest, gitio, hubapi
-from strata_kb.autorun import claude, picker, publishwatch, runlog
+from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
 from strata_kb.autorun.claimbeat import ClaimBeat
@@ -127,7 +127,10 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             f"the hub registry entry for '{cfg.repo_id}' lacks `auto_merge: true`, "
             "so intake would not merge its publish PRs"
         )
-    return reasons + _old_hub_refusal(cfg)
+    reasons += _old_hub_refusal(cfg)
+    if cfg.kind in ("ba", "dev"):
+        reasons += ghpolicy.refusals(root, cfg.kind)
+    return reasons
 
 
 def _registry_facts(kb_dir: Path, cfg: KBConfig, hub: str) -> tuple[bool, bool, str]:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from strata_kb import config as config_mod
 from strata_kb import gitio
+from strata_kb.autorun import ghpolicy
 from strata_kb.doctor.checks.assets import (  # noqa: F401 -- re-exported
     ASSET_SIZE_WARN_BYTES,
     check_asset_store,
@@ -124,6 +125,10 @@ def run(
             repo_id = None
 
     if cfg_kind in ("ba", "dev"):
+        issues += [
+            Issue("error", text)
+            for text in ghpolicy.refusals(kb_dir.resolve().parent, cfg_kind)
+        ]
         issues += check_usage_log(kb_dir)
         issues += check_usage_hooks(kb_dir.resolve().parent)
     if cfg_kind == "hub":
