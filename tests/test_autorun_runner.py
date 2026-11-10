@@ -1729,7 +1729,11 @@ def test_merged_parked_ticket_reruns_with_claims_and_ends_publishing(cenv, monke
     assert once(cenv, script, claims=claims) == "ran"
     assert script.prompts[0].startswith("/dev-implement-ticket US1")
     kinds = [c[0] for c in claims.calls if c[0] in ("claim", "begin", "phase")]
-    assert kinds == ["claim", "begin", "phase"]  # claim -> PR-phase begin -> done
+    assert kinds == [
+        "claim",
+        "begin",
+        "phase",
+    ]  # claim -> begin -> _after_task publishing
     assert claims.of("phase") == [("phase", "US1", "publishing")]
     state = autostate.load(cenv[1])
     assert (state.task, state.last_done, state.waiting_review) == (
@@ -1737,3 +1741,21 @@ def test_merged_parked_ticket_reruns_with_claims_and_ends_publishing(cenv, monke
         "dev-implement-ticket:US1",
         (),
     )
+
+
+def test_run_once_beat_stops_when_branch_restore_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    monkeypatch.setattr(runner_mod.gitio, "current_branch", lambda root: "main")
+    calls = []
+
+    def boom(root, ref):
+        calls.append(ref)
+        raise OSError("x")
+
+    monkeypatch.setattr(runner_mod.gitio, "checkout", boom)
+    monkeypatch.setattr(runner_mod, "_remember_branch", lambda root: "other")
+    claims = FakeClaims()
+    assert once(cenv, Script(TaskResult("done")), claims=claims) == "ran"
+    assert calls == ["other"]
+    assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
+    assert claims.of("phase") == [("phase", "US1", "publishing")]

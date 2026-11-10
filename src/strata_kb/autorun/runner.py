@@ -528,7 +528,7 @@ def _restore_branch(root: Path, ref: str | None) -> None:
         if branch == ref or (branch == "HEAD" and gitio.head_commit(root) == ref):
             return
         gitio.checkout(root, ref)
-    except gitio.GitError as exc:
+    except (gitio.GitError, OSError) as exc:
         logger.warning("could not return %s to %s: %s", root, ref, exc)
 
 
@@ -633,7 +633,7 @@ def run_once(
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
     # read before the heartbeat thread starts: an OSError here must not leak it
     started_at, head_before = runlog.stamp(), runlog.head(root)
-    started, ref = now(), _remember_branch(root)  # before the beat thread starts
+    started, ref = now(), _remember_branch(root)
     beat = None
     if claims is not None and ticket:
         if not claims.begin(ticket):
@@ -652,9 +652,9 @@ def run_once(
             result = claude.TaskResult("failed", (), f"runner error: {exc}")
         head_after = runlog.head(root)
     finally:
-        _restore_branch(root, ref)
         if beat is not None:
             beat.stop()
+        _restore_branch(root, ref)
     runlog.append(
         kb_dir,
         skill=task.skill,
