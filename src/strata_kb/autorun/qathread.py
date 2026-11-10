@@ -60,6 +60,7 @@ class QaThread:
         self._stop_reason = ""
         self._parked: set[str] = set()  # tickets whose answer stopped on dor-unticked
         self._review_prs: dict[str, str] = {}  # parked ticket -> PR awaiting review
+        self._wait_logged: set[str] = set()  # PR urls whose open wait is logged
 
     @property
     def worktree(self) -> Path:
@@ -170,8 +171,12 @@ class QaThread:
                 with self._lock:
                     self._review_prs.pop(ticket, None)
                     self._parked.discard(ticket)
+                self._wait_logged.discard(url)
             else:
                 pending = True
+                if url not in self._wait_logged:
+                    self._wait_logged.add(url)
+                    logger.info("Q&A waiting for review of %s: %s", ticket, url)
         return pending
 
     def _fresh_worktree(self) -> None:

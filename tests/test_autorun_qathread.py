@@ -514,3 +514,13 @@ def test_review_pr_unreadable_keeps_waiting(repo, monkeypatch, caplog, bad):
         assert qt.tick() is False
     assert qt.review_prs == {"T-a": PR7} and len(runner.calls) == 1
     assert "not read" in caplog.text
+
+
+def test_open_review_pr_wait_is_logged_once(repo, monkeypatch, caplog):
+    qt, _, _ = _review_parked(repo, monkeypatch, {"state": "OPEN"})
+    with caplog.at_level(logging.INFO):
+        qt.tick()
+        qt.tick()
+    waits = [r for r in caplog.records if "waiting for review" in r.getMessage()]
+    assert len(waits) == 1
+    assert "T-a" in waits[0].getMessage() and PR7 in waits[0].getMessage()
