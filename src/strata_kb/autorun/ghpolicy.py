@@ -124,7 +124,7 @@ def _bypass_why(detail: Any) -> str | None:
 
 
 def _count_rulesets(
-    g: _Guard, api: Callable, root: Path, slug: str, branch: str, rules: Any
+    g: _Guard, api: Callable, root: Path, slug: str, rules: Any, notes: list[str]
 ) -> _Counted:
     """Contexts and code-owner review from rulesets this identity cannot bypass."""
     if not isinstance(rules, list):
@@ -146,40 +146,33 @@ def _count_rulesets(
             continue
         if why:
             name = detail.get("name", rid) if isinstance(detail, dict) else rid
-            g.refuse(
-                f"branch protection on {branch} can be bypassed by this identity "
-                f"(ruleset {name}: {why})"
-            )
+            notes.append(f"ruleset {name}: {why}")
             continue
         contexts |= _ruleset_contexts(group)
         owner = owner or _ruleset_code_owner(group)
     return contexts, owner
 
 
-def _count_classic(g: _Guard, classic: dict, admin: bool, branch: str) -> _Counted:
+def _count_classic(classic: dict, admin: bool, notes: list[str]) -> _Counted:
     """Classic protection counts only for an admin with enforce_admins on and
     no review-bypass allowance; a non-admin cannot read the review settings."""
-    if not classic:
-        return set(), False
     if not admin:
-        g.refuse(
-            f"classic protection on {branch}: code-owner review cannot be "
-            "verified without a ruleset, use a ruleset"
-        )
+        # shortcut: a non-admin sees `protection.enabled`; any enabled classic
+        # protection is unverifiable, so it counts for nothing.
+        if classic.get("enabled"):
+            notes.append("classic protection: cannot be verified without a ruleset")
+        return set(), False
+    if not classic:
         return set(), False
     reviews = classic.get("required_pull_request_reviews") or {}
     allow = reviews.get("bypass_pull_request_allowances") or {}
     if not (classic.get("enforce_admins") or {}).get("enabled"):
-        why = "enforce_admins is off"
+        notes.append("classic protection: enforce_admins is off")
     elif any(allow.get(k) for k in ("users", "teams", "apps")):
-        why = "bypass_pull_request_allowances is not empty"
+        notes.append("classic protection: bypass_pull_request_allowances is not empty")
     else:
         contexts = _classic_contexts(classic.get("required_status_checks") or {})
         return contexts, bool(reviews.get("require_code_owner_reviews"))
-    g.refuse(
-        f"branch protection on {branch} can be bypassed by this identity "
-        f"(classic protection: {why})"
-    )
     return set(), False
 
 
@@ -216,15 +209,20 @@ def refusals(root: Path, kind: str, api: Callable = ghrest.api) -> list[str]:
 
     classic = g(f"the branch protection of {branch}", read_classic)
     if rules is not _FAIL and classic is not _FAIL:
+        notes: list[str] = []
         counted = g(
             f"the rulesets of {branch}",
-            lambda: _count_rulesets(g, api, root, slug, branch, rules),
+            lambda: _count_rulesets(g, api, root, slug, rules, notes),
         )
-        if counted is not _FAIL:
-            classic_counted = _count_classic(g, classic, admin, branch)
-            contexts = counted[0] | classic_counted[0]
-            owner = counted[1] or classic_counted[1]
-            _check_protection(g, api, root, (slug, branch, kind), contexts, owner)
+        by_classic = g(
+            f"the branch protection of {branch}",
+            lambda: _count_classic(classic, admin, notes),
+        )
+        if counted is not _FAIL and by_classic is not _FAIL:
+            contexts = counted[0] | by_classic[0]
+            owner = counted[1] or by_classic[1]
+            where = (slug, branch, kind)
+            _check_protection(g, api, root, where, contexts, owner, notes)
     _check_codeowners(g, api, root, slug, branch)
     return g.out
 
@@ -251,13 +249,20 @@ def _check_protection(
     where: tuple[str, str, str],
     contexts: set[str],
     owner: bool,
+    notes: list[str],
 ) -> None:
     slug, branch, kind = where
+    # What did not count and why, so the owner sees the real cause.
+    why = (
+        f" in protection this identity cannot bypass ({'; '.join(notes)})"
+        if notes
+        else ""
+    )
     for job in _required_jobs(g, api, root, slug, branch, kind):
         if not _is_required(job, contexts):
-            g.refuse(f"required check '{job}' is not required on {branch}")
+            g.refuse(f"required check '{job}' is not required on {branch}{why}")
     if not owner:
-        g.refuse(f"code-owner review is not required on {branch}")
+        g.refuse(f"code-owner review is not required on {branch}{why}")
 
 
 def _check_codeowners(

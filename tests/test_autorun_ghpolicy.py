@@ -46,9 +46,16 @@ def _routes(admin=False, rules=None, protection=None, **extra) -> dict:
         f"repos/{SLUG}/contents/.github/CODEOWNERS?ref={B}": _file(CODEOWNERS),
         f"repos/{SLUG}/rulesets/7": {"bypass_actors": []},
     }
-    if protection is not None:
-        key = f"repos/{SLUG}/branches/{B}" + ("/protection" if admin else "")
-        r[key] = protection if admin else {"protection": protection}
+    if not admin:  # the real body: 200 for every branch, `protection` always there
+        body = {
+            "enabled": False,
+            "required_status_checks": {"contexts": [], "checks": []},
+        }
+        if protection is not None:
+            body = {"enabled": True, **protection}
+        r[f"repos/{SLUG}/branches/{B}"] = {"name": B, "protection": body}
+    elif protection is not None:
+        r[f"repos/{SLUG}/branches/{B}/protection"] = protection
     r.update(extra)
     return r
 
@@ -93,7 +100,7 @@ def test_admin_with_bypass_actor_refused():
         admin=True, **{f"repos/{SLUG}/rulesets/7": {"bypass_actors": [{"actor_id": 5}]}}
     )
     out = _run(routes)
-    assert any("can be bypassed by this identity (ruleset 7" in m for m in out)
+    assert any("ruleset 7: bypass_actors is not empty" in m for m in out)
     assert all('see "Merge policy" in the BA guide' in m for m in out)
 
 
@@ -171,7 +178,9 @@ def test_admin_classic_review_bypass_allowance_refused():
 def test_nonadmin_classic_only_says_use_a_ruleset():
     prot = {"required_status_checks": {"contexts": ["lint"]}}
     out = _run(_routes(rules=[], protection=prot))
-    assert any("cannot be verified without a ruleset, use a ruleset" in m for m in out)
+    assert any(
+        "classic protection: cannot be verified without a ruleset" in m for m in out
+    )
 
 
 def test_missing_required_job_refused():
@@ -269,3 +278,56 @@ def test_unexpected_shapes_are_refusals_not_crashes(overrides, kind, needle):
     routes = _routes(rules=_rules(contexts=("lint", "pr-lint")), **overrides)
     out = _run(routes, kind=kind)
     assert out and any(needle in m for m in out)
+
+
+def test_nonadmin_ruleset_with_unprotected_branch_body_ok():
+    routes = _routes()
+    assert routes[f"repos/{SLUG}/branches/{B}"]["protection"]["enabled"] is False
+    assert _run(routes) == []
+
+
+def test_admin_full_classic_plus_deletion_only_bypassable_ruleset_ok():
+    prot = {
+        "required_status_checks": {"contexts": ["lint"]},
+        "required_pull_request_reviews": {"require_code_owner_reviews": True},
+        "enforce_admins": {"enabled": True},
+    }
+    routes = _routes(
+        admin=True,
+        rules=[{"type": "deletion", "ruleset_id": 7}],
+        protection=prot,
+        **{f"repos/{SLUG}/rulesets/7": {"bypass_actors": [{"actor_id": 5}]}},
+    )
+    assert _run(routes) == []
+
+
+def test_missing_piece_names_the_non_counted_sources():
+    prot = {
+        "required_status_checks": {"contexts": ["lint"]},
+        "enforce_admins": {"enabled": False},
+    }
+    routes = _routes(
+        admin=True,
+        protection=prot,
+        **{f"repos/{SLUG}/rulesets/7": {"name": "p", "bypass_actors": [{"id": 1}]}},
+    )
+    lint = next(m for m in _run(routes) if "'lint'" in m)
+    assert "ruleset p: bypass_actors is not empty" in lint
+    assert "classic protection: enforce_admins is off" in lint
+    assert lint.endswith('see "Merge policy" in the BA guide')
+
+
+@pytest.mark.parametrize(
+    "prot",
+    [
+        {"enforce_admins": True},
+        {
+            "enforce_admins": {"enabled": True},
+            "required_status_checks": {"checks": ["x"]},
+        },
+        {"required_pull_request_reviews": ["x"]},
+    ],
+)
+def test_odd_classic_shapes_are_refusals_not_crashes(prot):
+    out = _run(_routes(admin=True, protection=prot))
+    assert any("could not read the branch protection of main" in m for m in out)
