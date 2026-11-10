@@ -151,8 +151,8 @@ def git_root(start: Path) -> Path:
     return Path(proc.stdout.strip()).resolve()
 
 
-def head_commit(root: Path) -> str:
-    proc = _run(root, "rev-parse", "--short", "HEAD")
+def head_commit(root: Path, *, short: bool = True) -> str:
+    proc = _run(root, "rev-parse", *(["--short"] if short else []), "HEAD")
     if proc.returncode != 0:
         raise GitError(f"could not get HEAD: {proc.stderr.strip()}")
     return proc.stdout.strip()

@@ -1538,6 +1538,7 @@ def _view(monkeypatch, state=None, error=None):
         return {"state": state}
 
     monkeypatch.setattr(runner_mod.ghrest, "view_pr", view_pr)
+    monkeypatch.setattr(runner_mod.ghrest, "origin_slug", lambda root: ("h", "o/r"))
     return seen
 
 
@@ -1676,3 +1677,33 @@ def test_ba_parked_task_is_not_picked_again(env, monkeypatch):
     _park(env, f"ba-ticket-author:US1 {PR_URL}")
     once(env, Script(), cfg=cfg_of("ba"))
     assert "ba-ticket-author:US1" in skips[-1]
+
+
+@pytest.mark.parametrize("bad", [{"no": "state"}, None])
+def test_parked_odd_view_keeps_waiting(env, monkeypatch, caplog, bad):
+    _view(monkeypatch, "OPEN")
+    monkeypatch.setattr(runner_mod.ghrest, "view_pr", lambda root, ref: bad)
+    _park(env)
+    once(env, Script())
+    assert autostate.load(env[1]).waiting_review == (PARKED,)
+    assert "not read" in caplog.text
+
+
+def test_parked_url_of_another_repo_is_dropped(env, monkeypatch, caplog):
+    seen = _view(monkeypatch, "MERGED")
+    _park(env, "dev-implement-ticket:US1 https://github.com/x/y/pull/42")
+    once(env, Script())
+    state = autostate.load(env[1])
+    assert (state.waiting_review, state.last_done) == ((), None)
+    assert seen == [] and "not in this repo" in caplog.text
+
+
+def test_run_once_beat_stops_when_head_read_raises(cenv, monkeypatch):
+    monkeypatch.setattr(runner_mod, "ClaimBeat", FakeBeat)
+    monkeypatch.setattr(
+        runner_mod.runlog, "head", lambda root: (_ for _ in ()).throw(OSError("x"))
+    )
+    FakeBeat.events = []
+    with pytest.raises(OSError):
+        once(cenv, Script(TaskResult("done")), claims=FakeClaims())
+    assert FakeBeat.events == []  # the heartbeat thread never started

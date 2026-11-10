@@ -230,6 +230,13 @@ def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     )
 
 
+def _own_pr(root: Path, url: str) -> bool:
+    """`url` is a pull request of this repo's `origin`; the number alone is
+    looked up there, so a PR of another repo must never be read as ours."""
+    slug = ghrest.origin_slug(root)[1].lower()
+    return url.partition("://")[2].partition("/")[2].lower().startswith(f"{slug}/pull/")
+
+
 def _review_check(
     root: Path,
     kb_dir: Path,
@@ -247,8 +254,13 @@ def _review_check(
         key, _, url = entry.partition(" ")
         number = url.rpartition("/pull/")[2]
         try:
+            if not _own_pr(root, url):
+                logger.warning(
+                    "parked PR %s of %s is not in this repo; dropped", url, key
+                )
+                continue
             pr_state = view_pr(root, number)["state"]
-        except KbError as exc:
+        except (KbError, KeyError, TypeError) as exc:
             logger.warning("parked PR %s not read: %s", url, exc)
             kept.append(entry)
             continue
@@ -619,6 +631,8 @@ def run_once(
         state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
+    # read before the heartbeat thread starts: an OSError here must not leak it
+    started_at, head_before = runlog.stamp(), runlog.head(root)
     beat = None
     if claims is not None and ticket:
         if not claims.begin(ticket):
@@ -627,7 +641,6 @@ def run_once(
         beat.start(ticket)
     started = now()
     ref = _remember_branch(root)
-    started_at, head_before = runlog.stamp(), runlog.head(root)
     head_after = None
     try:
         try:

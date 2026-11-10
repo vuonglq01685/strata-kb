@@ -39,3 +39,12 @@ def test_append_oserror_only_warns(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         _append(tmp_path)
     assert "runs.jsonl" in caplog.text
+
+
+def test_head_is_the_full_sha(tmp_path, run_git):
+    run_git(tmp_path, "init")
+    (tmp_path / "f").write_text("x")
+    run_git(tmp_path, "add", "-A")
+    run_git(tmp_path, "commit", "-m", "c")
+    assert runlog.head(tmp_path) == run_git(tmp_path, "rev-parse", "HEAD")
+    assert len(runlog.head(tmp_path)) == 40

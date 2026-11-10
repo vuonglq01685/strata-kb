@@ -24,7 +24,7 @@ def stamp() -> str:
 
 def head(root: Path) -> str | None:
     try:
-        return gitio.head_commit(root)
+        return gitio.head_commit(root, short=False)
     except gitio.GitError:
         return None
 
