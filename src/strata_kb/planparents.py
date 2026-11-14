@@ -59,6 +59,9 @@ def _children(text: str, parent_id: str) -> list[storylint.SplitRow]:
     return [r for r in storylint.parse_split(text) if r.child != parent_id]
 
 
+children = _children  # public name for callers outside this module
+
+
 def _own_fix(text: str, parent_id: str) -> storylint.SplitRow | None:
     """The own-fix row of a parent bug that fixes something itself."""
     if not is_parent_bug(text):

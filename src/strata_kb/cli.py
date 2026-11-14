@@ -4886,6 +4886,54 @@ def test_env_seed(
     _test_env_run(go)
 
 
+def _story_hub(hub: str) -> HubHandle:
+    return _hub_or_exit(hub, Path(".kb"))
+
+
+_HUB_OPT = typer.Option(
+    "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+)
+
+
+@test_env_app.command("deployed")
+def test_env_deployed(
+    story: str = typer.Argument(..., help="Story id (or repo:id)"),
+    hub: str = _HUB_OPT,
+) -> None:
+    """Exit 0 if every repo of the story runs its published commit on the test
+    environment; 4 (reasons printed) if not yet."""
+
+    def go(t, root):
+        from strata_kb import testdeploy
+
+        reasons = testdeploy.deployed(_story_hub(hub), t.load(root), story, root=root)
+        for line in reasons:
+            typer.echo(line)
+        return 4 if reasons else 0
+
+    _test_env_run(go)
+
+
+@test_env_app.command("changed")
+def test_env_changed(
+    story: str = typer.Argument(..., help="Story id (or repo:id)"),
+    hub: str = _HUB_OPT,
+) -> None:
+    """Print `child file` for every file the story's merged PRs changed."""
+
+    def go(t, root):
+        from strata_kb import testdeploy
+
+        for child, files in testdeploy.changed_files(
+            _story_hub(hub), story, root=root
+        ).items():
+            for name in files:
+                typer.echo(f"{child} {name}")
+        return 0
+
+    _test_env_run(go)
+
+
 @test_env_app.command("version")
 def test_env_version() -> None:
     """Print `repo commit` for every app with a version_check."""
