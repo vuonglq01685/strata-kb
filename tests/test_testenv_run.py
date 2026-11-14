@@ -124,10 +124,10 @@ def test_verify_prints_each_item_and_exits_1_on_any_fail(tmp_path, monkeypatch, 
     assert testenv.verify(root, http, _run([])) == 1
     out = capsys.readouterr().out.splitlines()
     assert "ok shop-fe url: 200" in out
-    assert any(l.startswith("FAIL shop-api api_base") for l in out)
-    assert any(l.startswith("ok db.check") for l in out)
-    assert any(l.startswith("ok db.seeds.checkout-basic") for l in out)
-    assert any(l.startswith("ok shop-fe version: abc") for l in out)
+    assert any(ln.startswith("FAIL shop-api api_base") for ln in out)
+    assert any(ln.startswith("ok db.check") for ln in out)
+    assert any(ln.startswith("ok db.seeds.checkout-basic") for ln in out)
+    assert any(ln.startswith("ok shop-fe version: abc") for ln in out)
     assert SECRET not in "\n".join(out)
 
 
