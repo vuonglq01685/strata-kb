@@ -1400,7 +1400,7 @@ def test_no_admin_merge_anywhere():
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        if path.name.startswith("claude-settings-"):
+        if path.name == "claude-settings-auto.json":
             data = json.loads(text)
             data["permissions"].pop("deny")
             text = json.dumps(data)

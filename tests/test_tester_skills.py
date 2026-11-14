@@ -31,7 +31,7 @@ def test_test_story_body_orders_the_pipeline():
         "kb pr open",
     ]
     idx = [t.index(p) for p in order]
-    assert idx == sorted(idx), dict(zip(order, idx))
+    assert idx == sorted(idx), dict(zip(order, idx, strict=True))
     # the claim is released after the PR is opened
     assert t.index("kb claim release", t.index("kb pr open")) > t.index("kb pr open")
     assert t.index("deployed") < t.index("lock") < t.index("Q1")
@@ -105,3 +105,50 @@ def test_env_setup_body_keeps_secrets_out_of_yaml():
 def test_bodies_have_no_auto_mode_section(name):
     # kb auto for tester is phase 3; the settings allowlist test scans these.
     assert "\n## Auto mode" not in _body(name)
+
+
+def test_branch_switch_comes_before_push_and_default_is_refused():
+    t = _body("tester-test-story")
+    assert t.index("git switch -c test/<story>-R<n>") < t.index("git push")
+    assert "Never write, commit or push on the default branch" in t
+    assert "refuse to commit or push" in t
+
+
+def test_every_stop_path_releases():
+    t = _body("tester-test-story")
+    assert "kb claim release <story>`; exit" not in t
+    # claim-taken stop unlocks
+    assert "exit 3 means taken: unlock (`kb test-env unlock`)" in t
+    # INCOMPLETE / BLOCKED-ENV release whatever is still held
+    assert "release whatever is still held (`kb test-env unlock`," in t
+    # Q1/Q2 stop rule
+    stop = t.split("**Stop.**", 1)[1]
+    assert "release whatever is still held" in stop
+    # fallback pause keeps claim and lock
+    assert "A pause is not a stop" in t and "Tester-approved" in t
+
+
+def test_script_defects_end_incomplete_and_never_edit_mid_round():
+    t = _body("tester-test-story")
+    assert "Never edit a script during a round" in t
+    assert "is left" not in t
+
+
+def test_lock_refreshed_and_deploy_exit_paths():
+    t = _body("tester-test-story")
+    assert t.count("kb test-env lock <story>") >= 3
+    assert "no version_check" in t and "Exit 1" in t
+
+
+def test_regression_inputs_are_defined():
+    t = _body("tester-test-story")
+    for phrase in ("Verdict: PASS", "no baseline", "> Environment:", "git pull"):
+        assert phrase in t, phrase
+    assert "seed and reset scripts" in t
+
+
+def test_env_setup_never_types_credentials_through_mcp():
+    t = _body("tester-env-setup")
+    assert "Never type a password" in t
+    assert "tests/fixtures/login.smoke.spec.ts" in t
+    assert "STRATA_KB_HTTP_TOKEN" in t and "keep every other line" in t

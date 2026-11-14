@@ -25,14 +25,23 @@ first; when it is missing, stop and tell the Tester to run
 
 1. **Fetch the ticket.** `kb ticket fetch <story> --out tests/<story>/ticket.md`.
    Read its acceptance criteria and its `### Alternate / exception flows`.
-2. **Deploy check.** `kb test-env deployed <story>`. Exit 4 means the
+2. **Deploy check.** `kb test-env deployed <story>`. Exit 1 (hub or GitHub
+   error): stop with the printed error; nothing is held. Exit 4 means the
    environment does not run the published commits yet: stop with
    "not deployed yet", say which repo the command printed, and take no lock
-   or claim.
+   or claim. One exception: when every printed reason is `no version_check`
+   (the repo declares no version endpoint), a manual run asks the Tester to
+   confirm the deploy and goes on only on a yes; any other reason, or no
+   Tester to ask, stops with "not deployed yet".
 3. **Lock the environment.** `kb test-env lock <story>`. Exit 3 means another
-   round holds this environment: stop, "environment locked".
-4. **Take the claim.** `kb claim take <story>`; exit 3 means taken: unlock
-   (`kb test-env unlock`) and stop. Then `kb claim update <story> --phase cases`.
+   round holds this environment: stop, "environment locked". The lock has a
+   TTL: step 8.1 and step 8.5 re-run `kb test-env lock <story>` to refresh it.
+4. **Branch, then take the claim.** First `git pull`, then
+   `git switch -c test/<story>-R<n>` (`<n>` as in step 10; switch to it when it
+   already exists). Never write, commit or push on the default branch: when
+   `git branch --show-current` is the default branch, stop. Then
+   `kb claim take <story>`; exit 3 means taken: unlock (`kb test-env unlock`)
+   and stop. Then `kb claim update <story> --phase cases`.
 5. **Explore and write the cases.** Walk each acceptance criterion in the
    app with Playwright MCP to learn the real UI text, routes and API
    behaviour. Write `tests/<story>/test-cases.md` from
@@ -54,14 +63,15 @@ first; when it is missing, stop and tell the Tester to run
    env only, login through `tests/fixtures/login.ts`. Re-run
    `kb testcase lint` (no orphan scripts).
 7. **Q1 review.** `kb claim update <story> --phase review`. Dispatch the
-   `test-case-reviewer` subagent under the review contract below, on the test
-   cases and scripts, **before any run**. Append each round to the `## Review
+   `test-case-reviewer` subagent under the review contract below, handing it the
+   test cases, the scripts and the seed and reset scripts they use, **before any run**. Append each round to the `## Review
    record` of `tests/<story>/test-cases.md` and lint again. A BLOCKER still
    standing after round 2 stops the task (see the stop rule).
 8. **Run the pipeline, steps 1–6 in order.** `kb claim update <story> --phase run`.
    The run log is local: `.kb/runlog/` (git-ignored), one file per round.
-   1. **Preflight.** Env health (FE, API, DB `check`) and the deploy check
-      again; record each app's commit with `kb test-env version`. A failure
+   1. **Preflight.** Re-run `kb test-env lock <story>` (exit 3: stop and
+      release whatever is held). Env health (FE, API, DB `check`) and the
+      deploy check again; record each app's commit with `kb test-env version`. A failure
       here ends the round `BLOCKED-ENV`.
    2. **Story run.** Run every TC of the story with
       `npx playwright test tests/<story>/` (a re-test round reruns all of
@@ -73,10 +83,17 @@ first; when it is missing, stop and tell the Tester to run
       (never pass) and the script goes back to you; the Dev is not involved.
    4. **MCP confirmation.** Replay each stable failure by hand through
       Playwright MCP. Reproduced: it is a defect. Not reproduced: it is a
-      script defect — fix the script and rerun it, the Dev is not involved.
-   5. **Regression run.** Only when every story TC passed. Run the scripts
-      of every story whose status is `closed` (the `tests/<closed story>/`
-      folders), with the same clean retry and MCP confirmation. For each
+      script defect: record it in the run log; the round ends `INCOMPLETE`.
+      Never edit a script during a round. The fix happens in the next round
+      and goes back through Q1. The Dev is not involved.
+   5. **Regression run.** Only when every story TC passed. First re-run
+      `kb test-env lock <story>` (exit 3: stop and release whatever is held).
+      After `git pull`, the closed stories are those whose latest
+      `reports/<s>/R<n>.md` has `Verdict: PASS`. Run their scripts
+      (`tests/<s>/`), with the same clean retry and MCP confirmation. The
+      baseline is the newest PASS report whose `> Environment:` names this
+      environment, read from its `## Regression` results and commits; with no
+      such report there is "no baseline". For each
       confirmed regression failure:
       - Key it `<closed story id>/TC-<k>` and ask the hub:
         `curl -sS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN"
@@ -106,7 +123,7 @@ first; when it is missing, stop and tell the Tester to run
    |---|---|
    | `PASS` | every story TC passed, steps 1 and 6 clean |
    | `FAIL` | at least one confirmed story defect (story TC or story regression) |
-   | `INCOMPLETE` | no defect, but a flaky or script-defect TC is left |
+   | `INCOMPLETE` | no defect, but at least one flaky or script-defect TC |
    | `BLOCKED-ENV` | step 1 or 6 failed |
    Only `PASS` and `FAIL` produce a committed `reports/<story>/R<n>.md`.
    `INCOMPLETE` and `BLOCKED-ENV` go to the local run log only; write the
@@ -133,7 +150,9 @@ first; when it is missing, stop and tell the Tester to run
     record`, and run `kb report lint` again (its last row must be `pass`).
 12. **Publish.** `kb claim update <story> --phase publishing`. Run
     `kb report-ingest` and confirm it lists your report and the test cases,
-    not as skipped. Commit `tests/<story>/` (without `ticket.md`, which is
+    not as skipped. Check `git branch --show-current` is
+    `test/<story>-R<n>`, never the default branch; refuse to commit or push
+    otherwise. Commit `tests/<story>/` (without `ticket.md`, which is
     git-ignored) and `reports/<story>/`, push the branch with
     `git push -u origin HEAD`, and open the PR with `kb pr open --title
     "test: <story> R<n> <PASS|FAIL>" --body-file <file>`, the body listing
@@ -172,12 +191,16 @@ Two reviews run here: Q1 (`test-case-reviewer`, step 7) and Q2
   (`kb report lint` checks the report's).
 - Where the runtime cannot dispatch subagents, run the review as its own pass
   that reads ONLY the paths it was handed and reuses nothing it remembers
-  from authoring, write up its findings the same way, then STOP and hand the
-  result to the Tester. The task does not advance on a fallback pass; only
-  the Tester's explicit go-ahead does.
+  from authoring, write up its findings the same way, then PAUSE and hand the
+  result to the Tester. A pause is not a stop: it keeps the claim and the
+  environment lock. On resume, re-run `kb test-env lock <story>` to refresh
+  the lock (exit 3: stop and release whatever is held). The task does not
+  advance on a fallback pass; only the Tester's explicit go-ahead does, and
+  it is recorded in the `## Review record` row, for example
+  `Reviewer: fallback, Tester-approved`.
 
 **Stop.** A BLOCKER still standing after round 2 stops the task for a human:
-unlock and release (`kb test-env unlock`, `kb claim release <story>`), then
-say which finding stands and why. The text `AUTO-RESULT: failed test-review`
+release whatever is still held (`kb test-env unlock` if the lock is still
+taken, `kb claim release <story>`), then say which finding stands and why. The text `AUTO-RESULT: failed test-review`
 is reserved for the unattended runner of a later phase: do not write it in
 this phase.

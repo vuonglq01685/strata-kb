@@ -36,20 +36,26 @@ write the declaration, and verify it. The file holds NAMES only; values go to
    7. `retries` (default `3`).
 3. Write `.kb/test-env.yaml` from `.kb/test-env.example.yaml`: names only.
 4. Write the secret values the Tester gives you to `.env` only, one
-   `NAME=value` line each; if `.env` is missing, create it, and confirm
-   `.env` is listed in `.gitignore`. Do not print `.env` back.
+   `NAME=value` line each. Append: replace only lines with the same NAME and
+   keep every other line (including `STRATA_KB_HUB_URL` and
+   `STRATA_KB_HTTP_TOKEN` from `kb mcp-setup`). If `.env` is missing, create
+   it. Confirm `.env` is listed in `.gitignore`. Do not print `.env` back.
 5. Run `kb test-env check`. It validates the file: names only, no
    secret-looking value, scripts inside the repo. Fix what it prints with the
    Tester and re-run until it passes.
-6. Explore the login page with Playwright MCP: open the app `url`, find the
-   user, password and submit controls by role, label or test id, and fill
+6. Explore the login page with Playwright MCP, only to discover selectors:
+   open the app `url`, find the user, password and submit controls by role,
+   label or test id. Never type a password or any credential through MCP, as
+   tool-call arguments are logged. Fill
    `tests/fixtures/login.ts` with those selectors. The fixture reads the
    credentials from the env vars only. Keep the file in the Tester's repo; it
    is created once and re-running this skill edits it, never recreates it.
 7. Run `kb test-env verify`. It prints one `ok` or `FAIL` line per item: each
    app URL, the DB `check`, `reset`, each seed, each version endpoint. Then
-   log in as each account through `tests/fixtures/login.ts` with Playwright
-   MCP and add one `ok`/`FAIL` line per account.
+   log in as each account with the smoke spec: `npx playwright test
+   tests/fixtures/login.smoke.spec.ts` (it reads credentials from env only;
+   create-once like the fixture, extend its role list to match the accounts)
+   and add one `ok`/`FAIL` line per account.
 8. Report every item as `ok` or `FAIL`, with the item name and the one-line
    reason. Never include a credential in a reason. For each `FAIL`, say what
    the Tester fixes (a name, a script, a selector) and offer to re-run steps

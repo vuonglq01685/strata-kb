@@ -250,6 +250,7 @@ TESTER_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/test-review-rubric.local.md": "test-review-rubric-local-stub.md",
     # Selectors are filled per repo by /tester-env-setup; never overwrite.
     "tests/fixtures/login.ts": "playwright-login-fixture.ts",
+    "tests/fixtures/login.smoke.spec.ts": "playwright-login-smoke.spec.ts",
     CODEOWNERS_PATH: "codeowners-tester",
 }
 
@@ -260,15 +261,14 @@ def scaffold_tester_local_overrides(target: Path, report: InitReport) -> None:
 
 
 # Kind `tester` — system/integration test repo. Consumes the shared KB and
-# tickets, publishes only its generated `<repo_id>-test` report document. Its
-# own settings template: the playwright and test-env permissions stay off ba/dev.
+# tickets, publishes only its generated `<repo_id>-test` report document.
 TESTER_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-tester.yaml",
     ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-tester.json",
     ".cursor/mcp.json": "cursor-mcp-tester.json",
-    ".claude/settings.json": "claude-settings-tester.json",
+    ".claude/settings.json": "claude-settings-auto.json",
     "QUICKSTART-TESTER.md": "QUICKSTART-tester.md",
     "docs/test-review-rubric.md": "test-review-rubric.md",
     "docs/templates/test-cases.md": "test-cases-template.md",
@@ -657,6 +657,18 @@ _SETTINGS_REL = ".claude/settings.json"
 # Auto-mode commands per conventions language (test runners, installs, lint and
 # build), appended to `permissions.allow` for a dev repo's languages so a
 # headless `claude -p` run can run them: a command outside the list is denied.
+# Per-kind additions to the shared auto-mode settings template. The tester
+# also may never merge a PR in phase 1 (denied, not just told).
+TESTER_ALLOW: tuple[str, ...] = (
+    "Bash(kb test-env *)",
+    "Bash(kb testcase *)",
+    "Bash(kb report*)",
+    "Bash(kb report-ingest*)",
+    "Bash(npx playwright test*)",
+    "mcp__playwright__*",
+)
+TESTER_DENY: tuple[str, ...] = ("Bash(kb pr merge*)", "Bash(gh pr merge*)")
+
 LANG_COMMANDS: dict[str, tuple[str, ...]] = {
     "python": (
         "Bash(pytest *)",
@@ -796,6 +808,7 @@ def _apply_settings(
     langs: Sequence[str],
     force: bool,
     report: InitReport,
+    kind: str = KIND_DEV,
 ) -> None:
     """ba/dev `.claude/settings.json`: create from the template, or merge into
     the existing file (a dev's own permissions and hooks survive). `--force`
@@ -803,8 +816,13 @@ def _apply_settings(
     template = json.loads(template_text)
     template["permissions"]["allow"] = _union(
         template["permissions"]["allow"],
-        [cmd for lang in langs for cmd in LANG_COMMANDS.get(lang, ())],
+        [cmd for lang in langs for cmd in LANG_COMMANDS.get(lang, ())]
+        + (list(TESTER_ALLOW) if kind == KIND_TESTER else []),
     )
+    if kind == KIND_TESTER:
+        template["permissions"]["deny"] = _union(
+            template["permissions"]["deny"], list(TESTER_DENY)
+        )
     if not dest.exists() or force:
         _write_scaffold(dest, _SETTINGS_REL, _dump_settings(template), report)
         return
@@ -948,6 +966,7 @@ def init_repo(
             settings_langs,
             force,
             report,
+            kind,
         )
     if assets is not None:
         outcome = record_asset_store(target / ".kb" / "config.yaml", assets)

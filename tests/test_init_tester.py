@@ -30,9 +30,9 @@ def test_init_tester_has_all_four_wrappers_per_skill(tmp_path):
 
 def test_tester_settings_allow_the_tester_commands(tmp_path):
     init_repo(tmp_path, "tester")
-    allow = json.loads((tmp_path / ".claude/settings.json").read_text())[
-        "permissions"
-    ]["allow"]
+    allow = json.loads((tmp_path / ".claude/settings.json").read_text())["permissions"][
+        "allow"
+    ]
     for rule in (
         "Bash(kb test-env *)",
         "Bash(kb testcase *)",
@@ -149,3 +149,32 @@ def test_tester_scaffold_publishes_via_ci_with_report_ingest(tmp_path):
         in (tmp_path / ".github/workflows/kb-publish-request.yml").read_text()
     )
     assert ".kb/index.yaml" in (tmp_path / ".gitignore").read_text().splitlines()
+
+
+def test_tester_settings_are_auto_plus_the_tester_extras(tmp_path):
+    init_repo(tmp_path, "tester")
+    got = json.loads((tmp_path / ".claude/settings.json").read_text())
+    auto = json.loads(initcmd.read_template("claude-settings-auto.json"))
+    assert got["permissions"]["allow"] == auto["permissions"]["allow"] + list(
+        initcmd.TESTER_ALLOW
+    )
+    assert got["permissions"]["deny"] == auto["permissions"]["deny"] + list(
+        initcmd.TESTER_DENY
+    )
+    assert got["hooks"] == auto["hooks"]
+    for rule in ("Bash(kb pr merge*)", "Bash(gh pr merge*)"):
+        assert rule in got["permissions"]["deny"]
+
+
+def test_ba_and_dev_settings_do_not_gain_tester_rules(tmp_path):
+    for kind in ("ba", "dev"):
+        root = tmp_path / kind
+        init_repo(root, kind)
+        perms = json.loads((root / ".claude/settings.json").read_text())["permissions"]
+        assert not set(initcmd.TESTER_ALLOW) & set(perms["allow"])
+        assert not set(initcmd.TESTER_DENY) & set(perms["deny"])
+
+
+def test_tester_scaffold_has_the_login_smoke_spec(tmp_path):
+    init_repo(tmp_path, "tester")
+    assert (tmp_path / "tests/fixtures/login.smoke.spec.ts").is_file()
