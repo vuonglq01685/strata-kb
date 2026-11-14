@@ -37,7 +37,8 @@ write the declaration, and verify it. The file holds NAMES only; values go to
    6. `api_auth`: `cookie` or `bearer`.
    7. `retries` (default `3`).
 3. Write `.kb/test-env.yaml` from `.kb/test-env.example.yaml`: names only.
-4. Write `TEST_FE_URL=<front-end url>` (not a secret; the scaffolded
+4. Write `TEST_FE_URL=<front-end url>` (the `url` of the first app in `apps` that
+   has one; not a secret; the scaffolded
    `playwright.config.ts` uses it as `baseURL`) and the secret values the
    Tester gives you to `.env` only, one
    `NAME=value` line each. Append: replace only lines with the same NAME and

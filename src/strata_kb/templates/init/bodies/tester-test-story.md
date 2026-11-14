@@ -38,7 +38,8 @@ first; when it is missing, stop and tell the Tester to run
    TTL: step 8.1 and step 8.5 re-run `kb test-env lock <story>` to refresh it.
 4. **Branch, then take the claim.** Run `git fetch origin`. Find the default
    branch with `git rev-parse --abbrev-ref origin/HEAD` (it prints
-   `origin/<default>`). Start from it, not from the branch you are on:
+   `origin/<default>`); when `origin/HEAD` is unset it fails, so use the
+   `HEAD branch:` line of `git remote show origin`. Start from it, not from the branch you are on:
    `git switch -c test/<story>-R<n> origin/<default>` (`<n>` as in step 10).
    When that branch already exists, `git switch test/<story>-R<n>`.
    Never write, commit or push on the default branch: when
@@ -95,8 +96,7 @@ first; when it is missing, stop and tell the Tester to run
       the working tree: `git ls-tree -r --name-only origin/<default> reports/`
       lists them and `git show origin/<default>:reports/<s>/R<n>.md` reads
       one. The closed stories are those whose latest `reports/<s>/R<n>.md`
-      there has `Verdict: PASS`. Run their scripts (`tests/<s>/`, read from
-      the same ref when your branch lacks them), with the same clean retry and MCP confirmation. The
+      there has `Verdict: PASS`. Run their scripts (`tests/<s>/`), with the same clean retry and MCP confirmation. The
       baseline is the newest PASS report whose `> Environment:` names this
       environment, read from its `## Regression` results and commits; with no
       such report there is "no baseline". For each

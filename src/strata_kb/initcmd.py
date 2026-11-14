@@ -667,9 +667,18 @@ TESTER_ALLOW: tuple[str, ...] = (
     "Bash(git switch test/*)",
     "Bash(git ls-tree *origin/*)",
     "Bash(git show origin/*)",
-    "Bash(curl -fsS * */api/tests/known-failures*)",
+    # The one hub read the regression step makes: this exact command, no wildcard.
+    'Bash(curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" '
+    '"$STRATA_KB_HUB_URL/api/tests/known-failures")',
+    "Bash(git remote show origin)",
 )
-TESTER_DENY: tuple[str, ...] = ("Bash(kb pr merge*)", "Bash(gh pr merge*)")
+TESTER_DENY: tuple[str, ...] = (
+    "Bash(kb pr merge*)",
+    "Bash(gh pr merge*)",
+    "Bash(git switch *--discard-changes*)",
+    "Bash(git switch *--force*)",
+    "Bash(git switch * -f*)",
+)
 
 # Auto-mode commands per conventions language (test runners, installs, lint and
 # build), appended to `permissions.allow` for a dev repo's languages so a

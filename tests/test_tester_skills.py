@@ -142,7 +142,12 @@ def test_lock_refreshed_and_deploy_exit_paths():
 
 def test_regression_inputs_are_defined():
     t = _body("tester-test-story")
-    for phrase in ("Verdict: PASS", "no baseline", "> Environment:", "git fetch origin"):
+    for phrase in (
+        "Verdict: PASS",
+        "no baseline",
+        "> Environment:",
+        "git fetch origin",
+    ):
         assert phrase in t, phrase
     assert "seed and reset scripts" in t
 
@@ -166,3 +171,16 @@ def test_env_setup_writes_fe_url_and_role_env_convention():
     t = _body("tester-env-setup")
     assert "TEST_FE_URL" in t
     assert "TEST_<ROLE>_USER" in t and "TEST_<ROLE>_PASSWORD" in t
+
+
+def test_body_uses_the_exact_allowed_curl_and_has_a_default_branch_fallback():
+    from strata_kb.initcmd import TESTER_ALLOW
+
+    t = _body("tester-test-story")
+    exact = next(r for r in TESTER_ALLOW if r.startswith("Bash(curl"))[
+        len("Bash(") : -1
+    ]
+    assert exact in t
+    assert "git remote show origin" in t and "HEAD branch:" in t
+    assert "when your branch lacks them" not in t
+    assert "first app in `apps`" in _body("tester-env-setup")
