@@ -12,7 +12,13 @@ import typer
 
 from strata_kb import buglint, planparents, testcases, testenv
 from strata_kb.doctor import Issue
-from strata_kb.lintcore import LintReport, section_body, table_column, table_rows
+from strata_kb.lintcore import (
+    LintReport,
+    review_passed,
+    section_body,
+    table_column,
+    table_rows,
+)
 from strata_kb.mdmask import visible_body
 
 VERDICTS = ("PASS", "FAIL")
@@ -207,18 +213,6 @@ def _failed_keys(
     return tuple(dict.fromkeys(k for k in keys if k))
 
 
-def _review_rows(text: str) -> list[list[str]]:
-    rows = table_rows(section_body(text, "## Review record") or "")
-    return rows if len(rows) > 1 else []
-
-
-def _review_passed(text: str) -> bool:
-    rows = _review_rows(text)
-    ci = table_column(rows, "Verdict") if rows else None
-    last = rows[-1] if rows else []
-    return ci is not None and len(last) > ci and last[ci].strip().lower() == "pass"
-
-
 def parse(text: str) -> Report:
     text = _norm(text)
     head = _header_lines(text)
@@ -254,7 +248,7 @@ def parse(text: str) -> Report:
         regression_failed=_failed_keys(_keys(reg, "failed"), defects, rds),
         known=_keys(reg, "known"),
         regression_defects=rds,
-        review_passed=_review_passed(text),
+        review_passed=review_passed(text),
     )
 
 
@@ -385,6 +379,17 @@ def _verdict_issues(r: Report) -> list[Issue]:
     return issues
 
 
+def _uncovered_issues(r: Report, spec_tcs: tuple[str, ...] | None) -> list[Issue]:
+    if spec_tcs is None:
+        return []
+    have = {tc.strip() for _, tc, _ in r.results}
+    return [
+        _err(f"Results by AC: {tc} of the test cases has no result row", "rep-result")
+        for tc in spec_tcs
+        if tc not in have
+    ]
+
+
 def _declared_env_vars(repo_root: Path) -> set[str] | None:
     """Env var names `.kb/test-env.yaml` references; None if absent/invalid."""
     try:
@@ -450,7 +455,10 @@ def lint(
     report_dir: Path,
     story_children: tuple[str, ...],
     repo_root: Path,
+    spec_tcs: tuple[str, ...] | None = None,
 ) -> LintReport:
+    """`spec_tcs` (the TC ids of the story's test cases) makes a missing result
+    row an error; None skips that check."""
     norm = _norm(text)
     r = parse(text)
     issues = [
@@ -466,6 +474,7 @@ def lint(
         issues.append(_err("header: Environment and Date are required", "rep-header"))
     issues += _results_issues(norm, r)
     issues += _verdict_issues(r)
+    issues += _uncovered_issues(r, spec_tcs)
     issues += _flag_issues(norm)
     issues += _regression_issues(norm, r)
     issues += _defect_issues(r, story_children)
@@ -492,6 +501,15 @@ def story_children(spec: Path, story: str) -> tuple[str, ...]:
     return tuple(r.child for r in planparents.children(ticket, story))
 
 
+def spec_tcs(spec: Path) -> tuple[str, ...] | None:
+    """TC ids of `spec`; None when it cannot be read (nothing to compare)."""
+    try:
+        cases = testcases.parse(spec.read_text(encoding="utf-8")).cases
+    except (OSError, UnicodeDecodeError):
+        return None
+    return tuple(c.tc_id for c in cases)
+
+
 def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
     """`kb report lint`: exit 0 PASS, 1 FAIL or unreadable."""
     try:
@@ -499,13 +517,15 @@ def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
     except (OSError, UnicodeDecodeError) as exc:
         typer.secho(f"cannot read {file}: {type(exc).__name__}", fg="red", err=True)
         return 1
-    spec = repo_root / "tests" / parse(text).story / "test-cases.md"
-    children = story_children(spec, parse(text).story)
+    story = parse(text).story
+    spec = repo_root / "tests" / story / "test-cases.md"
+    children = story_children(spec, story)
     report = lint(
         text,
         report_dir=file.resolve().parent,
         story_children=children,
         repo_root=repo_root,
+        spec_tcs=spec_tcs(spec),
     )
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("REPORT"))
     return 0 if report.passed else 1

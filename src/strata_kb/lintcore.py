@@ -634,6 +634,15 @@ def table_column(rows: list[list[str]], name: str) -> int | None:
     return header.index(key) if key in header else None
 
 
+def review_passed(text: str) -> bool:
+    """`## Review record` whose last row's `Verdict` is `pass`."""
+    rows = table_rows(section_body(text, "## Review record") or "")
+    rows = rows if len(rows) > 1 else []
+    ci = table_column(rows, "Verdict") if rows else None
+    last = rows[-1] if rows else []
+    return ci is not None and len(last) > ci and last[ci].strip().lower() == "pass"
+
+
 def strip_bare_kb_context(text: str) -> str:
     """Drop a 'kb-context:' block that isn't wrapped in a ``` fence."""
     lines = text.splitlines()

@@ -17,6 +17,7 @@ from strata_kb.lintcore import (
     AC_ID_RE,
     LintReport,
     ac_items,
+    review_passed,
     section_body,
     table_column,
     table_rows,
@@ -146,6 +147,8 @@ def _structure(text: str, spec: CaseSpec) -> list[Issue]:
         )
     if not spec.cases:
         issues.append(_err("no `## TC-NN — title` sections", "tc-heading"))
+    if not review_passed(text):
+        issues.append(_err("Q1 has not passed", "tc-review"))
     for tc in spec.cases:
         if _placeholder(tc.title):
             issues.append(

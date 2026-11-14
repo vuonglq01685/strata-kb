@@ -79,6 +79,7 @@ def _ship_report(
     path: Path,
     kids: tuple[str, ...],
     root: Path,
+    tcs: tuple[str, ...],
 ) -> tuple[CodeSection, dict[str, bytes]] | str:
     """The section and image assets of one report, or why it cannot ship."""
     text = _read(path)
@@ -87,7 +88,11 @@ def _ship_report(
         return f"header Round {rep.round} does not match file name R{n}"
     if reason := planingest.lint_reason(
         testreport.lint(
-            text, report_dir=path.parent, story_children=kids, repo_root=root
+            text,
+            report_dir=path.parent,
+            story_children=kids,
+            repo_root=root,
+            spec_tcs=tcs,
         )
     ) or planingest.fence_reason(text):
         return reason
@@ -137,6 +142,7 @@ def _ship_story(
 
     story_reports = reports_dir / story
     kids = spec.children or children_of(story)
+    tcs = tuple(c.tc_id for c in spec.cases)
     for path in sorted(story_reports.glob("*.md"), key=lambda p: (len(p.name), p.name)):
         file = planingest.rel_path(path, root)
         m = _ROUND_RE.fullmatch(path.name)
@@ -147,7 +153,8 @@ def _ship_story(
         elif cases is None:
             out.skipped.append((file, f"test cases of {story} are not shippable"))
         elif isinstance(
-            shipped := _ship_report(story, int(m.group(1)), path, kids, root), str
+            shipped := _ship_report(story, int(m.group(1)), path, kids, root, tcs),
+            str,
         ):
             out.skipped.append((file, shipped))
         else:

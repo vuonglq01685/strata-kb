@@ -391,3 +391,40 @@ def test_malformed_regression_keys_are_errors(tmp_path):
         assert "rep-regression" in [
             i.code for i in _lint(tmp_path, _report(regression=reg)).issues
         ], line
+
+
+def test_every_spec_tc_needs_a_result_row(tmp_path):
+    d = tmp_path / "reports" / STORY
+    (d / "assets").mkdir(parents=True)
+    (d / "assets/tc01.png").write_bytes(b"x")
+
+    def lint(text, tcs):
+        return testreport.lint(
+            text, report_dir=d, story_children=KIDS, repo_root=tmp_path, spec_tcs=tcs
+        )
+
+    one_row = _report()  # a PASS report with only TC-01
+    err = _errors(lint(one_row, ("TC-01", "TC-02", "TC-03")))
+    assert "TC-02" in err and "TC-03" in err and "TC-01" not in err
+    assert lint(one_row, ("TC-01",)).passed
+    assert lint(_report(rows=_three_rows()), ("TC-01", "TC-02", "TC-03")).passed
+
+
+def test_cli_report_lint_reads_tcs_from_the_spec(tmp_path):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    d = tmp_path / "reports" / STORY
+    (d / "assets").mkdir(parents=True)
+    (d / "assets/tc01.png").write_bytes(b"x")
+    (d / "R1.md").write_text(_report())
+    spec = tmp_path / "tests" / STORY
+    spec.mkdir(parents=True)
+    (spec / "test-cases.md").write_text(
+        "> Story: ST-1 · Children: ST-1.web\n\n## TC-01 — a\n\n## TC-02 — b\n"
+    )
+    res = CliRunner().invoke(
+        app, ["report", "lint", str(d / "R1.md"), "--repo-root", str(tmp_path)]
+    )
+    assert res.exit_code == 1 and "TC-02" in res.output

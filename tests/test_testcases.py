@@ -7,6 +7,8 @@ from tests.test_ticketlint import _build_ticket, golden_block  # noqa: F401
 
 STORY = "ST-1"
 FLOW = "Airspace record missing"
+REVIEW_HEAD = "| Date | Round | Verdict | Reviewer | Coverage | Open gaps |\n|---|---|---|---|---|---|\n"
+PASS_ROW = REVIEW_HEAD + "| 2026-11-14 | 2 | pass | senior-tester | complete | none |\n"
 
 
 def _ticket(golden_block: str, *, flows: tuple[str, ...] = ()) -> str:  # noqa: F811
@@ -41,6 +43,7 @@ def _spec(
     trace: str = "| AC1 | TC-01 |\n| AC2 | TC-02, TC-03 |",
     cases: str | None = None,
     flows: str = "",
+    review: str = PASS_ROW,
 ) -> str:
     if cases is None:
         cases = _case(1, "positive") + _case(2, "positive") + _case(3, "boundary")
@@ -48,7 +51,7 @@ def _spec(
         f"# Test cases — {STORY} — Show airspace\n"
         f"> Story: {STORY} · Children: {STORY}.web · Ticket revision: {revision}\n\n"
         f"## Scope & traceability\n| AC | Test cases |\n|---|---|\n{trace}\n\n"
-        f"{flows}{cases}## Change log\n## Review record\n"
+        f"{flows}{cases}## Change log\n## Review record\n{review}"
     )
 
 
@@ -229,7 +232,9 @@ def _filled_template(flow_row: str) -> str:
         + "## TC-02"
         + tc2.split("## TC-02", 1)[-1]
         + "## Change log"
-        + tail
+        + tail.rstrip("\n")
+        + "\n"
+        + PASS_ROW
     )
 
 
@@ -267,3 +272,18 @@ def test_template_defaults_are_flagged(tmp_path):
     errs = _errs(testcases.lint(t, None, spec_dir=d))
     assert any("Steps" in e and "placeholder" in e for e in errs)
     assert any("Test data" in e and "placeholder" in e for e in errs)
+
+
+def test_spec_ships_only_after_q1_passed(tmp_path):
+    d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
+    for review in (
+        "",
+        REVIEW_HEAD,
+        REVIEW_HEAD + "| 2026-11-14 | 1 | blocked | x | y | z |\n",
+    ):
+        rep = testcases.lint(_spec(review=review), None, spec_dir=d)
+        assert any("Q1 has not passed" in e for e in _errs(rep)), review
+    rows = (
+        REVIEW_HEAD + "| d | 1 | blocked | x | y | z |\n| d | 2 | pass | x | y | z |\n"
+    )
+    assert testcases.lint(_spec(review=rows), None, spec_dir=d).passed
