@@ -145,3 +145,16 @@ def test_password_only_userinfo_is_secret_like():
 )
 def test_port_then_later_at_sign_is_not_userinfo(url):
     assert not testenv.secret_like(url)
+
+
+@pytest.mark.parametrize(
+    ("url", "secret"),
+    [
+        ("postgres://u:1234/abc@h/db", True),
+        ("redis://:hunter2@h:6379", True),
+        ("https://host:8443/x?email=a@b.test", False),
+        ("https://host:8443/api/@me", False),
+    ],
+)
+def test_userinfo_edge_cases(url, secret):
+    assert testenv.secret_like(url) is secret

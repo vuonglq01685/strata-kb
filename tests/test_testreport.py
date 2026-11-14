@@ -173,3 +173,136 @@ def test_cli_report_lint_json(tmp_path):
     f.write_text(_report(verdict="FAIL", defects=_d(1, guilty="ST-1.web")))
     res = CliRunner().invoke(app, args)
     assert res.exit_code == 0 and "REPORT: PASS" in res.output
+
+
+# --- real template -----------------------------------------------------------
+
+REVIEW6 = (
+    "| Date | Round | Verdict | Reviewer | Coverage | Open gaps |\n"
+    "|---|---|---|---|---|---|\n"
+    "| 2026-11-14 | 2 | pass | senior-tester | complete | none |\n"
+)
+
+
+def _from_template(*, fail: bool) -> str:
+    from strata_kb import initcmd
+
+    t = initcmd.read_template("test-report-template.md")
+    t = t.replace("R<n> — <story-id> — <story title>", "R1 — ST-1 — Show airspace")
+    t = t.replace(
+        "Story: <id> · Round: <n> · Verdict: PASS | FAIL",
+        f"Story: ST-1 · Round: 1 · Verdict: {'FAIL' if fail else 'PASS'}",
+    )
+    t = t.replace(
+        "Environment: <name> · <repo> <commit> · … · Date: YYYY-MM-DD",
+        "Environment: staging · shop-fe abc1234 · Date: 2026-11-14",
+    )
+    t = t.replace(
+        "tests/<story-id>/test-cases.md @ <tester commit>",
+        "tests/ST-1/test-cases.md @ 1a2b3c4",
+    )
+    t = t.replace("tests/…/tc01.spec.ts", "tests/ST-1/tc01.spec.ts")
+    if fail:
+        t = t.replace(
+            "<symptom>   Guilty: <child id>", "wrong level   Guilty: ST-1.web", 2
+        )
+        t = t.replace(
+            "Broken TC: <closed story id> TC-<k> · Baseline: R<m> @ <commits> passed",
+            "Broken TC: ST-0 TC-3 · Baseline: R1 @ abc1234 passed",
+        )
+        t = t.replace(
+            "<page/route/service> ↔ <file> in <child PR>", "/airspace ↔ a.ts in PR 4"
+        )
+        t = t.replace(
+            "<symptom>  Story: <closed story id> · TC ·",
+            "old bug  Story: ST-0 · TC-3 ·",
+        )
+    else:
+        a, b = t.index("### D1"), t.index("## Regression  ")
+        t = t[:a] + t[b:]
+        a, b = t.index("### RD1"), t.index("## Environment")
+        t = t[:a] + t[b:]
+    return t.rstrip("\n") + "\n" + REVIEW6
+
+
+def test_real_template_pass_variant_lints_clean(tmp_path):
+    rep = _lint(tmp_path, _from_template(fail=False))
+    assert rep.passed, rep.render("REPORT")
+
+
+def test_real_template_fail_variant_lints_clean(tmp_path):
+    text = _from_template(fail=True)
+    r = testreport.parse(text)
+    assert [d.regression for d in r.defects] == [False, True]
+    assert r.regression_defects[0].key == "ST-0/TC-3"
+    rep = _lint(tmp_path, text)
+    assert rep.passed, rep.render("REPORT")
+
+
+def test_heading_note_after_one_space_still_matches(tmp_path):
+    text = _report().replace(
+        "## Regression defects\n", "## Regression defects one per failure:\n"
+    )
+    assert _lint(tmp_path, text).passed
+
+
+def test_hex_secret_in_body_flagged_but_header_commit_is_not(tmp_path):
+    h = "a1" * 32
+    bad = _report(verdict="FAIL", defects=_d(1, more=f"token={h}\n"))
+    assert "credential" in _errors(_lint(tmp_path, bad))
+    sha = "ab12" * 10
+    ok = _report().replace("shop-fe abc1234", f"shop-fe {sha}")
+    assert _lint(tmp_path, ok).passed
+    base = YES.replace("R1 @ abc passed", f"R1 @ {sha} passed")
+    assert _lint(
+        tmp_path, _report(verdict="FAIL", defects=_d(1, reg="yes", more=base))
+    ).passed
+
+
+def _test_env(tmp_path):
+    import yaml
+
+    from strata_kb import testenv
+
+    data = yaml.safe_load(
+        (
+            Path(testenv.__file__).parent / "templates/init/test-env.example.yaml"
+        ).read_text()
+    )
+    (tmp_path / ".kb").mkdir(exist_ok=True)
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    return data["db"]["url_env"]
+
+
+def test_dotenv_scan_limited_to_vars_test_env_names(tmp_path):
+    var = _test_env(tmp_path)
+    (tmp_path / ".env").write_text(f"TEST_ENV_NAME=staging-eu\n{var}=dbvalue-12345\n")
+    assert _lint(tmp_path, _report(extra="env staging-eu")).passed
+    err = _errors(_lint(tmp_path, _report(extra="db dbvalue-12345")))
+    assert var in err and "dbvalue" not in err
+
+
+def test_no_results_rows_or_columns_is_error(tmp_path):
+    empty = _report(rows="")
+    assert "no result rows" in _errors(_lint(tmp_path, empty))
+    nocol = _report().replace("| Result |", "| Outcome |")
+    assert "columns" in _errors(_lint(tmp_path, nocol))
+
+
+def test_children_fall_back_to_ticket_split_table(tmp_path):
+    d = tmp_path / "tests" / STORY
+    d.mkdir(parents=True)
+    (d / "test-cases.md").write_text(
+        "> Story: ST-1 · Children:  · Ticket revision: 1\n"
+    )
+    from strata_kb import planparents
+
+    (d / "ticket.md").write_text("ticket")
+    seen = []
+    orig = planparents.children
+    planparents.children = lambda text, pid: seen.append((text, pid)) or []
+    try:
+        testreport._children(tmp_path, d / "test-cases.md", STORY)
+    finally:
+        planparents.children = orig
+    assert seen == [("ticket", STORY)]

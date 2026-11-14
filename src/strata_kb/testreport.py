@@ -10,7 +10,7 @@ from pathlib import Path
 
 import typer
 
-from strata_kb import buglint, testcases, testenv
+from strata_kb import buglint, planparents, testcases, testenv
 from strata_kb.doctor import Issue
 from strata_kb.lintcore import LintReport, section_body, table_column, table_rows
 from strata_kb.mdmask import visible_body
@@ -40,11 +40,13 @@ _BASELINE_RE = re.compile(r"Baseline:\s*([^·\n]+)")
 _OVERLAP_RE = re.compile(r"Overlap:\s*([^\n]+)")
 _RD_STORY_RE = re.compile(r"Story:\s*([^\s·]+)\s*·?\s*(TC-\d+)?")
 _KEY_RE = re.compile(r"[^\s,/]+/TC-\d+")
-_HEADING_TAIL_RE = re.compile(r"^(## [^\n]*?)[ \t]{2,}[^\n]*$", re.M)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)")
 _ENV_LINE_RE = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-# A 40/64-char lowercase hex run is a git/sha256 id, not a credential.
+# A 40/64-char lowercase hex run is a git/sha256 id, not a credential, but only
+# in header lines, `Baseline:` segments and after `@ `.
 _HASH_RE = re.compile(r"\b(?:[0-9a-f]{40}|[0-9a-f]{64})\b")
+_AT_HASH_RE = re.compile(r"@ (?:[0-9a-f]{40}|[0-9a-f]{64})\b")
+_BASELINE_HASH_RE = re.compile(r"Baseline:[^·\n]*")
 _ENV_MIN_LEN = 8
 _NO_REGRESSION = ("not run", "skipped", "n/a")
 
@@ -89,9 +91,25 @@ class Report:
     review_passed: bool
 
 
+_KNOWN_HEADINGS = sorted(
+    (*REQUIRED_HEADINGS, "## Environment & data seeds"), key=len, reverse=True
+)
+
+
+def _cut_note(line: str) -> str:
+    """`## Heading note` -> `## Heading`, whatever the gap width."""
+    for h in _KNOWN_HEADINGS:
+        if line == h or (line.startswith(h) and line[len(h)].isspace()):
+            return h
+    return line
+
+
 def _norm(text: str) -> str:
-    """Visible body with each `## Heading   note` cut to `## Heading`."""
-    return _HEADING_TAIL_RE.sub(r"\1", visible_body(text)) + "\n"
+    """Visible body with the note after each known `## Heading` cut off."""
+    lines = visible_body(text).splitlines()
+    return (
+        "\n".join(_cut_note(ln) if ln.startswith("## ") else ln for ln in lines) + "\n"
+    )
 
 
 def _header_lines(text: str) -> list[str]:
@@ -269,6 +287,19 @@ def _flag_issues(text: str) -> list[Issue]:
     return issues
 
 
+def _results_issues(norm: str, r: Report) -> list[Issue]:
+    rows = table_rows(section_body(norm, "## Results by AC") or "")
+    if rows and (
+        table_column(rows, "TC") is None or table_column(rows, "Result") is None
+    ):
+        return [
+            _err("Results by AC: table needs `TC` and `Result` columns", "rep-result")
+        ]
+    if not r.results:
+        return [_err("Results by AC: no result rows", "rep-result")]
+    return []
+
+
 def _verdict_issues(r: Report) -> list[Issue]:
     if r.verdict not in VERDICTS:
         return [
@@ -292,15 +323,30 @@ def _verdict_issues(r: Report) -> list[Issue]:
     return issues
 
 
+def _declared_env_vars(repo_root: Path) -> set[str] | None:
+    """Env var names `.kb/test-env.yaml` references; None if absent/invalid."""
+    try:
+        env = testenv.load(repo_root)
+    except testenv.TestEnvError:
+        return None
+    names = {env.db.url_env}
+    for acct in env.accounts.values():
+        names |= {acct.user_env, acct.password_env}
+    return names
+
+
 def _dotenv_issues(text: str, repo_root: Path) -> list[Issue]:
+    """Error for each `.env` value (>= 8 chars) found in `text`; scoped to the
+    vars test-env.yaml names, or every var when it does not load."""
     try:
         lines = (repo_root / ".env").read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return []
+    declared = _declared_env_vars(repo_root)
     issues = []
     for line in lines:
         m = _ENV_LINE_RE.match(line.strip())
-        if not m:
+        if not m or (declared is not None and m.group(1) not in declared):
             continue
         value = m.group(2).strip().strip("'\"")
         if len(value) >= _ENV_MIN_LEN and value in text:
@@ -312,11 +358,20 @@ def _dotenv_issues(text: str, repo_root: Path) -> list[Issue]:
     return issues
 
 
+def _without_commits(line: str) -> str:
+    """`line` minus hex ids where commits legitimately appear: header lines,
+    `Baseline:` segments and `@ <sha>`."""
+    if line.startswith(">"):
+        return _HASH_RE.sub("", line)
+    line = _AT_HASH_RE.sub("@", line)
+    return _BASELINE_HASH_RE.sub(lambda m: _HASH_RE.sub("", m.group(0)), line)
+
+
 def _credential_issues(text: str) -> list[Issue]:
     return [
         _err(f"line {n} looks like a credential — remove it", "rep-secret")
         for n, ln in enumerate(text.splitlines(), 1)
-        if testenv.secret_like(_HASH_RE.sub("", ln))
+        if testenv.secret_like(_without_commits(ln))
     ]
 
 
@@ -347,6 +402,7 @@ def lint(
         issues.append(_err("header: Story and Round are required", "rep-header"))
     if not r.env_name or not r.date:
         issues.append(_err("header: Environment and Date are required", "rep-header"))
+    issues += _results_issues(norm, r)
     issues += _verdict_issues(r)
     issues += _flag_issues(norm)
     issues += _defect_issues(r, story_children)
@@ -357,6 +413,21 @@ def lint(
     return LintReport(issues=issues)
 
 
+def _children(repo_root: Path, spec: Path, story: str) -> tuple[str, ...]:
+    """Spec header `Children:`; when empty, the split table of the story's ticket."""
+    try:
+        kids = testcases.parse(spec.read_text(encoding="utf-8")).children
+    except (OSError, UnicodeDecodeError):
+        kids = ()
+    if kids:
+        return kids
+    try:
+        ticket = (repo_root / "tests" / story / "ticket.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ()
+    return tuple(r.child for r in planparents.children(ticket, story))
+
+
 def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
     """`kb report lint`: exit 0 PASS, 1 FAIL or unreadable."""
     try:
@@ -365,10 +436,7 @@ def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
         typer.secho(f"cannot read {file}: {type(exc).__name__}", fg="red", err=True)
         return 1
     spec = repo_root / "tests" / parse(text).story / "test-cases.md"
-    try:
-        children = testcases.parse(spec.read_text(encoding="utf-8")).children
-    except (OSError, UnicodeDecodeError):
-        children = ()
+    children = _children(repo_root, spec, parse(text).story)
     report = lint(
         text,
         report_dir=file.resolve().parent,

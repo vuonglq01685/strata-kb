@@ -24,9 +24,11 @@ HTTP_TIMEOUT = 15
 _PROD_NAMES = {"production", "prod"}
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
-# `user:pass@` or `:pass@`; a port-shaped run (`host:8443/…`) is not a password.
+# `user:pass@` or `:pass@`. A port-shaped run (`host:8443/…`) is not a password,
+# unless it is `user:1234@h` or `user:1234/x@h/` (an `@host/` after a one-segment run).
 _USERINFO = re.compile(
-    r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]*:(?!\d{1,5}(?:[/?#\s]|$))[^\s@]*@"
+    r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]*:"
+    r"(?:(?!\d{1,5}(?:[/?#\s]|$))[^\s@]*@|\d{1,5}/[^\s@?#]*@[^\s/@?#]+/)"
 )
 _SCHEME_ALIAS = {"postgresql": "postgres"}
 _DEFAULT_PORTS = {
