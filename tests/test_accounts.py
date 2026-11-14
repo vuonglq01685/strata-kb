@@ -309,3 +309,69 @@ def test_add_first_admin_only_one_of_two_racers_wins(tmp_path):
         t.join()
     assert sorted(results) == ["lost", "lost", "lost", "ok"]
     assert accts.count() == 1
+
+
+_OLD_USERS = """
+CREATE TABLE users (
+    username TEXT PRIMARY KEY COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin','ba','dev')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+
+def _old_db(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as conn:
+        conn.execute(_OLD_USERS)
+        conn.executemany(
+            "INSERT INTO users VALUES (?, ?, ?, 't0', 't1')",
+            [("Root", "h1", "admin"), ("ann", "h2", "ba"), ("dan", "h3", "dev")],
+        )
+    conn_close = sqlite3.connect(path)
+    conn_close.close()
+
+
+def test_old_users_db_gains_tester_role(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "users.db"
+    _old_db(db)
+    a = Accounts(db)
+    before = sorted((u.username, u.role, u.password_hash) for u in a.list())
+    assert before == [
+        ("Root", "admin", "h1"),
+        ("ann", "ba", "h2"),
+        ("dan", "dev", "h3"),
+    ]
+    a.add("tess", "pw", "tester")
+    assert a.get("TESS").role == "tester"
+    a.set_role("dan", "tester")
+    assert a.get("dan").role == "tester"
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT created_at, updated_at FROM users WHERE username='ann'"
+        ).fetchone() == ("t0", "t1")
+        names = [
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+    assert names == ["users"]  # no users_new left behind
+
+
+def test_migration_is_idempotent_and_keeps_new_tables(tmp_path):
+    db = tmp_path / "users.db"
+    _old_db(db)
+    Accounts(db).add("tess", "pw", "tester")
+    again = Accounts(db)  # second open: no rebuild, nothing lost
+    assert again.count() == 4
+    assert again.get("tess").role == "tester"
+
+
+def test_fresh_users_db_allows_tester(tmp_path):
+    a = Accounts(tmp_path / "users.db")
+    a.add("tess", "pw", "tester")
+    assert a.get("tess").role == "tester"

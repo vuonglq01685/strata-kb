@@ -21,7 +21,7 @@
       <span class="sid">{{ s.us_id }}</span>
       <span class="title">{{ s.title }}</span>
       <span class="sum">{{ s.reasons | join('; ') }}</span>
-      <span class="st">{{ plan_status(s.status) }}{% if s.status == 'ready' and claim_badges.get(s.us_id) %} {{ claim_badge(claim_badges[s.us_id]) }}{% endif %}</span>
+      <span class="st">{{ plan_status(s.status, s.test_status, s.regression_bug) }}{% if s.status == 'ready' and claim_badges.get(s.us_id) %} {{ claim_badge(claim_badges[s.us_id]) }}{% endif %}</span>
       <span class="tk">{% if s.us_id in mission.tickets %}<a href="/ui/tickets/{{ mission.mission_id | urlencode }}/{{ s.us_id | urlencode }}?repo={{ mission.repo | urlencode }}">open</a>{% else %}—{% endif %}</span>
     </div>
     {% else %}

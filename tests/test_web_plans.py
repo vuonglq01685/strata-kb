@@ -302,3 +302,19 @@ def test_mermaid_script_loads_only_with_a_diagram_and_is_served(plan_hub):
     resp = client.get("/ui/static/mermaid.min.js")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/javascript")
+
+
+def test_mission_page_shows_test_status_and_regression_badge(plan_hub):
+    from tests.test_testflow import STORY, _text, publish_tests
+
+    fail = _text(STORY, 1, "FAIL", guilty=f"{STORY}.web")
+    publish_tests(
+        plan_hub.root,
+        "tester-one",
+        STORY,
+        fail.replace("Regression: no", "Regression: yes"),
+    )
+    text = _client(plan_hub).get(f"/ui/tickets/{MISSION_ID}?repo=ba-one").text
+    assert " · reopened<" in text and ">regression<" in text
+    listing = _client(plan_hub).get("/ui/tickets").text
+    assert "1 reopened" in listing

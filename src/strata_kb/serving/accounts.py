@@ -26,7 +26,7 @@ from pathlib import Path
 
 from strata_kb.errors import KbError
 
-ROLES: tuple[str, ...] = ("admin", "ba", "dev")
+ROLES: tuple[str, ...] = ("admin", "ba", "dev", "tester")
 
 _SCHEME = "scrypt"
 _N, _R, _P = 2**14, 8, 1
@@ -43,15 +43,22 @@ _scrypt_slots = threading.BoundedSemaphore(MAX_CONCURRENT_SCRYPT)
 
 _log = logging.getLogger("strata_kb.accounts")
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
+_ROLE_CHECK = ",".join(f"'{r}'" for r in ROLES)
+
+
+def _users_ddl(name: str) -> str:
+    return f"""
+CREATE TABLE IF NOT EXISTS {name} (
     username TEXT PRIMARY KEY COLLATE NOCASE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','ba','dev')),
+    role TEXT NOT NULL CHECK(role IN ({_ROLE_CHECK})),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
 """
+
+
+_SCHEMA = _users_ddl("users")
 
 
 class AccountError(KbError):
@@ -151,16 +158,42 @@ def _row_to_user(row: tuple[str, str, str, str, str]) -> User:
     return User(username, role, password_hash, created_at, updated_at)
 
 
+def _stored_ddl(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'users'").fetchone()
+    return row[0] if row else ""
+
+
 class Accounts:
     """The users table. One short-lived connection per call (thread-safe)."""
 
     def __init__(self, db_path: Path) -> None:
         self._path = db_path
         db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with closing(self._connect()) as conn, conn:
+        with closing(self._connect()) as conn:
             conn.execute(_SCHEMA)
+            self._migrate_roles(conn)
         if os.name != "nt":  # POSIX modes only; password hashes stay owner-readable
             db_path.chmod(0o600)
+
+    @staticmethod
+    def _migrate_roles(conn: sqlite3.Connection) -> None:
+        """An old `users` table has a CHECK without every role: rebuild it in
+        one transaction. BEGIN IMMEDIATE and a re-read of the stored DDL make
+        two processes opening the same file at once safe."""
+        if "'tester'" in _stored_ddl(conn):
+            return
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if "'tester'" not in _stored_ddl(conn):
+                conn.execute("DROP TABLE IF EXISTS users_new")
+                conn.execute(_users_ddl("users_new"))
+                conn.execute("INSERT INTO users_new SELECT * FROM users")
+                conn.execute("DROP TABLE users")
+                conn.execute("ALTER TABLE users_new RENAME TO users")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path, timeout=10)

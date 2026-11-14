@@ -80,9 +80,9 @@ def _test_docs(hub: HubHandle) -> Iterator[tuple[str, ticketcheck.LoadedDoc]]:
             yield entry.id, doc
 
 
-def _read_report(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> Report | None:
-    """The `<story>.R<n>` section parsed back: L3 headings were demoted at
-    ingest and the H1 dropped, so both are restored first."""
+def _section_text(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> str | None:
+    """A `-test` section as markdown again: L3 headings were demoted at ingest
+    and the H1 dropped, so both are restored."""
     if not _SAFE_FILE_RE.fullmatch(sec.file) or sec.file in (".", ".."):
         logger.warning("skipping section %s: unsafe group file name", sec.id)
         return None
@@ -91,7 +91,23 @@ def _read_report(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> Report
     if body is None:
         return None
     inner = promote_headings(body.partition("\n")[2].strip("\n"))
-    text = f"# {sec.title}\n\n{inner}\n"
+    return f"# {sec.title}\n\n{inner}\n"
+
+
+def section_text(hub: HubHandle, section_id: str) -> str | None:
+    """Markdown of one `-test` section (`<story>.R<n>`, `<story>.cases`), or
+    None when no tester doc holds it."""
+    for _doc_id, doc in _test_docs(hub):
+        for sec in doc.manifest.sections:
+            if sec.id == section_id:
+                return _section_text(doc, sec)
+    return None
+
+
+def _read_report(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> Report | None:
+    text = _section_text(doc, sec)
+    if text is None:
+        return None
     try:
         return testreport.parse(text)
     except (ValueError, KbError):

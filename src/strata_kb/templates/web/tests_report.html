@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="reader">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/tests">Test Report</a> <span class="sep">/</span>
+      <a href="/ui/tests/{{ story | urlencode }}">{{ story }}</a> <span class="sep">/</span> R{{ report.round }}</p>
+    <p class="meta-line">
+      {% if ticket_href %}<a href="{{ ticket_href }}">ticket</a>{% else %}<span class="note">unknown story</span>{% endif %}
+      <a href="/ui/tests/{{ story | urlencode }}">test cases</a>
+      {% for d, seg in closed_stories %}<a href="/ui/tests/{{ seg }}">{{ d.rd_id }}: {{ d.story }}</a> {% endfor %}
+    </p>
+  </div>
+  <article class="reader-body md-body">{{ content_html | safe }}</article>
+</div>
+{% endblock %}

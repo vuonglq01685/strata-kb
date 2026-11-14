@@ -178,7 +178,7 @@ _BACK_LABEL = {
     KB: "all documents",
     BA: "all tickets",
     DEV: "all code",
-    TESTER: "Test Report",
+    TESTER: "all test reports",
 }
 
 

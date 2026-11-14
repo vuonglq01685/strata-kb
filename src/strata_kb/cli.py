@@ -4852,7 +4852,7 @@ _KB_OPT = typer.Option(Path(".kb"), "--kb", help="KB directory")
 @user_app.command("add")
 def user_add(
     username: str = typer.Argument(..., help="Login name (case-insensitive)"),
-    role: str = typer.Option(..., "--role", help="admin, ba or dev"),
+    role: str = typer.Option(..., "--role", help="admin, ba, dev or tester"),
     kb_dir: Path = _KB_OPT,
 ) -> None:
     """Create a hub UI account; the password is prompted for twice."""
@@ -4880,7 +4880,7 @@ def user_passwd(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> 
 @user_app.command("role")
 def user_role(
     username: str = typer.Argument(...),
-    role: str = typer.Argument(..., help="admin, ba or dev"),
+    role: str = typer.Argument(..., help="admin, ba, dev or tester"),
     kb_dir: Path = _KB_OPT,
 ) -> None:
     """Change an account's role (the last admin cannot be demoted)."""

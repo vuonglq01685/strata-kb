@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="reader">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/tests">Test Report</a> <span class="sep">/</span> {{ story }}</p>
+    <h1 style="font-size:26px">{{ story }}</h1>
+    <p class="meta-line">{% if ticket_href %}<a href="{{ ticket_href }}">ticket</a>{% else %}<span class="note">unknown story</span>{% endif %}</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Rounds</h2><span class="note">{{ reports | length }}</span></div>
+    {% for r in reports %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/tests/{{ story | urlencode }}/R{{ r.round }}">R{{ r.round }}</a>
+      <span class="note">{{ r.verdict }}</span>
+      <span class="note">{{ r.date }}</span>
+      <span class="note">{{ r.defects | length }} defects</span>
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No report yet.</p></div>
+    {% endfor %}
+  </div>
+  {% if cases_html %}<article class="reader-body md-body">{{ cases_html | safe }}</article>{% endif %}
+</div>
+{% endblock %}

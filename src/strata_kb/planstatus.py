@@ -68,7 +68,10 @@ class PlanMission:
 
     @property
     def counts(self) -> Counter[str]:
-        return Counter(s.status for s in self.stories)
+        # test statuses (testing, closed, ...) ride along when a report or claim set one
+        return Counter(s.status for s in self.stories) + Counter(
+            s.test_status for s in self.stories if s.test_status
+        )
 
 
 @dataclass(frozen=True)

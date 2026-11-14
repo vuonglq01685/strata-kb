@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_partials/status.html" import plan_status %}
+{% block main %}
+<div class="stack-lg">
+  <div class="page-head">
+    <p class="kicker accent">Testing</p>
+    <h1>Test Report</h1>
+    <p class="lede">Reports the Tester published for each story: latest round, verdict
+      and the ticket status it gives. Bug candidates are regression failures not yet
+      logged by an earlier report. Read-only.</p>
+  </div>
+  <p class="meta-line">
+    {% for f in filters %}<a class="chip {{ 'on' if f == active else '' }}" href="/ui/tests?status={{ f }}">{{ 'bug candidates' if f == 'candidates' else f }}</a>
+    {% endfor %}
+  </p>
+  {% if active == 'candidates' %}
+  {% if candidates %}
+  <div class="panel">
+    <div class="panel-head"><h2>Bug candidates</h2><span class="note">{{ candidates | length }}</span></div>
+    {% for c in candidates %}
+    <div class="queue-row">
+      <span class="cite">{{ c.key }}</span>
+      <span class="file"><a href="/ui/tests/{{ c.story | urlencode }}/R{{ c.round }}">{{ c.story }} R{{ c.round }}</a></span>
+      <span class="note">{{ c.rd_id or 'no RD' }}</span>
+      <span class="note">{{ c.duplicates | length }} duplicate{{ '' if c.duplicates | length == 1 else 's' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state"><p>No open bug candidates.</p></div>
+  {% endif %}
+  {% elif rows %}
+  <div class="panel">
+    <div class="panel-head"><h2>Stories</h2><span class="note">{{ rows | length }}</span></div>
+    {% for r in rows %}
+    <div class="queue-row">
+      <a class="cite" href="/ui/tests/{{ r.story | urlencode }}">{{ r.story }}</a>
+      <span class="file">{% if r.round %}R{{ r.round }}{% else %}no report{% endif %}</span>
+      <span class="note">{{ r.verdict }}</span>
+      <span>{% if r.status %}<span class="badge badge-{{ {'closed': 'reviewed'}.get(r.status, 'pending') }}">{{ r.status }}</span>{% endif %}{% if r.regression %} <span class="badge badge-pending">regression</span>{% endif %}</span>
+      <span class="note">{{ r.date }}</span>
+      {% if r.report_href %}<a href="{{ r.report_href }}">report</a>{% endif %}
+      {% if r.ticket_href %}<a href="{{ r.ticket_href }}">ticket</a>{% else %}<span class="note">unknown story</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% elif any_reports %}
+  <div class="empty-state"><p>No stories with this status.</p><p><a href="/ui/tests">Show all</a></p></div>
+  {% else %}
+  <div class="empty-state">
+    <p>No test reports yet.</p>
+    <p>A Tester publishes them with <span class="mono">kb publish</span>.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
