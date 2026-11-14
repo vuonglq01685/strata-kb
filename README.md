@@ -92,7 +92,7 @@ automatic. A ticket or spec cites sections in a
 `kb-context` block pinned to the hub's commit, so `kb resolve` can tell you
 later whether what it cited still says the same thing.
 
-### Federation: hub, child, ba, dev, tester, tester
+### Federation: hub, child, ba, dev, tester
 
 One repo holds the shared, searchable copy; the others author or consume.
 
