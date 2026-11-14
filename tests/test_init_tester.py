@@ -101,3 +101,23 @@ def test_upgrade_still_refuses_other_kinds(tmp_path, run_git, monkeypatch):
     run_git(root, "commit", "-m", "init")
     with pytest.raises(KbError, match="ba, dev or tester"):
         upgrade(root, open_pr=False)
+
+
+def test_tester_scaffold_publishes_via_ci_with_report_ingest(tmp_path):
+    import yaml
+
+    init_repo(tmp_path, "tester")
+    wf = yaml.safe_load((tmp_path / ".github/workflows/kb-publish.yml").read_text())
+    assert wf[True]["push"] == {"tags": ["kb-publish/*"]}
+    steps = "\n".join(s.get("run", "") for s in wf["jobs"]["publish"]["steps"])
+    assert "kb report-ingest" in steps and "kb plan-ingest" not in steps
+    assert "kb ci-publish" in steps
+    req = yaml.safe_load(
+        (tmp_path / ".github/workflows/kb-publish-request.yml").read_text()
+    )
+    assert req[True]["push"]["paths"] == ["tests/**", "reports/**"]
+    assert (
+        "actions/workflows/kb-publish.yml/dispatches"
+        in (tmp_path / ".github/workflows/kb-publish-request.yml").read_text()
+    )
+    assert ".kb/index.yaml" in (tmp_path / ".gitignore").read_text().splitlines()

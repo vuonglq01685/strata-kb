@@ -1872,8 +1872,9 @@ def publish_via_intake(
 ) -> str:
     """Dev-machine intake flow: tag kb-publish/<ts>, push, poll for the PR URL.
 
-    `plan_inputs`: folders a ba repo's generated `-plan` is built from. `.kb/`
-    is gitignored there, so these must be clean too.
+    `plan_inputs`: folders a ba (missions, tickets) or tester (tests, reports)
+    repo's generated `-plan` / `-test` is built from. `.kb/` is gitignored
+    there, so these must be clean too.
 
     `on_merged`: called with the status' `merged` flag when the (newer) hub
     reports one -- the return value stays the PR URL.
@@ -1919,11 +1920,12 @@ def publish_via_intake(
         if not plan_inputs:
             raise
         # Some environments may push their branch but not tags (a cloud
-        # session's git proxy): a ba repo's kb-publish-request.yml publishes
-        # on a push to main instead (#107).
+        # session's git proxy): a ba or tester repo's kb-publish-request.yml
+        # publishes on a push to main instead (#107).
+        touched = " or ".join(f"{f.name}/" for f in plan_inputs)
         raise PublishError(
             f"{exc} -- where tags cannot be pushed, merge the change into main "
-            "(a push to main that touches missions/ or tickets/ publishes via "
+            f"(a push to main that touches {touched} publishes via "
             ".github/workflows/kb-publish-request.yml), or run "
             "that workflow by hand on main"
         ) from None

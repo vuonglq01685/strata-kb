@@ -413,8 +413,9 @@ def lint(
     return LintReport(issues=issues)
 
 
-def _children(repo_root: Path, spec: Path, story: str) -> tuple[str, ...]:
-    """Spec header `Children:`; when empty, the split table of the story's ticket."""
+def story_children(spec: Path, story: str) -> tuple[str, ...]:
+    """Spec header `Children:`; when empty, the split table of the `ticket.md`
+    next to the spec."""
     try:
         kids = testcases.parse(spec.read_text(encoding="utf-8")).children
     except (OSError, UnicodeDecodeError):
@@ -422,7 +423,7 @@ def _children(repo_root: Path, spec: Path, story: str) -> tuple[str, ...]:
     if kids:
         return kids
     try:
-        ticket = (repo_root / "tests" / story / "ticket.md").read_text(encoding="utf-8")
+        ticket = (spec.parent / "ticket.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ()
     return tuple(r.child for r in planparents.children(ticket, story))
@@ -436,7 +437,7 @@ def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
         typer.secho(f"cannot read {file}: {type(exc).__name__}", fg="red", err=True)
         return 1
     spec = repo_root / "tests" / parse(text).story / "test-cases.md"
-    children = _children(repo_root, spec, parse(text).story)
+    children = story_children(spec, parse(text).story)
     report = lint(
         text,
         report_dir=file.resolve().parent,

@@ -869,12 +869,56 @@ def _refresh_dev_code(kb_dir: Path) -> None:
     _refresh_code_or_exit(kb_dir, cfg.repo_id)
 
 
+def _warn_skipped_and_build(kb_dir: Path, skipped: list[tuple[str, str]]) -> None:
+    """After a publish-time refresh: a skipped item is not an error, but its
+    author must see it before it ships; then build the KB and fail on errors."""
+    from strata_kb import cipublish
+    from strata_kb.build import build_kb
+
+    for file, reason in skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        cipublish.write_step_summary(line)
+    report = build_kb(kb_dir)
+    for warning in report.warnings + report.quality:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+def _echo_ingest_report(report, json_out: bool) -> None:
+    """The `kb plan-ingest` / `kb report-ingest` output."""
+    from strata_kb import cipublish
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "doc_id": report.doc_id,
+                    "published": report.published,
+                    "skipped": [list(pair) for pair in report.skipped],
+                },
+                indent=2,
+            )
+        )
+        return
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"published: {len(report.published)} section(s)")
+    for sid in report.published:
+        typer.echo(f"  {sid}")
+    for file, reason in report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.echo(line)
+        cipublish.write_step_summary(line)
+
+
 def _refresh_ba_plan(kb_dir: Path) -> None:
     """`kb publish` in a ba repo: regenerate `<repo_id>-plan` from the working
     tree, so the diff preview and the upload show what CI will send. Same
     defaults as `kb plan-ingest`, anchored to the repo root."""
-    from strata_kb import cipublish, config, planingest
-    from strata_kb.build import build_kb
+    from strata_kb import config, planingest
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
@@ -888,40 +932,23 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
             f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED, err=True
         )
         raise typer.Exit(1) from None
-    # A skipped story is not an error, but the BA must see it before it ships.
-    for file, reason in plan_report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.secho(line, fg=typer.colors.YELLOW, err=True)
-        cipublish.write_step_summary(line)
-    report = build_kb(kb_dir)
-    for warning in report.warnings + report.quality:
-        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
-    for error in report.errors:
-        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
-    if not report.ok:
-        raise typer.Exit(1)
+    _warn_skipped_and_build(kb_dir, plan_report.skipped)
 
 
-def _tester_children_of(root: Path):
-    """Children of a story from `tests/<story>/ticket.md` (empty without one)."""
-    from strata_kb import planparents
+def _tester_children_of(tests_dir: Path):
+    """Children of a story from the `ticket.md` next to its test cases."""
+    from strata_kb import testreport
 
-    def children_of(story: str) -> tuple[str, ...]:
-        try:
-            text = (root / "tests" / story / "ticket.md").read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return ()
-        return tuple(r.child for r in planparents.children(text, story))
-
-    return children_of
+    return lambda story: testreport.story_children(
+        tests_dir / story / "test-cases.md", story
+    )
 
 
 def _refresh_tester_doc(kb_dir: Path) -> None:
     """`kb publish` in a tester repo: regenerate `<repo_id>-test` from the
     working tree, so the diff preview and the upload show what CI will send.
     Same defaults as `kb report-ingest`, anchored to the repo root."""
-    from strata_kb import cipublish, config, testingest
-    from strata_kb.build import build_kb
+    from strata_kb import config, testingest
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
@@ -933,24 +960,14 @@ def _refresh_tester_doc(kb_dir: Path) -> None:
             rid,
             root / "tests",
             root / "reports",
-            _tester_children_of(root),
+            _tester_children_of(root / "tests"),
         )
     except testingest.TestIngestError as exc:
         typer.secho(
             f"could not refresh {rid}-test: {exc}", fg=typer.colors.RED, err=True
         )
         raise typer.Exit(1) from None
-    for file, reason in test_report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.secho(line, fg=typer.colors.YELLOW, err=True)
-        cipublish.write_step_summary(line)
-    report = build_kb(kb_dir)
-    for warning in report.warnings + report.quality:
-        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
-    for error in report.errors:
-        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
-    if not report.ok:
-        raise typer.Exit(1)
+    _warn_skipped_and_build(kb_dir, test_report.skipped)
 
 
 @app.command()
@@ -2096,7 +2113,7 @@ def plan_ingest(
 ) -> None:
     """Build .kb/<repo_id>-plan/ from missions and ready tickets — deterministic,
     offline, no LLM. Items that are not ready are listed as skipped."""
-    from strata_kb import cipublish, config, planingest
+    from strata_kb import config, planingest
 
     resolved_root = repo_root.resolve()
     resolved_kb_dir = kb_dir.resolve()
@@ -2109,27 +2126,7 @@ def plan_ingest(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from None
 
-    if json_out:
-        typer.echo(
-            json.dumps(
-                {
-                    "doc_id": report.doc_id,
-                    "published": report.published,
-                    "skipped": [list(pair) for pair in report.skipped],
-                },
-                indent=2,
-            )
-        )
-        return
-
-    typer.echo(f"doc: {report.doc_id}")
-    typer.echo(f"published: {len(report.published)} section(s)")
-    for sid in report.published:
-        typer.echo(f"  {sid}")
-    for file, reason in report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.echo(line)
-        cipublish.write_step_summary(line)
+    _echo_ingest_report(report, json_out)
 
 
 @app.command(name="report-ingest")
@@ -2151,7 +2148,7 @@ def report_ingest(
 ) -> None:
     """Build .kb/<repo_id>-test/ from lint-clean test cases and reports —
     deterministic, offline, no LLM. Files that fail lint are listed as skipped."""
-    from strata_kb import cipublish, config, testingest
+    from strata_kb import config, testingest
 
     resolved_root = repo_root.resolve()
     resolved_kb_dir = kb_dir.resolve()
@@ -2163,33 +2160,13 @@ def report_ingest(
             rid,
             tests_dir,
             reports_dir,
-            _tester_children_of(resolved_root),
+            _tester_children_of(tests_dir),
         )
     except testingest.TestIngestError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from None
 
-    if json_out:
-        typer.echo(
-            json.dumps(
-                {
-                    "doc_id": report.doc_id,
-                    "published": report.published,
-                    "skipped": [list(pair) for pair in report.skipped],
-                },
-                indent=2,
-            )
-        )
-        return
-
-    typer.echo(f"doc: {report.doc_id}")
-    typer.echo(f"published: {len(report.published)} section(s)")
-    for sid in report.published:
-        typer.echo(f"  {sid}")
-    for file, reason in report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.echo(line)
-        cipublish.write_step_summary(line)
+    _echo_ingest_report(report, json_out)
 
 
 @svc_app.command("note")
@@ -2939,14 +2916,16 @@ def publish(
     if plan.route == "intake":
         merged_seen: list[bool] = []
         try:
-            ba_root = kb_dir.resolve().parent
+            repo_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
                 kb_dir,
                 plan.intake_url,
                 effective_repo_id(repo_id, kb_dir),
                 plan_inputs=(
-                    (ba_root / "missions", ba_root / "tickets")
+                    (repo_root / "missions", repo_root / "tickets")
                     if plan.refresh_plan
+                    else (repo_root / "tests", repo_root / "reports")
+                    if plan.refresh_test
                     else ()
                 ),
                 on_merged=merged_seen.append,

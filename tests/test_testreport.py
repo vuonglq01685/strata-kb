@@ -302,7 +302,7 @@ def test_children_fall_back_to_ticket_split_table(tmp_path):
     orig = planparents.children
     planparents.children = lambda text, pid: seen.append((text, pid)) or []
     try:
-        testreport._children(tmp_path, d / "test-cases.md", STORY)
+        testreport.story_children(d / "test-cases.md", STORY)
     finally:
         planparents.children = orig
     assert seen == [("ticket", STORY)]

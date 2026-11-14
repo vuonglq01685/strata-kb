@@ -145,3 +145,34 @@ def test_cli_report_ingest_json(tmp_path):
     )  # fmt: skip
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["published"] == [f"{STORY}.cases", f"{STORY}.R1"]
+
+
+def _only_cases_published(tmp_path, reason_part: str):
+    rep = run_tests(tmp_path)
+    assert rep.published == [f"{STORY}.cases"]
+    assert [f for f, _ in rep.skipped] == [f"reports/{STORY}/R1.md"]
+    assert reason_part in rep.skipped[0][1]
+
+
+def test_report_with_q2_not_passed_is_skipped(tmp_path):
+    write_repo(tmp_path, report=_report(review="| Q2 | 2 | fail |"))
+    _only_cases_published(tmp_path, "Q2")
+
+
+def test_report_round_must_match_file_name(tmp_path):
+    write_repo(tmp_path, report=_report().replace("Round: 1", "Round: 2"))
+    _only_cases_published(tmp_path, "does not match file name R1")
+
+
+def test_incomplete_verdict_is_skipped(tmp_path):
+    write_repo(tmp_path, report=_report(verdict="INCOMPLETE"))
+    _only_cases_published(tmp_path, "PASS or FAIL")
+
+
+def test_leading_zero_round_file_is_skipped_not_duplicated(tmp_path):
+    write_repo(tmp_path)
+    (tmp_path / "reports" / STORY / "R01.md").write_text(_report(), encoding="utf-8")
+    rep = run_tests(tmp_path)
+    assert rep.published == [f"{STORY}.cases", f"{STORY}.R1"]
+    assert [f for f, _ in rep.skipped] == [f"reports/{STORY}/R01.md"]
+    assert "R<n>.md" in rep.skipped[0][1]
