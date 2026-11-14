@@ -177,13 +177,22 @@ def _latest(story: str, facts: TestFacts) -> Report | None:
     return found[-1] if found else None
 
 
+def _closing(story: str, facts: TestFacts) -> Report | None:
+    """The newest PASS round of `story`, which closed it; None if none did."""
+    return next(
+        (r for r in reversed(facts.reports.get(story, ())) if r.verdict == "PASS"),
+        None,
+    )
+
+
 def story_test_status(
     story: str, children: tuple[str, ...], facts: TestFacts
 ) -> dict[str, str]:
     """id -> test status for a story and its children (spec D3). `closed` is
-    final: a held claim or a later Dev row never overrides a PASS."""
+    final (O15): once any round PASSed, a held claim, a later Dev row or a later
+    FAIL round never overrides it."""
     latest = _latest(story, facts)
-    if latest is not None and latest.verdict == "PASS":
+    if _closing(story, facts) is not None:
         return dict.fromkeys((story, *children), "closed")
     out: dict[str, str] = {}
     if latest is not None:  # FAIL
@@ -211,7 +220,7 @@ def overlay(repo: PlanRepo, facts: TestFacts) -> PlanRepo:
     for root in (r for r in rows if not r.parent):
         kids = tuple(r.us_id for r in rows if r.parent == root.us_id)
         statuses = story_test_status(root.us_id, kids, facts)
-        latest = _latest(root.us_id, facts)
+        latest = _closing(root.us_id, facts) or _latest(root.us_id, facts)
         for us_id, status in statuses.items():
             derived[us_id] = dataclasses.replace(
                 next(r for r in rows if r.us_id == us_id),

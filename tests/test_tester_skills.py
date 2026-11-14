@@ -208,3 +208,12 @@ def test_skill_stops_when_the_known_failures_call_fails():
     t = _body("tester-test-story")
     assert "exits non-zero" in t and "stop the round" in t
     assert "never treat a" in t
+
+
+def test_test_story_body_checks_testability_before_anything_is_held():
+    t = _body("tester-test-story").split("## Steps", 1)[1]
+    assert "kb mission next --from-hub" in t
+    assert t.index("kb mission next --from-hub") < t.index("kb test-env lock")
+    assert t.index("kb mission next --from-hub") < t.index("kb claim take")
+    for phrase in ("fix-done", "`reopened`", "closed", "holding nothing"):
+        assert phrase in t, phrase

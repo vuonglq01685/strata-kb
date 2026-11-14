@@ -25,6 +25,15 @@ first; when it is missing, stop and tell the Tester to run
 
 1. **Fetch the ticket.** `kb ticket fetch <story> --out tests/<story>/ticket.md`.
    Read its acceptance criteria and its `### Alternate / exception flows`.
+   **Testable check**, before anything is held: run
+   `kb mission next --from-hub --json` and read the rows of `<story>` and of
+   its children (rows whose `parent` is `<story>`; an unsplit story is its own
+   only row). Stop, holding nothing, unless the story's `test_status` is not
+   `closed` (a closed story is final: never test it again) and every child
+   (or the unsplit story itself) has `status` `done` and a `test_status` that
+   is empty or `fix-done`. A child that is not `done`, or that is `reopened`
+   (the Dev has not fixed it yet) or `testing` (another Tester holds it),
+   means "not testable yet": say which child and why.
 2. **Deploy check.** `kb test-env deployed <story>`. Exit 1 (hub or GitHub
    error): stop with the printed error; nothing is held. Exit 4 means the
    environment does not run the published commits yet: stop with

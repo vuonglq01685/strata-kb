@@ -368,3 +368,31 @@ def test_golden_report_end_to_end_opens_dedupes_and_closes(plan_hub, tmp_path):
         _facts(reports={"ST-1": facts.reports["ST-1"], "ST-9": (skipped,)})
     )
     assert set(kept) == {"ST-0/TC-3", "ST-0/TC-4"}
+
+
+def test_closed_is_final_when_a_later_round_fails():
+    facts = _facts(
+        reports={
+            STORY: (_rep(STORY, 1), _rep(STORY, 2, "FAIL", guilty=KIDS[0])),
+        },
+        fix_rounds={KIDS[0]: frozenset({2})},
+        testing=frozenset({STORY}),
+    )
+    assert testflow.story_test_status(STORY, KIDS, facts) == dict.fromkeys(
+        (STORY, *KIDS), "closed"
+    )
+
+
+def test_overlay_of_a_closed_story_shows_the_closing_round(plan_hub):
+    publish_tests(
+        plan_hub.root,
+        "qa-repo",
+        STORY,
+        _text(STORY, 1),
+        _text(STORY, 2, "FAIL", guilty=f"{STORY}.web", date="2026-11-15"),
+    )
+    repos, _ = planstatus.hub_plans(plan_hub)
+    row = next(
+        s for r in repos for m in r.missions for s in m.stories if s.us_id == STORY
+    )
+    assert (row.test_status, row.test_round) == ("closed", 1)
