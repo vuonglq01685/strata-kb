@@ -100,6 +100,7 @@ review.
 | O14 | Test accounts log in with user/password; API uses cookie or bearer token. |
 | O15 | A `closed` story stays `closed`, even if the BA later amends it; a change after close needs a new ticket. |
 | O16 | After every TC of the parent story passes, and before the story closes, the whole regression suite runs; any regression failure is logged as a bug. |
+| O17 | A regression failure caused by the story's own change reopens the story like any defect of the story, marked as a **regression bug**. A regression failure outside the story's change does not stop the story from closing; it is logged as a bug. |
 
 ## Approaches
 
@@ -319,9 +320,26 @@ Run pipeline per round, in order:
    script defect, back to the Tester.
 5. **Regression run** (O16), only when every story TC passed: run the scripts
    of every `closed` story, with the same retry and MCP confirmation. Each
-   confirmed regression failure becomes a *regression defect* in the report
-   (D6) and is logged as a bug (D6). It does not reopen the old story (closed
-   is final) and does not stop this story from closing.
+   confirmed regression failure is then **attributed** (O17):
+   - **Story regression** — caused by this story's change. It becomes a
+     defect of this story, marked `Regression: yes`, with a guilty child; the
+     round is `FAIL` and the child is `reopened`. The old story stays closed.
+   - **Outside regression** — not caused by this story's change. It becomes a
+     *regression defect* `RD<k>` in the report and a bug candidate (D6); it
+     does not stop this story from closing.
+
+   Attribution rule. A failure is a story regression only when both hold:
+   (a) **baseline**: the TC passed in the last recorded regression baseline
+   (the regression results of the last `PASS` round on this environment, with
+   each app's commit), so it broke since; and (b) **overlap**: the failing
+   page, API route or service maps to a file changed by one of this story's
+   child PRs (PR file list through the GitHub API, no clone; mapped with the
+   Dev repo's published `-code` routes/pages and `-svc` services). The guilty
+   child is the one whose PR holds the overlapping file. Neither signal, or
+   only one → outside regression. No baseline yet (first regression run on
+   this environment) → overlap alone decides. The agent writes the evidence
+   for (a) and (b) in the defect; Q2 must agree with the attribution, and a
+   Q2 doubt makes it an outside regression (no reopen on a guess).
 6. **Post-check**: re-read every `version_check`. A commit changed during the
    round (CI deployed) → the round is void, `BLOCKED-ENV`.
 
@@ -330,12 +348,14 @@ Round outcome:
 | Outcome | When | Published |
 |---|---|---|
 | `PASS` | every story TC passed, steps 1 and 6 clean | yes → `closed` |
-| `FAIL` | ≥1 confirmed story defect | yes → `reopened` |
+| `FAIL` | ≥1 confirmed story defect (story TC or story regression) | yes → `reopened` |
 | `INCOMPLETE` | no defect, but ≥1 flaky / script-defect TC | no (local run log) |
 | `BLOCKED-ENV` | step 1 or 6 failed | no (local run log) |
 
-A `FAIL` round skips the regression run (step 5): the regression runs on the
-round that will close the story.
+A round whose story TCs already failed skips the regression run (step 5): the
+regression runs on the round that would close the story. A story regression
+found there makes that round `FAIL`; the next round after the fix reruns the
+story TCs and the regression suite.
 
 ### D6. Test report — `reports/<story-id>/R<n>.md`
 
@@ -354,7 +374,11 @@ Based on ISO/IEC/IEEE 29119-3 test completion report + incident report fields
 |---|---|---|---|---|
 | AC1 | TC-01 | PASS | tests/…/tc01.spec.ts | ![](assets/tc01.png) |
 ## Defects            one per confirmed story failure:
-### D1 — <symptom>   Guilty: <child id> · Severity · Priority
+### D1 — <symptom>   Guilty: <child id> · Regression: no · Severity · Priority
+  Steps to reproduce · Expected · Actual · Evidence · Environment
+### D2 — <symptom>   Guilty: <child id> · Regression: yes · Severity · Priority
+  Broken TC: <closed story id> TC-<k> · Baseline: R<m> @ <commits> passed
+  Overlap: <page/route/service> ↔ <file> in <child PR>
   Steps to reproduce · Expected · Actual · Evidence · Environment
 ## Regression         suite size, passed, failed
 ## Regression defects one per confirmed regression failure:
@@ -380,7 +404,9 @@ Based on ISO/IEC/IEEE 29119-3 test completion report + incident report fields
 - `kb report lint`: template headings present; verdict matches the tables
   (any story FAIL → `FAIL`, else `PASS`; `INCOMPLETE`/`BLOCKED-ENV` never in
   a committed report); every defect has a guilty child that belongs to the
-  story; every regression defect names a `closed` story; every image exists;
+  story; every defect has `Regression: yes|no`, and every `yes` defect has
+  its broken TC, baseline (or "no baseline") and overlap lines; every
+  regression defect names a `closed` story; every image exists;
   no env var value or credential-looking string in the text.
 
 ### D7. Claims for the Tester
@@ -430,7 +456,8 @@ report cites their paths and the `tester` commit.
 
 - **Test Report** menu (`/ui/tests`), list like `questions.html`: story,
   round, verdict, status, date, filters `all · testing · reopened · closed ·
-  bug candidates`.
+  regression · bug candidates`. A reopened ticket whose defect is
+  `Regression: yes` carries a `regression` badge here and on its ticket page.
 - Report page renders `R<n>.md` with asset images; links to the ticket page,
   the test case spec and, per regression defect, the closed story and the
   logged bug.
@@ -493,9 +520,13 @@ report cites their paths and the `tester` commit.
   round voids it.
 - DB through the user's own scripts, any engine, no new driver; the reset
   guard is best-effort.
-- A regression failure does not reopen the old story and does not block the
-  current story from closing; it becomes a bug candidate the BA turns into
-  `BUG-<n>`.
+- Regression attribution (O17): story regression only when the TC passed in
+  the last baseline **and** the failing page/route/service overlaps a file of
+  the story's child PRs; otherwise, or when Q2 doubts it, outside regression.
+  An outside regression becomes a bug candidate the BA turns into `BUG-<n>`.
+  The old closed story is never reopened.
+- Hub shows regression bugs with a `regression` badge on the ticket and the
+  Test Report list (filter `regression`).
 - Bug tickets (`BUG-<n>`) go through the same test flow.
 - `retries` default 3; a flaky AC counts as unverified, never as pass.
 - Scripts stay in the `tester` repo and are not published to the hub.
