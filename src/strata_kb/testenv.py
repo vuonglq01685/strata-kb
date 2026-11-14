@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -210,6 +211,15 @@ def app_commits(env: TestEnv, http=httpio.request) -> dict[str, str]:
     return out
 
 
+def _bare_url(url: str) -> str:
+    """URL without userinfo, whitespace and trailing slash, for protected-URL matching."""
+    parts = urllib.parse.urlsplit(url.strip())
+    host = parts.netloc.rpartition("@")[2]
+    return urllib.parse.urlunsplit(
+        (parts.scheme.lower(), host.lower(), parts.path, parts.query, "")
+    ).rstrip("/")
+
+
 def run_script(repo_root: Path, env: TestEnv, script: str, run=subprocess.run) -> int:
     """Run a DB script with only the DB URL env var added; refuses production."""
     var = env.db.url_env
@@ -220,7 +230,7 @@ def run_script(repo_root: Path, env: TestEnv, script: str, run=subprocess.run) -
     value = os.environ.get(var) or read_env_value(repo_root, var)
     if not value:
         raise TestEnvError(f"{var} is not set")
-    if value in env.protected_urls:
+    if _bare_url(value) in {_bare_url(u) for u in env.protected_urls}:
         raise TestEnvError(f"refusing to run {script}: {var} points at a protected URL")
     try:
         proc = run(
@@ -231,6 +241,8 @@ def run_script(repo_root: Path, env: TestEnv, script: str, run=subprocess.run) -
         )
     except subprocess.TimeoutExpired:
         raise TestEnvError(f"{script} timed out after {SCRIPT_TIMEOUT}s") from None
+    except OSError as exc:
+        raise TestEnvError(f"{script} could not run: {type(exc).__name__}") from None
     return proc.returncode
 
 

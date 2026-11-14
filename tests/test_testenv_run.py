@@ -154,3 +154,22 @@ def test_verify_failing_script_is_fail(tmp_path, monkeypatch, capsys):
     root = _root(tmp_path, monkeypatch)
     assert testenv.verify(root, _http({}), _run([], 2)) == 1
     assert "FAIL db.check: exit 2" in capsys.readouterr().out
+
+
+def test_run_script_refuses_protected_url_with_userinfo(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEST_DB_URL", "postgres://u:p@prod/db/")
+    env = _env(protected_urls=["postgres://prod/db"])
+    calls: list = []
+    with pytest.raises(TestEnvError, match="protected") as ei:
+        testenv.run_script(tmp_path, env, "x.sh", _run(calls))
+    assert calls == [] and "u:p" not in str(ei.value)
+
+
+def test_run_script_oserror_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEST_DB_URL", SECRET)
+
+    def run(cmd, **kw):
+        raise FileNotFoundError("bash")
+
+    with pytest.raises(TestEnvError, match="s.sh could not run"):
+        testenv.run_script(tmp_path, _env(), "s.sh", run)

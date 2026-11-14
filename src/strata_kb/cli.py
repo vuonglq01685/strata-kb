@@ -241,7 +241,9 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         # click.Choice makes BadParameter escape typer.prompt instead of
         # re-prompting.
         while True:
-            answer = typer.prompt("Initialize this repo as (hub, child, ba, dev, tester)")
+            answer = typer.prompt(
+                "Initialize this repo as (hub, child, ba, dev, tester)"
+            )
             answer = answer.strip().lower()
             if answer in ("hub", "child", "ba", "dev", "tester"):
                 return answer
@@ -310,7 +312,8 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
             if answer in ("", *HUB_KINDS):
                 break
             typer.secho(
-                f"Error: {answer!r} is not one of kb, ba, dev, tester.", fg=typer.colors.RED
+                f"Error: {answer!r} is not one of kb, ba, dev, tester.",
+                fg=typer.colors.RED,
             )
         proposals[key] = answer
     chosen = {k: v for k, v in proposals.items() if v}
@@ -4867,13 +4870,17 @@ def test_env_reset() -> None:
 
 
 @test_env_app.command("seed")
-def test_env_seed(name: str = typer.Argument(..., help="Seed name from db.seeds")) -> None:
+def test_env_seed(
+    name: str = typer.Argument(..., help="Seed name from db.seeds"),
+) -> None:
     """Run one named DB seed script."""
 
     def go(t, root):
         env = t.load(root)
         if name not in env.db.seeds:
-            raise t.TestEnvError(f"unknown seed {name!r} — declared: {', '.join(env.db.seeds) or 'none'}")
+            raise t.TestEnvError(
+                f"unknown seed {name!r} — declared: {', '.join(env.db.seeds) or 'none'}"
+            )
         return t.run_script(root, env, env.db.seeds[name])
 
     _test_env_run(go)
