@@ -277,3 +277,25 @@ def test_switch_to_a_test_branch_cannot_discard_changes():
         "git switch test/US1-R1 -f",
     ):
         assert not _permitted_by_tester(bad), bad
+
+
+def test_tester_scaffold_gates_prs_with_the_lint_workflow(tmp_path):
+    import re
+
+    import yaml
+
+    init_repo(tmp_path, "tester")
+    init_repo(tmp_path / "ba", "ba")
+    path = tmp_path / ".github/workflows/kb-test-lint.yml"
+    text = path.read_text(encoding="utf-8")
+    wf = yaml.safe_load(text)
+    assert set(wf[True]) == {"pull_request"}  # not paths-filtered
+    assert wf["permissions"] == {"contents": "read"}
+    assert "kb testcase lint" in text and "--hub" in text
+    assert "kb report lint" in text
+    assert "tests/*/test-cases.md" in text and "reports/*/R*.md" in text
+    assert "secrets.KB_HUB_TOKEN" in text and "ghp_" not in text
+    assert "{version}" not in text and "strata-kb==" in text
+    ba = (tmp_path / "ba/.github/workflows/kb-ticket-lint.yml").read_text()
+    uses = lambda t: sorted(set(re.findall(r"uses: (\S+)", t)))  # noqa: E731
+    assert uses(text) == uses(ba)

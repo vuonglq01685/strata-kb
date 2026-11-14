@@ -277,6 +277,7 @@ TESTER_TEMPLATES: dict[str, str] = {
     ".kb/test-env.example.yaml": "test-env.example.yaml",
     ".github/workflows/kb-publish.yml": "kb-publish-tester.yml",
     ".github/workflows/kb-publish-request.yml": "kb-publish-request-tester.yml",
+    ".github/workflows/kb-test-lint.yml": "kb-test-lint.yml",
     **{
         path: resource
         for skill in ("tester-env-setup", "tester-test-story")

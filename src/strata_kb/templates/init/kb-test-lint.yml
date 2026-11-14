@@ -1,0 +1,75 @@
+# CI gate for tester repos: every pull request that touches a test case spec
+# (tests/<story>/test-cases.md) or a report (reports/<story>/R<n>.md) must pass
+# `kb testcase lint --hub` / `kb report lint` before it can merge. The hub is a
+# repo variable and any auth token a repo secret — never hardcoded here,
+# mirroring kb-ticket-lint.yml (documents behind the hub are copyrighted).
+#
+# Deliberately NOT `paths`-filtered: GitHub never synthesizes a passing status
+# for a job that never started, so a `paths:` filter on a trigger that backs a
+# *required* check would leave an unrelated PR waiting forever. The job always
+# starts; its step inspects the PR's own diff and exits 0 with a `::notice::`
+# when no spec or report changed.
+name: kb-test-lint
+on:
+  pull_request:
+concurrency:
+  group: kb-test-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+env:
+  STRATA_KB_HUB: ${{ vars.STRATA_KB_HUB }}
+  KB_HUB_TOKEN: ${{ secrets.KB_HUB_TOKEN }}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install strata-kb=={version}
+      - name: Authenticate the hub URL (private hub only)
+        if: env.KB_HUB_TOKEN != ''
+        run: |
+          scheme="${STRATA_KB_HUB%%://*}"
+          rest="${STRATA_KB_HUB#*://}"
+          echo "STRATA_KB_HUB=${scheme}://x-access-token:${KB_HUB_TOKEN}@${rest}" >> "$GITHUB_ENV"
+      - name: Lint changed test cases and reports
+        run: |
+          # `git diff` runs as a plain foreground command into a temp file so a
+          # git failure trips `bash -e` instead of reading as "nothing changed";
+          # -z with core.quotePath=false keeps non-ASCII paths intact.
+          status=0
+          count=0
+          git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR \
+            "origin/${BASE_REF}..." \
+            -- 'tests/*/test-cases.md' 'reports/*/R*.md' \
+            > "$RUNNER_TEMP/changed.nul"
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
+            case "$f" in
+              tests/*/test-cases.md) cmd="kb testcase lint" ; flags="--hub" ;;
+              reports/*/R*.md)       cmd="kb report lint"    ; flags="" ;;
+              *)
+                echo "::error::unrecognised path '$f'"
+                status=1
+                continue
+                ;;
+            esac
+            echo "::group::$cmd $f"
+            if ! $cmd "$f" $flags; then
+              echo "::error file=$f::$cmd failed"
+              status=1
+            fi
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/changed.nul"
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::no test case or report changed — lint skipped"
+            exit 0
+          fi
+          exit "$status"
