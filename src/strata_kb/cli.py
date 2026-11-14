@@ -119,6 +119,9 @@ app.add_typer(pr_app, name="pr")
 claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
 app.add_typer(claim_app, name="claim")
 
+test_env_app = typer.Typer(help="Tester repo: the declared test environment.")
+app.add_typer(test_env_app, name="test-env")
+
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
@@ -4831,6 +4834,14 @@ _KB_DIR_OPT = typer.Option(Path(".kb"), help="KB directory")
 def _exit_with(code: int) -> None:
     if code:
         raise typer.Exit(code)
+
+
+@test_env_app.command("check")
+def test_env_check() -> None:
+    """Validate .kb/test-env.yaml (names only, no secrets, scripts inside the repo)."""
+    from strata_kb import testenv
+
+    _exit_with(testenv.check(Path.cwd()))
 
 
 @claim_app.command("take")
