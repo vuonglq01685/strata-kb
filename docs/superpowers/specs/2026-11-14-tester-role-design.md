@@ -78,6 +78,7 @@ review.
 - A destructive DB reset/seed run against anything but the declared test DB.
 - Two Testers testing the same story at once, or two rounds sharing one test
   environment at once.
+- The same broken regression TC logged as two bugs, or reopening two stories.
 - A second source of truth for ticket status.
 
 ## Decisions made with the owner
@@ -101,6 +102,7 @@ review.
 | O15 | A `closed` story stays `closed`, even if the BA later amends it; a change after close needs a new ticket. |
 | O16 | After every TC of the parent story passes, and before the story closes, the whole regression suite runs; any regression failure is logged as a bug. |
 | O17 | A regression failure caused by the story's own change reopens the story like any defect of the story, marked as a **regression bug**. A regression failure outside the story's change does not stop the story from closing; it is logged as a bug. |
+| O18 | Two Tester agents running in parallel must not produce the same regression bug twice. |
 
 ## Approaches
 
@@ -303,7 +305,30 @@ failure. Credentials read from env only, login through the shared fixture.
 **Environment lock.** One round runs on one test environment at a time: the
 hub holds a lock per environment `name` next to claims (`claims.db`), taken
 before the preflight and released after the regression run. Taken → skip the
-story this pass.
+story this pass. So two Tester agents never run story TCs or the regression
+suite on the same environment at once; Testers work in parallel only on
+different environments (different `name`, own DB).
+
+**Duplicate guard (O18).** The same broken regression TC can still be found
+twice: by two Testers on two environments, or by a later round of another
+story while the first bug is still open. Each regression failure has a key
+`<closed story id>/TC-<k>`. The hub keeps a **known-failure** row per key
+(same DB, written when a report citing it is published, closed when the bug
+that fixes it is `closed` or a later regression run passes that TC). Before
+attribution (step 5) the agent asks the hub:
+
+- key has an open known-failure → no new defect, no new bug candidate. The
+  report lists it under `## Regression` as `known: <story> R<n> RD<k>` (or
+  `BUG-<n>`). It is not attributed to the current story (it failed before
+  this story's change, so the baseline signal (a) fails) and does not block
+  closing.
+- key unknown → attribute as below; the publish of the report writes the
+  known-failure row.
+- two reports published in the same window with the same new key (two
+  environments) → `kb report-ingest`/hub publish keeps the first, marks the
+  second's entry `duplicate of <story> R<n> RD<k>` and shows one bug
+  candidate. A story regression (`Regression: yes`) is keyed the same way, so
+  the same broken TC never reopens two stories.
 
 Run pipeline per round, in order:
 
