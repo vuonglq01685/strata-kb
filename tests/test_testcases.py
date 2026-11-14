@@ -242,3 +242,28 @@ def test_real_template_filled_in_passes(tmp_path, golden_block):  # noqa: F811
     with_flow = _filled_template(f"| {FLOW} | TC-02 |")
     ticket = _ticket(golden_block, flows=(FLOW,))
     assert _errs(testcases.lint(with_flow, ticket, spec_dir=d)) == []
+
+
+def test_cli_bare_filename_from_story_folder(tmp_path, golden_block, monkeypatch):  # noqa: F811
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
+    (d / "ticket.md").write_text(_ticket(golden_block))
+    (d / "test-cases.md").write_text(_spec())
+    monkeypatch.chdir(d)
+    res = CliRunner().invoke(app, ["testcase", "lint", "test-cases.md"])
+    assert res.exit_code == 0, res.output
+
+
+def test_template_defaults_are_flagged(tmp_path):
+    from strata_kb import initcmd
+
+    d = _dir(tmp_path)
+    t = initcmd.read_template("test-cases-template.md")
+    t = t.replace("<story-id> — <story title>", f"{STORY} — Show")
+    t = t.replace("<one-line title>", "case")
+    errs = _errs(testcases.lint(t, None, spec_dir=d))
+    assert any("Steps" in e and "placeholder" in e for e in errs)
+    assert any("Test data" in e and "placeholder" in e for e in errs)

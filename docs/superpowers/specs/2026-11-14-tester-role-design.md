@@ -276,6 +276,7 @@ use case).
 | Type | UI · API · UI+API |
 | Priority | P1 · P2 · P3 |
 | Technique | EP · BVA · decision table · state transition · use case |
+| Polarity | positive · negative · boundary |
 | Preconditions | … |
 | Test data | seed `<name>`, values … |
 | Steps | 1. … 2. … |

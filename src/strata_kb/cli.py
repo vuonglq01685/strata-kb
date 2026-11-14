@@ -4846,7 +4846,7 @@ def _exit_with(code: int) -> None:
 def testcase_lint(
     file: Path = typer.Argument(..., help="Test case spec file"),
     ticket: Path | None = typer.Option(
-        None, "--ticket", help="Fetched ticket (default tests/<story>/ticket.md)"
+        None, "--ticket", help="Fetched ticket (default <spec folder>/ticket.md)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: bool = typer.Option(False, "--hub", help="Fetch the ticket from the hub"),
@@ -4861,7 +4861,7 @@ def testcase_lint(
         typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
     story = testcases.parse(text).story
-    spec_dir = file.parent
+    spec_dir = file.resolve().parent
     ticket_text: str | None = None
     if hub:
         try:

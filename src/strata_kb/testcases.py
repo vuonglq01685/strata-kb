@@ -45,8 +45,7 @@ _CHILDREN_RE = re.compile(r"Children:\s*([^·]*)")
 _REV_RE = re.compile(r"Ticket revision:\s*(\d+)")
 _TC_HEAD_RE = re.compile(r"^## (TC-\d+)\s*[—-]\s*(.*)$", re.M)
 _TC_ID_RE = re.compile(r"TC-\d+")
-_CODE_RE = re.compile(r"`[^`]*`")
-_PLACEHOLDER_RE = re.compile(r"<(?!br\b)[a-z][\w .-]*>")
+_PLACEHOLDER_RE = re.compile(r"<(?!br\b)[a-z][\w .-]*>|(?<!\w)…(?!\w)")
 _NO_SCRIPT = {"", "-", "—", "n/a", "none"}
 
 
@@ -130,8 +129,7 @@ def _err(msg: str, code: str) -> Issue:
 
 
 def _placeholder(value: str) -> bool:
-    bare = _CODE_RE.sub("", value)
-    return bare.strip() == "…" or bool(_PLACEHOLDER_RE.search(bare))
+    return bool(_PLACEHOLDER_RE.search(value))
 
 
 def _structure(text: str, spec: CaseSpec) -> list[Issue]:
