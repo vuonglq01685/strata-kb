@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from strata_kb import ghapp, ghrest, planparents, testenv, ticket, ticketfetch
 from strata_kb.errors import KbError
@@ -14,6 +15,8 @@ from strata_kb.hub import HubHandle
 from strata_kb.testenv import TestEnv
 
 _DEPLOYED = {"identical", "ahead"}
+_PER_PAGE = 100
+_MAX_PAGES = 10  # shortcut: GitHub search caps at 1000 hits; 10 pages of 100
 Api = Callable[..., Any]
 
 
@@ -29,8 +32,9 @@ def story_repos(hub: HubHandle, story: str) -> dict[str, list[str]]:
         if not repo:
             raise KbError(f"{ticket_id} names no target repo")
         return {repo: [ticket_id]}
+    own = planparents._own_fix(text, ticket_id)  # a parent bug's own fix row
     out: dict[str, list[str]] = {}
-    for row in rows:
+    for row in [*([own] if own else []), *rows]:
         if not row.repo:
             raise KbError(f"{row.child} in the split of {ticket_id} names no repo")
         out.setdefault(row.repo, []).append(row.child)
@@ -59,18 +63,34 @@ def deployed(
 
 
 def _compare(api: Api, root: Path, repo: str, meta: Any, env_commit: str) -> list[str]:
-    try:
-        slug = ghapp.repo_full_from_url(meta.source_url)
-        status = api(
-            root, "GET", f"repos/{slug}/compare/{meta.source_commit}...{env_commit}"
-        ).get("status")
-    except KbError as exc:
-        return [f"{repo}: cannot compare commits ({exc})"]
+    slug = ghapp.repo_full_from_url(meta.source_url)
+    path = f"repos/{slug}/compare/{meta.source_commit}...{env_commit}"
+    status = _answer(api(root, "GET", path), path).get("status")
     if status in _DEPLOYED:
         return []
     return [
         f"{repo}: env at {env_commit}, publish at {meta.source_commit} not deployed yet"
     ]
+
+
+def _answer(value: Any, path: str) -> Any:
+    if value is None:
+        raise KbError(f"GitHub returned nothing for GET {path}")
+    return value
+
+
+def _paged(api: Api, root: Path, path: str, key: str | None = None) -> list[Any]:
+    """Every item of a paginated GET (`key` names the list inside the answer)."""
+    sep = "&" if "?" in path else "?"
+    items: list[Any] = []
+    for page in range(1, _MAX_PAGES + 1):
+        url = f"{path}{sep}per_page={_PER_PAGE}&page={page}"
+        got = _answer(api(root, "GET", url), url)
+        got = got[key] if key else got
+        items += got
+        if len(got) < _PER_PAGE:
+            break
+    return items
 
 
 def changed_files(
@@ -85,14 +105,12 @@ def changed_files(
             raise KbError(f"{repo}: not published")
         slug = ghapp.repo_full_from_url(meta.source_url)
         for child in children:
-            found = api(
-                root,
-                "GET",
-                f'search/issues?q=repo:{slug}+is:pr+is:merged+"{child}"',
-            )
+            query = quote(f'repo:{slug} is:pr is:merged "{child}"', safe="")
             files: list[str] = []
-            for item in found.get("items", []):
-                for f in api(root, "GET", f"repos/{slug}/pulls/{item['number']}/files"):
+            for item in _paged(api, root, f"search/issues?q={query}", "items"):
+                for f in _paged(
+                    api, root, f"repos/{slug}/pulls/{item['number']}/files"
+                ):
                     if f["filename"] not in files:
                         files.append(f["filename"])
             out[child] = files
