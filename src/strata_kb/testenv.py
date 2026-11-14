@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -10,9 +13,14 @@ import typer
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from strata_kb import httpio
 from strata_kb.errors import KbError
+from strata_kb.mcpsetup import read_env_value
 
 ENV_FILE = ".kb/test-env.yaml"
+SCRIPT_TIMEOUT = 600
+HTTP_TIMEOUT = 15
+_PROD_NAMES = {"production", "prod"}
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _USERINFO = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^\s@]*@")
@@ -124,7 +132,9 @@ def _secret_paths(node: Any, path: str = "") -> list[str]:
 def _loc(loc: tuple) -> str:
     out = ""
     for part in loc:
-        out += f"[{part}]" if isinstance(part, int) else (f".{part}" if out else str(part))
+        out += (
+            f"[{part}]" if isinstance(part, int) else (f".{part}" if out else str(part))
+        )
     return out
 
 
@@ -170,3 +180,105 @@ def check(repo_root: Path) -> int:
         return 1
     typer.echo("test-env: OK")
     return 0
+
+
+def _field(body: bytes, dotted: str) -> str:
+    node: Any = json.loads(body)
+    for part in dotted.split("."):
+        node = node[part]
+    if not isinstance(node, (str, int)) or isinstance(node, bool) or node == "":
+        raise ValueError("not a commit value")
+    return str(node)
+
+
+def app_commits(env: TestEnv, http=httpio.request) -> dict[str, str]:
+    """repo -> commit for every app with a version_check."""
+    out: dict[str, str] = {}
+    for app in env.apps:
+        vc = app.version_check
+        if vc is None:
+            continue
+        code, body = http("GET", vc.url, {}, None, HTTP_TIMEOUT)
+        if not 200 <= code < 300:
+            raise TestEnvError(f"{app.repo}: version check {vc.url} answered {code}")
+        try:
+            out[app.repo] = _field(body, vc.field)
+        except (ValueError, KeyError, TypeError):
+            raise TestEnvError(
+                f"{app.repo}: field {vc.field!r} missing in {vc.url}"
+            ) from None
+    return out
+
+
+def run_script(repo_root: Path, env: TestEnv, script: str, run=subprocess.run) -> int:
+    """Run a DB script with only the DB URL env var added; refuses production."""
+    var = env.db.url_env
+    if env.name.lower() in _PROD_NAMES:
+        raise TestEnvError(
+            f"refusing to run {script}: environment is {env.name!r} (production)"
+        )
+    value = os.environ.get(var) or read_env_value(repo_root, var)
+    if not value:
+        raise TestEnvError(f"{var} is not set")
+    if value in env.protected_urls:
+        raise TestEnvError(f"refusing to run {script}: {var} points at a protected URL")
+    try:
+        proc = run(
+            ["bash", script],
+            cwd=repo_root,
+            timeout=SCRIPT_TIMEOUT,
+            env={**os.environ, var: value},
+        )
+    except subprocess.TimeoutExpired:
+        raise TestEnvError(f"{script} timed out after {SCRIPT_TIMEOUT}s") from None
+    return proc.returncode
+
+
+def _script_item(repo_root: Path, env: TestEnv, script: str, run) -> tuple[bool, str]:
+    try:
+        code = run_script(repo_root, env, script, run)
+    except TestEnvError as exc:
+        return False, str(exc)
+    return code == 0, "ok" if code == 0 else f"exit {code}"
+
+
+def verify(repo_root: Path, http=httpio.request, run=subprocess.run) -> int:
+    try:
+        env = load(repo_root)
+    except TestEnvError as exc:
+        for problem in exc.problems:
+            typer.secho(problem, fg="red", err=True)
+        return 1
+    failed = False
+
+    def line(ok: bool, item: str, reason: str) -> None:
+        nonlocal failed
+        failed |= not ok
+        typer.echo(f"{'ok' if ok else 'FAIL'} {item}: {reason}")
+
+    for app in env.apps:
+        for label, url, lo, hi in (
+            ("url", app.url, 200, 400),
+            ("api_base", app.api_base, 1, 500),
+        ):
+            if url:
+                code, _ = http("GET", url, {}, None, HTTP_TIMEOUT)
+                line(lo <= code < hi, f"{app.repo} {label}", str(code))
+    scripts = {"db.check": env.db.check, "db.reset": env.db.reset} | {
+        f"db.seeds.{k}": v for k, v in env.db.seeds.items()
+    }
+    for item, script in scripts.items():
+        ok, reason = _script_item(repo_root, env, script, run)
+        line(ok, item, reason)
+    for app in env.apps:
+        if app.version_check is None:
+            continue
+        try:
+            line(
+                True,
+                f"{app.repo} version",
+                app_commits(env.model_copy(update={"apps": [app]}), http)[app.repo],
+            )
+        except TestEnvError as exc:
+            line(False, f"{app.repo} version", str(exc))
+    return 1 if failed else 0

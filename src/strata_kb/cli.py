@@ -4844,6 +4844,53 @@ def test_env_check() -> None:
     _exit_with(testenv.check(Path.cwd()))
 
 
+def _test_env_run(fn) -> None:
+    from strata_kb import testenv
+
+    try:
+        _exit_with(fn(testenv, Path.cwd()))
+    except testenv.TestEnvError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1) from None
+
+
+@test_env_app.command("verify")
+def test_env_verify() -> None:
+    """Check apps, DB scripts, seeds and version endpoints; one ok/FAIL line each."""
+    _test_env_run(lambda t, root: t.verify(root))
+
+
+@test_env_app.command("reset")
+def test_env_reset() -> None:
+    """Run the DB reset script (never against production or a protected URL)."""
+    _test_env_run(lambda t, root: t.run_script(root, (e := t.load(root)), e.db.reset))
+
+
+@test_env_app.command("seed")
+def test_env_seed(name: str = typer.Argument(..., help="Seed name from db.seeds")) -> None:
+    """Run one named DB seed script."""
+
+    def go(t, root):
+        env = t.load(root)
+        if name not in env.db.seeds:
+            raise t.TestEnvError(f"unknown seed {name!r} — declared: {', '.join(env.db.seeds) or 'none'}")
+        return t.run_script(root, env, env.db.seeds[name])
+
+    _test_env_run(go)
+
+
+@test_env_app.command("version")
+def test_env_version() -> None:
+    """Print `repo commit` for every app with a version_check."""
+
+    def go(t, root):
+        for repo, commit in t.app_commits(t.load(root)).items():
+            typer.echo(f"{repo} {commit}")
+        return 0
+
+    _test_env_run(go)
+
+
 @claim_app.command("take")
 def claim_take(
     ticket: str = typer.Argument(..., help="Ticket id"),
