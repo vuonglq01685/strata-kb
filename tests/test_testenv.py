@@ -27,6 +27,15 @@ def test_load_valid_env(tmp_path):
     assert env.accounts["buyer"].user_env == "TEST_BUYER_USER"
 
 
+def test_retries_must_be_at_least_one(tmp_path):
+    data = _base()
+    data["retries"] = 0
+    (tmp_path / ".kb").mkdir()
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    with pytest.raises(testenv.TestEnvError, match="retries"):
+        load(tmp_path)
+
+
 def test_refuses_credential_url_and_names_field(tmp_path):
     data = _base()
     data["apps"][0]["url"] = "postgres://u:p@h/db"

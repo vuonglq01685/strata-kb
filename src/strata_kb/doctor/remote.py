@@ -61,9 +61,9 @@ class RemoteDoctorError(KbError):
 
 
 def generated_doc(kind: str, repo_id: str) -> str | None:
-    """The doc a ba/dev repo regenerates per branch: left out of the
-    snapshot compare (dev `-code`, ba `-plan`)."""
-    suffix = {"dev": "code", "ba": "plan"}.get(kind)
+    """The doc a ba/dev/tester repo regenerates per branch: left out of the
+    snapshot compare (dev `-code`, ba `-plan`, tester `-test`)."""
+    suffix = {"dev": "code", "ba": "plan", "tester": "test"}.get(kind)
     return f"{repo_id}-{suffix}" if suffix and repo_id else None
 
 

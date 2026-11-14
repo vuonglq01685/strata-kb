@@ -4787,9 +4787,9 @@ def doctor(
         handle, reason = _hub_or_reason(hub, kb_dir)
         if handle is None:
             typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
-            if _config_kind(kb_dir) in ("ba", "dev"):
+            if _config_kind(kb_dir) in ("ba", "dev", "tester"):
                 typer.secho(
-                    "a ba or dev repo needs no hub clone: run `kb mcp-setup` "
+                    "a ba, dev or tester repo needs no hub clone: run `kb mcp-setup` "
                     "and `kb doctor` checks the hub over its MCP",
                     fg=typer.colors.YELLOW,
                 )

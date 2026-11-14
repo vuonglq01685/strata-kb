@@ -141,9 +141,11 @@ def test_routes(config: ServerConfig) -> list[Route]:
         hub = api.hub_handle(config)
         if hub is None:
             return _hub_unreachable()
-        reports = testflow.load_facts(hub).reports.get(story, ())
+        facts = testflow.load_facts(hub)
+        reports = facts.reports.get(story, ())
         cases = testflow.section_text(hub, f"{story}.cases")
-        if not reports and cases is None:
+        held = story in facts.testing  # listed as `testing`, so it must open
+        if not reports and cases is None and not held:
             return _not_found(f"No test reports for '{story}'.")
         return _render_page(
             "tests_story.html",

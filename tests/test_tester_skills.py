@@ -231,3 +231,9 @@ def test_test_story_never_publishes_by_hand():
     t = _body("tester-test-story")
     assert "Never run `kb publish`" in t
     assert "kb publish" not in t.replace("Never run `kb publish`", "")
+
+
+def test_only_no_version_check_may_be_confirmed_by_hand():
+    t = " ".join(_body("tester-test-story").split())
+    assert "every printed reason is `no version_check`" in t
+    assert "`not in test-env apps` included" in t

@@ -100,7 +100,17 @@ def test_missing_version_check_is_a_reason(build, tmp_path):  # noqa: F811
     reasons = testdeploy.deployed(
         hub, _env("demo", versioned=False), US1, api=_api({}), root=tmp_path
     )
-    assert reasons == ["demo: no version_check", "web: no version_check"]
+    assert reasons == ["demo: no version_check", "web: not in test-env apps"]
+
+
+def test_story_repo_not_in_env_apps_has_its_own_reason(build, monkeypatch, tmp_path):  # noqa: F811
+    hub = build()
+    _publish(hub, PUBLISH)
+    _commits(monkeypatch)
+    api = _api({"demo": "ahead"})
+    reasons = testdeploy.deployed(hub, _env("demo"), US1, api=api, root=tmp_path)
+    assert reasons == ["web: not in test-env apps"]
+    assert not any("no version_check" in r for r in reasons)
 
 
 def test_unpublished_repo_is_a_reason(build, monkeypatch, tmp_path):  # noqa: F811

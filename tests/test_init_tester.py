@@ -306,3 +306,19 @@ def test_tester_cannot_run_kb_publish():
     assert not _permitted_by_tester("kb publish")
     assert not _permitted_by_tester("kb publish --pr")
     assert _permitted_by_tester("kb report-ingest")
+
+
+def test_doctor_treats_the_test_doc_as_generated_and_hints_mcp(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+    from strata_kb.doctor import remote
+
+    assert remote.generated_doc("tester", "shop") == "shop-test"
+    assert remote.generated_doc("ba", "shop") == "shop-plan"
+    assert remote.generated_doc("dev", "shop") == "shop-code"
+    init_repo(tmp_path, "tester")
+    monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+    res = CliRunner().invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
+    assert res.exit_code == 1
+    assert "a ba, dev or tester repo needs no hub clone" in res.output

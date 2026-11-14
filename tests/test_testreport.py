@@ -428,3 +428,19 @@ def test_cli_report_lint_reads_tcs_from_the_spec(tmp_path):
         app, ["report", "lint", str(d / "R1.md"), "--repo-root", str(tmp_path)]
     )
     assert res.exit_code == 1 and "TC-02" in res.output
+
+
+def test_cli_report_lint_story_header_must_match_its_folder(tmp_path):
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    d = tmp_path / "reports" / "ST-2"
+    (d / "assets").mkdir(parents=True)
+    (d / "assets/tc01.png").write_bytes(b"x")
+    (d / "R1.md").write_text(_report())  # header says ST-1
+    res = CliRunner().invoke(
+        app, ["report", "lint", str(d / "R1.md"), "--repo-root", str(tmp_path)]
+    )
+    assert res.exit_code == 1
+    assert "does not match its folder" in res.output and "ST-2" in res.output

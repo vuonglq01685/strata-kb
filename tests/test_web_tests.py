@@ -206,3 +206,18 @@ def test_tester_role_can_view_not_registry(web_client, hub_dir, plan_hub):
     assert web_client.get("/ui/tests").status_code == 200
     assert web_client.get("/api/tests/known-failures").status_code == 200
     assert web_client.get("/ui/registry").status_code == 403
+
+
+def test_held_claim_story_without_report_opens_an_empty_state(
+    web_client_logged_in, plan_hub
+):
+    from strata_kb import ticketclaim
+
+    store = ticketclaim.ClaimStore(ticketclaim.claims_db_path(plan_hub.root))
+    store.take("ba-one", STORY, "tester-1", role="tester")
+    listing = web_client_logged_in.get("/ui/tests?status=testing").text
+    row = _row_of(listing, STORY)
+    href = re.search(rf'href="(/ui/tests/{re.escape(STORY)})"', row).group(1)
+    page = web_client_logged_in.get(href)
+    assert page.status_code == 200 and "No report yet." in page.text
+    assert web_client_logged_in.get("/ui/tests/ST-NOPE").status_code == 404

@@ -48,12 +48,15 @@ def deployed(
     else one reason per repo."""
     repos = story_repos(hub, story)
     published = {r.meta.repo_id: r.meta for r in load_federation(hub.federation_dir)}
+    declared = {a.repo for a in env.apps}
     checked = {a.repo for a in env.apps if a.version_check}
     running = testenv.app_commits(env) if checked & repos.keys() else {}
     reasons: list[str] = []
     for repo in repos:
         meta = published.get(repo)
-        if repo not in running:
+        if repo not in declared:  # a different reason: a human cannot override it
+            reasons.append(f"{repo}: not in test-env apps")
+        elif repo not in running:
             reasons.append(f"{repo}: no version_check")
         elif not (meta and meta.source_commit and meta.source_url):
             reasons.append(f"{repo}: not published")

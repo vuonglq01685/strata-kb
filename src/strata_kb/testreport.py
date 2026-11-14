@@ -527,5 +527,13 @@ def lint_file(file: Path, repo_root: Path, json_output: bool) -> int:
         repo_root=repo_root,
         spec_tcs=spec_tcs(spec),
     )
+    if story and file.resolve().parent.name != story:
+        report.issues.append(
+            _err(
+                f"header Story {story} does not match its folder "
+                f"reports/{file.resolve().parent.name}/",
+                "rep-header",
+            )
+        )
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("REPORT"))
     return 0 if report.passed else 1

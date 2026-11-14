@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import typer
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from strata_kb import httpio
 from strata_kb.errors import KbError
@@ -119,7 +119,7 @@ class TestEnv(_Model):
     db: Db
     accounts: dict[str, Account]
     api_auth: Literal["cookie", "bearer"] = "cookie"
-    retries: int = 3
+    retries: int = Field(3, ge=1)
     protected_urls: list[str] = []
 
     @field_validator("name")

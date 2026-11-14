@@ -183,7 +183,7 @@ def run(
     else:
         # The generated doc (dev `-code`, ba `-plan`) is rebuilt per branch
         # and CI publishes it, so it is left out of the snapshot compare.
-        suffix = {"dev": "code", "ba": "plan"}.get(cfg_kind)
+        suffix = {"dev": "code", "ba": "plan", "tester": "test"}.get(cfg_kind)
         generated = f"{repo_id}-{suffix}" if suffix and repo_id else None
         hub_issues, hub_stale = check_hub(
             kb_dir, handle, repo_id=repo_id, code_doc=generated

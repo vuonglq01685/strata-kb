@@ -40,8 +40,9 @@ first; when it is missing, stop and tell the Tester to run
    "not deployed yet", say which repo the command printed, and take no lock
    or claim. One exception: when every printed reason is `no version_check`
    (the repo declares no version endpoint), a manual run asks the Tester to
-   confirm the deploy and goes on only on a yes; any other reason, or no
-   Tester to ask, stops with "not deployed yet".
+   confirm the deploy and goes on only on a yes; any other reason (a repo
+   `not in test-env apps` included: declare it in `.kb/test-env.yaml`), or no Tester to ask, stops
+   with "not deployed yet".
 3. **Lock the environment.** `kb test-env lock <story>`. Exit 3 means another
    round holds this environment: stop, "environment locked". The lock has a
    TTL: step 8.1 and step 8.5 re-run `kb test-env lock <story>` to refresh it.
