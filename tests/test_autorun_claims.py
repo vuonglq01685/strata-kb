@@ -55,8 +55,8 @@ class FakeClient:
     def release(self, claim_id, claim_token, reason):
         self.calls.append(("release", claim_id, claim_token, reason))
 
-    def held(self, repo="", ticket=""):
-        return self.held_rows
+    def held(self, repo="", ticket="", role=""):
+        return [r for r in self.held_rows if not role or r.get("role", "dev") == role]
 
     def pr_closed(self, claim_id, pr):
         self.calls.append(("pr_closed", claim_id, pr))
@@ -404,3 +404,9 @@ def test_claim_other_hub_error_still_propagates(kb_dir):
     client.take_error = KbError("hub unreachable: refused")
     with pytest.raises(KbError, match="unreachable"):
         RunnerClaims(Path("."), kb_dir, client, "me@m1").claim("US1")
+
+
+def test_held_by_others_ignores_tester_claims(kb_dir):
+    client = FakeClient()
+    client.held_rows = [claim_dict("US1"), claim_dict("US2", id=8, role="tester")]
+    assert make(kb_dir, client).held_by_others(None) == {"US1"}

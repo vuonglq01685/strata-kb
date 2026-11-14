@@ -122,6 +122,13 @@ class TestEnv(_Model):
     retries: int = 3
     protected_urls: list[str] = []
 
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        if "/" in v or any(c.isspace() for c in v):
+            raise ValueError("must not contain '/' or whitespace")
+        return v
+
 
 def _secret_paths(node: Any, path: str = "") -> list[str]:
     """Paths (never values) of every credential-shaped string leaf or dict key."""

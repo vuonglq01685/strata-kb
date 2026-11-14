@@ -466,3 +466,9 @@ def test_api_env_lock_conflict_is_409(web_client, hub_with_ticket, auth):
     )
     assert r.status_code == 200
     assert web_client.get("/api/env-locks", headers=auth).json()["locks"] == []
+
+
+def test_api_env_lock_name_with_slash_is_400(web_client, hub_with_ticket, auth):
+    hub_with_ticket(rev=1)
+    body = {"name": "a/b", "holder": "a", "story": US1}
+    assert web_client.post("/api/env-locks", json=body, headers=auth).status_code == 400

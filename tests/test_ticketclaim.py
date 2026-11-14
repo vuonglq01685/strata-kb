@@ -345,7 +345,10 @@ def test_old_db_without_role_migrates_in_place(tmp_path: Path, clock: Clock):
     for _ in range(2):  # the second open is a no-op
         (c,) = ClaimStore(path, ttl=100, now=clock).held()
         assert (c.ticket, c.holder, c.phase, c.role) == ("US1", "a", "design", "dev")
-    ClaimStore(path, ttl=100, now=clock).take("r", "US1", "t1", role="tester")
+    migrated = ClaimStore(path, ttl=100, now=clock)
+    migrated.take("r", "US1", "t1", role="tester")
+    with pytest.raises(ClaimTaken):  # the index still keeps one open dev claim
+        migrated.take("r", "US1", "b")
 
 
 def test_dev_and_tester_can_hold_same_story(store: ClaimStore):
@@ -405,3 +408,18 @@ def test_env_lock_exclusive_and_expires(store: ClaimStore, clock: Clock):
     _, tok2 = store.lock_env("test", "b", "US2")
     store.unlock_env("test", tok2)
     assert store.env_locks() == []
+
+
+@pytest.mark.parametrize("name", ["a/b", "a b", "a\tb"])
+def test_env_name_refuses_slash_and_whitespace(store: ClaimStore, name: str):
+    with pytest.raises(ClaimError, match="name"):
+        store.lock_env(name, "a", "US1")
+
+
+def test_last_closed_filters_by_role(store: ClaimStore):
+    dev, dtok = store.take("r", "US1", "d")
+    store.release(dev.id, dtok, "x")
+    tester, ttok = store.take("r", "US1", "t", role="tester")
+    store.release(tester.id, ttok, "y")
+    assert store.last_closed("r", "US1").role == "tester"
+    assert store.last_closed("r", "US1", role="dev").id == dev.id

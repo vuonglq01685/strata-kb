@@ -45,7 +45,7 @@ class RunnerClaims:
     def held_by_others(self, mine: str | None) -> set[str]:
         """Tickets of every held claim but `mine`'s and our own stopped claims. A `review` claim whose PR
         was closed unmerged is reported to the hub, which frees it."""
-        claims = self._client.held()
+        claims = self._client.held(role="dev")  # a Tester's claim hides nothing
         for claim in claims:
             if claim.get("phase") == "review" and claim.get("pr"):
                 self._report_closed_pr(claim)

@@ -158,3 +158,13 @@ def test_port_then_later_at_sign_is_not_userinfo(url):
 )
 def test_userinfo_edge_cases(url, secret):
     assert testenv.secret_like(url) is secret
+
+
+@pytest.mark.parametrize("name", ["a/b", "a b"])
+def test_env_name_with_slash_or_space_is_refused(tmp_path, name):
+    data = yaml.safe_load(EXAMPLE.read_text())
+    data["name"] = name
+    (tmp_path / ".kb").mkdir(exist_ok=True)
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    with pytest.raises(TestEnvError, match="name"):
+        load(tmp_path)

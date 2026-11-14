@@ -295,3 +295,20 @@ def test_done_ticket_page_does_not_create_the_claims_db(admin_client, plan_hub):
     _mark_done(plan_hub)
     assert admin_client.get(PAGE).status_code == 200
     assert not claims_db_path(plan_hub.root).exists()
+
+
+def test_ticket_page_shows_dev_claim_not_tester_claim(admin_client, store):
+    store.take(REPO, TICKET, "dev@m1")
+    store.take(REPO, TICKET, "tester@m2", role="tester")
+    text = admin_client.get(PAGE).text
+    assert "dev@m1" in text
+    assert "tester@m2" not in text
+
+
+def test_last_closed_is_the_dev_claim(admin_client, store, admin_user):
+    dev, tok = store.take(REPO, TICKET, "dev@m1")
+    store.release(dev.id, tok, "dev done")
+    tester, ttok = store.take(REPO, TICKET, "tester@m2", role="tester")
+    store.release(tester.id, ttok, "tester done")
+    text = admin_client.get(PAGE).text
+    assert "dev done" in text and "tester done" not in text

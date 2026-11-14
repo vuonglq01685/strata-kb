@@ -172,6 +172,13 @@ def _stamp(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="seconds")
 
 
+def _env_name(value: str) -> None:
+    """An environment name is a URL path segment: no `/`, no whitespace."""
+    _name("name", value)
+    if "/" in value or any(c.isspace() for c in value):
+        raise ClaimError("name must not contain '/' or whitespace")
+
+
 def _name(label: str, value: str) -> None:
     """One printable line, so it cannot forge a line in a list or the page."""
     if not value.strip():
@@ -434,13 +441,16 @@ class ClaimStore:
                 [(now, repo, ticket) for repo, ticket in sorted(done)],
             )
 
-    def last_closed(self, repo: str, ticket: str) -> Claim | None:
+    def last_closed(self, repo: str, ticket: str, role: str = "") -> Claim | None:
+        role_sql, args = (
+            (" AND role = ?", (repo, ticket, role)) if role else ("", (repo, ticket))
+        )
         with closing(self._connect()) as conn:
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM claims "  # noqa: S608 - constant columns
-                "WHERE repo = ? AND ticket = ? AND closed_at IS NOT NULL "
+                f"WHERE repo = ? AND ticket = ? AND closed_at IS NOT NULL{role_sql} "
                 "ORDER BY id DESC LIMIT 1",
-                (repo, ticket),
+                args,
             ).fetchone()
         return _claim(row) if row else None
 
@@ -455,7 +465,7 @@ class ClaimStore:
         self, name: str, holder: str, story: str, token: str | None = None
     ) -> tuple[EnvLock, str]:
         """Take the test environment `name`; the holder's retry refreshes it."""
-        _name("name", name)
+        _env_name(name)
         _name("holder", holder)
         _name("story", story)
         with self._txn() as (conn, now):

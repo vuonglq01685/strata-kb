@@ -5,12 +5,12 @@ Each function returns the CLI exit code: 0 ok, 1 error, 3 taken or lost.
 
 from __future__ import annotations
 
-import contextlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
+import yaml
 
 from strata_kb import claimclient
 from strata_kb.claimclient import (
@@ -20,6 +20,7 @@ from strata_kb.claimclient import (
     LocalClaims,
 )
 from strata_kb.config import load_config
+from strata_kb.errors import KbError
 
 EXIT_TAKEN_OR_LOST = 3
 
@@ -49,7 +50,15 @@ def _lost(local: LocalClaims, ticket: str, exc: ClaimLostError) -> int:
 
 
 def claim_role(kb_dir: Path) -> str:
-    return "tester" if load_config(kb_dir).kind == "tester" else "dev"
+    try:
+        return "tester" if load_config(kb_dir).kind == "tester" else "dev"
+    except (
+        KbError,
+        OSError,
+        ValueError,
+        yaml.YAMLError,
+    ):  # a broken config must not block a claim
+        return "dev"
 
 
 def take(kb_dir: Path, root: Path, ticket: str, as_name: str | None) -> int:
@@ -159,8 +168,15 @@ def unlock_env(kb_dir: Path, name: str) -> int:
     if token is None:
         typer.echo(f"no lock held for {name} on this machine")
         return 1
-    # expired or released already: nothing left to give back
-    with contextlib.suppress(ClaimLostError):
+    note = f"unlocked {name}"
+    try:
         claimclient.from_env().unlock_env(name, token)
+    except ClaimLostError:
+        note = f"{name} lock had already expired"
+    except KbError as exc:
+        if "bad_token" not in str(exc):
+            raise
+        note = f"{name} is no longer yours (expired and taken by someone else)"
     local.drop_env(name)
+    typer.echo(note)
     return 0

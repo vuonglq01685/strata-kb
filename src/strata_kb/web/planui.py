@@ -80,7 +80,7 @@ def _held_by_ticket(
     if not db.exists():  # read-only pages must not create the DB
         return {}, ""
     try:
-        return {c.ticket: c for c in ClaimStore(db, ttl=ttl).held(repo)}, ""
+        return {c.ticket: c for c in ClaimStore(db, ttl=ttl).held(repo, role="dev")}, ""
     except (sqlite3.Error, KbError, OSError):
         logger.warning("claim store unreadable for %s", repo, exc_info=True)
         return {}, CLAIMS_UNAVAILABLE
@@ -262,7 +262,9 @@ def plan_routes(
         last_closed = None
         if shows_claim and claim is None and db.exists() and not ctx["claim_notice"]:
             try:  # after `held`: that call already closed any expired claim
-                last_closed = ClaimStore(db, ttl=ttl).last_closed(found_repo, story)
+                last_closed = ClaimStore(db, ttl=ttl).last_closed(
+                    found_repo, story, role="dev"
+                )
             except (sqlite3.Error, KbError, OSError):
                 ctx["claim_notice"] = CLAIMS_UNAVAILABLE
         user = current_user(request)
