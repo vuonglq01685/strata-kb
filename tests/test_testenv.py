@@ -11,16 +11,18 @@ EXAMPLE = Path(testenv.__file__).parent / "templates/init/test-env.example.yaml"
 
 def _write(root: Path, data) -> None:
     (root / ".kb").mkdir(exist_ok=True)
-    (root / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    (root / ".kb/test-env.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
 
 
 def _base() -> dict:
-    return yaml.safe_load(EXAMPLE.read_text())
+    return yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
 
 
 def test_load_valid_env(tmp_path):
     (tmp_path / ".kb").mkdir()
-    (tmp_path / ".kb/test-env.yaml").write_text(EXAMPLE.read_text())
+    (tmp_path / ".kb/test-env.yaml").write_text(
+        EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     env = load(tmp_path)
     assert env.retries == 3
     assert env.apps[0].repo == "shop-fe"
@@ -31,7 +33,7 @@ def test_retries_must_be_at_least_one(tmp_path):
     data = _base()
     data["retries"] = 0
     (tmp_path / ".kb").mkdir()
-    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(testenv.TestEnvError, match="retries"):
         load(tmp_path)
 
@@ -78,7 +80,9 @@ def test_missing_file_says_run_tester_env_setup(tmp_path):
 
 def test_check_prints_ok_and_problem(tmp_path, capsys):
     (tmp_path / ".kb").mkdir()
-    (tmp_path / ".kb/test-env.yaml").write_text(EXAMPLE.read_text())
+    (tmp_path / ".kb/test-env.yaml").write_text(
+        EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     assert testenv.check(tmp_path) == 0
     assert "test-env: OK" in capsys.readouterr().out
     (tmp_path / ".kb/test-env.yaml").unlink()
@@ -171,9 +175,9 @@ def test_userinfo_edge_cases(url, secret):
 
 @pytest.mark.parametrize("name", ["a/b", "a b"])
 def test_env_name_with_slash_or_space_is_refused(tmp_path, name):
-    data = yaml.safe_load(EXAMPLE.read_text())
+    data = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
     data["name"] = name
     (tmp_path / ".kb").mkdir(exist_ok=True)
-    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(TestEnvError, match="name"):
         load(tmp_path)

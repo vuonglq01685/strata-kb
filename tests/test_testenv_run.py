@@ -13,7 +13,7 @@ SECRET = "postgres-host-unique-value"
 
 
 def _env(**over) -> testenv.TestEnv:
-    data = yaml.safe_load(EXAMPLE.read_text()) | over
+    data = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8")) | over
     return testenv.TestEnv.model_validate(data)
 
 
@@ -84,7 +84,9 @@ def test_run_script_missing_url_env(tmp_path, monkeypatch):
 
 def test_run_script_passes_only_url_env_from_dotenv(tmp_path, monkeypatch):
     monkeypatch.delenv("TEST_DB_URL", raising=False)
-    (tmp_path / ".env").write_text(f"TEST_DB_URL={SECRET}\nTEST_BUYER_USER=bob\n")
+    (tmp_path / ".env").write_text(
+        f"TEST_DB_URL={SECRET}\nTEST_BUYER_USER=bob\n", encoding="utf-8"
+    )
     calls: list = []
     assert testenv.run_script(tmp_path, _env(), "s.sh", _run(calls, 3)) == 3
     cmd, kw = calls[0]
@@ -107,7 +109,9 @@ def test_run_script_timeout_is_an_error(tmp_path, monkeypatch):
 def _root(tmp_path, monkeypatch) -> Path:
     monkeypatch.setenv("TEST_DB_URL", SECRET)
     (tmp_path / ".kb").mkdir()
-    (tmp_path / ".kb/test-env.yaml").write_text(EXAMPLE.read_text())
+    (tmp_path / ".kb/test-env.yaml").write_text(
+        EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return tmp_path
 
 

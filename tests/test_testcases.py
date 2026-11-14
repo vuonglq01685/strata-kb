@@ -59,7 +59,7 @@ def _dir(tmp_path: Path, *names: str) -> Path:
     d = tmp_path / "tests" / STORY
     d.mkdir(parents=True)
     for n in names:
-        (d / n).write_text("// t")
+        (d / n).write_text("// t", encoding="utf-8")
     return d
 
 
@@ -167,14 +167,14 @@ def test_cli_lint_local_ticket(tmp_path, golden_block, monkeypatch):  # noqa: F8
     from strata_kb.cli import app
 
     d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
-    (d / "ticket.md").write_text(_ticket(golden_block))
+    (d / "ticket.md").write_text(_ticket(golden_block), encoding="utf-8")
     spec = d / "test-cases.md"
-    spec.write_text(_spec())
+    spec.write_text(_spec(), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     res = CliRunner().invoke(app, ["testcase", "lint", str(spec)])
     assert res.exit_code == 0, res.output
     assert "TC: PASS" in res.output
-    spec.write_text(_spec(revision=5))
+    spec.write_text(_spec(revision=5), encoding="utf-8")
     res = CliRunner().invoke(app, ["testcase", "lint", str(spec), "--json"])
     assert res.exit_code == 1
 
@@ -255,8 +255,8 @@ def test_cli_bare_filename_from_story_folder(tmp_path, golden_block, monkeypatch
     from strata_kb.cli import app
 
     d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
-    (d / "ticket.md").write_text(_ticket(golden_block))
-    (d / "test-cases.md").write_text(_spec())
+    (d / "ticket.md").write_text(_ticket(golden_block), encoding="utf-8")
+    (d / "test-cases.md").write_text(_spec(), encoding="utf-8")
     monkeypatch.chdir(d)
     res = CliRunner().invoke(app, ["testcase", "lint", "test-cases.md"])
     assert res.exit_code == 0, res.output

@@ -124,7 +124,9 @@ def test_regression_defect_must_name_other_story(tmp_path):
 
 
 def test_dotenv_value_in_report_is_error_without_echoing_it(tmp_path):
-    (tmp_path / ".env").write_text("TEST_BUYER_PASSWORD=s3cretvalue!\nSHORT=abc\n")
+    (tmp_path / ".env").write_text(
+        "TEST_BUYER_PASSWORD=s3cretvalue!\nSHORT=abc\n", encoding="utf-8"
+    )
     rep = _lint(tmp_path, _report(extra="logged in with s3cretvalue!"))
     err = _errors(rep)
     assert "TEST_BUYER_PASSWORD" in err and "s3cretvalue" not in err
@@ -156,14 +158,20 @@ def test_cli_report_lint_json(tmp_path):
     (d / "assets").mkdir(parents=True)
     (d / "assets/tc01.png").write_bytes(b"x")
     f = d / "R1.md"
-    f.write_text(_report(verdict="FAIL", defects=_d(1, guilty="OTHER.web")))
+    f.write_text(
+        _report(verdict="FAIL", defects=_d(1, guilty="OTHER.web")), encoding="utf-8"
+    )
     spec = tmp_path / "tests" / STORY
     spec.mkdir(parents=True)
-    (spec / "test-cases.md").write_text("> Story: ST-1 · Children: ST-1.web\n")
+    (spec / "test-cases.md").write_text(
+        "> Story: ST-1 · Children: ST-1.web\n", encoding="utf-8"
+    )
     args = ["report", "lint", str(f), "--repo-root", str(tmp_path)]
     res = CliRunner().invoke(app, [*args, "--json"])
     assert res.exit_code == 1 and json.loads(res.output)["pass"] is False
-    f.write_text(_report(verdict="FAIL", defects=_d(1, guilty="ST-1.web")))
+    f.write_text(
+        _report(verdict="FAIL", defects=_d(1, guilty="ST-1.web")), encoding="utf-8"
+    )
     res = CliRunner().invoke(app, args)
     assert res.exit_code == 0 and "REPORT: PASS" in res.output
 
@@ -269,16 +277,18 @@ def _test_env(tmp_path):
     data = yaml.safe_load(
         (
             Path(testenv.__file__).parent / "templates/init/test-env.example.yaml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
     )
     (tmp_path / ".kb").mkdir(exist_ok=True)
-    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data))
+    (tmp_path / ".kb/test-env.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
     return data["db"]["url_env"]
 
 
 def test_dotenv_scan_limited_to_vars_test_env_names(tmp_path):
     var = _test_env(tmp_path)
-    (tmp_path / ".env").write_text(f"TEST_ENV_NAME=staging-eu\n{var}=dbvalue-12345\n")
+    (tmp_path / ".env").write_text(
+        f"TEST_ENV_NAME=staging-eu\n{var}=dbvalue-12345\n", encoding="utf-8"
+    )
     assert _lint(tmp_path, _report(extra="env staging-eu")).passed
     err = _errors(_lint(tmp_path, _report(extra="db dbvalue-12345")))
     assert var in err and "dbvalue" not in err
@@ -295,11 +305,11 @@ def test_children_fall_back_to_ticket_split_table(tmp_path):
     d = tmp_path / "tests" / STORY
     d.mkdir(parents=True)
     (d / "test-cases.md").write_text(
-        "> Story: ST-1 · Children:  · Ticket revision: 1\n"
+        "> Story: ST-1 · Children:  · Ticket revision: 1\n", encoding="utf-8"
     )
     from strata_kb import planparents
 
-    (d / "ticket.md").write_text("ticket")
+    (d / "ticket.md").write_text("ticket", encoding="utf-8")
     seen = []
     orig = planparents.children
     planparents.children = lambda text, pid: seen.append((text, pid)) or []
@@ -418,11 +428,12 @@ def test_cli_report_lint_reads_tcs_from_the_spec(tmp_path):
     d = tmp_path / "reports" / STORY
     (d / "assets").mkdir(parents=True)
     (d / "assets/tc01.png").write_bytes(b"x")
-    (d / "R1.md").write_text(_report())
+    (d / "R1.md").write_text(_report(), encoding="utf-8")
     spec = tmp_path / "tests" / STORY
     spec.mkdir(parents=True)
     (spec / "test-cases.md").write_text(
-        "> Story: ST-1 · Children: ST-1.web\n\n## TC-01 — a\n\n## TC-02 — b\n"
+        "> Story: ST-1 · Children: ST-1.web\n\n## TC-01 — a\n\n## TC-02 — b\n",
+        encoding="utf-8",
     )
     res = CliRunner().invoke(
         app, ["report", "lint", str(d / "R1.md"), "--repo-root", str(tmp_path)]
@@ -438,7 +449,7 @@ def test_cli_report_lint_story_header_must_match_its_folder(tmp_path):
     d = tmp_path / "reports" / "ST-2"
     (d / "assets").mkdir(parents=True)
     (d / "assets/tc01.png").write_bytes(b"x")
-    (d / "R1.md").write_text(_report())  # header says ST-1
+    (d / "R1.md").write_text(_report(), encoding="utf-8")  # header says ST-1
     res = CliRunner().invoke(
         app, ["report", "lint", str(d / "R1.md"), "--repo-root", str(tmp_path)]
     )

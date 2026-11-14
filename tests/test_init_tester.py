@@ -30,9 +30,9 @@ def test_init_tester_has_all_four_wrappers_per_skill(tmp_path):
 
 def test_tester_settings_allow_the_tester_commands(tmp_path):
     init_repo(tmp_path, "tester")
-    allow = json.loads((tmp_path / ".claude/settings.json").read_text())["permissions"][
-        "allow"
-    ]
+    allow = json.loads(
+        (tmp_path / ".claude/settings.json").read_text(encoding="utf-8")
+    )["permissions"]["allow"]
     for rule in (
         "Bash(kb test-env *)",
         "Bash(kb testcase *)",
@@ -59,20 +59,22 @@ def test_tester_scaffold_has_the_contract_paths(tmp_path):
         ".cursor/mcp.json",
     ):
         assert (tmp_path / rel).is_file(), rel
-    assert "Polarity" in (tmp_path / "docs/templates/test-cases.md").read_text()
+    assert "Polarity" in (tmp_path / "docs/templates/test-cases.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_tester_config_has_kind_and_mcp_has_playwright(tmp_path):
     init_repo(tmp_path, "tester")
-    assert "kind: tester" in (tmp_path / ".kb/config.yaml").read_text()
+    assert "kind: tester" in (tmp_path / ".kb/config.yaml").read_text(encoding="utf-8")
     for rel in (".mcp.json", ".cursor/mcp.json"):
-        mcp = json.loads((tmp_path / rel).read_text())
+        mcp = json.loads((tmp_path / rel).read_text(encoding="utf-8"))
         assert set(mcp["mcpServers"]) == {"strata-kb", "playwright"}, rel
 
 
 def test_tester_gitignore_hides_env_and_playwright_output(tmp_path):
     init_repo(tmp_path, "tester")
-    lines = (tmp_path / ".gitignore").read_text().splitlines()
+    lines = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
     for line in (
         ".env",
         "test-results/",
@@ -135,25 +137,31 @@ def test_tester_scaffold_publishes_via_ci_with_report_ingest(tmp_path):
     import yaml
 
     init_repo(tmp_path, "tester")
-    wf = yaml.safe_load((tmp_path / ".github/workflows/kb-publish.yml").read_text())
+    wf = yaml.safe_load(
+        (tmp_path / ".github/workflows/kb-publish.yml").read_text(encoding="utf-8")
+    )
     assert wf[True]["push"] == {"tags": ["kb-publish/*"]}
     steps = "\n".join(s.get("run", "") for s in wf["jobs"]["publish"]["steps"])
     assert "kb report-ingest" in steps and "kb plan-ingest" not in steps
     assert "kb ci-publish" in steps
     req = yaml.safe_load(
-        (tmp_path / ".github/workflows/kb-publish-request.yml").read_text()
+        (tmp_path / ".github/workflows/kb-publish-request.yml").read_text(
+            encoding="utf-8"
+        )
     )
     assert req[True]["push"]["paths"] == ["tests/**", "reports/**"]
+    assert "actions/workflows/kb-publish.yml/dispatches" in (
+        tmp_path / ".github/workflows/kb-publish-request.yml"
+    ).read_text(encoding="utf-8")
     assert (
-        "actions/workflows/kb-publish.yml/dispatches"
-        in (tmp_path / ".github/workflows/kb-publish-request.yml").read_text()
+        ".kb/index.yaml"
+        in (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
     )
-    assert ".kb/index.yaml" in (tmp_path / ".gitignore").read_text().splitlines()
 
 
 def test_tester_settings_are_auto_plus_the_tester_extras(tmp_path):
     init_repo(tmp_path, "tester")
-    got = json.loads((tmp_path / ".claude/settings.json").read_text())
+    got = json.loads((tmp_path / ".claude/settings.json").read_text(encoding="utf-8"))
     auto = json.loads(initcmd.read_template("claude-settings-auto.json"))
     assert got["permissions"]["allow"] == auto["permissions"]["allow"] + list(
         initcmd.TESTER_ALLOW
@@ -170,7 +178,9 @@ def test_ba_and_dev_settings_do_not_gain_tester_rules(tmp_path):
     for kind in ("ba", "dev"):
         root = tmp_path / kind
         init_repo(root, kind)
-        perms = json.loads((root / ".claude/settings.json").read_text())["permissions"]
+        perms = json.loads(
+            (root / ".claude/settings.json").read_text(encoding="utf-8")
+        )["permissions"]
         assert not set(initcmd.TESTER_ALLOW) & set(perms["allow"])
         assert not set(initcmd.TESTER_DENY) & set(perms["deny"])
 
@@ -183,7 +193,9 @@ def test_tester_scaffold_has_the_login_smoke_spec(tmp_path):
 def test_tester_scaffold_has_a_create_once_playwright_config(tmp_path):
     init_repo(tmp_path, "tester")
     cfg = tmp_path / "playwright.config.ts"
-    assert "TEST_FE_URL" in cfg.read_text() and "chromium" in cfg.read_text()
+    assert "TEST_FE_URL" in cfg.read_text(
+        encoding="utf-8"
+    ) and "chromium" in cfg.read_text(encoding="utf-8")
     cfg.write_text("// mine\n", encoding="utf-8")
     init_repo(tmp_path, "tester")
     assert cfg.read_text(encoding="utf-8") == "// mine\n"
@@ -192,7 +204,7 @@ def test_tester_scaffold_has_a_create_once_playwright_config(tmp_path):
 def test_tester_reinit_restores_removed_extras_and_keeps_custom_rules(tmp_path):
     init_repo(tmp_path, "tester")
     path = tmp_path / ".claude/settings.json"
-    settings = json.loads(path.read_text())
+    settings = json.loads(path.read_text(encoding="utf-8"))
     allow = settings["permissions"]["allow"]
     settings["permissions"]["allow"] = [
         r for r in allow if r not in initcmd.TESTER_ALLOW
@@ -202,7 +214,7 @@ def test_tester_reinit_restores_removed_extras_and_keeps_custom_rules(tmp_path):
     ]
     path.write_text(json.dumps(settings), encoding="utf-8")
     init_repo(tmp_path, "tester", force=False)
-    got = json.loads(path.read_text())["permissions"]
+    got = json.loads(path.read_text(encoding="utf-8"))["permissions"]
     assert set(initcmd.TESTER_ALLOW) <= set(got["allow"])
     assert set(initcmd.TESTER_DENY) <= set(got["deny"])
     assert "Bash(make *)" in got["allow"]
@@ -296,7 +308,9 @@ def test_tester_scaffold_gates_prs_with_the_lint_workflow(tmp_path):
     assert "tests/*/test-cases.md" in text and "reports/*/R*.md" in text
     assert "secrets.KB_HUB_TOKEN" in text and "ghp_" not in text
     assert "{version}" not in text and "strata-kb==" in text
-    ba = (tmp_path / "ba/.github/workflows/kb-ticket-lint.yml").read_text()
+    ba = (tmp_path / "ba/.github/workflows/kb-ticket-lint.yml").read_text(
+        encoding="utf-8"
+    )
     uses = lambda t: sorted(set(re.findall(r"uses: (\S+)", t)))  # noqa: E731
     assert uses(text) == uses(ba)
 
