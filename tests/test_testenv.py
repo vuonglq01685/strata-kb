@@ -79,5 +79,58 @@ def test_check_prints_ok_and_problem(tmp_path, capsys):
 
 def test_secret_like():
     assert testenv.secret_like("https://u:p@h/db")
-    assert testenv.secret_like("x" * 32)
+    assert testenv.secret_like("x1" * 16)
     assert not testenv.secret_like("https://staging.example.test/version")
+
+
+TOKEN = "ghp_" + "aB3x" * 9
+
+
+def test_token_shaped_seed_key_refused_without_echo(tmp_path):
+    data = _base()
+    data["db"]["seeds"][TOKEN] = "tests/seeds/x.sh"
+    _write(tmp_path, data)
+    with pytest.raises(TestEnvError, match=r"db\.seeds \(key\)") as e:
+        load(tmp_path)
+    assert TOKEN not in str(e.value)
+
+
+def test_token_shaped_top_level_key_refused_without_echo(tmp_path):
+    data = _base()
+    data[TOKEN] = 1
+    _write(tmp_path, data)
+    with pytest.raises(TestEnvError, match=r"top level \(key\)") as e:
+        load(tmp_path)
+    assert TOKEN not in "".join(e.value.problems)
+
+
+def test_long_env_names_and_script_names_are_not_secrets(tmp_path):
+    data = _base()
+    data["db"]["url_env"] = "STAGING_PAYMENT_GATEWAY_DATABASE_URL"
+    data["db"]["reset"] = "scripts/reset_staging_database_with_fixtures.sh"
+    _write(tmp_path, data)
+    assert load(tmp_path).db.url_env == "STAGING_PAYMENT_GATEWAY_DATABASE_URL"
+
+
+def test_mixed_40_char_token_still_refused(tmp_path):
+    data = _base()
+    data["name"] = "a1" * 20
+    _write(tmp_path, data)
+    with pytest.raises(TestEnvError, match="name"):
+        load(tmp_path)
+
+
+def test_password_with_slash_refused_but_port_url_fine(tmp_path):
+    assert testenv.secret_like("postgres://admin:ab/cd@h/db")
+    assert not testenv.secret_like("https://host:8443/path")
+
+
+def test_check_prints_one_line_per_problem(tmp_path, capsys):
+    data = _base()
+    data["db"]["url_env"] = "bad"
+    data["db"]["reset"] = "/abs.sh"
+    data["accounts"]["buyer"]["user_env"] = "bad"
+    _write(tmp_path, data)
+    assert testenv.check(tmp_path) == 1
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert len(lines) == 3

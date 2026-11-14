@@ -15,17 +15,26 @@ from strata_kb.errors import KbError
 ENV_FILE = ".kb/test-env.yaml"
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_USERINFO = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^/\s@]*@")
+_USERINFO = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^\s@]*@")
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]{32,}")
 
 
 class TestEnvError(KbError):
     __test__ = False
 
+    def __init__(self, *problems: str) -> None:
+        super().__init__(problems[0])
+        self.problems = problems
+
 
 def secret_like(value: str) -> bool:
     """True if `value` holds URL userinfo (`user:pass@`) or a 32+ char token run."""
-    return bool(_USERINFO.search(value) or _TOKEN.search(value))
+    if _USERINFO.search(value):
+        return True
+    return any(
+        re.search("[A-Za-z]", t) and re.search("[0-9]", t) and not _ENV_NAME.match(t)
+        for t in _TOKEN.findall(value)
+    )
 
 
 def _env_name(v: str) -> str:
@@ -93,18 +102,23 @@ class TestEnv(_Model):
     protected_urls: list[str] = []
 
 
-def _first_secret(node: Any, path: str = "") -> str | None:
+def _secret_paths(node: Any, path: str = "") -> list[str]:
+    """Paths (never values) of every credential-shaped string leaf or dict key."""
     if isinstance(node, str):
-        return path if secret_like(node) else None
-    items: list[tuple[str, Any]] = []
+        return [path] if secret_like(node) else []
+    hits: list[str] = []
     if isinstance(node, dict):
-        items = [(f"{path}.{k}" if path else str(k), v) for k, v in node.items()]
+        for k, v in node.items():
+            if secret_like(str(k)):
+                hits.append(f"{path or 'top level'} (key)")
+                sub = f"{path}.<redacted>" if path else "<redacted>"
+            else:
+                sub = f"{path}.{k}" if path else str(k)
+            hits += _secret_paths(v, sub)
     elif isinstance(node, list):
-        items = [(f"{path}[{i}]", v) for i, v in enumerate(node)]
-    for sub, v in items:
-        if hit := _first_secret(v, sub):
-            return hit
-    return None
+        for i, v in enumerate(node):
+            hits += _secret_paths(v, f"{path}[{i}]")
+    return hits
 
 
 def _loc(loc: tuple) -> str:
@@ -124,15 +138,19 @@ def load(repo_root: Path) -> TestEnv:
         raise TestEnvError(f"{ENV_FILE} is unreadable: {type(exc).__name__}") from None
     if not isinstance(raw, dict):
         raise TestEnvError(f"{ENV_FILE} must be a mapping")
-    if hit := _first_secret(raw):
+    if hits := _secret_paths(raw):
         raise TestEnvError(
-            f"{ENV_FILE}: {hit} looks like a credential — keep env var names here, values in .env"
+            *(
+                f"{ENV_FILE}: {h} looks like a credential — keep env var names here, values in .env"
+                for h in hits
+            )
         )
     try:
         env = TestEnv.model_validate(raw)
     except ValidationError as exc:
-        e = exc.errors()[0]
-        raise TestEnvError(f"{ENV_FILE}: {_loc(e['loc'])}: {e['msg']}") from None
+        raise TestEnvError(
+            *(f"{ENV_FILE}: {_loc(e['loc'])}: {e['msg']}" for e in exc.errors())
+        ) from None
     root = repo_root.resolve()
     scripts = {"db.check": env.db.check, "db.reset": env.db.reset} | {
         f"db.seeds.{k}": v for k, v in env.db.seeds.items()
@@ -147,7 +165,8 @@ def check(repo_root: Path) -> int:
     try:
         load(repo_root)
     except TestEnvError as exc:
-        typer.secho(str(exc), fg="red", err=True)
+        for problem in exc.problems:
+            typer.secho(problem, fg="red", err=True)
         return 1
     typer.echo("test-env: OK")
     return 0
