@@ -191,7 +191,9 @@ first; when it is missing, stop and tell the Tester to run
     `git push -u origin HEAD`, and open the PR with `kb pr open --title
     "test: <story> R<n> <PASS|FAIL>" --body-file <file>`, the body listing
     the verdict, the defects and the regression result. **Never merge it**:
-    a human reviews and merges. Then `kb claim release <story>`.
+    a human reviews and merges, and the merge publishes the report through the
+    `kb-publish-request` workflow. **Never run `kb publish`.** Then
+    `kb claim release <story>`.
 
 ## Review dispatch contract (every review in this flow)
 

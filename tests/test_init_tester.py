@@ -299,3 +299,10 @@ def test_tester_scaffold_gates_prs_with_the_lint_workflow(tmp_path):
     ba = (tmp_path / "ba/.github/workflows/kb-ticket-lint.yml").read_text()
     uses = lambda t: sorted(set(re.findall(r"uses: (\S+)", t)))  # noqa: E731
     assert uses(text) == uses(ba)
+
+
+def test_tester_cannot_run_kb_publish():
+    assert "Bash(kb publish*)" in initcmd.TESTER_DENY
+    assert not _permitted_by_tester("kb publish")
+    assert not _permitted_by_tester("kb publish --pr")
+    assert _permitted_by_tester("kb report-ingest")

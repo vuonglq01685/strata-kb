@@ -674,6 +674,9 @@ TESTER_ALLOW: tuple[str, ...] = (
     "Bash(git remote show origin)",
 )
 TESTER_DENY: tuple[str, ...] = (
+    # Phase 1: a human merges the report PR and its merge publishes it
+    # (kb-publish-request workflow); the Tester never publishes by hand.
+    "Bash(kb publish*)",
     "Bash(kb pr merge*)",
     "Bash(gh pr merge*)",
     "Bash(git switch *--discard-changes*)",

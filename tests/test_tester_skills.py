@@ -217,3 +217,17 @@ def test_test_story_body_checks_testability_before_anything_is_held():
     assert t.index("kb mission next --from-hub") < t.index("kb claim take")
     for phrase in ("fix-done", "`reopened`", "closed", "holding nothing"):
         assert phrase in t, phrase
+
+
+def test_env_setup_never_receives_secret_values():
+    t = " ".join(_body("tester-env-setup").split())
+    assert "never ask for, receive or read a secret value" in t.lower()
+    assert "`NAME=` placeholder" in t and "editor" in t
+    assert "Never ask for the values" in t
+    assert "the secret values the" not in t  # old step 4 took them in chat
+
+
+def test_test_story_never_publishes_by_hand():
+    t = _body("tester-test-story")
+    assert "Never run `kb publish`" in t
+    assert "kb publish" not in t.replace("Never run `kb publish`", "")

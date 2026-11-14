@@ -9,6 +9,9 @@ write the declaration, and verify it. The file holds NAMES only; values go to
   credentials — go only to `.env`, which is git-ignored. Never put a value in
   the YAML, a commit, a PR or the chat, and never echo a value back: when you
   confirm an item, say the name you stored, not what the user typed.
+- You never ask for, receive or read a secret value in the chat. You write
+  `NAME=` placeholder lines into `.env` and the Tester types each value in
+  their own editor.
 - The test environment is a shared, non-production system. Refuse a `name` of
   `production` or `prod`, and ask the Tester to list any `protected_urls`.
 - DB access is the Tester's own scripts (any engine). kb adds no driver; you
@@ -32,19 +35,22 @@ write the declaration, and verify it. The file holds NAMES only; values go to
       the Tester to read before saving. It must touch only `$<url_env>`.
    5. Each account role (`buyer`, `admin`, …): the NAMES of the user and
       password env vars, declared with the convention `TEST_<ROLE>_USER` and
-      `TEST_<ROLE>_PASSWORD` (the login fixture reads exactly those). Ask for
-      the values separately (step 4).
+      `TEST_<ROLE>_PASSWORD` (the login fixture reads exactly those). Never ask
+      for the values: the Tester fills them in `.env` (step 4).
    6. `api_auth`: `cookie` or `bearer`.
    7. `retries` (default `3`).
 3. Write `.kb/test-env.yaml` from `.kb/test-env.example.yaml`: names only.
 4. Write `TEST_FE_URL=<front-end url>` (the `url` of the first app in `apps` that
-   has one; not a secret; the scaffolded
-   `playwright.config.ts` uses it as `baseURL`) and the secret values the
-   Tester gives you to `.env` only, one
-   `NAME=value` line each. Append: replace only lines with the same NAME and
-   keep every other line (including `STRATA_KB_HUB_URL` and
-   `STRATA_KB_HTTP_TOKEN` from `kb mcp-setup`). If `.env` is missing, create
-   it. Confirm `.env` is listed in `.gitignore`. Do not print `.env` back.
+   has one; not a secret; the scaffolded `playwright.config.ts` uses it as
+   `baseURL`) to `.env`, and one empty `NAME=` placeholder line for each secret
+   env var the YAML names (the DB `url_env`, each account's user and password).
+   Append: replace only lines with the same NAME and keep every other line
+   (including `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` from
+   `kb mcp-setup`); a NAME that already has a value is left as it is. If `.env`
+   is missing, create it. Confirm `.env` is listed in `.gitignore`. Then tell
+   the Tester to open `.env` in an editor and fill in each placeholder
+   themselves, and wait for them to say it is done. Never ask for, receive or
+   print a value, and do not print `.env` back.
 5. Run `kb test-env check`. It validates the file: names only, no
    secret-looking value, scripts inside the repo. Fix what it prints with the
    Tester and re-run until it passes.
