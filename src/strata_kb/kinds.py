@@ -21,7 +21,12 @@ BA = "ba"
 DEV = "dev"
 TESTER = "tester"
 HUB_KINDS = (KB, BA, DEV, TESTER)
-MENU: dict[str, str] = {KB: "Document", BA: "Ticket", DEV: "Code", TESTER: "Test Report"}
+MENU: dict[str, str] = {
+    KB: "Document",
+    BA: "Ticket",
+    DEV: "Code",
+    TESTER: "Test Report",
+}
 
 # A plan doc `kb plan-ingest` generated: title suffix + `plan`/`generated`
 # tags, never its id (a hand-ingested `release-plan` stays a plain document).

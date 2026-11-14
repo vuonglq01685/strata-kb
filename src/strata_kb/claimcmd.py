@@ -5,6 +5,7 @@ Each function returns the CLI exit code: 0 ok, 1 error, 3 taken or lost.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,7 +13,13 @@ from pathlib import Path
 import typer
 
 from strata_kb import claimclient
-from strata_kb.claimclient import ClaimLostError, ClaimTakenError, LocalClaims
+from strata_kb.claimclient import (
+    ClaimLostError,
+    ClaimTakenError,
+    EnvLockedError,
+    LocalClaims,
+)
+from strata_kb.config import load_config
 
 EXIT_TAKEN_OR_LOST = 3
 
@@ -41,13 +48,19 @@ def _lost(local: LocalClaims, ticket: str, exc: ClaimLostError) -> int:
     return EXIT_TAKEN_OR_LOST
 
 
+def claim_role(kb_dir: Path) -> str:
+    return "tester" if load_config(kb_dir).kind == "tester" else "dev"
+
+
 def take(kb_dir: Path, root: Path, ticket: str, as_name: str | None) -> int:
     holder = as_name or claimclient.holder_name(root)
     local = LocalClaims(kb_dir)
     known = local.get(ticket)
     client = claimclient.from_env()
     try:
-        claim, token = client.take(ticket, holder, known[1] if known else None)
+        claim, token = client.take(
+            ticket, holder, known[1] if known else None, role=claim_role(kb_dir)
+        )
         if claim.get("state") == "stopped":  # our own, resumed
             claim = client.update(claim["id"], token, state="active")
     except ClaimLostError as exc:
@@ -118,4 +131,36 @@ def list_(kb_dir: Path, as_json: bool) -> int:
             f"{c.get('ticket', '')}\t{c.get('holder', '')}\t{c.get('phase', '')}\t"
             f"{c.get('state', '')}\t{c.get('last_seen', '')}"
         )
+    return 0
+
+
+def lock_env(kb_dir: Path, root: Path, name: str, story: str) -> int:
+    """Lock the test environment `name` for `story` (exit 3 if locked)."""
+    local = LocalClaims(kb_dir)
+    try:
+        _, token = claimclient.from_env().lock_env(
+            name, claimclient.holder_name(root), story, local.get_env(name)
+        )
+    except EnvLockedError as exc:
+        lock = exc.lock
+        typer.echo(
+            f"locked by {lock.get('holder', '?')} for {lock.get('story', '?')} "
+            f"(updated {_age(str(lock.get('last_seen', '')))} ago)"
+        )
+        return EXIT_TAKEN_OR_LOST
+    local.put_env(name, token)
+    typer.echo(f"locked {name} for {story}")
+    return 0
+
+
+def unlock_env(kb_dir: Path, name: str) -> int:
+    local = LocalClaims(kb_dir)
+    token = local.get_env(name)
+    if token is None:
+        typer.echo(f"no lock held for {name} on this machine")
+        return 1
+    # expired or released already: nothing left to give back
+    with contextlib.suppress(ClaimLostError):
+        claimclient.from_env().unlock_env(name, token)
+    local.drop_env(name)
     return 0

@@ -82,6 +82,11 @@ def _claim_error(exc: ticketclaim.ClaimError) -> JSONResponse:
         return JSONResponse(
             {"error": "taken", "claim": _claim_json(exc.claim)}, status_code=409
         )
+    if isinstance(exc, ticketclaim.EnvLocked):
+        return JSONResponse(
+            {"error": "env_locked", "lock": dataclasses.asdict(exc.lock)},
+            status_code=409,
+        )
     if isinstance(exc, ticketclaim.ClaimLost):
         return JSONResponse(
             {
@@ -171,6 +176,9 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         ref = _str_field(body, "ticket", required=True) or ""
         holder = _str_field(body, "holder", required=True) or ""
         sent = _str_field(body, "token")
+        role = _str_field(body, "role") or "dev"
+        if role not in ticketclaim.ROLES:
+            return _bad(f"role must be one of {', '.join(ticketclaim.ROLES)}")
         try:
             _, ticket = ticketfetch.split_ref(ref)
             repo, doc, l3 = ticketfetch.find(hub, ref)
@@ -186,14 +194,17 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         except ticketfetch.TicketFetchError as exc:
             # unreadable or missing mid auto-pull: the runner retries
             return _error(503, "hub_busy", str(exc))
-        # a parent bug is taken: the first responder fixes its own row
-        if planparents.is_parent_story(planstatus._restore("", section)):
+        # a parent bug is taken: the first responder fixes its own row;
+        # a Tester tests a whole parent story
+        if role == "dev" and planparents.is_parent_story(
+            planstatus._restore("", section)
+        ):
             return _error(
                 400,
                 "parent_story",
                 f"{ticket} is a parent story — claim one of its children",
             )
-        claim, token = store_for(hub).take(repo, ticket, holder, sent)
+        claim, token = store_for(hub).take(repo, ticket, holder, sent, role)
         # An expired claim retried with its old token is a new grant (new token).
         regrant = sent is not None and token == sent
         return JSONResponse(
@@ -221,7 +232,9 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         store = store_for(hub)
         close_done_tickets(hub, store)
         params = request.query_params
-        claims = store.held(params.get("repo", ""), params.get("ticket", ""))
+        claims = store.held(
+            params.get("repo", ""), params.get("ticket", ""), params.get("role", "")
+        )
         return JSONResponse({"claims": [_claim_json(c) for c in claims]})
 
     def update(request: Request, body: dict, hub: HubHandle) -> JSONResponse:
@@ -247,7 +260,41 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
         claim = store_for(hub).pr_closed(claim_id(request), pr)
         return JSONResponse({"claim": _claim_json(claim)})
 
+    def env_name(request: Request) -> str:
+        return request.path_params["name"]
+
+    def env_lock(_request: Request, body: dict, hub: HubHandle) -> JSONResponse:
+        sent = _str_field(body, "token")
+        lock, token = store_for(hub).lock_env(
+            _str_field(body, "name", required=True) or "",
+            _str_field(body, "holder", required=True) or "",
+            _str_field(body, "story", required=True) or "",
+            sent,
+        )
+        return JSONResponse(
+            {"lock": dataclasses.asdict(lock), "token": token},
+            status_code=200 if sent == token else 201,
+        )
+
+    def env_refresh(request: Request, body: dict, hub: HubHandle) -> JSONResponse:
+        token = _str_field(body, "token", required=True) or ""
+        lock = store_for(hub).refresh_env(env_name(request), token)
+        return JSONResponse({"lock": dataclasses.asdict(lock)})
+
+    def env_unlock(request: Request, body: dict, hub: HubHandle) -> JSONResponse:
+        token = _str_field(body, "token", required=True) or ""
+        store_for(hub).unlock_env(env_name(request), token)
+        return JSONResponse({})
+
+    def env_listing(_request: Request, _body: dict, hub: HubHandle) -> JSONResponse:
+        locks = store_for(hub).env_locks()
+        return JSONResponse({"locks": [dataclasses.asdict(x) for x in locks]})
+
     return [
+        Route("/api/env-locks", endpoint(env_lock), methods=["POST"]),
+        Route("/api/env-locks", endpoint(env_listing, has_body=False), methods=["GET"]),
+        Route("/api/env-locks/{name}", endpoint(env_refresh), methods=["PATCH"]),
+        Route("/api/env-locks/{name}", endpoint(env_unlock), methods=["DELETE"]),
         Route("/api/claims", endpoint(take), methods=["POST"]),
         Route("/api/claims", endpoint(listing, has_body=False), methods=["GET"]),
         Route("/api/claims/{claim_id}", endpoint(update), methods=["PATCH"]),

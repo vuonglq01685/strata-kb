@@ -406,3 +406,63 @@ def test_close_done_closes_parent_bug_claim_only_on_rollup(
     _mark_done(hub, "api", "BUG-12.api")
     _mark_done(hub, "web", "BUG-12.web")  # the whole roll-up
     assert open_claims() == 0
+
+
+def _make_parent(hub):
+    from strata_kb import ticketfetch
+
+    l3 = ticketfetch.find(hub, US1)[2]
+    head, sep, tail = l3.read_text(encoding="utf-8").partition(f"\n## {US1} ")
+    title, _, rest = tail.partition("\n")
+    l3.write_text(
+        f"{head}{sep}{title}\n> Kind: parent story\n{rest}",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def test_api_tester_may_claim_parent_story(web_client, hub_with_ticket, auth):
+    _make_parent(hub_with_ticket(rev=1))
+    assert _take(web_client, auth).status_code == 400
+    r = _take(web_client, auth, role="tester")
+    assert r.status_code == 201
+    assert r.json()["claim"]["role"] == "tester"
+    r = web_client.get("/api/claims", params={"role": "dev"}, headers=auth)
+    assert r.json()["claims"] == []
+
+
+def test_api_dev_and_tester_both_claim(web_client, hub_with_ticket, auth):
+    hub_with_ticket(rev=1)
+    assert _take(web_client, auth).status_code == 201
+    assert _take(web_client, auth, holder="t@m2", role="tester").status_code == 201
+    assert _take(web_client, auth, holder="t@m3", role="tester").status_code == 409
+
+
+def test_api_unknown_role_is_400(web_client, hub_with_ticket, auth):
+    hub_with_ticket(rev=1)
+    assert _take(web_client, auth, role="qa").status_code == 400
+
+
+def test_api_env_lock_conflict_is_409(web_client, hub_with_ticket, auth):
+    hub_with_ticket(rev=1)
+    body = {"name": "test", "holder": "a", "story": US1}
+    r = web_client.post("/api/env-locks", json=body, headers=auth)
+    assert r.status_code == 201
+    tok = r.json()["token"]
+    r = web_client.post("/api/env-locks", json={**body, "holder": "b"}, headers=auth)
+    assert r.status_code == 409
+    assert r.json()["error"] == "env_locked"
+    assert r.json()["lock"]["holder"] == "a"
+    r = web_client.post("/api/env-locks", json={**body, "token": tok}, headers=auth)
+    assert r.status_code == 200
+    (lock,) = web_client.get("/api/env-locks", headers=auth).json()["locks"]
+    assert lock["name"] == "test"
+    r = web_client.patch("/api/env-locks/test", json={"token": "bad"}, headers=auth)
+    assert r.status_code == 403
+    r = web_client.patch("/api/env-locks/test", json={"token": tok}, headers=auth)
+    assert r.status_code == 200
+    r = web_client.request(
+        "DELETE", "/api/env-locks/test", json={"token": tok}, headers=auth
+    )
+    assert r.status_code == 200
+    assert web_client.get("/api/env-locks", headers=auth).json()["locks"] == []

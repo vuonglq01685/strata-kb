@@ -12,6 +12,7 @@ from strata_kb.claimclient import (
     ClaimLostError,
     ClaimRouteMissing,
     ClaimTakenError,
+    EnvLockedError,
     LocalClaims,
 )
 from strata_kb.errors import KbError
@@ -194,3 +195,31 @@ def test_parent_story_400_is_its_own_rejection():
             FakeHttp(400, {"error": "parent_story", "detail": "P1 is a parent"})
         ).take("P1", "a")
     assert isinstance(exc.value, ClaimRejectedError)
+
+
+def test_take_sends_role_only_for_tester():
+    http = FakeHttp(201, {"claim": {"id": 4}, "token": "ct"})
+    client(http).take("US1", "a@m1")
+    client(http).take("US1", "a@m1", role="tester")
+    assert "role" not in json.loads(http.calls[0][3])
+    assert json.loads(http.calls[1][3])["role"] == "tester"
+
+
+def test_lock_env_wire_and_conflict():
+    http = FakeHttp(201, {"lock": {"name": "test"}, "token": "lt"})
+    assert client(http).lock_env("test", "a", "US1") == ({"name": "test"}, "lt")
+    method, url, _, body = http.calls[0]
+    assert (method, url) == ("POST", "http://hub/api/env-locks")
+    assert json.loads(body) == {"name": "test", "holder": "a", "story": "US1"}
+    busy = FakeHttp(409, {"error": "env_locked", "lock": {"holder": "b"}})
+    with pytest.raises(EnvLockedError) as exc:
+        client(busy).lock_env("test", "a", "US1")
+    assert exc.value.lock == {"holder": "b"}
+
+
+def test_unlock_env_wire():
+    http = FakeHttp(200, {})
+    client(http).unlock_env("test", "lt")
+    method, url, _, body = http.calls[0]
+    assert (method, url) == ("DELETE", "http://hub/api/env-locks/test")
+    assert json.loads(body) == {"token": "lt"}

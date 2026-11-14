@@ -28,7 +28,7 @@ from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.kinds import HUB_KINDS
-from strata_kb.ticketclaim import PHASES
+from strata_kb.ticketclaim import PHASES, TESTER_PHASES
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -5039,6 +5039,33 @@ def test_env_seed(
     _test_env_run(go)
 
 
+@test_env_app.command("lock")
+def test_env_lock(
+    story: str = typer.Argument(..., help="Story id being tested"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Lock the test environment on the hub for a story (exit 3 if locked)."""
+
+    def go(t, root):
+        from strata_kb import claimcmd
+
+        return claimcmd.lock_env(kb_dir, root, t.load(root).name, story)
+
+    _test_env_run(go)
+
+
+@test_env_app.command("unlock")
+def test_env_unlock(kb_dir: Path = _KB_DIR_OPT) -> None:
+    """Give the test environment lock back."""
+
+    def go(t, root):
+        from strata_kb import claimcmd
+
+        return claimcmd.unlock_env(kb_dir, t.load(root).name)
+
+    _test_env_run(go)
+
+
 def _story_hub(hub: str) -> HubHandle:
     return _hub_or_exit(hub, Path(".kb"))
 
@@ -5119,7 +5146,10 @@ def claim_update(
     phase: str | None = typer.Option(
         None,
         "--phase",
-        help="New phase: " + ", ".join(PHASES),
+        help="New phase: "
+        + ", ".join(PHASES)
+        + "; tester: "
+        + ", ".join(TESTER_PHASES),
     ),
     pr: str | None = typer.Option(None, "--pr", help="PR URL"),
     stopped: str | None = typer.Option(
@@ -5132,9 +5162,10 @@ def claim_update(
     from strata_kb import claimcmd
 
     # Not click.Choice: typer >= 0.26 vendors click, so a real click type breaks.
-    if phase is not None and phase not in PHASES:
+    allowed = (*PHASES, *(p for p in TESTER_PHASES if p not in PHASES))
+    if phase is not None and phase not in allowed:
         raise typer.BadParameter(
-            f"{phase!r} is not one of {', '.join(PHASES)}", param_hint="--phase"
+            f"{phase!r} is not one of {', '.join(allowed)}", param_hint="--phase"
         )
     _exit_with(claimcmd.update(kb_dir, ticket, phase, pr, stopped, active))
 
