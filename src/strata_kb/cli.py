@@ -4861,7 +4861,7 @@ def testcase_lint(
         typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
     story = testcases.parse(text).story
-    spec_dir = Path("tests") / story
+    spec_dir = file.parent
     ticket_text: str | None = None
     if hub:
         try:

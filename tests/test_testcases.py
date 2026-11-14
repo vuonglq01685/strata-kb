@@ -69,6 +69,7 @@ def test_clean_spec_passes(tmp_path, golden_block):  # noqa: F811
     rep = testcases.lint(_spec(), _ticket(golden_block), spec_dir=d)
     assert _errs(rep) == []
     assert rep.passed
+    assert not [i for i in rep.issues if i.level == "warning" and "AC1" in i.message]
     spec = testcases.parse(_spec())
     assert spec.children == (f"{STORY}.web",)
     assert spec.trace["AC2"] == ("TC-02", "TC-03")
@@ -164,7 +165,7 @@ def test_cli_lint_local_ticket(tmp_path, golden_block, monkeypatch):  # noqa: F8
 
     d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
     (d / "ticket.md").write_text(_ticket(golden_block))
-    spec = tmp_path / "spec.md"
+    spec = d / "test-cases.md"
     spec.write_text(_spec())
     monkeypatch.chdir(tmp_path)
     res = CliRunner().invoke(app, ["testcase", "lint", str(spec)])
@@ -173,3 +174,71 @@ def test_cli_lint_local_ticket(tmp_path, golden_block, monkeypatch):  # noqa: F8
     spec.write_text(_spec(revision=5))
     res = CliRunner().invoke(app, ["testcase", "lint", str(spec), "--json"])
     assert res.exit_code == 1
+
+
+def test_placeholder_detection(tmp_path):
+    d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
+    ok = _spec().replace(
+        "| Test data | seed a |",
+        "| Test data | level < 100 and level > 0, press <Enter> |",
+    )
+    assert _errs(testcases.lint(ok, None, spec_dir=d)) == []
+    for tok in ("<k>", "<name>", "<id.repo>", "<story-id>", "<one-line title>", "<n>"):
+        bad = _spec().replace("| Steps | 1. open |", f"| Steps | {tok} |")
+        assert any(
+            "Steps" in e for e in _errs(testcases.lint(bad, None, spec_dir=d))
+        ), tok
+
+
+def _filled_template(flow_row: str) -> str:
+    from strata_kb import initcmd
+
+    t = initcmd.read_template("test-cases-template.md")
+    t = t.replace("<story-id> — <story title>", f"{STORY} — Show airspace")
+    t = t.replace(
+        "Story: <id> · Children: <id.repo>, …",
+        f"Story: {STORY} · Children: {STORY}.web",
+    )
+    t = t.replace("Ticket revision: <n>", "Ticket revision: 1")
+    t = t.replace("| AC1 | TC-01, TC-02 |", "| AC1 | TC-01 |\n| AC2 | TC-02 |")
+    t = t.replace("|---|---|\n\n## TC-01", "|---|---|\n" + flow_row + "\n\n## TC-01")
+    t = t.replace("<one-line title>", "case")
+    t = t.replace("Verify AC<k>: …", "Verify it").replace("UI · API · UI+API", "UI")
+    t = t.replace("P1 · P2 · P3", "P1").replace(
+        "EP · BVA · decision table · state transition · use case", "EP"
+    )
+    t = t.replace("positive · negative · boundary", "positive").replace(
+        "| Preconditions | … |", "| Preconditions | none |"
+    )
+    t = t.replace("seed `<name>`, values …", "seed a").replace("1. … 2. …", "1. open")
+    t = t.replace("observable outcome (UI text, API status/body, DB row)", "shown")
+    t = t.replace("tests/<story-id>/tc01.spec.ts", f"tests/{STORY}/tc01.spec.ts")
+    t = t.replace("automated · manual (reason)", "automated")
+    head, rest = t.split("## TC-01", 1)
+    block, tail = rest.split("## Change log", 1)
+    tc2 = (
+        block.replace("TC-01", "TC-02")
+        .replace("case", "case 2")
+        .replace("tc01", "tc02")
+    )
+    tc1 = block.replace("TC-01", "TC-01")
+    return (
+        head
+        + "## TC-01"
+        + tc1
+        + "## TC-02"
+        + tc2.split("## TC-02", 1)[-1]
+        + "## Change log"
+        + tail
+    )
+
+
+def test_real_template_filled_in_passes(tmp_path, golden_block):  # noqa: F811
+    d = _dir(tmp_path, "tc01.spec.ts", "tc02.spec.ts")
+    spec = _filled_template("")
+    assert _errs(testcases.lint(spec, None, spec_dir=d)) == []
+    ticket = _ticket(golden_block)
+    assert _errs(testcases.lint(spec, ticket, spec_dir=d)) == []
+    with_flow = _filled_template(f"| {FLOW} | TC-02 |")
+    ticket = _ticket(golden_block, flows=(FLOW,))
+    assert _errs(testcases.lint(with_flow, ticket, spec_dir=d)) == []

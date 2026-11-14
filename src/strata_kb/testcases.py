@@ -46,7 +46,7 @@ _REV_RE = re.compile(r"Ticket revision:\s*(\d+)")
 _TC_HEAD_RE = re.compile(r"^## (TC-\d+)\s*[—-]\s*(.*)$", re.M)
 _TC_ID_RE = re.compile(r"TC-\d+")
 _CODE_RE = re.compile(r"`[^`]*`")
-_PLACEHOLDER_RE = re.compile(r"<(?!/?br\s*/?>)[^<>\n]+>|(?<!\w)…(?!\w)")
+_PLACEHOLDER_RE = re.compile(r"<(?!br\b)[a-z][\w .-]*>")
 _NO_SCRIPT = {"", "-", "—", "n/a", "none"}
 
 
@@ -130,7 +130,8 @@ def _err(msg: str, code: str) -> Issue:
 
 
 def _placeholder(value: str) -> bool:
-    return bool(_PLACEHOLDER_RE.search(_CODE_RE.sub("", value)))
+    bare = _CODE_RE.sub("", value)
+    return bare.strip() == "…" or bool(_PLACEHOLDER_RE.search(bare))
 
 
 def _structure(text: str, spec: CaseSpec) -> list[Issue]:
@@ -235,7 +236,10 @@ def _ticket_issues(spec: CaseSpec, ticket_text: str) -> list[Issue]:
         pols = {pol.get(t) for t in tcs}
         if "positive" not in pols:
             issues.append(_err(f"{ac} has no positive test case", "tc-no-positive"))
-        if re.search(r"\d", item) and not pols & {"negative", "boundary"}:
+        if re.search(r"\d", AC_ID_RE.sub("", item, count=1)) and not pols & {
+            "negative",
+            "boundary",
+        }:
             issues.append(
                 Issue(
                     level="warning",
@@ -253,7 +257,13 @@ def _ticket_issues(spec: CaseSpec, ticket_text: str) -> list[Issue]:
     covered = {_norm(f) for f, tcs in spec.flows.items() if tcs}
     for flow in ticket.alternate_flows(ticket_text):
         if _norm(flow) not in covered:
-            issues.append(_err(f"alternate flow has no test case: {flow}", "tc-flow"))
+            issues.append(
+                _err(
+                    f"alternate flow has no test case: {flow} "
+                    '(add "| <flow> | TC-NN |" under ## Alternate flows coverage)',
+                    "tc-flow",
+                )
+            )
     want = planrev.parse_revision(ticket_text)
     if want is not None and spec.revision != want:
         issues.append(

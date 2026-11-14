@@ -6,6 +6,10 @@
 |---|---|
 | AC1 | TC-01, TC-02 |
 
+## Alternate flows coverage
+| Flow | Test cases |
+|---|---|
+
 ## TC-01 — <one-line title>
 | Field | Value |
 |---|---|
