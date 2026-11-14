@@ -1,0 +1,183 @@
+Test one story end to end on the declared test environment, and publish a
+report only when the round ends `PASS` or `FAIL`. You are the Tester. You
+open the report PR; you never merge it in this phase — a human does.
+
+`<story>` is the story id given to the command (a parent story or an
+unsplit story). Ask for it when it is empty. Read `.kb/test-env.yaml`
+first; when it is missing, stop and tell the Tester to run
+`/tester-env-setup`.
+
+## Hold-and-release rules
+
+- The claim and the environment lock are released **on any stop**, not only
+  at the end: `kb test-env unlock` and `kb claim release <story>` (the claim
+  is released after the report PR is opened, so a `reopened` story never keeps
+  an open Tester claim). A stop never leaves either one held.
+- Update the claim phase as you go: `kb claim update <story> --phase <p>`
+  with `cases`, `scripts`, `run`, `report`, `review`, `publishing`. Exit 3
+  from any `kb claim` or `kb test-env lock` call means the claim or lock is
+  taken or lost: stop at once.
+- Secrets: credentials come from env vars only, through
+  `tests/fixtures/login.ts`. Never write a value into a test case, script,
+  report, log, PR or chat.
+
+## Steps
+
+1. **Fetch the ticket.** `kb ticket fetch <story> --out tests/<story>/ticket.md`.
+   Read its acceptance criteria and its `### Alternate / exception flows`.
+2. **Deploy check.** `kb test-env deployed <story>`. Exit 4 means the
+   environment does not run the published commits yet: stop with
+   "not deployed yet", say which repo the command printed, and take no lock
+   or claim.
+3. **Lock the environment.** `kb test-env lock <story>`. Exit 3 means another
+   round holds this environment: stop, "environment locked".
+4. **Take the claim.** `kb claim take <story>`; exit 3 means taken: unlock
+   (`kb test-env unlock`) and stop. Then `kb claim update <story> --phase cases`.
+5. **Explore and write the cases.** Walk each acceptance criterion in the
+   app with Playwright MCP to learn the real UI text, routes and API
+   behaviour. Write `tests/<story>/test-cases.md` from
+   `docs/templates/test-cases.md`: one TC per `## TC-<n>` block, every field
+   filled (Objective, Type, Priority, Technique, Polarity, Preconditions,
+   Test data, Steps, Expected result, Script, Automation). Per AC: at least
+   one positive TC, and one negative or boundary TC when the AC states a
+   value, limit, format or state. Fill `## Alternate flows coverage` with
+   every alternate or exception flow of the ticket. Pick the technique that
+   fits (EP, BVA, decision table, state transition, use case).
+   Run `kb testcase lint tests/<story>/test-cases.md`; fix every finding
+   until it exits 0.
+6. **Write the scripts.** `kb claim update <story> --phase scripts`. One
+   Playwright Test file per TC at the path its `Script` field names. Rules:
+   role/text/testid locators, no brittle CSS or XPath; no `waitForTimeout`
+   or other fixed sleep; web-first assertions; every test creates or seeds
+   its own data and does not depend on order; API checks through Playwright
+   `request`; trace, screenshot and video kept on failure; credentials from
+   env only, login through `tests/fixtures/login.ts`. Re-run
+   `kb testcase lint` (no orphan scripts).
+7. **Q1 review.** `kb claim update <story> --phase review`. Dispatch the
+   `test-case-reviewer` subagent under the review contract below, on the test
+   cases and scripts, **before any run**. Append each round to the `## Review
+   record` of `tests/<story>/test-cases.md` and lint again. A BLOCKER still
+   standing after round 2 stops the task (see the stop rule).
+8. **Run the pipeline, steps 1–6 in order.** `kb claim update <story> --phase run`.
+   The run log is local: `.kb/runlog/` (git-ignored), one file per round.
+   1. **Preflight.** Env health (FE, API, DB `check`) and the deploy check
+      again; record each app's commit with `kb test-env version`. A failure
+      here ends the round `BLOCKED-ENV`.
+   2. **Story run.** Run every TC of the story with
+      `npx playwright test tests/<story>/` (a re-test round reruns all of
+      them, not only the ones that failed before).
+   3. **Clean retry.** Rerun each failing TC on a reset, reseeded DB, up to
+      `retries` times (default 3): `kb test-env reset`, then
+      `kb test-env seed <name>` for the seed that TC names. Always fails:
+      stable failure. Sometimes passes: flaky, so that AC is *unverified*
+      (never pass) and the script goes back to you; the Dev is not involved.
+   4. **MCP confirmation.** Replay each stable failure by hand through
+      Playwright MCP. Reproduced: it is a defect. Not reproduced: it is a
+      script defect — fix the script and rerun it, the Dev is not involved.
+   5. **Regression run.** Only when every story TC passed. Run the scripts
+      of every story whose status is `closed` (the `tests/<closed story>/`
+      folders), with the same clean retry and MCP confirmation. For each
+      confirmed regression failure:
+      - Key it `<closed story id>/TC-<k>` and ask the hub:
+        `curl -sS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN"
+        "$STRATA_KB_HUB_URL/api/tests/known-failures"`. If the key has an
+        open known-failure, it is not a new defect and not attributed to
+        this story: list it under `## Regression` as
+        `known: <story> R<n> RD<k>` (or `BUG-<n>`), and move on. Never print
+        the token.
+      - Otherwise attribute it with `kb test-env changed <story>` (the files
+        this story's child PRs changed). It is a **story regression** only
+        when both hold: (a) **baseline** — the TC passed in the last recorded
+        regression baseline (the last `PASS` round on this environment, with
+        each app's commit); (b) **overlap** — the failing page, API route or
+        service maps to a file in that list (use the Dev repo's `-code`
+        routes/pages and `-svc` services). The guilty child is the one whose
+        PR holds the file. With no baseline yet, overlap alone decides.
+        Story regression: a defect of this story, `Regression: yes`, with the
+        evidence for (a) and (b) written into it. Neither signal, or only
+        one: an outside regression, recorded as `RD<k>`, which does not stop
+        this story closing. A doubt means outside regression, never a reopen
+        on a guess.
+   6. **Post-check.** `kb test-env version` again. A changed commit means
+      the round is void: `BLOCKED-ENV`. Then `kb test-env unlock`.
+   A round whose story TCs failed skips the regression run.
+9. **Round outcome.**
+   | Outcome | When |
+   |---|---|
+   | `PASS` | every story TC passed, steps 1 and 6 clean |
+   | `FAIL` | at least one confirmed story defect (story TC or story regression) |
+   | `INCOMPLETE` | no defect, but a flaky or script-defect TC is left |
+   | `BLOCKED-ENV` | step 1 or 6 failed |
+   Only `PASS` and `FAIL` produce a committed `reports/<story>/R<n>.md`.
+   `INCOMPLETE` and `BLOCKED-ENV` go to the local run log only; write the
+   reason there, release whatever is still held (`kb test-env unlock`,
+   `kb claim release <story>`) and stop. The
+   story's status does not change and it is retried later.
+10. **Write the report.** `kb claim update <story> --phase report`. `<n>` is
+    one more than the highest `reports/<story>/R<n>.md`. Write
+    `reports/<story>/R<n>.md` from `docs/templates/test-report.md`. The
+    verdict follows the tables: any story FAIL gives `FAIL`, else `PASS`.
+    One `### D<k>` per confirmed story failure, with `Guilty:` a child id of
+    the story, `Regression: yes|no`, steps to reproduce, expected, actual,
+    evidence and environment; a `Regression: yes` defect also carries its
+    broken TC, baseline and overlap lines. One `### RD<k>` per outside
+    regression, naming the `closed` story. Evidence images are PNG or WebP
+    under `reports/<story>/assets/`. No env var value or credential in the
+    text. Run `kb report lint reports/<story>/R<n>.md` until it exits 0.
+11. **Q2 review.** Dispatch the `test-report-reviewer` subagent under the
+    review contract below. It checks that the verdict follows the evidence,
+    every defect was reproduced through MCP and assigned to the right child,
+    regression defects are confirmed and attribution is right, flaky tests
+    were handled, and no secret leaked. A Q2 doubt on an attribution makes it
+    an outside regression. Append each round to the report's `## Review
+    record`, and run `kb report lint` again (its last row must be `pass`).
+12. **Publish.** `kb claim update <story> --phase publishing`. Run
+    `kb report-ingest` and confirm it lists your report and the test cases,
+    not as skipped. Commit `tests/<story>/` (without `ticket.md`, which is
+    git-ignored) and `reports/<story>/`, push the branch with
+    `git push -u origin HEAD`, and open the PR with `kb pr open --title
+    "test: <story> R<n> <PASS|FAIL>" --body-file <file>`, the body listing
+    the verdict, the defects and the regression result. **Never merge it**:
+    a human reviews and merges. Then `kb claim release <story>`.
+
+## Review dispatch contract (every review in this flow)
+
+Two reviews run here: Q1 (`test-case-reviewer`, step 7) and Q2
+(`test-report-reviewer`, step 11).
+
+- The author and the reviewer are NEVER the same subagent. A self-review
+  never satisfies a review step.
+- A reviewer starts from a fresh context and gets no conversation history —
+  hand it only the paths it must read and the constraints that bind it.
+- Artefacts move as FILE PATHS, never pasted into the dispatch prompt: the
+  test cases, the scripts, the report, the run log. Whatever you paste stays
+  in your context for the rest of the session.
+- Never pre-judge: a dispatch prompt never tells a reviewer what not to flag
+  and never rates a finding's severity for it.
+- Name the model on every dispatch — a standard model for authors and
+  fixers, the most capable one available for reviewers. Never inherit the
+  session default silently.
+- Convergence: round 1 is exhaustive; round 2 is verification only — it
+  blocks only on round-1 items, regressions introduced by the fix, and any
+  BLOCKER. The review passes when no BLOCKER stands and at most 2 SUGGESTED
+  remain; every carried SUGGESTED is recorded as a row in `## Review record`.
+- A finding goes to a fix subagent (never the reviewer), then to round 2.
+- Criteria: `docs/test-review-rubric.md` — its `## Q1 axes` for the
+  `test-case-reviewer`, its Q2 axes for the `test-report-reviewer` — then
+  `docs/test-review-rubric.local.md`, which wins where they disagree.
+  Severity is always BLOCKER / SUGGESTED / NOTE / NITS.
+- `## Review record` is a table with the header exactly
+  `| Date | Round | Verdict | Reviewer | Coverage | Open gaps |`, one row per
+  round; the last row's Verdict is `pass` before the artefact is published
+  (`kb report lint` checks the report's).
+- Where the runtime cannot dispatch subagents, run the review as its own pass
+  that reads ONLY the paths it was handed and reuses nothing it remembers
+  from authoring, write up its findings the same way, then STOP and hand the
+  result to the Tester. The task does not advance on a fallback pass; only
+  the Tester's explicit go-ahead does.
+
+**Stop.** A BLOCKER still standing after round 2 stops the task for a human:
+unlock and release (`kb test-env unlock`, `kb claim release <story>`), then
+say which finding stands and why. The text `AUTO-RESULT: failed test-review`
+is reserved for the unattended runner of a later phase: do not write it in
+this phase.

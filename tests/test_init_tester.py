@@ -16,6 +16,34 @@ def test_init_tester_scaffolds_exactly_the_tester_set(tmp_path):
     )
 
 
+def test_init_tester_has_all_four_wrappers_per_skill(tmp_path):
+    init_repo(tmp_path, "tester")
+    for skill in ("tester-env-setup", "tester-test-story"):
+        for rel in (
+            f".claude/skills/{skill}/SKILL.md",
+            f".claude/commands/{skill}.md",
+            f".github/prompts/{skill}.prompt.md",
+            f".cursor/commands/{skill}.md",
+        ):
+            assert (tmp_path / rel).is_file(), rel
+
+
+def test_tester_settings_allow_the_tester_commands(tmp_path):
+    init_repo(tmp_path, "tester")
+    allow = json.loads((tmp_path / ".claude/settings.json").read_text())[
+        "permissions"
+    ]["allow"]
+    for rule in (
+        "Bash(kb test-env *)",
+        "Bash(kb testcase *)",
+        "Bash(kb report*)",
+        "Bash(kb report-ingest*)",
+        "Bash(npx playwright test*)",
+        "mcp__playwright__*",
+    ):
+        assert rule in allow, rule
+
+
 def test_tester_scaffold_has_the_contract_paths(tmp_path):
     init_repo(tmp_path, "tester")
     for rel in (

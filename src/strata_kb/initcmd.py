@@ -260,15 +260,15 @@ def scaffold_tester_local_overrides(target: Path, report: InitReport) -> None:
 
 
 # Kind `tester` — system/integration test repo. Consumes the shared KB and
-# tickets, publishes only its generated `<repo_id>-test` report document.
-# Skill wrappers are added with the tester skills.
+# tickets, publishes only its generated `<repo_id>-test` report document. Its
+# own settings template: the playwright and test-env permissions stay off ba/dev.
 TESTER_TEMPLATES: dict[str, str] = {
     **MCP_CLIENT_TEMPLATES,
     ".kb/config.yaml": "config-tester.yaml",
     ".gitattributes": "gitattributes-child.txt",
     ".mcp.json": "mcp-tester.json",
     ".cursor/mcp.json": "cursor-mcp-tester.json",
-    ".claude/settings.json": "claude-settings-auto.json",
+    ".claude/settings.json": "claude-settings-tester.json",
     "QUICKSTART-TESTER.md": "QUICKSTART-tester.md",
     "docs/test-review-rubric.md": "test-review-rubric.md",
     "docs/templates/test-cases.md": "test-cases-template.md",
@@ -276,6 +276,16 @@ TESTER_TEMPLATES: dict[str, str] = {
     ".kb/test-env.example.yaml": "test-env.example.yaml",
     ".github/workflows/kb-publish.yml": "kb-publish-tester.yml",
     ".github/workflows/kb-publish-request.yml": "kb-publish-request-tester.yml",
+    **{
+        path: resource
+        for skill in ("tester-env-setup", "tester-test-story")
+        for path, resource in (
+            (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
+            (f".claude/commands/{skill}.md", f"claude-command-{skill}.md"),
+            (f".github/prompts/{skill}.prompt.md", f"copilot-{skill}.prompt.md"),
+            (f".cursor/commands/{skill}.md", f"cursor-{skill}.md"),
+        )
+    },
 }
 
 
@@ -842,6 +852,7 @@ AGENT_FILE_PREFIXES = (
     ".github/prompts/",
     ".cursor/commands/",
     "docs/pr-review-rubric.md",
+    "docs/test-review-rubric.md",
 )
 
 
