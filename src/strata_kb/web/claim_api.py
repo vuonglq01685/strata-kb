@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import os
 import sqlite3
 from collections.abc import Callable
 from typing import Any
@@ -34,29 +33,11 @@ from strata_kb.web.api import (
 logger = logging.getLogger("strata_kb.web.claim_api")
 
 MAX_BODY = 8192
-TTL_ENV = "STRATA_KB_CLAIM_TTL"
+TTL_ENV = ticketclaim.TTL_ENV  # re-exported: callers and tests import it here
+claim_ttl_from_env = ticketclaim.claim_ttl_from_env
 CLAIMS_NEED_HUB_DETAIL = "claims need the shared hub server"
 
 Handler = Callable[[Request, dict[str, Any], HubHandle], JSONResponse]
-
-
-def claim_ttl_from_env() -> int:
-    raw = os.environ.get(TTL_ENV)
-    if raw is None:
-        return ticketclaim.DEFAULT_TTL
-    try:
-        ttl = int(raw)
-    except ValueError:
-        ttl = 0
-    if ttl <= 0:
-        logger.warning(
-            "%s=%r is not a positive integer; using %d",
-            TTL_ENV,
-            raw,
-            ticketclaim.DEFAULT_TTL,
-        )
-        return ticketclaim.DEFAULT_TTL
-    return ttl
 
 
 def _bad(detail: str) -> JSONResponse:

@@ -42,6 +42,8 @@ logger = logging.getLogger("strata_kb.testflow")
 
 STATUSES = ("testing", "closed", "reopened", "fix-done")
 _ROUND_ID_RE = re.compile(r".+\.R[1-9]\d*")
+# same rule as `planstatus.safe_name`, which this module cannot import (cycle)
+_SAFE_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 @dataclass(frozen=True)
@@ -50,8 +52,6 @@ class TestFacts:
     reports: dict[str, tuple[Report, ...]] = field(default_factory=dict)
     testing: frozenset[str] = frozenset()
     fix_rounds: dict[str, frozenset[int]] = field(default_factory=dict)
-    # tester repo id -> story ids its `-test` docs cover (for `duplicate_testers`)
-    covered: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,9 @@ def _test_docs(hub: HubHandle) -> Iterator[tuple[str, ticketcheck.LoadedDoc]]:
 def _read_report(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> Report | None:
     """The `<story>.R<n>` section parsed back: L3 headings were demoted at
     ingest and the H1 dropped, so both are restored first."""
+    if not _SAFE_FILE_RE.fullmatch(sec.file) or sec.file in (".", ".."):
+        logger.warning("skipping section %s: unsafe group file name", sec.id)
+        return None
     raw = doc.read_raw(sec.file)
     body = slice_section(raw, sec.id) if raw else None
     if body is None:
@@ -129,15 +132,17 @@ def _fix_rounds(hub: HubHandle) -> dict[str, frozenset[int]]:
 
 
 def _held_testing(hub: HubHandle) -> frozenset[str]:
-    db = ticketclaim.claims_db_path(hub.root)
-    if not db.exists():  # read-only: never create the store
-        return frozenset()
+    """Stories with a held Tester claim, read without touching the store: a
+    plans page must not expire claims or create the DB."""
     try:
-        held = ticketclaim.ClaimStore(db).held(role="tester")
-    except (sqlite3.Error, KbError, OSError):
+        return ticketclaim.held_tickets_readonly(
+            ticketclaim.claims_db_path(hub.root),
+            role="tester",
+            ttl=ticketclaim.claim_ttl_from_env(),
+        )
+    except (sqlite3.Error, OSError):
         logger.warning("claim store unreadable", exc_info=True)
         return frozenset()
-    return frozenset(c.ticket for c in held)
 
 
 def load_facts(hub: HubHandle) -> TestFacts:
@@ -148,7 +153,6 @@ def load_facts(hub: HubHandle) -> TestFacts:
         },
         testing=_held_testing(hub),
         fix_rounds=_fix_rounds(hub),
-        covered=testcover.tester_coverage(hub),
     )
 
 
@@ -169,6 +173,8 @@ def story_test_status(
     if latest is not None:  # FAIL
         out[story] = "reopened"
         guilty = {d.guilty for d in latest.defects}
+        if not children and latest.round in facts.fix_rounds.get(story, frozenset()):
+            out[story] = "fix-done"  # an unsplit story is its own guilty ticket
         for child in children:
             if child in guilty:
                 fixed = latest.round in facts.fix_rounds.get(child, frozenset())
@@ -240,7 +246,7 @@ def known_failures(facts: TestFacts) -> dict[str, KnownFailure]:
     return open_
 
 
-def duplicate_testers(hub: HubHandle, facts: TestFacts) -> list[str]:
+def duplicate_testers(hub: HubHandle, facts: TestFacts | None = None) -> list[str]:
     """One message per BA repo covered by `-test` docs of more than one
     tester repo (spec D1); see `testcover`, which `kb doctor` shares."""
-    return testcover.duplicate_testers(hub, facts.covered)
+    return testcover.duplicate_testers(hub, testcover.tester_coverage(hub))

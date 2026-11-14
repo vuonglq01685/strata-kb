@@ -194,3 +194,17 @@ def test_from_env_whitespace_only_counts_as_unset(monkeypatch):
     monkeypatch.setenv("STRATA_KB_HTTP_TOKEN", "  ")
     with pytest.raises(KbError, match="needed to read the hub"):
         hubapi.from_env()
+
+
+def test_hubapi_story_keeps_test_overlay_fields():
+    row = {
+        "us_id": "U1", "mission_id": "M", "title": "t", "status": "done",
+        "reasons": [], "depends_on": [], "test_status": "closed",
+        "test_round": 2, "regression_bug": True,
+    }  # fmt: skip
+    got = hubapi._story(row)
+    assert (got.test_status, got.test_round, got.regression_bug) == ("closed", 2, True)
+    old = hubapi._story(
+        {k: v for k, v in row.items() if not k.startswith(("test_", "regression"))}
+    )
+    assert (old.test_status, old.test_round, old.regression_bug) == ("", 0, False)

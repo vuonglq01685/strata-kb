@@ -517,7 +517,6 @@ def check_hub(
             )
 
     issues += duplicate_doc_id_issues(fed)
-    issues += duplicate_tester_issues(handle)
     return issues, hub_stale
 
 

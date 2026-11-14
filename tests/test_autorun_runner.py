@@ -1475,7 +1475,7 @@ class OwnClaimClient:
             "pr": "",
         }
 
-    def held(self, repo="", ticket=""):
+    def held(self, repo="", ticket="", role=""):
         return [self._row()] if self.taken else []
 
     def take(self, ticket, holder, claim_token=None):

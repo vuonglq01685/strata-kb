@@ -223,3 +223,60 @@ def test_render_shows_test_status_after_status():
 
     row = missionnext.StoryStatus("US1", "M", "t", "done", (), test_status="closed")
     assert "| done / closed |" in missionnext.render([row], [])
+
+
+def test_claim_read_honours_ttl_env_and_never_writes(plan_hub, monkeypatch):
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    db = ticketclaim.claims_db_path(plan_hub.root)
+    old = datetime.now(UTC) - timedelta(hours=10)
+    ticketclaim.ClaimStore(db, now=lambda: old).take(
+        "ba-one", STORY, "tester-1", role="tester"
+    )
+    snapshot = (db.stat().st_mtime_ns, db.read_bytes())
+    monkeypatch.setenv("STRATA_KB_CLAIM_TTL", str(48 * 3600))
+    assert testflow.load_facts(plan_hub).testing == {STORY}
+    assert (db.stat().st_mtime_ns, db.read_bytes()) == snapshot
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT closed_at FROM claims").fetchall() == [(None,)]
+    monkeypatch.setenv("STRATA_KB_CLAIM_TTL", "3600")  # now it is unheld ...
+    assert testflow.load_facts(plan_hub).testing == frozenset()
+    assert (db.stat().st_mtime_ns, db.read_bytes()) == snapshot  # ... yet not closed
+
+
+def test_unsplit_story_reaches_fix_done():
+    rep = _rep(STORY, 1, "FAIL", guilty=STORY)
+    facts = _facts(reports={STORY: (rep,)}, fix_rounds={STORY: frozenset({1})})
+    assert testflow.story_test_status(STORY, (), facts) == {STORY: "fix-done"}
+    assert testflow.story_test_status(STORY, (), _facts(reports=facts.reports)) == {
+        STORY: "reopened"
+    }
+
+
+def test_unsafe_group_file_name_is_skipped(plan_hub):
+    publish_tests(plan_hub.root, "qa-repo", STORY, _text(STORY, 1))
+    manifest = plan_hub.federation_dir / "qa-repo" / "qa-repo-test" / "_manifest.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(f"file: {STORY}", "file: ../../x"),
+        encoding="utf-8",
+    )
+    assert testflow.load_facts(plan_hub).reports == {}
+
+
+def test_doctor_reports_duplicate_testers_only_for_hub_and_tester(git_kb, plan_hub):
+    from strata_kb import doctor
+
+    publish_tests(plan_hub.root, "qa-one", STORY, _text(STORY, 1))
+    publish_tests(plan_hub.root, "qa-two", STORY, _text(STORY, 2))
+    kb = git_kb["kb"]
+
+    def errors(kind: str) -> list[str]:
+        (kb / "config.yaml").write_text(
+            f"kind: {kind}\nrepo_id: demo\n", encoding="utf-8"
+        )
+        res = doctor.run(kb, plan_hub)
+        return [i.message for i in res.issues if "tester repo" in i.message]
+
+    assert errors("ba") == [] and errors("dev") == []
+    assert len(errors("tester")) == 1

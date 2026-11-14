@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import os
 import secrets
 import sqlite3
 import unicodedata
@@ -48,6 +50,7 @@ TESTER_PHASES: tuple[str, ...] = (
 WORKING_PHASES = ("claimed", "design", "plan", "execute", "handover", "waiting-qa")
 STATES = ("active", "stopped")
 DEFAULT_TTL = 14400  # 4 h
+TTL_ENV = "STRATA_KB_CLAIM_TTL"
 MAX_NAME = 100
 MAX_REASON = 1000
 MAX_PR = 500
@@ -162,6 +165,54 @@ class EnvLock:
 
 def claims_db_path(hub_root: Path) -> Path:
     return hub_root / ".kb-qa" / "claims.db"
+
+
+logger = logging.getLogger("strata_kb.ticketclaim")
+
+
+def claim_ttl_from_env() -> int:
+    raw = os.environ.get(TTL_ENV)
+    if raw is None:
+        return DEFAULT_TTL
+    try:
+        ttl = int(raw)
+    except ValueError:
+        ttl = 0
+    if ttl <= 0:
+        logger.warning(
+            "%s=%r is not a positive integer; using %d", TTL_ENV, raw, DEFAULT_TTL
+        )
+        return DEFAULT_TTL
+    return ttl
+
+
+def held_tickets_readonly(
+    db_path: Path,
+    *,
+    role: str,
+    ttl: int,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> frozenset[str]:
+    """Tickets with a held claim of `role`, by the same rule as `ClaimStore`
+    but without writing: the DB opens read-only, is never migrated and no
+    expired claim is closed. A missing DB, or one that predates `role`, holds
+    nothing. A page that only reads must use this, not `ClaimStore`."""
+    if not db_path.exists():
+        return frozenset()
+    cutoff = _stamp(now() - timedelta(seconds=ttl))
+    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    sql = (
+        "SELECT ticket FROM claims WHERE closed_at IS NULL AND role = ? "  # noqa: S608 - fixed fragment
+        f"AND NOT ({_UNHELD})"
+    )
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=10)) as conn:
+            rows = conn.execute(sql, (role, *PR_PHASES, cutoff)).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such" in str(exc):  # a pre-1.37 table without `role`, or none
+            return frozenset()
+        raise
+    return frozenset(r[0] for r in rows)
 
 
 def _utc_now() -> datetime:
