@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import federation, gitio, kinds, models
+from strata_kb import federation, gitio, kinds, models, testcover
 from strata_kb.doctor.issues import Issue, _flatten
 from strata_kb.federation import (  # noqa: F401 -- _FED_TOP_SKIP re-exported
     _FED_TOP_SKIP,
@@ -517,7 +517,14 @@ def check_hub(
             )
 
     issues += duplicate_doc_id_issues(fed)
+    issues += duplicate_tester_issues(handle)
     return issues, hub_stale
+
+
+def duplicate_tester_issues(handle: HubHandle) -> list[Issue]:
+    """Spec D1: one tester repo per BA repo."""
+    msgs = testcover.duplicate_testers(handle, testcover.tester_coverage(handle))
+    return [Issue("error", m) for m in msgs]
 
 
 def published_digest(handle: HubHandle, entry: Path, skip: frozenset[str]) -> str:

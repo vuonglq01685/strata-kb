@@ -13,7 +13,7 @@ and `missionlint.py` keep.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
 
 from strata_kb import lintcore, mission
@@ -60,6 +60,10 @@ class StoryStatus:
     is_parent: bool = False  # a parent story: rolled-up status, never worked on itself
     parent: str = ""  # a child ticket's parent story id
     own_fix_ready: bool = False  # a parent bug whose own fix a Dev may build now
+    # overlay of `testflow` (testing | closed | reopened | fix-done); `status` stays
+    test_status: str = ""
+    test_round: int = 0  # latest published report round; 0 = none
+    regression_bug: bool = False  # the latest report found a regression defect
 
 
 OWN_FIX_DONE = "own fix done"  # reasons of a parent bug with `Own fix: yes`
@@ -177,9 +181,9 @@ def svc_doc_id(doc: str) -> str:
     return f"{stem}-svc"
 
 
-def done_ids_from_history(history_l2: str | None) -> set[str]:
-    """Ticket ids of every `| Ticket | Title | Domain refs |` row across all
-    `hist.*` sections of a `<repo>-svc` history.md (L2). Header and
+def _history_rows(history_l2: str | None) -> Iterator[tuple[str, str]]:
+    """(ticket, refs) of every `| Ticket | Title | Domain refs |` row across
+    all `hist.*` sections of a `<repo>-svc` history.md (L2). Header and
     separator rows are skipped the way `svcnote._parse_existing_rows`
     skips them. An escaped pipe (`\\|`, written by `escape_cell` when a
     title contains a literal `|`) is swapped for `_ESCAPED_PIPE_SENTINEL`
@@ -187,7 +191,6 @@ def done_ids_from_history(history_l2: str | None) -> set[str]:
     `ROW_RE`'s `[^|]` groups don't mistake it for a column delimiter and
     refuse to match the whole row — a merged story with an escaped `|` in
     its title would otherwise silently read as not done."""
-    out: set[str] = set()
     for raw in (history_l2 or "").splitlines():
         line = raw.strip()
         if not line.startswith("|") or _SEP_ROW_RE.match(line):
@@ -197,7 +200,24 @@ def done_ids_from_history(history_l2: str | None) -> set[str]:
             continue
         ticket = m.group("ticket").strip().replace(_ESCAPED_PIPE_SENTINEL, "|")
         if ticket and ticket != "Ticket":
-            out.add(ticket)
+            yield ticket, m.group("refs")
+
+
+def done_ids_from_history(history_l2: str | None) -> set[str]:
+    """Ticket ids of every row of a `<repo>-svc` history (see `_history_rows`)."""
+    return {ticket for ticket, _ in _history_rows(history_l2)}
+
+
+_FIX_REF_RE = re.compile(r"\bfix:R([1-9]\d*)\b")
+
+
+def fix_rounds_from_history(history_l2: str | None) -> dict[str, frozenset[int]]:
+    """Ticket id -> the test rounds its `fix:R<n>` refs say it answers."""
+    out: dict[str, frozenset[int]] = {}
+    for ticket, refs in _history_rows(history_l2):
+        rounds = frozenset(int(n) for n in _FIX_REF_RE.findall(refs))
+        if rounds:
+            out[ticket] = out.get(ticket, frozenset()) | rounds
     return out
 
 
@@ -420,7 +440,8 @@ def render(
     lines += ["| US | Mission | Status | Reason |", "|---|---|---|---|"]
     for r in results:
         lines.append(
-            f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)} | "
+            f"| {r.us_id} | {r.mission_id} | {labels.get(r.status, r.status)}"
+            f"{f' / {r.test_status}' if r.test_status else ''} | "
             f"{'; '.join(r.reasons)} |"
         )
     if unparented:

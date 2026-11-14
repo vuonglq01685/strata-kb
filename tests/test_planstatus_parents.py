@@ -27,7 +27,14 @@ from tests.test_planstatus import _mirror
 from tests.test_planstatus_routing import _dev
 
 GOLDEN = Path(__file__).parent / "data" / "planstatus_golden.json"
-NEW_KEYS = {"is_parent": False, "parent": "", "own_fix_ready": False}
+NEW_KEYS = {
+    "is_parent": False,
+    "parent": "",
+    "own_fix_ready": False,
+    "test_status": "",
+    "test_round": 0,
+    "regression_bug": False,
+}
 
 
 def _plan_json(hub: HubHandle) -> dict:
@@ -414,3 +421,22 @@ def test_published_parent_bug_may_be_done_in_svc(bug_build):
 def test_done_bug_not_on_hub_cannot_become_parent(bug_build):
     hub = bug_build(done={"api": ("BUG-99",)})
     assert any("already implemented" in e for e in _lint_errors(hub, "BUG-99"))
+
+
+def test_test_report_overlays_parent_and_guilty_child_only(build):
+    from tests.test_testflow import _text, publish_tests
+
+    hub = build(done={"demo": (API,), "web": (WEB,)})
+    publish_tests(
+        hub.root,
+        "qa-repo",
+        US1,
+        _text(US1, 1, "FAIL", guilty=API),
+    )
+    rows = _rows(hub)
+    assert [(rows[i].status, rows[i].test_status) for i in (US1, API, WEB)] == [
+        ("done", "reopened"),
+        ("done", "reopened"),
+        ("done", ""),
+    ]
+    assert rows[US1].test_round == 1
