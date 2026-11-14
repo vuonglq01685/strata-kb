@@ -24,7 +24,17 @@ HTTP_TIMEOUT = 15
 _PROD_NAMES = {"production", "prod"}
 
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_USERINFO = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^\s@]*@")
+# `user:pass@` or `:pass@`; a port-shaped run (`host:8443/…`) is not a password.
+_USERINFO = re.compile(
+    r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]*:(?!\d{1,5}(?:[/?#\s]|$))[^\s@]*@"
+)
+_SCHEME_ALIAS = {"postgresql": "postgres"}
+_DEFAULT_PORTS = {
+    "postgres": "5432",
+    "mysql": "3306",
+    "redis": "6379",
+    "mongodb": "27017",
+}
 _TOKEN = re.compile(r"[A-Za-z0-9_\-]{32,}")
 
 
@@ -212,12 +222,19 @@ def app_commits(env: TestEnv, http=httpio.request) -> dict[str, str]:
 
 
 def _bare_url(url: str) -> str:
-    """URL without userinfo, whitespace and trailing slash, for protected-URL matching."""
-    parts = urllib.parse.urlsplit(url.strip())
-    host = parts.netloc.rpartition("@")[2]
-    return urllib.parse.urlunsplit(
-        (parts.scheme.lower(), host.lower(), parts.path, parts.query, "")
-    ).rstrip("/")
+    """URL for protected-URL matching: no userinfo, query, whitespace or trailing
+    slash; postgres/postgresql alike; the scheme's default port dropped."""
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+    except ValueError:
+        raise TestEnvError("a URL is malformed") from None
+    scheme = parts.scheme.lower()
+    scheme = _SCHEME_ALIAS.get(scheme, scheme)
+    host = parts.netloc.rpartition("@")[2].lower()
+    name, _, port = host.rpartition(":")
+    if name and port == _DEFAULT_PORTS.get(scheme):
+        host = name
+    return urllib.parse.urlunsplit((scheme, host, parts.path, "", "")).rstrip("/")
 
 
 def run_script(repo_root: Path, env: TestEnv, script: str, run=subprocess.run) -> int:

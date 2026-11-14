@@ -125,6 +125,9 @@ app.add_typer(test_env_app, name="test-env")
 testcase_app = typer.Typer(help="Tester repo: test case specs.")
 app.add_typer(testcase_app, name="testcase")
 
+report_app = typer.Typer(help="Tester repo: test reports.")
+app.add_typer(report_app, name="report")
+
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
@@ -4883,6 +4886,18 @@ def testcase_lint(
     report = testcases.lint(text, ticket_text, spec_dir=spec_dir)
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("TC"))
     _exit_with(0 if report.passed else 1)
+
+
+@report_app.command("lint")
+def report_lint(
+    file: Path = typer.Argument(..., help="Test report file (R<n>.md)"),
+    repo_root: Path = typer.Option(Path("."), help="Tester repo root"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check a test report (verdict, defects, evidence, secrets). Exit 0 PASS, 1 FAIL."""
+    from strata_kb import testreport
+
+    _exit_with(testreport.lint_file(file, repo_root.resolve(), json_output))
 
 
 @test_env_app.command("check")

@@ -134,3 +134,14 @@ def test_check_prints_one_line_per_problem(tmp_path, capsys):
     assert testenv.check(tmp_path) == 1
     lines = capsys.readouterr().err.strip().splitlines()
     assert len(lines) == 3
+
+
+def test_password_only_userinfo_is_secret_like():
+    assert testenv.secret_like("redis://:hunter2@h:6379")
+
+
+@pytest.mark.parametrize(
+    "url", ["https://host:8443/x?email=a@b.test", "https://host:8443/api/@me"]
+)
+def test_port_then_later_at_sign_is_not_userinfo(url):
+    assert not testenv.secret_like(url)

@@ -173,3 +173,34 @@ def test_run_script_oserror_is_an_error(tmp_path, monkeypatch):
 
     with pytest.raises(TestEnvError, match="s.sh could not run"):
         testenv.run_script(tmp_path, _env(), "s.sh", run)
+
+
+def test_bare_url_malformed_is_error_without_value():
+    with pytest.raises(TestEnvError) as ei:
+        testenv._bare_url("postgres://[bad/db")
+    assert "bad" not in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("postgresql://h/db", "postgres://h:5432/db"),
+        ("mysql://H:3306/db?x=1", "mysql://h/db"),
+        ("redis://:pw@h:6379/0", "redis://h/0"),
+        ("mongodb://h:27017/db", "mongodb://h/db"),
+    ],
+)
+def test_bare_url_normalises(a, b):
+    assert testenv._bare_url(a) == testenv._bare_url(b)
+
+
+def test_bare_url_keeps_non_default_port():
+    assert testenv._bare_url("postgres://h:5433/db") != testenv._bare_url(
+        "postgres://h/db"
+    )
+
+
+def test_run_script_refuses_malformed_db_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEST_DB_URL", "postgres://[bad/db")
+    with pytest.raises(TestEnvError):
+        testenv.run_script(tmp_path, _env(), "x.sh", _run([]))
