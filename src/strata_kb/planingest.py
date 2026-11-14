@@ -115,12 +115,12 @@ def promote_headings(markdown: str) -> str:
     return "\n".join(out)
 
 
-def _normalize(text: str) -> str:
+def normalize_text(text: str) -> str:
     """LF and NFC, so a CRLF or NFD twin renders the same sections."""
     return unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
-def _title(text: str) -> str:
+def section_title(text: str) -> str:
     lines = text.split("\n")
     for line, fenced in zip(lines, _fenced(lines), strict=True):
         if not fenced and line.startswith("# "):
@@ -128,7 +128,7 @@ def _title(text: str) -> str:
     return ""
 
 
-def _l3_body(text: str) -> str:
+def l3_body(text: str) -> str:
     """The source minus its H1, Review record and Definition of Ready, with
     every heading demoted one level. A second H1 would become a `## `
     heading and open a section of its own, so it is pushed down first."""
@@ -188,10 +188,10 @@ def _summary(text: str, title: str) -> str:
 
 
 def _section(item: _Item) -> CodeSection | None:
-    title = _title(item.text)
+    title = section_title(item.text)
     if not title:
         return None
-    l3 = _l3_body(item.text)
+    l3 = l3_body(item.text)
     return CodeSection(
         id=item.id,
         title=title,
@@ -219,19 +219,19 @@ def _dor_reason(text: str) -> str | None:
 
 def _read(path: Path) -> str:
     try:
-        return _normalize(path.read_bytes().decode("utf-8"))
+        return normalize_text(path.read_bytes().decode("utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         raise PlanIngestError(f"cannot read {path}: {exc}") from exc
 
 
-def _rel(path: Path, root: Path) -> str:
+def rel_path(path: Path, root: Path) -> str:
     try:
         return path.resolve().relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
 
 
-def _fence_reason(text: str) -> str | None:
+def fence_reason(text: str) -> str | None:
     """`mdutils.section_map` splits on every line starting with `## `, fenced
     or not, so such a line inside a fence would cut the section for readers."""
     lines = text.split("\n")
@@ -243,7 +243,7 @@ def _fence_reason(text: str) -> str | None:
     return None
 
 
-def _lint_reason(report) -> str | None:
+def lint_reason(report) -> str | None:
     errors = _offline_errors(report)
     if not errors:
         return None
@@ -251,7 +251,7 @@ def _lint_reason(report) -> str | None:
     return f"lint error: {errors[0]}{more}"
 
 
-def _via_symlink(base: Path, rel: str) -> bool:
+def via_symlink(base: Path, rel: str) -> bool:
     cur = base
     for part in Path(rel).parts:
         cur = cur / part
@@ -260,26 +260,30 @@ def _via_symlink(base: Path, rel: str) -> bool:
     return False
 
 
-def _attach(
-    text: str, stem: str, base_dir: Path
+def attach_images(
+    text: str,
+    srcs: list[str],
+    stem: str,
+    base_dir: Path,
+    noun: str = "ticket",
 ) -> tuple[str, tuple[tuple[str, bytes], ...]] | str:
-    """Read each `## Attachments` image of a bug and rewrite its reference to
-    `assets/<sha256>.<ext>`. Returns `(text, assets)`, or the reason the bug
-    cannot ship. A symlinked image (or folder) is refused: publish must not
-    copy files from outside the repo."""
+    """Read each image `srcs` names (a `stem/...` path under `base_dir`) and
+    rewrite its reference in `text` to `assets/<sha256>.<ext>`. Returns
+    `(text, assets)`, or the reason `noun` cannot ship. A symlinked image (or
+    folder) is refused: publish must not copy files from outside the repo."""
     mapping: dict[str, str] = {}
     assets: dict[str, bytes] = {}
     root = base_dir.resolve()
-    for src in buglint.attachment_images(text):
+    for src in srcs:
         if src in mapping:
             continue
         if problems := buglint.image_problems(src, stem, None):
             return problems[0]  # lint catches these; this is defence
         path = base_dir / src
-        if _via_symlink(base_dir, src) or not path.resolve().is_relative_to(root):
-            return f"image '{src}' is a symlink or lies outside the ticket's folder — copy the real file"
+        if via_symlink(base_dir, src) or not path.resolve().is_relative_to(root):
+            return f"image '{src}' is a symlink or lies outside the {noun}'s folder — copy the real file"
         if not path.is_file():
-            return f"image '{src}' not found next to the ticket"
+            return f"image '{src}' not found next to the {noun}"
         try:
             data = path.read_bytes()
         except OSError as exc:
@@ -288,6 +292,13 @@ def _attach(
         mapping[src] = f"{ASSETS_DIR}/{name}"
         assets[name] = data
     return buglint.rewrite_images(text, mapping), tuple(assets.items())
+
+
+def _attach(
+    text: str, stem: str, base_dir: Path
+) -> tuple[str, tuple[tuple[str, bytes], ...]] | str:
+    """A bug's `## Attachments` images, hashed into `assets/`."""
+    return attach_images(text, buglint.attachment_images(text), stem, base_dir)
 
 
 def _select(
@@ -299,10 +310,10 @@ def _select(
     for path in sorted(missions_dir.glob("*.md")):
         text = _read(path)
         mission_texts[path.stem] = text
-        file = _rel(path, root)
+        file = rel_path(path, root)
         # No DoR gate for a mission: it ships as soon as it lints, and every
         # amend republishes it. Its tickets keep theirs (published = ready).
-        reason = _lint_reason(missionlint.lint(text, None, path=path)) or _fence_reason(
+        reason = lint_reason(missionlint.lint(text, None, path=path)) or fence_reason(
             text
         )
         if reason:
@@ -316,12 +327,12 @@ def _select(
         if path.stem in ticket_files:
             raise PlanIngestError(
                 f"duplicate ticket id {path.stem}: "
-                f"{_rel(ticket_files[path.stem], root)}, {_rel(path, root)}"
+                f"{rel_path(ticket_files[path.stem], root)}, {rel_path(path, root)}"
             )
         if path.stem in mission_texts:
             raise PlanIngestError(
                 f"duplicate id {path.stem}: "
-                f"{_rel(missions_dir / f'{path.stem}.md', root)}, {_rel(path, root)}"
+                f"{rel_path(missions_dir / f'{path.stem}.md', root)}, {rel_path(path, root)}"
             )
         ticket_files[path.stem] = path
         ticket_texts[path.stem] = _read(path)
@@ -340,7 +351,7 @@ def _select(
         # Fail closed: a parent that does not lint stops the whole publish, so
         # its children never appear without it and the old document stays.
         path = ticket_files[us_id]
-        reason = _lint_reason(
+        reason = lint_reason(
             ticketlint.lint(
                 text,
                 None,
@@ -348,7 +359,7 @@ def _select(
                 missions_dir=missions_dir,
                 load_ticket=ticket_texts.get,
             )
-        ) or _fence_reason(text)
+        ) or fence_reason(text)
         if reason:
             raise PlanIngestError(
                 f"{ticket.ticket_kind(text)} {us_id} fails lint: "
@@ -366,17 +377,25 @@ def _select(
                 )
             text, assets = attached
         published.append(
-            _Item(us_id, _rel(path, root), text, False, group_of[us_id], is_bug, assets)
+            _Item(
+                us_id,
+                rel_path(path, root),
+                text,
+                False,
+                group_of[us_id],
+                is_bug,
+                assets,
+            )
         )
 
     for us_id, path in ticket_files.items():
         if us_id in parent_texts:
             continue
         text = ticket_texts[us_id]
-        file = _rel(path, root)
+        file = rel_path(path, root)
         reason = (
             "id contains whitespace" if re.search(r"\s", us_id) else None
-        ) or _lint_reason(
+        ) or lint_reason(
             ticketlint.lint(
                 text,
                 None,
@@ -395,7 +414,7 @@ def _select(
         # the story stays visible; only its children are held back.
         reason = (
             reason
-            or _fence_reason(text)
+            or fence_reason(text)
             or _dor_reason(text)
             or demoted.get(us_id)
             or inherited
@@ -425,7 +444,12 @@ def _natural(value: str) -> list:
     return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", value)]
 
 
-def _check_owned(doc_dir: Path) -> None:
+def check_owned(
+    doc_dir: Path,
+    suffix: str = TITLE_SUFFIX,
+    command: str = "kb plan-ingest",
+    error: type[KbError] = PlanIngestError,
+) -> None:
     """Refuse to overwrite or delete a document this command did not write."""
     manifest_path = doc_dir / "_manifest.yaml"
     if not (manifest_path.is_file() or any(doc_dir.glob("*.md"))):
@@ -433,18 +457,20 @@ def _check_owned(doc_dir: Path) -> None:
     try:
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
     except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError) as exc:
-        raise PlanIngestError(
+        raise error(
             f"{doc_dir} holds content with no readable _manifest.yaml ({exc}); "
             "move it away — nothing was written"
         ) from exc
-    if not manifest.title.endswith(TITLE_SUFFIX):
-        raise PlanIngestError(
-            f"{doc_dir} holds a document kb plan-ingest did not generate "
+    if not manifest.title.endswith(suffix):
+        raise error(
+            f"{doc_dir} holds a document {command} did not generate "
             f"(title: {manifest.title!r}); nothing was written"
         )
 
 
-def _drop_index_entry(kb_dir: Path, doc_id: str) -> None:
+def drop_index_entry(
+    kb_dir: Path, doc_id: str, error: type[KbError] = PlanIngestError
+) -> None:
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
         return
@@ -453,10 +479,10 @@ def _drop_index_entry(kb_dir: Path, doc_id: str) -> None:
         index.docs = [d for d in index.docs if d.id != doc_id]
         models.save_yaml_model(index_path, index)
     except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError) as exc:
-        raise PlanIngestError(f"cannot update {index_path}: {exc}") from exc
+        raise error(f"cannot update {index_path}: {exc}") from exc
 
 
-def _sync_assets(doc_dir: Path, wanted: dict[str, bytes]) -> None:
+def sync_assets(doc_dir: Path, wanted: dict[str, bytes]) -> None:
     """`<doc_dir>/assets/` holds exactly `wanted` (name -> bytes); the folder
     goes when nothing is wanted."""
     folder = doc_dir / ASSETS_DIR
@@ -507,13 +533,13 @@ def run(
         report.published.append(item.id)
 
     doc_dir = kb_dir / doc_id
-    _check_owned(doc_dir)
+    check_owned(doc_dir)
     if not sections:
         try:
             shutil.rmtree(doc_dir, ignore_errors=not doc_dir.exists())
         except OSError as exc:
             raise PlanIngestError(f"could not remove {doc_dir} ({exc})") from exc
-        _drop_index_entry(kb_dir, doc_id)
+        drop_index_entry(kb_dir, doc_id)
         return report
 
     short = core._head_commit(repo_root)[:7]
@@ -538,7 +564,7 @@ def run(
         for stale in doc_dir.glob("*.md"):
             if stale.name not in written:
                 stale.unlink()
-        _sync_assets(doc_dir, {n: d for i in items for n, d in i.assets})
+        sync_assets(doc_dir, {n: d for i in items for n, d in i.assets})
         manifest = models.Manifest(
             id=doc_id,
             title=title,

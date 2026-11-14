@@ -41,10 +41,17 @@ def test_viewport_meta_allows_cover_and_zoom(demo_doc_hub):
     assert "user-scalable" not in text and "maximum-scale" not in text
 
 
-def test_tab_bar_lists_five_main_menus_in_order(demo_doc_hub):
+def test_tab_bar_lists_six_main_menus_in_order(demo_doc_hub):
     bar = _slice(get(demo_doc_hub, "/ui"), '<nav class="tab-bar"', "</nav>")
     hrefs = re.findall(r'href="([^"]+)"', bar)
-    assert hrefs == ["/ui", "/ui/docs", "/ui/tickets", "/ui/code", "/ui/questions"]
+    assert hrefs == [
+        "/ui",
+        "/ui/docs",
+        "/ui/tickets",
+        "/ui/code",
+        "/ui/questions",
+        "/ui/tests",
+    ]
 
 
 @pytest.mark.parametrize(

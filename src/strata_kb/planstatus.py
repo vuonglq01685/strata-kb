@@ -30,6 +30,7 @@ from strata_kb import (
     planparents,
     query,
     storylint,
+    testflow,
     ticket,
     ticketcheck,
 )
@@ -67,7 +68,10 @@ class PlanMission:
 
     @property
     def counts(self) -> Counter[str]:
-        return Counter(s.status for s in self.stories)
+        # test statuses (testing, closed, ...) ride along when a report or claim set one
+        return Counter(s.status for s in self.stories) + Counter(
+            s.test_status for s in self.stories if s.test_status
+        )
 
 
 @dataclass(frozen=True)
@@ -502,7 +506,8 @@ def hub_plans(
     notes: list[str] = []
     routing = _Routing.load(hub)
     plans = [_plan_repo(hub, fed, m, notes, routing) for fed, m in plan_docs(hub, repo)]
-    return plans, notes
+    facts = testflow.load_facts(hub)
+    return [testflow.overlay(p, facts) for p in plans], notes
 
 
 # `kb mission next --from-hub` and MCP kb_mission_next: a story with no

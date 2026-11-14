@@ -670,3 +670,68 @@ def test_publish_via_intake_reports_merged_flag(child):
     )
     assert pr == "https://gh/pull/4"
     assert seen == [True]
+
+
+class TestTesterTestRefresh:
+    """`kb publish` in a tester repo regenerates the gitignored `-test` and
+    treats tests/ and reports/ as the plan inputs that must be committed."""
+
+    @pytest.fixture
+    def tester(self, tmp_path, monkeypatch):
+        from tests.test_testingest import write_repo
+
+        monkeypatch.delenv("STRATA_KB_HUB", raising=False)
+        root = tmp_path / "tester-repo"
+        (root / ".kb").mkdir(parents=True)
+        (root / ".kb" / "config.yaml").write_text(
+            'kind: tester\nhub: ""\nrepo_id: "demo"\nintake: "https://kb.test"\n',
+            encoding="utf-8",
+        )
+        (root / ".gitignore").write_text(
+            ".kb/*-test/\n.kb/index.yaml\n", encoding="utf-8"
+        )
+        write_repo(root)
+        (root / "kb").rmdir()
+        _git(root, "init", "-b", "main")
+        _git(root, "config", "user.email", "t@t")
+        _git(root, "config", "user.name", "t")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-m", "init")
+        bare = tmp_path / "tester-origin.git"
+        _git(tmp_path, "clone", "--bare", str(root), str(bare))
+        _git(root, "remote", "add", "origin", str(bare))
+        monkeypatch.setattr(
+            publish_mod,
+            "_default_get_json",
+            lambda url: (200, {"state": "done", "pr_url": "https://gh/pull/9"}),
+        )
+        return root, bare
+
+    def test_publish_regenerates_test_doc_and_tags(self, tester):
+        root, bare = tester
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 0, result.output
+        assert (root / ".kb" / "demo-test" / "_manifest.yaml").is_file()
+        assert "kb-publish/" in _git(bare, "tag", "--list")
+
+    @pytest.mark.parametrize("rel", ["tests/ST-1/test-cases.md", "reports/ST-1/R1.md"])
+    def test_publish_refuses_uncommitted_inputs(self, tester, rel):
+        root, bare = tester
+        with (root / rel).open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\nedit\n")
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert f"{rel.split('/')[0]}/ has uncommitted changes" in result.output
+        assert "kb-publish/" not in _git(bare, "tag", "--list")
+
+    def test_refused_tag_push_points_at_a_merge_to_main(self, tester, monkeypatch):
+        root, bare = tester
+
+        def refuse(_root, name):
+            raise gitio.GitError(f"push tag '{name}' failed: HTTP 403")
+
+        monkeypatch.setattr(gitio, "push_tag", refuse)
+        result = CliRunner().invoke(app, ["publish", "--kb-dir", str(root / ".kb")])
+        assert result.exit_code == 1
+        assert "touches tests/ or reports/" in result.output
+        assert "kb-publish-request.yml" in result.output

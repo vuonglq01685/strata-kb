@@ -372,6 +372,25 @@ def build_routes(config: ServerConfig) -> list[Route]:
             }
         )
 
+    def known_failures(request: Request) -> JSONResponse:
+        from strata_kb import testflow
+
+        hub = hub_handle(config)
+        if hub is None:
+            return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
+        found = testflow.known_failures(testflow.load_facts(hub))
+        return JSONResponse(
+            {
+                key: {
+                    "story": k.story,
+                    "round": k.round,
+                    "rd_id": k.rd_id,
+                    "duplicates": list(k.duplicates),
+                }
+                for key, k in found.items()
+            }
+        )
+
     def registry_entry(request: Request) -> JSONResponse:
         # One repo's facts only: never the workflow pins or the whole registry.
         from strata_kb import federation
@@ -468,6 +487,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
         Route("/api/search", api_search, methods=["GET"]),
         Route("/api/questions", questions, methods=["GET"]),
         Route("/api/plan/next", plan_next, methods=["GET"]),
+        Route("/api/tests/known-failures", known_failures, methods=["GET"]),
         Route("/api/registry/entry", registry_entry, methods=["GET"]),
         Route("/api/resolve", api_resolve, methods=["POST"]),
     ]

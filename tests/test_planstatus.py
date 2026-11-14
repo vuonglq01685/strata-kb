@@ -290,3 +290,12 @@ def test_only_generated_plan_documents_are_plans():
     assert not planstatus.is_plan("Release plan", ["plan", "generated"])
     assert not planstatus.is_plan("ba-one — plan", ["plan"])
     assert not planstatus.is_plan("ba-one — plan", ["generated"])
+
+
+def test_hub_plans_overlay_leaves_status_alone(plan_hub):
+    from tests.test_testflow import _text, publish_tests
+
+    publish_tests(plan_hub.root, "qa-repo", US[0], _text(US[0], 1))
+    (repo,) = planstatus.hub_plans(plan_hub)[0]
+    row = next(s for s in repo.missions[0].stories if s.us_id == US[0])
+    assert (row.status, row.test_status, row.test_round) == ("done", "closed", 1)

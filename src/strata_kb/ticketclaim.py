@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import os
 import secrets
 import sqlite3
 import unicodedata
@@ -35,9 +37,20 @@ PHASES: tuple[str, ...] = (
     "review",
     "publishing",
 )
+ROLES = ("dev", "tester")
+TESTER_PHASES: tuple[str, ...] = (
+    "claimed",
+    "cases",
+    "scripts",
+    "run",
+    "report",
+    "review",
+    "publishing",
+)
 WORKING_PHASES = ("claimed", "design", "plan", "execute", "handover", "waiting-qa")
 STATES = ("active", "stopped")
 DEFAULT_TTL = 14400  # 4 h
+TTL_ENV = "STRATA_KB_CLAIM_TTL"
 MAX_NAME = 100
 MAX_REASON = 1000
 MAX_PR = 500
@@ -60,17 +73,29 @@ CREATE TABLE IF NOT EXISTS claims (
     closed_at TEXT,
     closed_by TEXT,
     close_reason TEXT,
-    token_hash TEXT NOT NULL
+    token_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'dev'
+)
+"""
+_ENV_LOCKS = """
+CREATE TABLE IF NOT EXISTS env_locks (
+    name TEXT PRIMARY KEY,
+    holder TEXT NOT NULL,
+    story TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    taken_at TEXT NOT NULL,
+    last_seen TEXT NOT NULL
 )
 """
 _ONE_OPEN = (
     "CREATE UNIQUE INDEX IF NOT EXISTS one_open_claim "
-    "ON claims(repo, ticket) WHERE closed_at IS NULL"
+    "ON claims(repo, ticket, role) WHERE closed_at IS NULL"
 )
 _COLUMNS = (
     "id, repo, ticket, holder, phase, state, pr, stop_reason, claimed_at, "
-    "last_seen, closed_at, closed_by, close_reason"
+    "last_seen, closed_at, closed_by, close_reason, role"
 )
+_TOKEN_AT = 14  # index of token_hash in a `{_COLUMNS}, token_hash` row
 # An open claim nobody holds: not stopped, not in a PR phase with a PR, and
 # last seen at or before the cutoff (parameter 1 of the clause).
 _UNHELD = (
@@ -97,6 +122,12 @@ class ClaimLost(ClaimError):
         self.closed_by = closed_by
 
 
+class EnvLocked(ClaimError):
+    def __init__(self, lock: EnvLock) -> None:
+        super().__init__(f"environment {lock.name} is locked by {lock.holder}")
+        self.lock = lock
+
+
 class BadClaimToken(ClaimError):
     pass
 
@@ -120,10 +151,68 @@ class Claim:
     closed_at: str | None
     closed_by: str | None
     close_reason: str | None
+    role: str = "dev"
+
+
+@dataclass(frozen=True)
+class EnvLock:
+    name: str
+    holder: str
+    story: str
+    taken_at: str
+    last_seen: str
 
 
 def claims_db_path(hub_root: Path) -> Path:
     return hub_root / ".kb-qa" / "claims.db"
+
+
+logger = logging.getLogger("strata_kb.ticketclaim")
+
+
+def claim_ttl_from_env() -> int:
+    raw = os.environ.get(TTL_ENV)
+    if raw is None:
+        return DEFAULT_TTL
+    try:
+        ttl = int(raw)
+    except ValueError:
+        ttl = 0
+    if ttl <= 0:
+        logger.warning(
+            "%s=%r is not a positive integer; using %d", TTL_ENV, raw, DEFAULT_TTL
+        )
+        return DEFAULT_TTL
+    return ttl
+
+
+def held_tickets_readonly(
+    db_path: Path,
+    *,
+    role: str,
+    ttl: int,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> frozenset[str]:
+    """Tickets with a held claim of `role`, by the same rule as `ClaimStore`
+    but without writing: the DB opens read-only, is never migrated and no
+    expired claim is closed. A missing DB, or one that predates `role`, holds
+    nothing. A page that only reads must use this, not `ClaimStore`."""
+    if not db_path.exists():
+        return frozenset()
+    cutoff = _stamp(now() - timedelta(seconds=ttl))
+    uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    sql = (
+        "SELECT ticket FROM claims WHERE closed_at IS NULL AND role = ? "  # noqa: S608 - fixed fragment
+        f"AND NOT ({_UNHELD})"
+    )
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=10)) as conn:
+            rows = conn.execute(sql, (role, *PR_PHASES, cutoff)).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such" in str(exc):  # a pre-1.37 table without `role`, or none
+            return frozenset()
+        raise
+    return frozenset(r[0] for r in rows)
 
 
 def _utc_now() -> datetime:
@@ -132,6 +221,13 @@ def _utc_now() -> datetime:
 
 def _stamp(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _env_name(value: str) -> None:
+    """An environment name is a URL path segment: no `/`, no whitespace."""
+    _name("name", value)
+    if "/" in value or any(c.isspace() for c in value):
+        raise ClaimError("name must not contain '/' or whitespace")
 
 
 def _name(label: str, value: str) -> None:
@@ -170,7 +266,7 @@ def _same_token(token: str, token_hash: str) -> bool:
 
 
 def _claim(row: tuple) -> Claim:
-    return Claim(*row[:13])
+    return Claim(*row[:14])
 
 
 class ClaimStore:
@@ -184,9 +280,27 @@ class ClaimStore:
         self._ttl = ttl
         self._now = now
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as conn, conn:
-            conn.execute(_SCHEMA)
-            conn.execute(_ONE_OPEN)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Create the tables; add `role` to a pre-1.37 claims table in place,
+        keeping every row, and re-key the one-open-claim index by role."""
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(_SCHEMA)
+                conn.execute(_ENV_LOCKS)
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(claims)")}
+                if "role" not in cols:
+                    conn.execute(
+                        "ALTER TABLE claims ADD COLUMN role TEXT NOT NULL DEFAULT 'dev'"
+                    )
+                    conn.execute("DROP INDEX IF EXISTS one_open_claim")
+                conn.execute(_ONE_OPEN)
+            except BaseException:
+                conn.rollback()
+                raise
+            conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path, timeout=10)
@@ -217,6 +331,7 @@ class ClaimStore:
             f"close_reason = 'expired' WHERE {_UNHELD}"
         )
         conn.execute(sql, (_stamp(now), *PR_PHASES, cutoff))
+        conn.execute("DELETE FROM env_locks WHERE last_seen <= ?", (cutoff,))
 
     def _load(self, conn: sqlite3.Connection, claim_id: int) -> tuple[Claim, str]:
         row = conn.execute(
@@ -225,7 +340,7 @@ class ClaimStore:
         ).fetchone()
         if row is None:
             raise UnknownClaim(f"claim {claim_id} does not exist")
-        return _claim(row), row[13]
+        return _claim(row), row[_TOKEN_AT]
 
     def _load_held(self, conn: sqlite3.Connection, claim_id: int, token: str) -> Claim:
         """The claim, if the token is right and it is still open."""
@@ -237,27 +352,33 @@ class ClaimStore:
         return claim
 
     def take(
-        self, repo: str, ticket: str, holder: str, token: str | None = None
+        self,
+        repo: str,
+        ticket: str,
+        holder: str,
+        token: str | None = None,
+        role: str = "dev",
     ) -> tuple[Claim, str]:
+        _one_of("role", role, ROLES)
         _name("repo", repo)
         _name("ticket", ticket)
         _name("holder", holder)
         with self._txn() as (conn, now):
             row = conn.execute(
                 f"SELECT {_COLUMNS}, token_hash FROM claims "  # noqa: S608 - constant columns
-                "WHERE repo = ? AND ticket = ? AND closed_at IS NULL",
-                (repo, ticket),
+                "WHERE repo = ? AND ticket = ? AND role = ? AND closed_at IS NULL",
+                (repo, ticket, role),
             ).fetchone()
             if row is None:
                 token = secrets.token_urlsafe(32)
                 cur = conn.execute(
                     "INSERT INTO claims (repo, ticket, holder, phase, state, pr, "
-                    "stop_reason, claimed_at, last_seen, token_hash) "
-                    "VALUES (?, ?, ?, 'claimed', 'active', '', '', ?, ?, ?)",
-                    (repo, ticket, holder, now, now, _hash(token)),
+                    "stop_reason, claimed_at, last_seen, token_hash, role) "
+                    "VALUES (?, ?, ?, 'claimed', 'active', '', '', ?, ?, ?, ?)",
+                    (repo, ticket, holder, now, now, _hash(token), role),
                 )
                 return self._load(conn, cur.lastrowid or 0)[0], token
-            if token is None or not _same_token(token, row[13]):
+            if token is None or not _same_token(token, row[_TOKEN_AT]):
                 raise ClaimTaken(_claim(row))
             # A retry by the holder proves it is alive.
             conn.execute("UPDATE claims SET last_seen = ? WHERE id = ?", (now, row[0]))
@@ -273,8 +394,6 @@ class ClaimStore:
         state: str | None = None,
         stop_reason: str | None = None,
     ) -> Claim:
-        if phase is not None:
-            _one_of("phase", phase, PHASES)
         if state is not None:
             _one_of("state", state, STATES)
         if pr is not None:
@@ -294,7 +413,11 @@ class ClaimStore:
             if val is not None
         }
         with self._txn() as (conn, now):
-            self._load_held(conn, claim_id, token)
+            claim = self._load_held(conn, claim_id, token)
+            if phase is not None:
+                _one_of(
+                    "phase", phase, TESTER_PHASES if claim.role == "tester" else PHASES
+                )
             sets = "".join(f", {col} = ?" for col in changes)
             conn.execute(
                 f"UPDATE claims SET last_seen = ?{sets} WHERE id = ?",  # noqa: S608 - fixed column names
@@ -340,11 +463,14 @@ class ClaimStore:
             )
             return self._load(conn, claim_id)[0]
 
-    def held(self, repo: str = "", ticket: str = "") -> list[Claim]:
-        where = [
-            f"{col} = ?" for col, val in (("repo", repo), ("ticket", ticket)) if val
+    def held(self, repo: str = "", ticket: str = "", role: str = "") -> list[Claim]:
+        filters = [
+            (col, val)
+            for col, val in (("repo", repo), ("ticket", ticket), ("role", role))
+            if val
         ]
-        args = [val for val in (repo, ticket) if val]
+        where = [f"{col} = ?" for col, _ in filters]
+        args = [val for _, val in filters]
         clause = "".join(f" AND {w}" for w in where)
         with self._txn() as (conn, _):
             rows = conn.execute(
@@ -355,22 +481,91 @@ class ClaimStore:
         return [_claim(r) for r in rows]
 
     def close_done(self, done: set[tuple[str, str]]) -> None:
+        """Close open Dev claims on done stories; a Tester claims a done story."""
         if not done:
             return
         with self._txn() as (conn, now):
             conn.executemany(
                 "UPDATE claims SET closed_at = ?, closed_by = 'hub', "
                 "close_reason = 'done' "
-                "WHERE repo = ? AND ticket = ? AND closed_at IS NULL",
+                "WHERE repo = ? AND ticket = ? AND role = 'dev' AND closed_at IS NULL",
                 [(now, repo, ticket) for repo, ticket in sorted(done)],
             )
 
-    def last_closed(self, repo: str, ticket: str) -> Claim | None:
+    def last_closed(self, repo: str, ticket: str, role: str = "") -> Claim | None:
+        role_sql, args = (
+            (" AND role = ?", (repo, ticket, role)) if role else ("", (repo, ticket))
+        )
         with closing(self._connect()) as conn:
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM claims "  # noqa: S608 - constant columns
-                "WHERE repo = ? AND ticket = ? AND closed_at IS NOT NULL "
+                f"WHERE repo = ? AND ticket = ? AND closed_at IS NOT NULL{role_sql} "
                 "ORDER BY id DESC LIMIT 1",
-                (repo, ticket),
+                args,
             ).fetchone()
         return _claim(row) if row else None
+
+    def _env_row(self, conn: sqlite3.Connection, name: str) -> tuple | None:
+        return conn.execute(
+            "SELECT name, holder, story, taken_at, last_seen, token_hash "
+            "FROM env_locks WHERE name = ?",
+            (name,),
+        ).fetchone()
+
+    def lock_env(
+        self, name: str, holder: str, story: str, token: str | None = None
+    ) -> tuple[EnvLock, str]:
+        """Take the test environment `name`; the holder's retry refreshes it."""
+        _env_name(name)
+        _name("holder", holder)
+        _name("story", story)
+        with self._txn() as (conn, now):
+            row = self._env_row(conn, name)
+            if row is None:
+                token = secrets.token_urlsafe(32)
+                conn.execute(
+                    "INSERT INTO env_locks VALUES (?, ?, ?, ?, ?, ?)",
+                    (name, holder, story, _hash(token), now, now),
+                )
+            elif token is None or not _same_token(token, row[5]):
+                raise EnvLocked(EnvLock(*row[:5]))
+            else:
+                conn.execute(
+                    "UPDATE env_locks SET last_seen = ?, story = ? WHERE name = ?",
+                    (now, story, name),
+                )
+            return EnvLock(*self._env_row(conn, name)[:5]), token  # type: ignore[index]
+
+    def _held_env(self, conn: sqlite3.Connection, name: str, token: str) -> tuple:
+        row = self._env_row(conn, name)
+        if row is None:
+            raise ClaimLost("expired or released", "hub")
+        if not _same_token(token, row[5]):
+            raise BadClaimToken(f"wrong token for environment {name}")
+        return row
+
+    def refresh_env(self, name: str, token: str) -> EnvLock:
+        with self._txn() as (conn, now):
+            self._held_env(conn, name, token)
+            conn.execute(
+                "UPDATE env_locks SET last_seen = ? WHERE name = ?", (now, name)
+            )
+            return EnvLock(*self._env_row(conn, name)[:5])  # type: ignore[index]
+
+    def unlock_env(self, name: str, token: str) -> None:
+        with self._txn() as (conn, _):
+            self._held_env(conn, name, token)
+            conn.execute("DELETE FROM env_locks WHERE name = ?", (name,))
+
+    def env_lock(self, name: str) -> EnvLock | None:
+        with self._txn() as (conn, _):
+            row = self._env_row(conn, name)
+        return EnvLock(*row[:5]) if row else None
+
+    def env_locks(self) -> list[EnvLock]:
+        with self._txn() as (conn, _):
+            rows = conn.execute(
+                "SELECT name, holder, story, taken_at, last_seen FROM env_locks "
+                "ORDER BY name"
+            ).fetchall()
+        return [EnvLock(*r) for r in rows]

@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
 
 TOOL = "kb_doctor_hub"
-REMOTE_KINDS = ("child", "ba", "dev")
+REMOTE_KINDS = ("child", "ba", "dev", "tester")
 # The hub's version goes into a pip command: a plain release string only.
 _VERSION_RE = re.compile(
     r"[0-9]+(\.[0-9]+)*([a-z]+[0-9]*)?(\.post[0-9]+)?(\.dev[0-9]+)?"
@@ -61,9 +61,9 @@ class RemoteDoctorError(KbError):
 
 
 def generated_doc(kind: str, repo_id: str) -> str | None:
-    """The doc a ba/dev repo regenerates per branch: left out of the
-    snapshot compare (dev `-code`, ba `-plan`)."""
-    suffix = {"dev": "code", "ba": "plan"}.get(kind)
+    """The doc a ba/dev/tester repo regenerates per branch: left out of the
+    snapshot compare (dev `-code`, ba `-plan`, tester `-test`)."""
+    suffix = {"dev": "code", "ba": "plan", "tester": "test"}.get(kind)
     return f"{repo_id}-{suffix}" if suffix and repo_id else None
 
 

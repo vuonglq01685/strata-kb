@@ -3,6 +3,20 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.37.0 — 2026-11-14
+
+A new repo kind, `tester`, tests each story on a shared test environment and publishes a `PASS` or `FAIL` report to the hub. Phase 1: a Tester runs it by hand. The Dev/BA side (fix hand-over, bug tickets, `kb ticket lint` refusing a closed story) and `kb auto` for `tester` come later.
+
+- **`kb init --kind tester`.** Scaffolds `.kb/test-env.example.yaml` (`/tester-env-setup` writes `.kb/test-env.yaml`), `playwright.config.ts`, `tests/fixtures/` (login fixture and smoke spec), report and test-case templates under `docs/templates/`, the review rubric (`docs/test-review-rubric.md` and a `.local.md` override), a Playwright MCP entry, slash commands (`/tester-env-setup`, `/tester-test-story`), CODEOWNERS and the publish workflows. One `tester` repo per BA repo. The hub kind and the account role are both `tester`.
+- **`kb test-env`.** `check` validates `.kb/test-env.yaml` (env var names only, secret values stay in `.env` or CI secrets). `verify`, `reset`, `seed` and `version` drive the environment; `reset` refuses production and protected URLs. `deployed` exits `0` when every repo of the story runs its published commit, `4` (reasons printed) when not; `changed` lists the files the story's merged PRs touched. `lock` and `unlock` take the environment on the hub (exit `3` if locked).
+- **`kb testcase lint` and `kb report lint`.** Check a test case spec against its ticket (acceptance-criteria coverage, alternate flows, revision) and a report (verdict `PASS` or `FAIL` only, defects, PNG/WebP evidence, secrets).
+- **`kb report-ingest`.** Builds the `<repo_id>-test` document (tags `test`, `generated`) from lint-clean cases and reports, deterministic and offline; `kb ci-publish` ships it. Evidence images become `assets/<sha256>.<ext>`.
+- **Tester claims and statuses.** `kb claim` takes a story for a Tester; the hub derives `testing`, `closed` (final), `reopened` and `fix-done` from the published reports. The `users` table in `users.db` gains the `tester` role: it is rebuilt in one transaction on first open.
+- **Regression and bug candidates.** Before a story closes, the Tester runs the regression suite of the closed stories. A regression failure with both signals (the test passed at the last baseline, and the failing page, route or service touches a file the story's child PRs changed) is a defect of this story, marked `Regression: yes`, and reopens the guilty child. Any other regression failure is an outside regression `RD<k>`: a bug candidate that does not stop the story closing. A key already open as a known failure is listed as known and not logged again.
+- **Hub UI.** A **Test Report** menu lists rounds, verdicts and status, with filters (`all`, `testing`, `reopened`, `closed`, `regression`, bug candidates); a reopened ticket with a regression defect carries a `regression` badge, and open bug candidates show on the Test Report page. Ticket pages show the derived status.
+- **Exit code `4`.** `kb test-env deployed`: test environment not deployed yet.
+- **Upgrade.** Upgrade the hub first. Existing `users.db` and `claims.db` migrate on first open. No new dependency.
+
 ## 1.36.0 — 2026-11-10
 
 An unattended run now merges only where GitHub itself enforces the checks and a human review, and every task run leaves a record.

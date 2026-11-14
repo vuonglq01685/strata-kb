@@ -1,0 +1,23 @@
+# Strata — repo config (commit to git).
+# kind: this repo's role. "tester" is a system/integration test repo — it
+#       writes test cases and Playwright scripts per story, runs them against
+#       a deployed test environment and publishes the report as
+#       `<repo_id>-test`. It never ingests or summarizes KB content.
+kind: tester
+# hub: git URL or kb-hub path of the MAIN HUB — the read source for
+#      kb query / kb resolve / MCP. FILL THIS IN before writing test cases.
+#      This file is committed: never put a token in `hub:`. A URL that
+#      needs one goes in the STRATA_KB_HUB environment variable, which
+#      overrides this line (`kb doctor` warns on a committed credential).
+hub: ""
+# repo_id: repo name on the federation (pre-filled from the folder name).
+#          Names the published `<repo_id>-test` document and must match this
+#          repo's entry in the hub's federation/registry.yaml.
+repo_id: "{repo_id}"
+# intake: https://kb.internal:8321   # enable publishing via OIDC CI (zero secrets in this repo)
+intake: ""
+# auto: full-auto mode. Switch with `kb auto on|off|status` (it appends a live
+#       `auto:` block below), then `kb auto run`. Intervals are seconds.
+# auto:
+#   enabled: false
+#   idle_interval: 600   # wait between rounds when there is no task

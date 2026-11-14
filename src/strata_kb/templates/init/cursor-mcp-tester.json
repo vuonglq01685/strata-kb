@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "strata-kb": {
+      "url": "${env:STRATA_KB_HUB_URL}/mcp",
+      "headers": { "Authorization": "Bearer ${env:STRATA_KB_HTTP_TOKEN}" }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@0.0.85", "--browser", "chromium"]
+    }
+  }
+}

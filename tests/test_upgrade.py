@@ -76,7 +76,7 @@ def test_upgrade_refuses_wrong_kind(tmp_path, run_git, monkeypatch):
     init_repo(root, "hub")
     run_git(root, "add", "-A")
     run_git(root, "commit", "-m", "init")
-    with pytest.raises(KbError, match="ba or dev"):
+    with pytest.raises(KbError, match="ba, dev or tester"):
         upgrade(root, open_pr=False)
 
 

@@ -21,6 +21,20 @@ def test_hub_kind_maps_config_kinds():
         kinds.hub_kind("x")
 
 
+def test_hub_kind_maps_tester():
+    assert kinds.hub_kind("tester") == "tester"
+    assert kinds.HUB_KINDS == ("kb", "ba", "dev", "tester")
+    assert kinds.MENU["tester"] == "Test Report"
+
+
+def test_test_doc_is_recognised_and_infers_tester():
+    assert kinds.is_test_doc("acme — tests", ["test", "generated"])
+    assert not kinds.is_test_doc("acme — tests", ["test"])
+    assert not kinds.is_test_doc("acme tests", ["test", "generated"])
+    doc = _doc("acme-test", "acme — tests", ["test", "generated"])
+    assert kinds.infer_kind([doc]) == "tester"
+
+
 def test_normalize_kinds():
     assert kinds.normalize_kinds([" Dev", "kb", "dev"]) == ["dev", "kb"]
     assert kinds.normalize_kinds(None) == []

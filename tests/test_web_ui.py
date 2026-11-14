@@ -2202,3 +2202,9 @@ def test_section_page_hides_made_up_heading_id(fed_hub):
     body = _main(resp).split('<article class="reader-body">', 1)[1]
     assert "Nợ kỹ thuật mang theo</h2>" in body
     assert sid not in body.split("</h2>", 1)[0]
+
+
+def test_tag_browse_of_tester_kind_renders_not_500(tmp_path):
+    client, _ = _kinds_client(tmp_path)
+    resp = client.get("/ui", params={"tags": "x", "kind": "tester"})
+    assert resp.status_code == 200

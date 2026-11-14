@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from strata_kb import claimcmd
 from strata_kb.claimclient import ClaimLostError, ClaimTakenError, LocalClaims
 from strata_kb.cli import app
+from strata_kb.errors import KbError
 from strata_kb.initcmd import read_template
 
 runner = CliRunner()
@@ -23,8 +24,10 @@ class FakeClient:
         self.update_error: Exception | None = None
         self.claims: list[dict] = []
         self.take_state = "active"
+        self.roles: list[str] = []
 
-    def take(self, ticket, holder, claim_token=None):
+    def take(self, ticket, holder, claim_token=None, role="dev"):
+        self.roles.append(role)
         self.calls.append(("take", ticket, holder, claim_token))
         if self.take_error:
             raise self.take_error
@@ -206,3 +209,70 @@ def test_auto_settings_allow_kb_claim():
     ]
     assert "Bash(kb claim *)" in allow
     assert allow.index("Bash(kb claim *)") == allow.index("Bash(kb pr *)") + 1
+
+
+def test_take_role_follows_repo_kind(fake, tmp_path):
+    runner.invoke(app, ["claim", "take", "US1", "--as", "a"])
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: tester\n", encoding="utf-8")
+    result = runner.invoke(app, ["claim", "take", "US2", "--as", "a"])
+    assert result.exit_code == 0, result.output
+    assert fake.roles == ["dev", "tester"]
+
+
+def test_test_env_lock_and_unlock(fake, tmp_path, monkeypatch):
+    from tests.test_testenv import EXAMPLE
+
+    (tmp_path / ".kb" / "test-env.yaml").write_text(EXAMPLE.read_text())
+    locked: list[tuple] = []
+    fake.lock_env = lambda name, holder, story, token=None: (
+        locked.append((name, story, token)) or ({"name": name}, "lt")
+    )
+    fake.unlock_env = lambda name, token: locked.append(("unlock", name, token))
+    result = runner.invoke(app, ["test-env", "lock", "US1"])
+    assert result.exit_code == 0, result.output
+    name = locked[0][0]
+    assert local(tmp_path).get_env(name) == "lt"
+    unlocked = runner.invoke(app, ["test-env", "unlock"])
+    assert unlocked.exit_code == 0
+    assert unlocked.output.strip() == f"unlocked {name}"
+    assert locked[-1] == ("unlock", name, "lt")
+    assert local(tmp_path).get_env(name) is None
+
+
+def test_test_env_lock_taken_exits_3(fake, tmp_path):
+    from strata_kb.claimclient import EnvLockedError
+    from tests.test_testenv import EXAMPLE
+
+    (tmp_path / ".kb" / "test-env.yaml").write_text(EXAMPLE.read_text())
+
+    def busy(*_a, **_k):
+        raise EnvLockedError({"holder": "b", "story": "US9", "last_seen": ""})
+
+    fake.lock_env = busy
+    result = runner.invoke(app, ["test-env", "lock", "US1"])
+    assert result.exit_code == 3
+    assert "locked by b for US9" in result.output
+
+
+def test_take_survives_a_broken_config(fake, tmp_path):
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: [unclosed\n", encoding="utf-8")
+    result = runner.invoke(app, ["claim", "take", "US1", "--as", "a"])
+    assert result.exit_code == 0, result.output
+    assert fake.roles == ["dev"]
+
+
+def test_test_env_unlock_after_expiry_and_retake(fake, tmp_path):
+    from tests.test_testenv import EXAMPLE
+
+    (tmp_path / ".kb" / "test-env.yaml").write_text(EXAMPLE.read_text())
+    fake.lock_env = lambda name, holder, story, token=None: ({}, "lt")
+    runner.invoke(app, ["test-env", "lock", "US1"])
+
+    def stolen(name, token):
+        raise KbError("hub /api/env-locks returned 403: bad_token")
+
+    fake.unlock_env = stolen
+    result = runner.invoke(app, ["test-env", "unlock"])
+    assert result.exit_code == 0, result.output
+    assert "no longer yours" in result.output
+    assert local(tmp_path)._read() == {}

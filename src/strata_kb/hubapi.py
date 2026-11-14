@@ -45,6 +45,9 @@ def _story(row: dict) -> StoryStatus:
         is_parent=row.get("is_parent", False),
         parent=row.get("parent", ""),
         own_fix_ready=row.get("own_fix_ready", False),
+        test_status=row.get("test_status", ""),
+        test_round=row.get("test_round", 0),
+        regression_bug=row.get("regression_bug", False),
     )
 
 

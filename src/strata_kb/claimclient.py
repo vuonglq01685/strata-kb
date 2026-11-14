@@ -13,7 +13,7 @@ import socket
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from strata_kb import gitio, httpio
 from strata_kb.autorun import state as autostate
@@ -24,6 +24,7 @@ from strata_kb.mcpsetup import HUB_URL_VAR
 Http = Callable[..., tuple[int, bytes]]
 
 ROUTE = "/api/claims"
+ENV_ROUTE = "/api/env-locks"
 CLAIM_AS_VAR = "STRATA_KB_CLAIM_AS"
 CLAIMS_FILE = "claims.json"
 
@@ -39,6 +40,12 @@ class ClaimLostError(KbError):
         super().__init__(f"lost: {close_reason} by {closed_by}")
         self.close_reason = close_reason
         self.closed_by = closed_by
+
+
+class EnvLockedError(KbError):
+    def __init__(self, lock: dict) -> None:
+        super().__init__("test environment is locked")
+        self.lock = lock
 
 
 class ClaimRejectedError(KbError):
@@ -63,9 +70,15 @@ class ClaimClient:
         self._http = http
 
     def take(
-        self, ticket: str, holder: str, claim_token: str | None = None
+        self,
+        ticket: str,
+        holder: str,
+        claim_token: str | None = None,
+        role: str = "dev",
     ) -> tuple[dict, str]:
         body = {"ticket": ticket, "holder": holder}
+        if role != "dev":
+            body["role"] = role
         if claim_token:
             body["token"] = claim_token
         data = self._call("POST", ROUTE, body)
@@ -85,8 +98,9 @@ class ClaimClient:
             "DELETE", f"{ROUTE}/{claim_id}", {"token": claim_token, "reason": reason}
         )
 
-    def held(self, repo: str = "", ticket: str = "") -> list[dict]:
-        query = urlencode({k: v for k, v in (("repo", repo), ("ticket", ticket)) if v})
+    def held(self, repo: str = "", ticket: str = "", role: str = "") -> list[dict]:
+        pairs = (("repo", repo), ("ticket", ticket), ("role", role))
+        query = urlencode({k: v for k, v in pairs if v})
         data = self._call("GET", f"{ROUTE}?{query}" if query else ROUTE)
         if not isinstance(data.get("claims"), list):
             raise self._bad_body()
@@ -96,6 +110,21 @@ class ClaimClient:
         return self._claim(
             self._call("POST", f"{ROUTE}/{claim_id}/pr-closed", {"pr": pr})
         )
+
+    def lock_env(
+        self, name: str, holder: str, story: str, token: str | None = None
+    ) -> tuple[dict, str]:
+        body = {"name": name, "holder": holder, "story": story}
+        if token:
+            body["token"] = token
+        data = self._call("POST", ENV_ROUTE, body)
+        try:
+            return data["lock"], data["token"]
+        except KeyError as exc:
+            raise self._bad_body() from exc
+
+    def unlock_env(self, name: str, token: str) -> None:
+        self._call("DELETE", f"{ENV_ROUTE}/{quote(name, safe='')}", {"token": token})
 
     def _claim(self, data: dict) -> dict:
         if not isinstance(data.get("claim"), dict):
@@ -129,6 +158,8 @@ class ClaimClient:
             raise ClaimRouteMissing
         if code == 409 and reason == "taken":
             raise ClaimTakenError(data.get("claim") or {})
+        if code == 409 and reason == "env_locked":
+            raise EnvLockedError(data.get("lock") or {})
         if code == 409 and reason == "lost":
             raise ClaimLostError(
                 str(data.get("close_reason", "")), str(data.get("closed_by", ""))
@@ -181,6 +212,16 @@ class LocalClaims:
 
     def put(self, ticket: str, claim_id: int, token: str) -> None:
         self._write({**self._read(), ticket: {"id": claim_id, "token": token}})
+
+    def put_env(self, name: str, token: str) -> None:
+        self.put(f"env:{name}", 0, token)
+
+    def get_env(self, name: str) -> str | None:
+        entry = self.get(f"env:{name}")
+        return entry[1] if entry else None
+
+    def drop_env(self, name: str) -> None:
+        self.drop(f"env:{name}")
 
     def drop(self, ticket: str) -> None:
         data = self._read()

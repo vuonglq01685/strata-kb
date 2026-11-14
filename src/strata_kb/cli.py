@@ -28,7 +28,7 @@ from typer.core import TyperGroup
 
 from strata_kb import models
 from strata_kb.kinds import HUB_KINDS
-from strata_kb.ticketclaim import PHASES
+from strata_kb.ticketclaim import PHASES, TESTER_PHASES
 from strata_kb.utf8io import force_utf8_streams
 
 if TYPE_CHECKING:
@@ -119,6 +119,15 @@ app.add_typer(pr_app, name="pr")
 claim_app = typer.Typer(help="Ticket claims on the hub: who is working on what.")
 app.add_typer(claim_app, name="claim")
 
+test_env_app = typer.Typer(help="Tester repo: the declared test environment.")
+app.add_typer(test_env_app, name="test-env")
+
+testcase_app = typer.Typer(help="Tester repo: test case specs.")
+app.add_typer(testcase_app, name="testcase")
+
+report_app = typer.Typer(help="Tester repo: test reports.")
+app.add_typer(report_app, name="report")
+
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
@@ -169,6 +178,7 @@ class RepoKind(StrEnum):
     child = "child"
     ba = "ba"
     dev = "dev"
+    tester = "tester"
 
 
 class AssetsMode(StrEnum):
@@ -177,7 +187,7 @@ class AssetsMode(StrEnum):
 
 
 KIND_DESCRIPTIONS = """\
-This repo can be one of four kinds:
+This repo can be one of five kinds:
 
   hub   — Central knowledge hub. Hosts federation/, the single source of
           truth for search. Runs the shared HTTP MCP server + Web UI
@@ -202,6 +212,11 @@ This repo can be one of four kinds:
           TDD enforced; bugs via dev-fix-bug) and, from Stage B on, publishes
           generated knowledge about its own source code back to the hub.
           Never ingests outside documents.
+
+  tester — Test repo. Writes test cases grounded in BA tickets and the KB,
+          runs them against a deployed environment, and publishes only its
+          own test report (`<repo_id>-test`) to the hub. Never ingests or
+          summarizes KB content.
 """
 
 
@@ -232,12 +247,14 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         # click.Choice makes BadParameter escape typer.prompt instead of
         # re-prompting.
         while True:
-            answer = typer.prompt("Initialize this repo as (hub, child, ba, dev)")
+            answer = typer.prompt(
+                "Initialize this repo as (hub, child, ba, dev, tester)"
+            )
             answer = answer.strip().lower()
-            if answer in ("hub", "child", "ba", "dev"):
+            if answer in ("hub", "child", "ba", "dev", "tester"):
                 return answer
             typer.secho(
-                f"Error: {answer!r} is not one of 'hub', 'child', 'ba', 'dev'.",
+                f"Error: {answer!r} is not one of 'hub', 'child', 'ba', 'dev', 'tester'.",
                 fg=typer.colors.RED,
             )
     # NOTE: this message intentionally still reads "hub|child" (not
@@ -293,7 +310,7 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
     for key in unresolved:
         while True:
             answer = typer.prompt(
-                f"Kind for registry entry {key} (kb, ba, dev; blank to skip)",
+                f"Kind for registry entry {key} (kb, ba, dev, tester; blank to skip)",
                 default="",
                 show_default=False,
             )
@@ -301,7 +318,8 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
             if answer in ("", *HUB_KINDS):
                 break
             typer.secho(
-                f"Error: {answer!r} is not one of kb, ba, dev.", fg=typer.colors.RED
+                f"Error: {answer!r} is not one of kb, ba, dev, tester.",
+                fg=typer.colors.RED,
             )
         proposals[key] = answer
     chosen = {k: v for k, v in proposals.items() if v}
@@ -336,7 +354,7 @@ def init(
         None,
         "--kind",
         help="Repo kind: hub (hosts federation + the shared MCP/Web service) "
-        "or child (authors and publishes to the hub). Required on first init "
+        "child (authors and publishes to the hub), ba, dev or tester. Required on first init "
         "when not running interactively.",
     ),
     force: bool = typer.Option(
@@ -454,6 +472,16 @@ def init(
             "  4. kb publish    (or /kb-publish)"
             "  # sends the plan; needs intake: and a hub registry entry"
         )
+    elif resolved == "tester":
+        typer.echo("  1. Fill hub: and intake: in .kb/config.yaml")
+        typer.echo(
+            "  2. kb mcp-setup   (or /kb-mcp-setup)"
+            "  # writes STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN into .env"
+        )
+        typer.echo(
+            "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
+            "run /tester-env-setup"
+        )
     else:  # dev
         typer.echo(
             "  1. Fill hub: in .kb/config.yaml with the main hub URL/path — "
@@ -474,6 +502,7 @@ def init(
     quickstart_name = {
         "ba": "QUICKSTART-BA.md",
         "dev": "QUICKSTART-DEV.md",
+        "tester": "QUICKSTART-TESTER.md",
     }.get(resolved, "QUICKSTART.md")
     typer.echo(f"  (details: {quickstart_name})")
 
@@ -484,7 +513,7 @@ def upgrade(
         False, "--no-pr", help="Stop after the commit: no push, no PR."
     ),
 ) -> None:
-    """Refresh this ba/dev repo's scaffold on a new branch and open a PR (never merges)."""
+    """Refresh this ba/dev/tester repo's scaffold on a new branch and open a PR (never merges)."""
     from strata_kb.upgradecmd import upgrade as run_upgrade
 
     result = run_upgrade(Path("."), open_pr=not no_pr)
@@ -840,12 +869,56 @@ def _refresh_dev_code(kb_dir: Path) -> None:
     _refresh_code_or_exit(kb_dir, cfg.repo_id)
 
 
+def _warn_skipped_and_build(kb_dir: Path, skipped: list[tuple[str, str]]) -> None:
+    """After a publish-time refresh: a skipped item is not an error, but its
+    author must see it before it ships; then build the KB and fail on errors."""
+    from strata_kb import cipublish
+    from strata_kb.build import build_kb
+
+    for file, reason in skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        cipublish.write_step_summary(line)
+    report = build_kb(kb_dir)
+    for warning in report.warnings + report.quality:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+def _echo_ingest_report(report, json_out: bool) -> None:
+    """The `kb plan-ingest` / `kb report-ingest` output."""
+    from strata_kb import cipublish
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "doc_id": report.doc_id,
+                    "published": report.published,
+                    "skipped": [list(pair) for pair in report.skipped],
+                },
+                indent=2,
+            )
+        )
+        return
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"published: {len(report.published)} section(s)")
+    for sid in report.published:
+        typer.echo(f"  {sid}")
+    for file, reason in report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.echo(line)
+        cipublish.write_step_summary(line)
+
+
 def _refresh_ba_plan(kb_dir: Path) -> None:
     """`kb publish` in a ba repo: regenerate `<repo_id>-plan` from the working
     tree, so the diff preview and the upload show what CI will send. Same
     defaults as `kb plan-ingest`, anchored to the repo root."""
-    from strata_kb import cipublish, config, planingest
-    from strata_kb.build import build_kb
+    from strata_kb import config, planingest
 
     resolved_kb_dir = kb_dir.resolve()
     root = resolved_kb_dir.parent
@@ -859,18 +932,42 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
             f"could not refresh {rid}-plan: {exc}", fg=typer.colors.RED, err=True
         )
         raise typer.Exit(1) from None
-    # A skipped story is not an error, but the BA must see it before it ships.
-    for file, reason in plan_report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.secho(line, fg=typer.colors.YELLOW, err=True)
-        cipublish.write_step_summary(line)
-    report = build_kb(kb_dir)
-    for warning in report.warnings + report.quality:
-        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
-    for error in report.errors:
-        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
-    if not report.ok:
-        raise typer.Exit(1)
+    _warn_skipped_and_build(kb_dir, plan_report.skipped)
+
+
+def _tester_children_of(tests_dir: Path):
+    """Children of a story from the `ticket.md` next to its test cases."""
+    from strata_kb import testreport
+
+    return lambda story: testreport.story_children(
+        tests_dir / story / "test-cases.md", story
+    )
+
+
+def _refresh_tester_doc(kb_dir: Path) -> None:
+    """`kb publish` in a tester repo: regenerate `<repo_id>-test` from the
+    working tree, so the diff preview and the upload show what CI will send.
+    Same defaults as `kb report-ingest`, anchored to the repo root."""
+    from strata_kb import config, testingest
+
+    resolved_kb_dir = kb_dir.resolve()
+    root = resolved_kb_dir.parent
+    rid = config.repo_id_or_root("", resolved_kb_dir, root)
+    try:
+        test_report = testingest.run(
+            root,
+            resolved_kb_dir,
+            rid,
+            root / "tests",
+            root / "reports",
+            _tester_children_of(root / "tests"),
+        )
+    except testingest.TestIngestError as exc:
+        typer.secho(
+            f"could not refresh {rid}-test: {exc}", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1) from None
+    _warn_skipped_and_build(kb_dir, test_report.skipped)
 
 
 @app.command()
@@ -2016,7 +2113,7 @@ def plan_ingest(
 ) -> None:
     """Build .kb/<repo_id>-plan/ from missions and ready tickets — deterministic,
     offline, no LLM. Items that are not ready are listed as skipped."""
-    from strata_kb import cipublish, config, planingest
+    from strata_kb import config, planingest
 
     resolved_root = repo_root.resolve()
     resolved_kb_dir = kb_dir.resolve()
@@ -2029,27 +2126,47 @@ def plan_ingest(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from None
 
-    if json_out:
-        typer.echo(
-            json.dumps(
-                {
-                    "doc_id": report.doc_id,
-                    "published": report.published,
-                    "skipped": [list(pair) for pair in report.skipped],
-                },
-                indent=2,
-            )
-        )
-        return
+    _echo_ingest_report(report, json_out)
 
-    typer.echo(f"doc: {report.doc_id}")
-    typer.echo(f"published: {len(report.published)} section(s)")
-    for sid in report.published:
-        typer.echo(f"  {sid}")
-    for file, reason in report.skipped:
-        line = f"skipped: {file} — {reason}"
-        typer.echo(line)
-        cipublish.write_step_summary(line)
+
+@app.command(name="report-ingest")
+def report_ingest(
+    repo_root: Path = typer.Option(
+        Path("."), "--repo-root", help="Repository root (read for the commit)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID (default: config, then folder name)"
+    ),
+    tests_dir: Path = typer.Option(
+        Path("tests"), "--tests-dir", help="Where test case specs live"
+    ),
+    reports_dir: Path = typer.Option(
+        Path("reports"), "--reports-dir", help="Where test reports live"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Build .kb/<repo_id>-test/ from lint-clean test cases and reports —
+    deterministic, offline, no LLM. Files that fail lint are listed as skipped."""
+    from strata_kb import config, testingest
+
+    resolved_root = repo_root.resolve()
+    resolved_kb_dir = kb_dir.resolve()
+    rid = config.repo_id_or_root(repo_id, resolved_kb_dir, resolved_root)
+    try:
+        report = testingest.run(
+            resolved_root,
+            resolved_kb_dir,
+            rid,
+            tests_dir,
+            reports_dir,
+            _tester_children_of(tests_dir),
+        )
+    except testingest.TestIngestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from None
+
+    _echo_ingest_report(report, json_out)
 
 
 @svc_app.command("note")
@@ -2742,6 +2859,8 @@ def publish(
         _refresh_dev_code(kb_dir)
     if plan.refresh_plan:
         _refresh_ba_plan(kb_dir)
+    if plan.refresh_test:
+        _refresh_tester_doc(kb_dir)
     # The one point every dev route (snapshot, intake) passes before it
     # sends anything. The refresh above only rewrites local, derived `-code`.
     if plan.repo_kind == "dev":
@@ -2797,14 +2916,16 @@ def publish(
     if plan.route == "intake":
         merged_seen: list[bool] = []
         try:
-            ba_root = kb_dir.resolve().parent
+            repo_root = kb_dir.resolve().parent
             pr_url = publish_mod.publish_via_intake(
                 kb_dir,
                 plan.intake_url,
                 effective_repo_id(repo_id, kb_dir),
                 plan_inputs=(
-                    (ba_root / "missions", ba_root / "tickets")
+                    (repo_root / "missions", repo_root / "tickets")
                     if plan.refresh_plan
+                    else (repo_root / "tests", repo_root / "reports")
+                    if plan.refresh_test
                     else ()
                 ),
                 on_merged=merged_seen.append,
@@ -4666,9 +4787,9 @@ def doctor(
         handle, reason = _hub_or_reason(hub, kb_dir)
         if handle is None:
             typer.secho(reason or "hub unavailable", fg=typer.colors.RED)
-            if _config_kind(kb_dir) in ("ba", "dev"):
+            if _config_kind(kb_dir) in ("ba", "dev", "tester"):
                 typer.secho(
-                    "a ba or dev repo needs no hub clone: run `kb mcp-setup` "
+                    "a ba, dev or tester repo needs no hub clone: run `kb mcp-setup` "
                     "and `kb doctor` checks the hub over its MCP",
                     fg=typer.colors.YELLOW,
                 )
@@ -4731,7 +4852,7 @@ _KB_OPT = typer.Option(Path(".kb"), "--kb", help="KB directory")
 @user_app.command("add")
 def user_add(
     username: str = typer.Argument(..., help="Login name (case-insensitive)"),
-    role: str = typer.Option(..., "--role", help="admin, ba or dev"),
+    role: str = typer.Option(..., "--role", help="admin, ba, dev or tester"),
     kb_dir: Path = _KB_OPT,
 ) -> None:
     """Create a hub UI account; the password is prompted for twice."""
@@ -4759,7 +4880,7 @@ def user_passwd(username: str = typer.Argument(...), kb_dir: Path = _KB_OPT) -> 
 @user_app.command("role")
 def user_role(
     username: str = typer.Argument(...),
-    role: str = typer.Argument(..., help="admin, ba or dev"),
+    role: str = typer.Argument(..., help="admin, ba, dev or tester"),
     kb_dir: Path = _KB_OPT,
 ) -> None:
     """Change an account's role (the last admin cannot be demoted)."""
@@ -4816,6 +4937,195 @@ def _exit_with(code: int) -> None:
         raise typer.Exit(code)
 
 
+@testcase_app.command("lint")
+def testcase_lint(
+    file: Path = typer.Argument(..., help="Test case spec file"),
+    ticket: Path | None = typer.Option(
+        None, "--ticket", help="Fetched ticket (default <spec folder>/ticket.md)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: bool = typer.Option(False, "--hub", help="Fetch the ticket from the hub"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check a test case spec against its ticket. Exit 0 PASS, 1 FAIL."""
+    from strata_kb import testcases, ticketfetch
+
+    try:
+        text = file.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    story = testcases.parse(text).story
+    spec_dir = file.resolve().parent
+    ticket_text: str | None = None
+    if hub:
+        try:
+            ticket_text = ticketfetch.render(_hub_or_exit("", kb_dir), story)
+        except ticketfetch.TicketFetchError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    else:
+        path = ticket or spec_dir / "ticket.md"
+        try:
+            ticket_text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if ticket is not None:
+                typer.secho(f"cannot read {path}", fg=typer.colors.RED)
+                raise typer.Exit(1) from None
+        except OSError as exc:
+            typer.secho(f"cannot read {path}: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    report = testcases.lint(text, ticket_text, spec_dir=spec_dir)
+    typer.echo(json.dumps(report.to_json()) if json_output else report.render("TC"))
+    _exit_with(0 if report.passed else 1)
+
+
+@report_app.command("lint")
+def report_lint(
+    file: Path = typer.Argument(..., help="Test report file (R<n>.md)"),
+    repo_root: Path = typer.Option(Path("."), help="Tester repo root"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check a test report (verdict, defects, evidence, secrets). Exit 0 PASS, 1 FAIL."""
+    from strata_kb import testreport
+
+    _exit_with(testreport.lint_file(file, repo_root.resolve(), json_output))
+
+
+@test_env_app.command("check")
+def test_env_check() -> None:
+    """Validate .kb/test-env.yaml (names only, no secrets, scripts inside the repo)."""
+    from strata_kb import testenv
+
+    _exit_with(testenv.check(Path.cwd()))
+
+
+def _test_env_run(fn) -> None:
+    from strata_kb import testenv
+
+    try:
+        _exit_with(fn(testenv, Path.cwd()))
+    except testenv.TestEnvError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(1) from None
+
+
+@test_env_app.command("verify")
+def test_env_verify() -> None:
+    """Check apps, DB scripts, seeds and version endpoints; one ok/FAIL line each."""
+    _test_env_run(lambda t, root: t.verify(root))
+
+
+@test_env_app.command("reset")
+def test_env_reset() -> None:
+    """Run the DB reset script (never against production or a protected URL)."""
+    _test_env_run(lambda t, root: t.run_script(root, (e := t.load(root)), e.db.reset))
+
+
+@test_env_app.command("seed")
+def test_env_seed(
+    name: str = typer.Argument(..., help="Seed name from db.seeds"),
+) -> None:
+    """Run one named DB seed script."""
+
+    def go(t, root):
+        env = t.load(root)
+        if name not in env.db.seeds:
+            raise t.TestEnvError(
+                f"unknown seed {name!r} — declared: {', '.join(env.db.seeds) or 'none'}"
+            )
+        return t.run_script(root, env, env.db.seeds[name])
+
+    _test_env_run(go)
+
+
+@test_env_app.command("lock")
+def test_env_lock(
+    story: str = typer.Argument(..., help="Story id being tested"),
+    kb_dir: Path = _KB_DIR_OPT,
+) -> None:
+    """Lock the test environment on the hub for a story (exit 3 if locked)."""
+
+    def go(t, root):
+        from strata_kb import claimcmd
+
+        return claimcmd.lock_env(kb_dir, root, t.load(root).name, story)
+
+    _test_env_run(go)
+
+
+@test_env_app.command("unlock")
+def test_env_unlock(kb_dir: Path = _KB_DIR_OPT) -> None:
+    """Give the test environment lock back."""
+
+    def go(t, root):
+        from strata_kb import claimcmd
+
+        return claimcmd.unlock_env(kb_dir, t.load(root).name)
+
+    _test_env_run(go)
+
+
+def _story_hub(hub: str) -> HubHandle:
+    return _hub_or_exit(hub, Path(".kb"))
+
+
+_HUB_OPT = typer.Option(
+    "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+)
+
+
+@test_env_app.command("deployed")
+def test_env_deployed(
+    story: str = typer.Argument(..., help="Story id (or repo:id)"),
+    hub: str = _HUB_OPT,
+) -> None:
+    """Exit 0 if every repo of the story runs its published commit on the test
+    environment; 4 (reasons printed) if not yet."""
+
+    def go(t, root):
+        from strata_kb import testdeploy
+
+        reasons = testdeploy.deployed(_story_hub(hub), t.load(root), story, root=root)
+        for line in reasons:
+            typer.echo(line)
+        return 4 if reasons else 0
+
+    _test_env_run(go)
+
+
+@test_env_app.command("changed")
+def test_env_changed(
+    story: str = typer.Argument(..., help="Story id (or repo:id)"),
+    hub: str = _HUB_OPT,
+) -> None:
+    """Print `child file` for every file the story's merged PRs changed."""
+
+    def go(t, root):
+        from strata_kb import testdeploy
+
+        for child, files in testdeploy.changed_files(
+            _story_hub(hub), story, root=root
+        ).items():
+            for name in files:
+                typer.echo(f"{child} {name}")
+        return 0
+
+    _test_env_run(go)
+
+
+@test_env_app.command("version")
+def test_env_version() -> None:
+    """Print `repo commit` for every app with a version_check."""
+
+    def go(t, root):
+        for repo, commit in t.app_commits(t.load(root)).items():
+            typer.echo(f"{repo} {commit}")
+        return 0
+
+    _test_env_run(go)
+
+
 @claim_app.command("take")
 def claim_take(
     ticket: str = typer.Argument(..., help="Ticket id"),
@@ -4836,7 +5146,10 @@ def claim_update(
     phase: str | None = typer.Option(
         None,
         "--phase",
-        help="New phase: " + ", ".join(PHASES),
+        help="New phase: "
+        + ", ".join(PHASES)
+        + "; tester: "
+        + ", ".join(TESTER_PHASES),
     ),
     pr: str | None = typer.Option(None, "--pr", help="PR URL"),
     stopped: str | None = typer.Option(
@@ -4849,9 +5162,10 @@ def claim_update(
     from strata_kb import claimcmd
 
     # Not click.Choice: typer >= 0.26 vendors click, so a real click type breaks.
-    if phase is not None and phase not in PHASES:
+    allowed = (*PHASES, *(p for p in TESTER_PHASES if p not in PHASES))
+    if phase is not None and phase not in allowed:
         raise typer.BadParameter(
-            f"{phase!r} is not one of {', '.join(PHASES)}", param_hint="--phase"
+            f"{phase!r} is not one of {', '.join(allowed)}", param_hint="--phase"
         )
     _exit_with(claimcmd.update(kb_dir, ticket, phase, pr, stopped, active))
 

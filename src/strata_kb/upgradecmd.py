@@ -11,7 +11,7 @@ from pathlib import Path
 from strata_kb import __version__, ghrest, gitio
 from strata_kb.config import load_config
 from strata_kb.errors import KbError
-from strata_kb.initcmd import KIND_BA, KIND_DEV, InitReport, init_repo
+from strata_kb.initcmd import KIND_BA, KIND_DEV, KIND_TESTER, InitReport, init_repo
 from strata_kb.llm import AUTO_TASK_ENV
 
 
@@ -40,9 +40,9 @@ def _check_preconditions(root: Path, branch: str) -> str:
     if os.environ.get(AUTO_TASK_ENV) == "1":
         raise KbError("kb upgrade is for humans — it is not allowed in an auto task")
     kind = load_config(root / ".kb").kind
-    if kind not in (KIND_BA, KIND_DEV):
+    if kind not in (KIND_BA, KIND_DEV, KIND_TESTER):
         raise KbError(
-            "kb upgrade supports ba or dev repos only "
+            "kb upgrade supports ba, dev or tester repos only "
             f"(this repo: {kind or 'no kind recorded'})"
         )
     if gitio.current_branch(root) == "HEAD":

@@ -9,6 +9,8 @@
       {% if mission_linked %}<a href="/ui/tickets/{{ group | urlencode }}?repo={{ repo | urlencode }}">{{ group }}</a>
       <span class="sep">/</span> {% endif %}{{ ticket_id }}</p>
     <h1 style="font-size:26px">{{ ticket.title }}</h1>
+    {% if ticket_status %}<p class="meta-line">{{ plan_status(ticket_status, test_status, regression) }}
+      {% for n in test_rounds %}<a href="/ui/tests/{{ test_story | urlencode }}/R{{ n }}">R{{ n }} report</a> {% endfor %}</p>{% endif %}
     {% if unresolved %}<p class="meta-line"><a href="/ui/questions/ticket?repo={{ repo | urlencode }}&amp;ticket={{ ticket_id | urlencode }}">{{ unresolved }} unresolved question{{ '' if unresolved == 1 else 's' }}</a></p>{% endif %}
     {% if claim_notice %}<p class="meta-line">{{ claim_notice }}</p>{% endif %}
     {% if waiting_on %}<p class="meta-line">Waiting on: {{ waiting_on | join('; ') }}</p>{% endif %}

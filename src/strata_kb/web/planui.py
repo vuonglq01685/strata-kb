@@ -18,7 +18,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from strata_kb import planstatus
+from strata_kb import planstatus, testflow
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.kinds import BA
@@ -80,7 +80,7 @@ def _held_by_ticket(
     if not db.exists():  # read-only pages must not create the DB
         return {}, ""
     try:
-        return {c.ticket: c for c in ClaimStore(db, ttl=ttl).held(repo)}, ""
+        return {c.ticket: c for c in ClaimStore(db, ttl=ttl).held(repo, role="dev")}, ""
     except (sqlite3.Error, KbError, OSError):
         logger.warning("claim store unreadable for %s", repo, exc_info=True)
         return {}, CLAIMS_UNAVAILABLE
@@ -100,6 +100,23 @@ def _story_status(hub: HubHandle, repo: str, story: str) -> tuple[str, tuple[str
     when unknown."""
     item = next((r for r in _plan_rows(hub, repo) if r.us_id == story), None)
     return (item.status, item.reasons) if item else ("", ())
+
+
+def _test_view(hub: HubHandle, repo: str, story: str) -> dict:
+    """Test status, regression flag and report rounds of one ticket for its
+    page; rounds are those of the ticket's own report (a child shows its
+    parent story's, which is where its defects are)."""
+    rows = _plan_rows(hub, repo)
+    me = next((r for r in rows if r.us_id == story), None)
+    root = me.parent if me and me.parent else story
+    return {
+        "test_status": me.test_status if me else "",
+        "regression": bool(me and me.regression_bug),
+        "test_story": root,
+        "test_rounds": [
+            r.round for r in testflow.load_facts(hub).reports.get(root, ())
+        ],
+    }
 
 
 def _family(hub: HubHandle, repo: str, group: str, story: str) -> list[dict]:
@@ -262,7 +279,9 @@ def plan_routes(
         last_closed = None
         if shows_claim and claim is None and db.exists() and not ctx["claim_notice"]:
             try:  # after `held`: that call already closed any expired claim
-                last_closed = ClaimStore(db, ttl=ttl).last_closed(found_repo, story)
+                last_closed = ClaimStore(db, ttl=ttl).last_closed(
+                    found_repo, story, role="dev"
+                )
             except (sqlite3.Error, KbError, OSError):
                 ctx["claim_notice"] = CLAIMS_UNAVAILABLE
         user = current_user(request)
@@ -279,6 +298,8 @@ def plan_routes(
             ticket_id=story,
             ticket=ticket,
             unresolved=qaui.unresolved_count(hub, found_repo, story),
+            ticket_status=ticket_status,
+            **_test_view(hub, found_repo, story),
             content_html=content_html,
             toc=toc,
             mermaid=has_mermaid(content_html),

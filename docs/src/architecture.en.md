@@ -120,6 +120,7 @@ form a knowledge supply chain.
 | `child` | domain documents from outside sources | — | yes |
 | `ba` | tickets and mission plans | the hub, read-only | yes (`-plan` only) |
 | `dev` | product code, plus knowledge about that code | the hub, read-only | yes (`-code`, `-svc`) |
+| `tester` | test cases, scripts and test reports per story | the hub, read-only | yes (`-test` only) |
 
 ```
         outside documents                    product code
@@ -142,6 +143,14 @@ form a knowledge supply chain.
 in `.kb/config.yaml`. The kind is not cosmetic: it determines which commands are
 available, which slash commands and CI workflows are generated, and how the MCP
 client is wired (stdio on a hub, HTTP everywhere else).
+
+A `tester` repository tests one story at a time on a shared test environment. It
+reads the ticket and the knowledge base from the hub, writes test cases and
+Playwright scripts, and publishes one generated document, `<repo_id>-test`: the test
+cases and the `PASS` or `FAIL` report of each round. Like `ba`, it never ingests documents
+and never edits knowledge: it reads the hub read-only and publishes only its own
+document, by pull request. Phase 1 covers the Tester's
+own side; the Dev and BA hand-over and `kb auto` for `tester` are not built yet.
 
 ## 3.1 Why the roles are separate
 
@@ -576,6 +585,13 @@ published, `not ready` when it is not, `blocked` with reasons. `kb mission next
 per kind. Nothing is stored and there is no write path. In the other direction, a dev
 given only a ticket id runs `kb ticket fetch`, which reads the ticket from the
 hub's `-plan` and restores its source shape.
+
+Once a Dev has finished a story, test reports and Tester claims add four more statuses,
+derived the same way and never stored: `testing` while a Tester claim on the story is
+held, `closed` when the latest published report is `PASS` (final: nothing later
+changes it), `reopened` when it is `FAIL` (the children it names as guilty show it
+too), and `fix-done` when a reopened child's Dev history records the fix of that
+round. Only `PASS` and `FAIL` rounds are published.
 
 ## 8.5 Ticket questions
 

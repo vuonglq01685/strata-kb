@@ -13,12 +13,14 @@ from strata_kb.ticketclaim import (
     DEFAULT_TTL,
     PHASES,
     STATES,
+    TESTER_PHASES,
     WORKING_PHASES,
     BadClaimToken,
     ClaimError,
     ClaimLost,
     ClaimStore,
     ClaimTaken,
+    EnvLocked,
     UnknownClaim,
     claims_db_path,
 )
@@ -312,3 +314,112 @@ def test_token_not_stored_in_clear(store, tmp_path):
     _, token = store.take("ba-one", "US1", "a@m1")
     assert token.encode() not in (tmp_path / "claims.db").read_bytes()
     assert not hasattr(store.held()[0], "token")
+
+
+def test_old_db_without_role_migrates_in_place(tmp_path: Path, clock: Clock):
+    import sqlite3
+
+    path = tmp_path / "claims.db"
+    old = (
+        "CREATE TABLE claims (id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, "
+        "ticket TEXT NOT NULL, holder TEXT NOT NULL, phase TEXT NOT NULL, "
+        "state TEXT NOT NULL, pr TEXT NOT NULL, stop_reason TEXT NOT NULL, "
+        "claimed_at TEXT NOT NULL, last_seen TEXT NOT NULL, closed_at TEXT, "
+        "closed_by TEXT, close_reason TEXT, token_hash TEXT NOT NULL)"
+    )
+    conn = sqlite3.connect(path)
+    conn.execute(old)
+    conn.execute(
+        "CREATE UNIQUE INDEX one_open_claim ON claims(repo, ticket) "
+        "WHERE closed_at IS NULL"
+    )
+    stamp = clock().isoformat(timespec="seconds")
+    conn.execute(
+        "INSERT INTO claims (repo, ticket, holder, phase, state, pr, stop_reason, "
+        "claimed_at, last_seen, token_hash) VALUES "
+        "('r', 'US1', 'a', 'design', 'active', '', '', ?, ?, 'h')",
+        (stamp, stamp),
+    )
+    conn.commit()
+    conn.close()
+    for _ in range(2):  # the second open is a no-op
+        (c,) = ClaimStore(path, ttl=100, now=clock).held()
+        assert (c.ticket, c.holder, c.phase, c.role) == ("US1", "a", "design", "dev")
+    migrated = ClaimStore(path, ttl=100, now=clock)
+    migrated.take("r", "US1", "t1", role="tester")
+    with pytest.raises(ClaimTaken):  # the index still keeps one open dev claim
+        migrated.take("r", "US1", "b")
+
+
+def test_dev_and_tester_can_hold_same_story(store: ClaimStore):
+    store.take("r", "US1", "dev1")
+    claim, _ = store.take("r", "US1", "tester1", role="tester")
+    assert claim.role == "tester"
+    assert [c.role for c in store.held()] == ["dev", "tester"]
+    assert [c.holder for c in store.held(role="tester")] == ["tester1"]
+
+
+def test_two_testers_cannot_hold_same_story(store: ClaimStore):
+    store.take("r", "US1", "t1", role="tester")
+    with pytest.raises(ClaimTaken):
+        store.take("r", "US1", "t2", role="tester")
+
+
+def test_unknown_role_refused(store: ClaimStore):
+    with pytest.raises(ClaimError, match="role"):
+        store.take("r", "US1", "a", role="qa")
+
+
+def test_tester_phase_validation(store: ClaimStore):
+    tc, ttok = store.take("r", "US1", "t", role="tester")
+    dc, dtok = store.take("r", "US1", "d")
+    for phase in TESTER_PHASES:
+        assert store.update(tc.id, ttok, phase=phase).phase == phase
+    with pytest.raises(ClaimError, match="phase"):
+        store.update(tc.id, ttok, phase="design")
+    assert store.update(dc.id, dtok, phase="design").phase == "design"
+    with pytest.raises(ClaimError, match="phase"):
+        store.update(dc.id, dtok, phase="cases")
+
+
+def test_close_done_keeps_tester_claims(store: ClaimStore):
+    store.take("r", "US1", "d")
+    store.take("r", "US1", "t", role="tester")
+    store.close_done({("r", "US1")})
+    assert [c.role for c in store.held()] == ["tester"]
+
+
+def test_env_lock_exclusive_and_expires(store: ClaimStore, clock: Clock):
+    lock, tok = store.lock_env("test", "a", "US1")
+    assert store.env_lock("test") == lock
+    with pytest.raises(EnvLocked) as taken:
+        store.lock_env("test", "b", "US2")
+    assert taken.value.lock.holder == "a"
+    with pytest.raises(BadClaimToken):
+        store.refresh_env("test", "nope")
+    clock.advance(60)
+    assert store.lock_env("test", "a", "US1", tok)[1] == tok  # holder retry
+    clock.advance(99)
+    assert store.env_lock("test") is not None
+    clock.advance(2)
+    assert store.env_lock("test") is None
+    with pytest.raises(ClaimLost):
+        store.refresh_env("test", tok)
+    _, tok2 = store.lock_env("test", "b", "US2")
+    store.unlock_env("test", tok2)
+    assert store.env_locks() == []
+
+
+@pytest.mark.parametrize("name", ["a/b", "a b", "a\tb"])
+def test_env_name_refuses_slash_and_whitespace(store: ClaimStore, name: str):
+    with pytest.raises(ClaimError, match="name"):
+        store.lock_env(name, "a", "US1")
+
+
+def test_last_closed_filters_by_role(store: ClaimStore):
+    dev, dtok = store.take("r", "US1", "d")
+    store.release(dev.id, dtok, "x")
+    tester, ttok = store.take("r", "US1", "t", role="tester")
+    store.release(tester.id, ttok, "y")
+    assert store.last_closed("r", "US1").role == "tester"
+    assert store.last_closed("r", "US1", role="dev").id == dev.id

@@ -1,0 +1,20 @@
+# Test environment — copy to .kb/test-env.yaml (or let /tester-env-setup write it).
+# Only env var NAMES go here; values live in .env (git-ignored) or CI secrets.
+name: staging
+apps:                         # one entry per Dev repo the stories touch
+  - repo: shop-fe
+    url: https://staging.example.test
+    version_check: { url: https://staging.example.test/version, field: commit }
+  - repo: shop-api
+    api_base: https://api.staging.example.test
+    version_check: { url: https://api.staging.example.test/health, field: git_sha }
+db:
+  url_env: TEST_DB_URL        # name only
+  check: tests/seeds/check.sh # exits 0 when the DB answers
+  reset: tests/seeds/reset.sh
+  seeds: { checkout-basic: tests/seeds/checkout-basic.sh }
+accounts:                     # role -> env var names, user/password login
+  buyer:  { user_env: TEST_BUYER_USER, password_env: TEST_BUYER_PASSWORD }
+  admin:  { user_env: TEST_ADMIN_USER, password_env: TEST_ADMIN_PASSWORD }
+api_auth: cookie              # or: bearer
+retries: 3

@@ -38,6 +38,7 @@ from strata_kb.kinds import (
     HUB_KINDS,
     KB,
     MENU,
+    TESTER,
     UnknownKindError,
     normalize_kinds,
 )
@@ -161,14 +162,24 @@ def _tag_links(
 
 # The kind whose tags the left rail shows on each menu screen; every other
 # screen (overview, top search, errors) shows the tags of all kinds.
-_SCREEN_KIND = {"docs": KB, "plans": BA, "plan": BA, "code": DEV}
+_SCREEN_KIND = {"docs": KB, "plans": BA, "plan": BA, "code": DEV, "tests": TESTER}
 
 # Tag-only browse of one kind renders as that kind's menu: (rail screen, docs.html menu).
-_BROWSE_MENU = {KB: ("docs", "docs"), BA: ("plans", "tickets"), DEV: ("code", "code")}
+_BROWSE_MENU = {
+    KB: ("docs", "docs"),
+    BA: ("plans", "tickets"),
+    DEV: ("code", "code"),
+    TESTER: ("tests", "tests"),
+}
 
 # Where each kind's menu lives, and the reader's back-link wording.
-MENU_PATH = {KB: "/ui/docs", BA: "/ui/tickets", DEV: "/ui/code"}
-_BACK_LABEL = {KB: "all documents", BA: "all tickets", DEV: "all code"}
+MENU_PATH = {KB: "/ui/docs", BA: "/ui/tickets", DEV: "/ui/code", TESTER: "/ui/tests"}
+_BACK_LABEL = {
+    KB: "all documents",
+    BA: "all tickets",
+    DEV: "all code",
+    TESTER: "all test reports",
+}
 
 
 def _ago(ts: float) -> str:

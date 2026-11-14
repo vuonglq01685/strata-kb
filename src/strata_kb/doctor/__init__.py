@@ -34,6 +34,7 @@ from strata_kb.doctor.checks.hub import (  # noqa: F401 -- re-exported
     check_published_digests,
     check_published_kind,
     check_registry_kinds,
+    duplicate_tester_issues,
 )
 from strata_kb.doctor.checks.local import (  # noqa: F401 -- re-exported
     SOURCE_DIRS,
@@ -182,7 +183,7 @@ def run(
     else:
         # The generated doc (dev `-code`, ba `-plan`) is rebuilt per branch
         # and CI publishes it, so it is left out of the snapshot compare.
-        suffix = {"dev": "code", "ba": "plan"}.get(cfg_kind)
+        suffix = {"dev": "code", "ba": "plan", "tester": "test"}.get(cfg_kind)
         generated = f"{repo_id}-{suffix}" if suffix and repo_id else None
         hub_issues, hub_stale = check_hub(
             kb_dir, handle, repo_id=repo_id, code_doc=generated
@@ -195,6 +196,8 @@ def run(
             issues += check_dev_sync(kb_dir, repo_root, repo_id)
             issues += check_code_extra()
             issues += check_hub_lag(kb_dir, repo_root, handle, repo_id)
+    if cfg_kind in ("hub", "tester"):  # a BA or Dev repo cannot act on it
+        issues += duplicate_tester_issues(handle)
     has_stale = False
     if context_text is not None:
         ctx_issues, results = check_context(context_text, handle)
