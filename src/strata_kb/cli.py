@@ -902,6 +902,57 @@ def _refresh_ba_plan(kb_dir: Path) -> None:
         raise typer.Exit(1)
 
 
+def _tester_children_of(root: Path):
+    """Children of a story from `tests/<story>/ticket.md` (empty without one)."""
+    from strata_kb import planparents
+
+    def children_of(story: str) -> tuple[str, ...]:
+        try:
+            text = (root / "tests" / story / "ticket.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return ()
+        return tuple(r.child for r in planparents.children(text, story))
+
+    return children_of
+
+
+def _refresh_tester_doc(kb_dir: Path) -> None:
+    """`kb publish` in a tester repo: regenerate `<repo_id>-test` from the
+    working tree, so the diff preview and the upload show what CI will send.
+    Same defaults as `kb report-ingest`, anchored to the repo root."""
+    from strata_kb import cipublish, config, testingest
+    from strata_kb.build import build_kb
+
+    resolved_kb_dir = kb_dir.resolve()
+    root = resolved_kb_dir.parent
+    rid = config.repo_id_or_root("", resolved_kb_dir, root)
+    try:
+        test_report = testingest.run(
+            root,
+            resolved_kb_dir,
+            rid,
+            root / "tests",
+            root / "reports",
+            _tester_children_of(root),
+        )
+    except testingest.TestIngestError as exc:
+        typer.secho(
+            f"could not refresh {rid}-test: {exc}", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1) from None
+    for file, reason in test_report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        cipublish.write_step_summary(line)
+    report = build_kb(kb_dir)
+    for warning in report.warnings + report.quality:
+        typer.secho(f"[warn] {warning}", fg=typer.colors.YELLOW, err=True)
+    for error in report.errors:
+        typer.secho(f"[error] {error}", fg=typer.colors.RED, err=True)
+    if not report.ok:
+        raise typer.Exit(1)
+
+
 @app.command()
 def ingest(
     source: Path = typer.Argument(..., help="Source PDF or Markdown file"),
@@ -2081,6 +2132,66 @@ def plan_ingest(
         cipublish.write_step_summary(line)
 
 
+@app.command(name="report-ingest")
+def report_ingest(
+    repo_root: Path = typer.Option(
+        Path("."), "--repo-root", help="Repository root (read for the commit)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    repo_id: str = typer.Option(
+        "", "--repo-id", help="Repo ID (default: config, then folder name)"
+    ),
+    tests_dir: Path = typer.Option(
+        Path("tests"), "--tests-dir", help="Where test case specs live"
+    ),
+    reports_dir: Path = typer.Option(
+        Path("reports"), "--reports-dir", help="Where test reports live"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Build .kb/<repo_id>-test/ from lint-clean test cases and reports —
+    deterministic, offline, no LLM. Files that fail lint are listed as skipped."""
+    from strata_kb import cipublish, config, testingest
+
+    resolved_root = repo_root.resolve()
+    resolved_kb_dir = kb_dir.resolve()
+    rid = config.repo_id_or_root(repo_id, resolved_kb_dir, resolved_root)
+    try:
+        report = testingest.run(
+            resolved_root,
+            resolved_kb_dir,
+            rid,
+            tests_dir,
+            reports_dir,
+            _tester_children_of(resolved_root),
+        )
+    except testingest.TestIngestError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from None
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "doc_id": report.doc_id,
+                    "published": report.published,
+                    "skipped": [list(pair) for pair in report.skipped],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    typer.echo(f"doc: {report.doc_id}")
+    typer.echo(f"published: {len(report.published)} section(s)")
+    for sid in report.published:
+        typer.echo(f"  {sid}")
+    for file, reason in report.skipped:
+        line = f"skipped: {file} — {reason}"
+        typer.echo(line)
+        cipublish.write_step_summary(line)
+
+
 @svc_app.command("note")
 def svc_note(
     service: str = typer.Argument(
@@ -2771,6 +2882,8 @@ def publish(
         _refresh_dev_code(kb_dir)
     if plan.refresh_plan:
         _refresh_ba_plan(kb_dir)
+    if plan.refresh_test:
+        _refresh_tester_doc(kb_dir)
     # The one point every dev route (snapshot, intake) passes before it
     # sends anything. The refresh above only rewrites local, derived `-code`.
     if plan.repo_kind == "dev":

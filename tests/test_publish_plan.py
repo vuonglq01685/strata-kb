@@ -133,3 +133,9 @@ def test_ba_refreshes_its_plan_doc(tmp_path):
 def test_dev_does_not_refresh_a_plan_doc(tmp_path):
     kb_dir = _kb(tmp_path, "kind: dev\nhub: ../hub\n")
     assert not publish.plan(kb_dir, "", pr=False, direct=False).refresh_plan
+
+
+def test_tester_publish_plan_refreshes_test_doc(tmp_path):
+    kb_dir = _kb(tmp_path, "kind: tester\nrepo_id: acme\nhub: ../hub\n")
+    plan = publish.plan(kb_dir, "", pr=False, direct=False)
+    assert plan.refresh_test and not plan.refresh_plan and not plan.refresh_code

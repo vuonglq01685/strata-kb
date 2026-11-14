@@ -425,7 +425,12 @@ def _natural(value: str) -> list:
     return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", value)]
 
 
-def _check_owned(doc_dir: Path) -> None:
+def _check_owned(
+    doc_dir: Path,
+    suffix: str = TITLE_SUFFIX,
+    command: str = "kb plan-ingest",
+    error: type[KbError] = PlanIngestError,
+) -> None:
     """Refuse to overwrite or delete a document this command did not write."""
     manifest_path = doc_dir / "_manifest.yaml"
     if not (manifest_path.is_file() or any(doc_dir.glob("*.md"))):
@@ -433,18 +438,20 @@ def _check_owned(doc_dir: Path) -> None:
     try:
         manifest = models.load_yaml_model(manifest_path, models.Manifest)
     except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError) as exc:
-        raise PlanIngestError(
+        raise error(
             f"{doc_dir} holds content with no readable _manifest.yaml ({exc}); "
             "move it away — nothing was written"
         ) from exc
-    if not manifest.title.endswith(TITLE_SUFFIX):
-        raise PlanIngestError(
-            f"{doc_dir} holds a document kb plan-ingest did not generate "
+    if not manifest.title.endswith(suffix):
+        raise error(
+            f"{doc_dir} holds a document {command} did not generate "
             f"(title: {manifest.title!r}); nothing was written"
         )
 
 
-def _drop_index_entry(kb_dir: Path, doc_id: str) -> None:
+def _drop_index_entry(
+    kb_dir: Path, doc_id: str, error: type[KbError] = PlanIngestError
+) -> None:
     index_path = kb_dir / "index.yaml"
     if not index_path.exists():
         return
@@ -453,7 +460,7 @@ def _drop_index_entry(kb_dir: Path, doc_id: str) -> None:
         index.docs = [d for d in index.docs if d.id != doc_id]
         models.save_yaml_model(index_path, index)
     except (yaml.YAMLError, OSError, UnicodeDecodeError, ValidationError) as exc:
-        raise PlanIngestError(f"cannot update {index_path}: {exc}") from exc
+        raise error(f"cannot update {index_path}: {exc}") from exc
 
 
 def _sync_assets(doc_dir: Path, wanted: dict[str, bytes]) -> None:

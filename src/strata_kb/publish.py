@@ -1328,6 +1328,7 @@ class PublishPlan:
       reported after the unreviewed gate, as before.
     - `refresh_code`: a dev repo sends the `-code` this commit would send.
     - `refresh_plan`: a ba repo sends the `-plan` this commit would send.
+    - `refresh_test`: a tester repo sends the `-test` this commit would send.
     """
 
     route: str
@@ -1337,6 +1338,7 @@ class PublishPlan:
     intake_url: str = ""
     refresh_code: bool = False
     refresh_plan: bool = False
+    refresh_test: bool = False
     repo_kind: str = ""
 
 
@@ -1373,6 +1375,7 @@ def plan(kb_dir: Path, hub_flag: str, *, pr: bool, direct: bool) -> PublishPlan:
             intake_url=cfg.intake or "",
             refresh_code=cfg.kind == "dev",
             refresh_plan=cfg.kind == "ba",
+            refresh_test=cfg.kind == "tester",
             repo_kind=cfg.kind,
         )
     try:
