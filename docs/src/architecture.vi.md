@@ -122,6 +122,7 @@ lại thành một chuỗi cung ứng tri thức.
 | `child` | tài liệu nghiệp vụ từ nguồn bên ngoài | — | có |
 | `ba` | ticket và mission plan | hub, chỉ đọc | có (chỉ `-plan`) |
 | `dev` | code sản phẩm, kèm tri thức về chính code đó | hub, chỉ đọc | có (`-code`, `-svc`) |
+| `tester` | test case, script và báo cáo kiểm thử theo từng story | hub, chỉ đọc | có (chỉ `-test`) |
 
 ```
       tài liệu bên ngoài                   code sản phẩm
@@ -144,6 +145,14 @@ lại thành một chuỗi cung ứng tri thức.
 `.kb/config.yaml`. Kind không phải thứ trang trí: nó quyết định lệnh nào khả
 dụng, slash command và CI workflow nào được sinh ra, và MCP client được nối dây
 kiểu gì (stdio trên hub, HTTP ở những nơi còn lại).
+
+Repo `tester` kiểm thử từng story trên một môi trường test dùng chung. Nó đọc ticket và
+cơ sở tri thức từ hub, viết test case và script Playwright, rồi publish đúng một tài
+liệu sinh tự động, `<repo_id>-test`: các test case và báo cáo `PASS` hoặc `FAIL` của
+từng vòng. Giống `ba`, nó không ingest tài liệu và không sửa tri thức. Trong sơ đồ ở
+trên, nó đứng cạnh `ba`: chỉ đọc hub và chỉ publish tài liệu của chính mình. Giai đoạn 1
+mới có phần việc của Tester; khâu bàn giao với Dev và BA, cùng `kb auto` cho `tester`,
+chưa được xây.
 
 ## 3.1 Vì sao tách vai trò
 
@@ -571,6 +580,13 @@ Web UI hiển thị nó, và tài liệu `*-plan` nằm ở menu Ticket, không 
 tổng quan đếm theo từng loại. Không có gì được lưu và không có đường ghi. Theo chiều ngược
 lại, một dev chỉ có id ticket chạy `kb ticket fetch`, lệnh này đọc ticket từ `-plan` của
 hub và khôi phục dạng nguồn của nó.
+
+Khi Dev làm xong một story, các báo cáo kiểm thử đã publish bổ sung thêm bốn trạng thái,
+cũng được suy ra và không bao giờ được lưu: `testing` khi một claim của Tester trên story
+đang được giữ, `closed` khi báo cáo mới nhất đã publish là `PASS` (cuối cùng: không gì
+về sau đổi được), `reopened` khi là `FAIL` (các ticket con bị nêu là có lỗi cũng hiện như
+vậy), và `fix-done` khi lịch sử Dev của một ticket con đã mở lại ghi nhận bản sửa của vòng
+đó. Chỉ các vòng `PASS` và `FAIL` được publish.
 
 ## 8.5 Câu hỏi về ticket
 

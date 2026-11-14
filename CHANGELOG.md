@@ -3,6 +3,19 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.37.0 — 2026-11-14
+
+A new repo kind, `tester`, tests each story on a shared test environment and publishes a `PASS` or `FAIL` report to the hub. Phase 1: a Tester runs it by hand. The Dev/BA side (fix hand-over, bug tickets, `kb ticket lint` refusing a closed story) and `kb auto` for `tester` come later.
+
+- **`kb init --kind tester`.** Scaffolds `.kb/test-env.yaml`, `tests/`, `reports/`, a Playwright MCP entry, slash commands (`/tester-env-setup`, `/tester-test-story`) and a CI publish workflow. One `tester` repo per BA repo. The hub kind and the account role are both `tester`.
+- **`kb test-env`.** `check` validates `.kb/test-env.yaml` (env var names only, secret values stay in `.env` or CI secrets). `verify`, `reset`, `seed` and `version` drive the environment; `reset` refuses production and protected URLs. `deployed` exits `0` when every repo of the story runs its published commit, `4` (reasons printed) when not; `changed` lists the files the story's merged PRs touched. `lock` and `unlock` take the environment on the hub (exit `3` if locked).
+- **`kb testcase lint` and `kb report lint`.** Check a test case spec against its ticket (acceptance-criteria coverage, alternate flows, revision) and a report (verdict `PASS` or `FAIL` only, defects, PNG/WebP evidence, secrets).
+- **`kb report-ingest`.** Builds the `<repo_id>-test` document (tags `test`, `generated`) from lint-clean cases and reports, deterministic and offline; `kb ci-publish` ships it. Evidence images become `assets/<sha256>.<ext>`.
+- **Tester claims and statuses.** `kb claim` takes a story for a Tester; the hub derives `testing`, `closed` (final), `reopened` and `fix-done` from the published reports. The `accounts` table gains the `tester` role by an in-place migration.
+- **Hub UI.** A **Test Report** menu lists rounds, verdicts and status; ticket pages show the derived status.
+- **Exit code `4`.** `kb test-env deployed`: test environment not deployed yet.
+- **Upgrade.** Upgrade the hub first. Existing `users.db` and `claims.db` migrate on first open. No new dependency.
+
 ## 1.36.0 — 2026-11-10
 
 An unattended run now merges only where GitHub itself enforces the checks and a human review, and every task run leaves a record.

@@ -166,7 +166,7 @@ kb --help
 
 ## Repo kinds
 
-`kb init --kind hub|child|ba|dev` scaffolds a repo for its role and records
+`kb init --kind hub|child|ba|dev|tester` scaffolds a repo for its role and records
 `kind:` in `.kb/config.yaml`. Re-running `kb init` refreshes the scaffold and
 keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 
@@ -176,6 +176,7 @@ keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Does not host the shared service. | [Child](docs/src/guide-child.en.md) |
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets and mission plans grounded in the KB, gated by CI Definition-of-Ready checks. Publishes only its own plan (`<repo_id>-plan`). | [BA](docs/src/guide-ba.en.md) |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through an agent workflow. Publishes knowledge about *its own code* (`-code` generated, `-svc` curated), never outside documents. | [Dev](docs/src/guide-dev.en.md) |
+| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a signed `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup` and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and the
 MCP client is wired in `.mcp.json` and `.cursor/mcp.json`; each guide lists them
@@ -240,7 +241,7 @@ daily use.
 | `kb diff` | Diff sections between the worktree and a git rev |
 | `kb assets` | Asset store operations on a hub: `migrate`, `verify` |
 | `kb code-sync` | Hub only: `scan`, `issue`, `baseline`, `run` — hub docs that name code that changed |
-| `kb user` | Hub only: accounts for the Web UI (`add`, `passwd`, `role`, `remove`, `list`, `hash`) |
+| `kb user` | Hub only: accounts for the Web UI (`add`, `passwd`, `role`, `remove`, `list`, `hash`); roles `admin`, `ba`, `dev`, `tester` |
 | `kb code-ingest` | Extract a codebase's structure into `.kb/<repo_id>-code/` — deterministic, no LLM |
 | `kb svc note` | Record which tickets touched which service in `<repo_id>-svc` |
 | `kb plan-ingest` | Build `.kb/<repo_id>-plan/` from the ready missions and tickets of a `ba` repo |
@@ -249,13 +250,17 @@ daily use.
 | `kb mission` | `lint` (Definition of Ready) and `next` (which story is done, ready, draft or blocked) for BA mission plans |
 | `kb impl tidy` | Move flat `docs/impl/<id>-*` files into `docs/impl/<id>/` |
 | `kb pr` | `lint`, `find`, `view`, `open`, `checks`, `merge`, `edit`: pull requests over the GitHub REST API (what the skills call instead of `gh pr`) |
-| `kb claim` | Ticket claims on the hub for several Devs on one repo: `take`, `update`, `release`, `list` |
+| `kb claim` | Ticket claims on the hub for several Devs on one repo, and Tester claims on a story: `take`, `update`, `release`, `list` |
+| `kb test-env` | Tester repo: the test environment in `.kb/test-env.yaml` — `check`, `verify`, `reset`, `seed`, `version`, `deployed`, `changed`, `lock`, `unlock` |
+| `kb testcase lint` | Check a story's `tests/<story-id>/test-cases.md` against its ticket |
+| `kb report lint` | Check a test report `reports/<story-id>/R<n>.md` (verdict, defects, evidence, secrets) |
+| `kb report-ingest` | Build `.kb/<repo_id>-test/` from the lint-clean test cases and reports of a `tester` repo |
 | `kb auto` | Full-auto mode for `ba` and `dev` repos: `on`, `off`, `status`, `run`, `wait` |
 | `kb usage` | Token and cost measurement: `kb usage ingest-transcript`, `kb usage note`, `kb usage report` |
 
 Exit codes: `0` success, `1` error (including a misconfiguration), `2` citation
 stale (and a few command-specific results, listed in the guides), `3` a ticket
-claim taken or lost.
+claim taken or lost, `4` the test environment is not deployed yet (`kb test-env deployed`).
 
 ---
 

@@ -25,6 +25,9 @@ def test_to_json_carries_unparented():
             "is_parent": False,
             "parent": "",
             "own_fix_ready": False,
+            "test_status": "",
+            "test_round": 0,
+            "regression_bug": False,
         }
     ]
     assert to_json([], [])["unparented"] == []
