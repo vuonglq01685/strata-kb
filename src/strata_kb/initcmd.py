@@ -248,6 +248,8 @@ def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
 # Created once, never refreshed — the tester repo's own review criteria.
 TESTER_LOCAL_OVERRIDES: dict[str, str] = {
     "docs/test-review-rubric.local.md": "test-review-rubric-local-stub.md",
+    # Selectors are filled per repo by /tester-env-setup; never overwrite.
+    "tests/fixtures/login.ts": "playwright-login-fixture.ts",
     CODEOWNERS_PATH: "codeowners-tester",
 }
 
@@ -272,7 +274,6 @@ TESTER_TEMPLATES: dict[str, str] = {
     "docs/templates/test-cases.md": "test-cases-template.md",
     "docs/templates/test-report.md": "test-report-template.md",
     ".kb/test-env.example.yaml": "test-env.example.yaml",
-    "tests/fixtures/login.ts": "playwright-login-fixture.ts",
 }
 
 

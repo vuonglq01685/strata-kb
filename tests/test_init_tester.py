@@ -66,6 +66,14 @@ def test_tester_reinit_is_idempotent_and_keeps_local_overrides(tmp_path):
     assert report.created == [] and report.updated == []
 
 
+def test_tester_reinit_keeps_an_edited_login_fixture(tmp_path):
+    init_repo(tmp_path, "tester")
+    login = tmp_path / "tests/fixtures/login.ts"
+    login.write_text("// my selectors\n", encoding="utf-8")
+    init_repo(tmp_path, "tester")
+    assert login.read_text(encoding="utf-8") == "// my selectors\n"
+
+
 def test_upgrade_accepts_a_tester_repo(tmp_path, run_git, monkeypatch):
     monkeypatch.delenv(AUTO_TASK_ENV, raising=False)
     origin = tmp_path / "origin.git"
