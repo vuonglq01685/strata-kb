@@ -36,9 +36,12 @@ first; when it is missing, stop and tell the Tester to run
 3. **Lock the environment.** `kb test-env lock <story>`. Exit 3 means another
    round holds this environment: stop, "environment locked". The lock has a
    TTL: step 8.1 and step 8.5 re-run `kb test-env lock <story>` to refresh it.
-4. **Branch, then take the claim.** First `git pull`, then
-   `git switch -c test/<story>-R<n>` (`<n>` as in step 10; switch to it when it
-   already exists). Never write, commit or push on the default branch: when
+4. **Branch, then take the claim.** Run `git fetch origin`. Find the default
+   branch with `git rev-parse --abbrev-ref origin/HEAD` (it prints
+   `origin/<default>`). Start from it, not from the branch you are on:
+   `git switch -c test/<story>-R<n> origin/<default>` (`<n>` as in step 10).
+   When that branch already exists, `git switch test/<story>-R<n>`.
+   Never write, commit or push on the default branch: when
    `git branch --show-current` is the default branch, stop. Then
    `kb claim take <story>`; exit 3 means taken: unlock (`kb test-env unlock`)
    and stop. Then `kb claim update <story> --phase cases`.
@@ -88,16 +91,19 @@ first; when it is missing, stop and tell the Tester to run
       and goes back through Q1. The Dev is not involved.
    5. **Regression run.** Only when every story TC passed. First re-run
       `kb test-env lock <story>` (exit 3: stop and release whatever is held).
-      After `git pull`, the closed stories are those whose latest
-      `reports/<s>/R<n>.md` has `Verdict: PASS`. Run their scripts
-      (`tests/<s>/`), with the same clean retry and MCP confirmation. The
+      Run `git fetch origin`, and read reports from `origin/<default>`, not
+      the working tree: `git ls-tree -r --name-only origin/<default> reports/`
+      lists them and `git show origin/<default>:reports/<s>/R<n>.md` reads
+      one. The closed stories are those whose latest `reports/<s>/R<n>.md`
+      there has `Verdict: PASS`. Run their scripts (`tests/<s>/`, read from
+      the same ref when your branch lacks them), with the same clean retry and MCP confirmation. The
       baseline is the newest PASS report whose `> Environment:` names this
       environment, read from its `## Regression` results and commits; with no
       such report there is "no baseline". For each
       confirmed regression failure:
       - Key it `<closed story id>/TC-<k>` and ask the hub:
-        `curl -sS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN"
-        "$STRATA_KB_HUB_URL/api/tests/known-failures"`. If the key has an
+        `curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" "$STRATA_KB_HUB_URL/api/tests/known-failures"`
+        (a GET; use exactly this shape). If the key has an
         open known-failure, it is not a new defect and not attributed to
         this story: list it under `## Regression` as
         `known: <story> R<n> RD<k>` (or `BUG-<n>`), and move on. Never print

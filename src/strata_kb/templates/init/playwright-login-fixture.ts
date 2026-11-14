@@ -1,6 +1,7 @@
 // Login fixture for a user/password form. /tester-env-setup fills the
 // selectors below by exploring the login page through Playwright MCP.
-// Credentials come from the env var NAMES in .kb/test-env.yaml, never literals.
+// Credentials come from env vars named TEST_<ROLE>_USER / TEST_<ROLE>_PASSWORD
+// (the names .kb/test-env.yaml declares), never literals.
 import { test as base, expect, type Page } from "@playwright/test";
 
 export const LOGIN = {

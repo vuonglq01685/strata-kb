@@ -178,3 +178,62 @@ def test_ba_and_dev_settings_do_not_gain_tester_rules(tmp_path):
 def test_tester_scaffold_has_the_login_smoke_spec(tmp_path):
     init_repo(tmp_path, "tester")
     assert (tmp_path / "tests/fixtures/login.smoke.spec.ts").is_file()
+
+
+def test_tester_scaffold_has_a_create_once_playwright_config(tmp_path):
+    init_repo(tmp_path, "tester")
+    cfg = tmp_path / "playwright.config.ts"
+    assert "TEST_FE_URL" in cfg.read_text() and "chromium" in cfg.read_text()
+    cfg.write_text("// mine\n", encoding="utf-8")
+    init_repo(tmp_path, "tester")
+    assert cfg.read_text(encoding="utf-8") == "// mine\n"
+
+
+def test_tester_reinit_restores_removed_extras_and_keeps_custom_rules(tmp_path):
+    init_repo(tmp_path, "tester")
+    path = tmp_path / ".claude/settings.json"
+    settings = json.loads(path.read_text())
+    allow = settings["permissions"]["allow"]
+    settings["permissions"]["allow"] = [
+        r for r in allow if r not in initcmd.TESTER_ALLOW
+    ] + ["Bash(make *)"]
+    settings["permissions"]["deny"] = [
+        r for r in settings["permissions"]["deny"] if r not in initcmd.TESTER_DENY
+    ]
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    init_repo(tmp_path, "tester", force=False)
+    got = json.loads(path.read_text())["permissions"]
+    assert set(initcmd.TESTER_ALLOW) <= set(got["allow"])
+    assert set(initcmd.TESTER_DENY) <= set(got["deny"])
+    assert "Bash(make *)" in got["allow"]
+
+
+def test_tester_allow_covers_the_bodys_git_and_curl_commands():
+    from fnmatch import fnmatchcase
+
+    allow = [
+        r[len("Bash(") : -1] for r in initcmd.TESTER_ALLOW if r.startswith("Bash(")
+    ]
+    auto = json.loads(initcmd.read_template("claude-settings-auto.json"))
+    allow += [
+        r[len("Bash(") : -1]
+        for r in auto["permissions"]["allow"]
+        if r.startswith("Bash(")
+    ]
+    for cmd in (
+        "git fetch origin",
+        "git rev-parse --abbrev-ref origin/HEAD",
+        "git switch -c test/US1-R1 origin/main",
+        "git switch test/US1-R1",
+        "git branch --show-current",
+        "git ls-tree -r --name-only origin/main reports/",
+        "git show origin/main:reports/US1/R1.md",
+        "git push -u origin HEAD",
+        'curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" '
+        '"$STRATA_KB_HUB_URL/api/tests/known-failures"',
+    ):
+        assert any(fnmatchcase(cmd, p) for p in allow), cmd
+    assert not any(
+        fnmatchcase('curl -fsS -X POST "$STRATA_KB_HUB_URL/api/other"', p)
+        for p in allow
+    )

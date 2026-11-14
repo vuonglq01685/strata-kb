@@ -251,6 +251,7 @@ TESTER_LOCAL_OVERRIDES: dict[str, str] = {
     # Selectors are filled per repo by /tester-env-setup; never overwrite.
     "tests/fixtures/login.ts": "playwright-login-fixture.ts",
     "tests/fixtures/login.smoke.spec.ts": "playwright-login-smoke.spec.ts",
+    "playwright.config.ts": "playwright-config.ts",
     CODEOWNERS_PATH: "codeowners-tester",
 }
 
@@ -654,9 +655,6 @@ def record_asset_store(config_path: Path, mode: str) -> str:
 
 _SETTINGS_REL = ".claude/settings.json"
 
-# Auto-mode commands per conventions language (test runners, installs, lint and
-# build), appended to `permissions.allow` for a dev repo's languages so a
-# headless `claude -p` run can run them: a command outside the list is denied.
 # Per-kind additions to the shared auto-mode settings template. The tester
 # also may never merge a PR in phase 1 (denied, not just told).
 TESTER_ALLOW: tuple[str, ...] = (
@@ -666,9 +664,16 @@ TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb report-ingest*)",
     "Bash(npx playwright test*)",
     "mcp__playwright__*",
+    "Bash(git switch test/*)",
+    "Bash(git ls-tree *origin/*)",
+    "Bash(git show origin/*)",
+    "Bash(curl -fsS * */api/tests/known-failures*)",
 )
 TESTER_DENY: tuple[str, ...] = ("Bash(kb pr merge*)", "Bash(gh pr merge*)")
 
+# Auto-mode commands per conventions language (test runners, installs, lint and
+# build), appended to `permissions.allow` for a dev repo's languages so a
+# headless `claude -p` run can run them: a command outside the list is denied.
 LANG_COMMANDS: dict[str, tuple[str, ...]] = {
     "python": (
         "Bash(pytest *)",
@@ -808,9 +813,9 @@ def _apply_settings(
     langs: Sequence[str],
     force: bool,
     report: InitReport,
-    kind: str = KIND_DEV,
+    kind: str,
 ) -> None:
-    """ba/dev `.claude/settings.json`: create from the template, or merge into
+    """ba/dev/tester `.claude/settings.json`: create from the template, or merge into
     the existing file (a dev's own permissions and hooks survive). `--force`
     replaces it outright, like every other protected file."""
     template = json.loads(template_text)

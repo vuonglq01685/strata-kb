@@ -31,11 +31,15 @@ write the declaration, and verify it. The file holds NAMES only; values go to
       seed under `seeds`. Offer to write a missing script, then show it for
       the Tester to read before saving. It must touch only `$<url_env>`.
    5. Each account role (`buyer`, `admin`, …): the NAMES of the user and
-      password env vars. Ask for the values separately (step 4).
+      password env vars, declared with the convention `TEST_<ROLE>_USER` and
+      `TEST_<ROLE>_PASSWORD` (the login fixture reads exactly those). Ask for
+      the values separately (step 4).
    6. `api_auth`: `cookie` or `bearer`.
    7. `retries` (default `3`).
 3. Write `.kb/test-env.yaml` from `.kb/test-env.example.yaml`: names only.
-4. Write the secret values the Tester gives you to `.env` only, one
+4. Write `TEST_FE_URL=<front-end url>` (not a secret; the scaffolded
+   `playwright.config.ts` uses it as `baseURL`) and the secret values the
+   Tester gives you to `.env` only, one
    `NAME=value` line each. Append: replace only lines with the same NAME and
    keep every other line (including `STRATA_KB_HUB_URL` and
    `STRATA_KB_HTTP_TOKEN` from `kb mcp-setup`). If `.env` is missing, create

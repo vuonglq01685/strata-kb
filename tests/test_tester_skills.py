@@ -142,7 +142,7 @@ def test_lock_refreshed_and_deploy_exit_paths():
 
 def test_regression_inputs_are_defined():
     t = _body("tester-test-story")
-    for phrase in ("Verdict: PASS", "no baseline", "> Environment:", "git pull"):
+    for phrase in ("Verdict: PASS", "no baseline", "> Environment:", "git fetch origin"):
         assert phrase in t, phrase
     assert "seed and reset scripts" in t
 
@@ -152,3 +152,17 @@ def test_env_setup_never_types_credentials_through_mcp():
     assert "Never type a password" in t
     assert "tests/fixtures/login.smoke.spec.ts" in t
     assert "STRATA_KB_HTTP_TOKEN" in t and "keep every other line" in t
+
+
+def test_branch_starts_from_origin_default_and_regression_reads_origin():
+    t = _body("tester-test-story")
+    assert "git switch -c test/<story>-R<n> origin/<default>" in t
+    assert "git pull" not in t
+    assert "git show origin/<default>:reports/" in t
+    assert "-fsS" in t and "use exactly this shape" in t
+
+
+def test_env_setup_writes_fe_url_and_role_env_convention():
+    t = _body("tester-env-setup")
+    assert "TEST_FE_URL" in t
+    assert "TEST_<ROLE>_USER" in t and "TEST_<ROLE>_PASSWORD" in t
