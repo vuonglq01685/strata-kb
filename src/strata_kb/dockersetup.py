@@ -87,10 +87,10 @@ def repo_kind(repo_root: Path) -> str:
     recorded — each caller asserts the kinds it supports instead.
     """
     kind = load_config(repo_root / ".kb").kind
-    if kind not in ("hub", "child", "ba", "dev"):
+    if kind not in ("hub", "child", "ba", "dev", "tester"):
         raise DockerSetupError(
             "repo kind is not recorded — run `kb init` first "
-            "(it records kind: hub|child|ba|dev in .kb/config.yaml)"
+            "(it records kind: hub|child|ba|dev|tester in .kb/config.yaml)"
         )
     return kind
 

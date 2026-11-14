@@ -963,7 +963,7 @@ def test_doctor_flags_unknown_recorded_kind(tmp_path):
     assert [(i.level, i.message) for i in issues] == [
         (
             "error",
-            "federation/repo-a records unknown kind 'code' — expected kb, ba or dev",
+            "federation/repo-a records unknown kind 'code' — expected kb, ba, dev or tester",
         )
     ]
 

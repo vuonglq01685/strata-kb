@@ -733,7 +733,7 @@ def check_registry_kinds(hub_root: Path) -> list[Issue]:
                 Issue(
                     "error",
                     f"federation/{path_id} records unknown kind '{recorded}' — "
-                    "expected kb, ba or dev",
+                    "expected kb, ba, dev or tester",
                 )
             )
             continue

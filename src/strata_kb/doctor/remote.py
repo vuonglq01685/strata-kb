@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from strata_kb.hub import HubHandle
 
 TOOL = "kb_doctor_hub"
-REMOTE_KINDS = ("child", "ba", "dev")
+REMOTE_KINDS = ("child", "ba", "dev", "tester")
 # The hub's version goes into a pip command: a plain release string only.
 _VERSION_RE = re.compile(
     r"[0-9]+(\.[0-9]+)*([a-z]+[0-9]*)?(\.post[0-9]+)?(\.dev[0-9]+)?"

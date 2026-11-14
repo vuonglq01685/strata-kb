@@ -1026,7 +1026,7 @@ def test_resolve_kind_interactive_rejects_invalid_then_accepts_dev(
     # Pins the new error string: dropping "dev" from the accepted tuple
     # would reject it interactively forever while every other assertion in
     # this file stays green, so the four-kind list itself is the needle.
-    assert "'hub', 'child', 'ba', 'dev'" in result.output
+    assert "'hub', 'child', 'ba', 'dev', 'tester'" in result.output
     assert (tmp_path / ".kb" / "config.yaml").read_text(encoding="utf-8").count(
         "kind: dev"
     ) == 1
@@ -2218,10 +2218,10 @@ def test_cli_init_dev_next_steps(tmp_path: Path):
     assert "(details: QUICKSTART-DEV.md)" in result.output
 
 
-def test_kind_descriptions_lists_four_kinds():
+def test_kind_descriptions_lists_five_kinds():
     from strata_kb.cli import KIND_DESCRIPTIONS
 
-    assert "one of four kinds" in KIND_DESCRIPTIONS
+    assert "one of five kinds" in KIND_DESCRIPTIONS
     assert "dev" in KIND_DESCRIPTIONS
 
 
@@ -3304,7 +3304,7 @@ def test_kind_and_assets_choices_in_help():
         app, ["init", "--help"], env={"_TYPER_FORCE_DISABLE_TERMINAL": "1"}
     )
     assert result.exit_code == 0
-    assert "hub|child|ba|dev" in result.output
+    assert "hub|child|ba|dev|tester" in result.output
     assert "none|s3" in result.output
 
 

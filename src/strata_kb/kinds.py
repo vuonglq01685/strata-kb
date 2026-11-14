@@ -1,5 +1,5 @@
 """Hub kind vocabulary: what a federated repo holds (`kb` documents, `ba`
-tickets, `dev` code), how a config kind maps onto it, and how a kind is
+tickets, `dev` code, `tester` test reports), how a config kind maps onto it, and how a kind is
 inferred when none was recorded.
 
 A near-leaf module on purpose (imports only `errors`): `models` and
@@ -19,15 +19,19 @@ if TYPE_CHECKING:
 KB = "kb"
 BA = "ba"
 DEV = "dev"
-HUB_KINDS = (KB, BA, DEV)
-MENU: dict[str, str] = {KB: "Document", BA: "Ticket", DEV: "Code"}
+TESTER = "tester"
+HUB_KINDS = (KB, BA, DEV, TESTER)
+MENU: dict[str, str] = {KB: "Document", BA: "Ticket", DEV: "Code", TESTER: "Test Report"}
 
 # A plan doc `kb plan-ingest` generated: title suffix + `plan`/`generated`
 # tags, never its id (a hand-ingested `release-plan` stays a plain document).
 # Lives here, not in planingest/planstatus, so inference needs no heavy import.
 PLAN_TITLE_SUFFIX = "— plan"
 
-_CONFIG_TO_HUB = {"hub": KB, "child": KB, "ba": BA, "dev": DEV}
+# A test-report doc `kb test-ingest` generates: same rule as plan docs.
+TEST_TITLE_SUFFIX = "— tests"
+
+_CONFIG_TO_HUB = {"hub": KB, "child": KB, "ba": BA, "dev": DEV, "tester": TESTER}
 
 
 class UnknownKindError(KbError):
@@ -49,6 +53,11 @@ def is_plan(title: str, tags: Iterable[str]) -> bool:
     """A document `kb plan-ingest` generated: shown under Ticket, never under
     Document."""
     return title.endswith(PLAN_TITLE_SUFFIX) and {"plan", "generated"} <= set(tags)
+
+
+def is_test_doc(title: str, tags: Iterable[str]) -> bool:
+    """A document `kb test-ingest` generated: shown under Test Report."""
+    return title.endswith(TEST_TITLE_SUFFIX) and {"test", "generated"} <= set(tags)
 
 
 def hub_kind(repo_kind: str) -> str:
@@ -75,6 +84,8 @@ def infer_kind(docs: Iterable[models.IndexEntry]) -> str:
     the `code` tag both code-ingest documents carry (`-code`: code+generated,
     `-svc`: code+curated), so a kb doc named `civil-code` stays Document."""
     docs = list(docs)
+    if any(is_test_doc(d.title, d.tags) for d in docs):
+        return TESTER
     if any(is_plan(d.title, d.tags) for d in docs):
         return BA
     if any(d.id.endswith(("-code", "-svc")) and "code" in d.tags for d in docs):

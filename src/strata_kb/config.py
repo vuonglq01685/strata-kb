@@ -73,7 +73,7 @@ class L3FixConfig(BaseModel):
 class KBConfig(BaseModel):
     hub: str = ""
     repo_id: str = ""
-    kind: Literal["", "hub", "child", "ba", "dev"] = ""
+    kind: Literal["", "hub", "child", "ba", "dev", "tester"] = ""
     intake: str = ""  # intake service base URL — child publishes via OIDC CI
     asset_store: AssetStoreConfig = Field(default_factory=AssetStoreConfig)
     langs: list[str] = Field(default_factory=list)

@@ -24,7 +24,8 @@ KIND_HUB = "hub"
 KIND_CHILD = "child"
 KIND_BA = "ba"
 KIND_DEV = "dev"
-KINDS = (KIND_HUB, KIND_CHILD, KIND_BA, KIND_DEV)
+KIND_TESTER = "tester"
+KINDS = (KIND_HUB, KIND_CHILD, KIND_BA, KIND_DEV, KIND_TESTER)
 
 # target relative path -> template resource name under templates/init/
 COMMON_TEMPLATES: dict[str, str] = {
@@ -470,6 +471,9 @@ def template_map(kind: str) -> dict[str, str]:
         return dict(BA_TEMPLATES)
     if kind == KIND_DEV:
         return dict(DEV_TEMPLATES)
+    if kind == KIND_TESTER:
+        # Task 2 adds the tester scaffold; until then fail cleanly.
+        raise ValueError("kind 'tester' has no scaffold templates yet")
     extra = HUB_TEMPLATES if kind == KIND_HUB else CHILD_TEMPLATES
     return {**COMMON_TEMPLATES, **extra}
 

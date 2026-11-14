@@ -169,6 +169,7 @@ class RepoKind(StrEnum):
     child = "child"
     ba = "ba"
     dev = "dev"
+    tester = "tester"
 
 
 class AssetsMode(StrEnum):
@@ -177,7 +178,7 @@ class AssetsMode(StrEnum):
 
 
 KIND_DESCRIPTIONS = """\
-This repo can be one of four kinds:
+This repo can be one of five kinds:
 
   hub   — Central knowledge hub. Hosts federation/, the single source of
           truth for search. Runs the shared HTTP MCP server + Web UI
@@ -202,6 +203,11 @@ This repo can be one of four kinds:
           TDD enforced; bugs via dev-fix-bug) and, from Stage B on, publishes
           generated knowledge about its own source code back to the hub.
           Never ingests outside documents.
+
+  tester — Test repo. Writes test cases grounded in BA tickets and the KB,
+          runs them against a deployed environment, and publishes only its
+          own test report (`<repo_id>-test`) to the hub. Never ingests or
+          summarizes KB content.
 """
 
 
@@ -232,12 +238,12 @@ def _resolve_kind(target: Path, kind_flag: RepoKind | None) -> str:
         # click.Choice makes BadParameter escape typer.prompt instead of
         # re-prompting.
         while True:
-            answer = typer.prompt("Initialize this repo as (hub, child, ba, dev)")
+            answer = typer.prompt("Initialize this repo as (hub, child, ba, dev, tester)")
             answer = answer.strip().lower()
-            if answer in ("hub", "child", "ba", "dev"):
+            if answer in ("hub", "child", "ba", "dev", "tester"):
                 return answer
             typer.secho(
-                f"Error: {answer!r} is not one of 'hub', 'child', 'ba', 'dev'.",
+                f"Error: {answer!r} is not one of 'hub', 'child', 'ba', 'dev', 'tester'.",
                 fg=typer.colors.RED,
             )
     # NOTE: this message intentionally still reads "hub|child" (not
@@ -293,7 +299,7 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
     for key in unresolved:
         while True:
             answer = typer.prompt(
-                f"Kind for registry entry {key} (kb, ba, dev; blank to skip)",
+                f"Kind for registry entry {key} (kb, ba, dev, tester; blank to skip)",
                 default="",
                 show_default=False,
             )
@@ -301,7 +307,7 @@ def _upgrade_registry_kinds(hub: Path, yes: bool) -> None:
             if answer in ("", *HUB_KINDS):
                 break
             typer.secho(
-                f"Error: {answer!r} is not one of kb, ba, dev.", fg=typer.colors.RED
+                f"Error: {answer!r} is not one of kb, ba, dev, tester.", fg=typer.colors.RED
             )
         proposals[key] = answer
     chosen = {k: v for k, v in proposals.items() if v}
@@ -336,7 +342,7 @@ def init(
         None,
         "--kind",
         help="Repo kind: hub (hosts federation + the shared MCP/Web service) "
-        "or child (authors and publishes to the hub). Required on first init "
+        "child (authors and publishes to the hub), ba, dev or tester. Required on first init "
         "when not running interactively.",
     ),
     force: bool = typer.Option(
