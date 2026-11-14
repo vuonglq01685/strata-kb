@@ -247,13 +247,17 @@ def known_failures(facts: TestFacts) -> dict[str, KnownFailure]:
     open_: dict[str, KnownFailure] = {}
     for rep in ordered:
         failed = set(rep.regression_failed)
+        still_failing = failed | set(rep.known)  # a known key still fails
         if rep.regression_ran:
-            open_ = {k: v for k, v in open_.items() if k in failed}
+            open_ = {k: v for k, v in open_.items() if k in still_failing}
         rd_of = {d.key: d.rd_id for d in rep.regression_defects}
-        for key in rep.regression_failed:
+        for key in dict.fromkeys((*rep.regression_failed, *rep.known)):
             current = open_.get(key)
             if current is None:
-                open_[key] = KnownFailure(key, rep.story, rep.round, rd_of.get(key, ""))
+                if key in failed:
+                    open_[key] = KnownFailure(
+                        key, rep.story, rep.round, rd_of.get(key, "")
+                    )
             else:
                 open_[key] = dataclasses.replace(
                     current,

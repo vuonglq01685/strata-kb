@@ -149,7 +149,7 @@ def test_candidates_show_one_row_per_key(web_client_logged_in, plan_hub):
     rds = "### RD1 — filter broken   Story: ST-0 · TC-3\nSteps: open\n\n"
     kw = {
         "verdict": "FAIL",
-        "regression": "size 4, passed 3, failed 1\nFailed: ST-0/TC-3",
+        "regression": "Run: yes\nFailed: ST-0/TC-3\nKnown: none",
         "rds": rds,
     }
     _publish(plan_hub, STORY, _text(STORY, 1, guilty=f"{STORY}.web", **kw))

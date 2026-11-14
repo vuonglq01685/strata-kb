@@ -48,7 +48,10 @@ _HASH_RE = re.compile(r"\b(?:[0-9a-f]{40}|[0-9a-f]{64})\b")
 _AT_HASH_RE = re.compile(r"@ (?:[0-9a-f]{40}|[0-9a-f]{64})\b")
 _BASELINE_HASH_RE = re.compile(r"Baseline:[^·\n]*")
 _ENV_MIN_LEN = 8
-_NO_REGRESSION = ("not run", "skipped", "n/a")
+_RUN_RE = re.compile(r"^\s*Run:\s*(yes|no)\b", re.I | re.M)
+_LIST_LINE_RE = re.compile(r"^\s*(Failed|Known):(.*)$", re.I | re.M)
+_FULL_KEY_RE = re.compile(r"[^\s,/]+/TC-\d+")
+_BROKEN_KEY_RE = re.compile(r"^([^\s/]+)[\s/]+(TC-\d+)$")
 
 
 @dataclass(frozen=True)
@@ -85,10 +88,10 @@ class Report:
     results: tuple[tuple[str, str, str], ...]
     defects: tuple[Defect, ...]
     regression_ran: bool
-    regression_failed: tuple[str, ...]
+    regression_failed: tuple[str, ...]  # `Failed:` ∪ RD keys ∪ Regression: yes keys
     known: tuple[str, ...]
     regression_defects: tuple[RegressionDefect, ...]
-    review_passed: bool
+    review_passed: bool  # meaningful on the source file only: the hub copy drops it
 
 
 _KNOWN_HEADINGS = sorted(
@@ -185,6 +188,25 @@ def _keys(body: str, label: str) -> tuple[str, ...]:
     return ()
 
 
+def broken_key(broken_tc: str) -> str:
+    """`ST-0 TC-3` (or `ST-0/TC-3`) -> `ST-0/TC-3`; "" when not that shape."""
+    m = _BROKEN_KEY_RE.match(broken_tc.strip())
+    return f"{m.group(1)}/{m.group(2)}" if m else ""
+
+
+def _failed_keys(
+    listed: tuple[str, ...],
+    defects: tuple[Defect, ...],
+    rds: tuple[RegressionDefect, ...],
+) -> tuple[str, ...]:
+    keys = [
+        *listed,
+        *(d.key for d in rds if d.story and d.tc),
+        *(broken_key(d.broken_tc) for d in defects if d.regression),
+    ]
+    return tuple(dict.fromkeys(k for k in keys if k))
+
+
 def _review_rows(text: str) -> list[list[str]]:
     rows = table_rows(section_body(text, "## Review record") or "")
     return rows if len(rows) > 1 else []
@@ -216,6 +238,9 @@ def parse(text: str) -> Report:
         else ()
     )
     reg = section_body(text, "## Regression") or ""
+    defects = _defects(section_body(text, "## Defects"))
+    rds = _regression_defects(section_body(text, "## Regression defects"))
+    run = _RUN_RE.search(reg)
     return Report(
         story=pick(_STORY_RE),
         round=int(pick(_ROUND_RE) or 0),
@@ -224,14 +249,11 @@ def parse(text: str) -> Report:
         commits=commits,
         date=date,
         results=results,
-        defects=_defects(section_body(text, "## Defects")),
-        regression_ran=bool(reg.strip())
-        and not reg.strip().lower().startswith(_NO_REGRESSION),
-        regression_failed=_keys(reg, "failed"),
+        defects=defects,
+        regression_ran=bool(run) and run.group(1).lower() == "yes",
+        regression_failed=_failed_keys(_keys(reg, "failed"), defects, rds),
         known=_keys(reg, "known"),
-        regression_defects=_regression_defects(
-            section_body(text, "## Regression defects")
-        ),
+        regression_defects=rds,
         review_passed=_review_passed(text),
     )
 
@@ -273,6 +295,46 @@ def _defect_issues(r: Report, children: tuple[str, ...]) -> list[Issue]:
                     "rep-rd-story",
                 )
             )
+    return issues
+
+
+def _regression_issues(norm: str, r: Report) -> list[Issue]:
+    """`## Regression` block (spec D6): `Run:`, `Failed:`, `Known:` lines."""
+    reg = section_body(norm, "## Regression") or ""
+    out = lambda m: _err(m, "rep-regression")  # noqa: E731
+    issues = []
+    if not _RUN_RE.search(reg):
+        issues.append(out("Regression: needs `Run: yes` or `Run: no (<reason>)`"))
+    elif r.verdict == "PASS" and not r.regression_ran:
+        issues.append(out("a PASS report needs `Run: yes` under ## Regression"))
+    lines = {m.group(1).lower(): m.group(2) for m in _LIST_LINE_RE.finditer(reg)}
+    for label in ("failed", "known"):
+        raw = lines.get(label)
+        if raw is None:
+            if r.regression_ran:
+                issues.append(out(f"Regression: needs a `{label.title()}:` line"))
+            continue
+        items = [i.strip() for i in raw.split(",")]
+        if items == ["none"]:
+            continue
+        bad = [i for i in items if not _FULL_KEY_RE.fullmatch(i)]
+        if bad:
+            issues.append(
+                out(
+                    f"Regression: `{label.title()}:` needs `<story>/TC-<k>` keys "
+                    f"or `none`, got {', '.join(bad)}"
+                )
+            )
+    listed = set(_keys(reg, "failed"))
+    for rd in r.regression_defects:
+        if rd.story and not rd.tc:
+            issues.append(out(f"{rd.rd_id}: Story needs a TC (`Story: <id> · TC-<k>`)"))
+    for d in (d for d in r.defects if d.regression and d.broken_tc):
+        if not broken_key(d.broken_tc):
+            issues.append(out(f"{d.defect_id}: Broken TC needs `<story> TC-<k>`"))
+    for key in r.regression_failed:
+        if key not in listed:
+            issues.append(out(f"{key} is a regression failure but not in `Failed:`"))
     return issues
 
 
@@ -405,6 +467,7 @@ def lint(
     issues += _results_issues(norm, r)
     issues += _verdict_issues(r)
     issues += _flag_issues(norm)
+    issues += _regression_issues(norm, r)
     issues += _defect_issues(r, story_children)
     issues += _image_issues(text, report_dir)
     issues += _dotenv_issues(text, repo_root) + _credential_issues(text)

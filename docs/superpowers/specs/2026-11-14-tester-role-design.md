@@ -410,9 +410,12 @@ Based on ISO/IEC/IEEE 29119-3 test completion report + incident report fields
   Broken TC: <closed story id> TC-<k> · Baseline: R<m> @ <commits> passed
   Overlap: <page/route/service> ↔ <file> in <child PR>
   Steps to reproduce · Expected · Actual · Evidence · Environment
-## Regression         suite size, passed, failed
+## Regression         the whole-suite run, exactly these lines, then the counts:
+Run: yes | no (<reason>)
+Failed: <closed story id>/TC-<k>, … | none
+Known: <closed story id>/TC-<k>, … | none
 ## Regression defects one per confirmed regression failure:
-### RD1 — <symptom>  Story: <closed story id> · TC · Severity · Priority
+### RD1 — <symptom>  Story: <closed story id> · TC-<k> · Severity · Priority
   Steps to reproduce · Expected · Actual · Evidence · Environment
 ## Environment & data seeds used, deviations
 ## Review record
@@ -436,7 +439,11 @@ Based on ISO/IEC/IEEE 29119-3 test completion report + incident report fields
   a committed report); every defect has a guilty child that belongs to the
   story; every defect has `Regression: yes|no`, and every `yes` defect has
   its broken TC, baseline (or "no baseline") and overlap lines; every
-  regression defect names a `closed` story; every image exists;
+  regression defect names a `closed` story; a `PASS` report has `Run: yes`
+  under `## Regression`, its `Failed:`/`Known:` keys are `<story>/TC-<k>`,
+  and every `RD<k>` key and every `Regression: yes` broken TC key is on the
+  `Failed:` line (the parser's failed keys are that line, the RD keys and the
+  `Regression: yes` broken TC keys); every image exists;
   no env var value or credential-looking string in the text.
 
 ### D7. Claims for the Tester

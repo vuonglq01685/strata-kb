@@ -15,9 +15,17 @@
   Broken TC: <closed story id> TC-<k> · Baseline: R<m> @ <commits> passed
   Overlap: <page/route/service> ↔ <file> in <child PR>
   Steps to reproduce · Expected · Actual · Evidence · Environment
-## Regression         suite size, passed, failed
+## Regression         the whole-suite run of every closed story, exactly these lines:
+Run: yes | no (<reason>)
+Failed: <closed story id>/TC-<k>, … | none
+Known: <closed story id>/TC-<k>, … | none
+  `Run: no (<reason>)` only when a story TC failed or the round is FAIL; a PASS
+  report always says `Run: yes`. `Failed:` lists every confirmed regression
+  failure (each `Regression: yes` defect's broken TC and each RD's story/TC);
+  `Known:` lists failures the hub already knows (not new defects). Then the
+  suite size, passed and failed counts.
 ## Regression defects one per confirmed regression failure:
-### RD1 — <symptom>  Story: <closed story id> · TC · Severity · Priority
+### RD1 — <symptom>  Story: <closed story id> · TC-<k> · Severity · Priority
   Steps to reproduce · Expected · Actual · Evidence · Environment
 ## Environment & data seeds used, deviations
 ## Review record

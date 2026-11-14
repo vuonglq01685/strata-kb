@@ -67,7 +67,7 @@ def test_test_story_body_pins_outcomes_and_rules():
         "AUTO-RESULT: failed test-review",
         "Alternate flows coverage",
         "reopened",
-        "known: ",
+        "`Known:` line",
         "`retries`",
     ):
         assert phrase in t, phrase
@@ -184,3 +184,27 @@ def test_body_uses_the_exact_allowed_curl_and_has_a_default_branch_fallback():
     assert "git remote show origin" in t and "HEAD branch:" in t
     assert "when your branch lacks them" not in t
     assert "first app in `apps`" in _body("tester-env-setup")
+
+
+def test_skill_regression_block_matches_the_report_parser():
+    import re
+
+    from strata_kb import testreport
+    from tests.test_testreport import _report
+
+    skill = _body("tester-test-story")
+    block = re.search(r"```\n\s*(## Regression\n.*?)```", skill, re.S)
+    assert block, "skill must show the `## Regression` block it writes"
+    lines = [ln.strip() for ln in block.group(1).splitlines()]
+    body = "\n".join(lines[1:]).strip()
+    r = testreport.parse(_report(regression=body))
+    assert r.regression_ran
+    assert r.regression_failed == ("ST-0/TC-3", "ST-0/TC-4")
+    assert r.known == ("ST-0/TC-5",)
+    assert "known: <story> R<n>" not in skill
+
+
+def test_skill_stops_when_the_known_failures_call_fails():
+    t = _body("tester-test-story")
+    assert "exits non-zero" in t and "stop the round" in t
+    assert "never treat a" in t

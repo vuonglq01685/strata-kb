@@ -6,6 +6,8 @@ from strata_kb import testreport
 
 STORY = "ST-1"
 KIDS = ("ST-1.web", "ST-1.api")
+REG_TC3 = "Run: yes\nFailed: ST-0/TC-3\nKnown: none"
+REG_OK = "Run: yes\nFailed: none\nKnown: none\nsize 4, passed 4, failed 0"
 
 
 def _report(
@@ -16,6 +18,7 @@ def _report(
     rds: str = "",
     review: str = "| Q2 | 2 | pass |",
     extra: str = "",
+    regression: str = REG_OK,
 ) -> str:
     return (
         "# R1 — ST-1 — Show airspace\n"
@@ -25,7 +28,7 @@ def _report(
         "## Summary\n1/1 TCs, 0 defects, 0 regression defects\n\n"
         f"## Results by AC\n| AC | TC | Result | Script | Evidence |\n|---|---|---|---|---|\n{rows}\n\n"
         f"## Defects\n{defects}\n"
-        "## Regression\nsize 4, passed 4, failed 0\n\n"
+        f"## Regression\n{regression}\n\n"
         f"## Regression defects\n{rds}\n"
         f"## Environment & data seeds\nstaging, seed a. {extra}\n\n"
         f"## Review record\n| Review | Round | Verdict |\n|---|---|---|\n{review}\n"
@@ -83,17 +86,18 @@ def test_incomplete_verdict_is_refused(tmp_path):
 
 
 def test_regression_yes_defect_needs_baseline_and_overlap(tmp_path):
-    bad = _report(verdict="FAIL", defects=_d(1, reg="yes"))
+    bad = _report(verdict="FAIL", defects=_d(1, reg="yes"), regression=REG_TC3)
     err = _errors(_lint(tmp_path, bad))
     assert "Broken TC" in err and "Baseline" in err and "Overlap" in err
-    ok = _report(verdict="FAIL", defects=_d(1, reg="yes", more=YES))
+    ok = _report(verdict="FAIL", defects=_d(1, reg="yes", more=YES), regression=REG_TC3)
     assert _lint(tmp_path, ok).passed
     r = testreport.parse(ok)
     assert r.defects[0].broken_tc == "ST-0 TC-3" and r.defects[0].regression
     nb = YES.replace("Baseline: R1 @ abc passed", "Baseline: no baseline")
-    assert _lint(
-        tmp_path, _report(verdict="FAIL", defects=_d(1, reg="yes", more=nb))
-    ).passed
+    nb_report = _report(
+        verdict="FAIL", defects=_d(1, reg="yes", more=nb), regression=REG_TC3
+    )
+    assert _lint(tmp_path, nb_report).passed
 
 
 def test_defect_without_regression_flag_is_error(tmp_path):
@@ -111,23 +115,12 @@ def test_guilty_child_must_belong_to_story(tmp_path):
 
 def test_regression_defect_must_name_other_story(tmp_path):
     rd = "### RD1 — old   Story: ST-0 · TC-3 · S2 · P1\n\n"
-    ok = _report(rds=rd, rows="| AC1 | TC-01 | PASS | s | |")
+    ok = _report(rds=rd, rows="| AC1 | TC-01 | PASS | s | |", regression=REG_TC3)
     r = testreport.parse(ok)
     assert r.regression_defects[0].key == "ST-0/TC-3"
     assert _lint(tmp_path, ok).passed
-    same = _report(rds=rd.replace("ST-0", STORY))
+    same = _report(rds=rd.replace("ST-0", STORY), regression=REG_TC3)
     assert "RD1" in _errors(_lint(tmp_path, same))
-
-
-def test_regression_failed_and_known_parse():
-    text = _report().replace(
-        "size 4, passed 4, failed 0",
-        "size 4, passed 2, failed 2\nFailed: ST-0/TC-3, ST-0/TC-4\nknown: ST-0/TC-4",
-    )
-    r = testreport.parse(text)
-    assert r.regression_ran
-    assert r.regression_failed == ("ST-0/TC-3", "ST-0/TC-4")
-    assert r.known == ("ST-0/TC-4",)
 
 
 def test_dotenv_value_in_report_is_error_without_echoing_it(tmp_path):
@@ -202,6 +195,12 @@ def _from_template(*, fail: bool) -> str:
         "tests/ST-1/test-cases.md @ 1a2b3c4",
     )
     t = t.replace("tests/…/tc01.spec.ts", "tests/ST-1/tc01.spec.ts")
+    t = t.replace("Run: yes | no (<reason>)", "Run: yes", 1)
+    t = t.replace(
+        "Failed: <closed story id>/TC-<k>, … | none",
+        "Failed: ST-0/TC-3, ST-0/TC-4" if fail else "Failed: none",
+    )
+    t = t.replace("Known: <closed story id>/TC-<k>, … | none", "Known: none")
     if fail:
         t = t.replace(
             "<symptom>   Guilty: <child id>", "wrong level   Guilty: ST-1.web", 2
@@ -214,8 +213,8 @@ def _from_template(*, fail: bool) -> str:
             "<page/route/service> ↔ <file> in <child PR>", "/airspace ↔ a.ts in PR 4"
         )
         t = t.replace(
-            "<symptom>  Story: <closed story id> · TC ·",
-            "old bug  Story: ST-0 · TC-3 ·",
+            "<symptom>  Story: <closed story id> · TC-<k> ·",
+            "old bug  Story: ST-0 · TC-4 ·",
         )
     else:
         a, b = t.index("### D1"), t.index("## Regression  ")
@@ -234,7 +233,7 @@ def test_real_template_fail_variant_lints_clean(tmp_path):
     text = _from_template(fail=True)
     r = testreport.parse(text)
     assert [d.regression for d in r.defects] == [False, True]
-    assert r.regression_defects[0].key == "ST-0/TC-3"
+    assert r.regression_defects[0].key == "ST-0/TC-4"
     rep = _lint(tmp_path, text)
     assert rep.passed, rep.render("REPORT")
 
@@ -255,7 +254,10 @@ def test_hex_secret_in_body_flagged_but_header_commit_is_not(tmp_path):
     assert _lint(tmp_path, ok).passed
     base = YES.replace("R1 @ abc passed", f"R1 @ {sha} passed")
     assert _lint(
-        tmp_path, _report(verdict="FAIL", defects=_d(1, reg="yes", more=base))
+        tmp_path,
+        _report(
+            verdict="FAIL", defects=_d(1, reg="yes", more=base), regression=REG_TC3
+        ),
     ).passed
 
 
@@ -306,3 +308,86 @@ def test_children_fall_back_to_ticket_split_table(tmp_path):
     finally:
         planparents.children = orig
     assert seen == [("ticket", STORY)]
+
+
+# --- regression block contract (spec D6) -------------------------------------
+
+GOLDEN = Path(__file__).parent / "data" / "tester_report_golden.md"
+
+
+def _golden() -> str:
+    return GOLDEN.read_text(encoding="utf-8")
+
+
+def _three_rows() -> str:
+    return "\n".join(
+        f"| AC{k} | TC-0{k} | PASS | tests/ST-1/tc0{k}.spec.ts | |" for k in (1, 2, 3)
+    )
+
+
+def test_golden_report_parses_to_the_failed_and_known_keys():
+    r = testreport.parse(_golden())
+    assert r.regression_ran
+    assert r.regression_failed == ("ST-0/TC-3", "ST-0/TC-4")
+    assert r.known == ("ST-0/TC-5",)
+    assert [d.regression for d in r.defects] == [True]
+    assert r.regression_defects[0].key == "ST-0/TC-4"
+
+
+def test_golden_report_lints_clean(tmp_path):
+    rep = _lint(tmp_path, _golden())
+    assert rep.passed, rep.render("REPORT")
+
+
+def test_failed_keys_include_rd_and_regression_defect_keys():
+    reg = "Run: yes\nFailed: none\nKnown: none"
+    rd = "### RD1 — old   Story: ST-0 · TC-4 · S2 · P1\n\n"
+    d = _d(
+        1,
+        reg="yes",
+        more="Broken TC: ST-0 TC-3 · Baseline: no baseline\nOverlap: /a ↔ b\n",
+    )
+    r = testreport.parse(_report(verdict="FAIL", defects=d, rds=rd, regression=reg))
+    assert set(r.regression_failed) == {"ST-0/TC-3", "ST-0/TC-4"}
+
+
+def test_regression_ran_only_from_run_yes():
+    for block, ran in (
+        ("Run: yes\nFailed: none\nKnown: none", True),
+        ("Run: no (story TCs failed)\nFailed: none\nKnown: none", False),
+        ("size 4, passed 4, failed 0", False),
+        ("", False),
+    ):
+        assert testreport.parse(_report(regression=block)).regression_ran is ran
+
+
+def test_pass_report_needs_run_yes(tmp_path):
+    no = "Run: no (skipped)\nFailed: none\nKnown: none"
+    assert "Run: yes" in _errors(_lint(tmp_path, _report(regression=no)))
+    assert "Run: yes" in _errors(_lint(tmp_path, _report(regression="")))
+    fail = _report(
+        verdict="FAIL",
+        regression=no,
+        defects=_d(1),
+    )
+    assert _lint(tmp_path, fail).passed
+
+
+def test_rd_and_regression_defect_keys_must_be_listed_as_failed(tmp_path):
+    rd = "### RD1 — old   Story: ST-0 · TC-3 · S2 · P1\n\n"
+    assert "ST-0/TC-3" in _errors(_lint(tmp_path, _report(rds=rd)))
+    ok = _report(rds=rd, regression=REG_TC3)
+    assert _lint(tmp_path, ok).passed
+    d = _d(1, reg="yes", more=YES)
+    miss = _report(verdict="FAIL", defects=d)
+    assert "ST-0/TC-3" in _errors(_lint(tmp_path, miss))
+
+
+def test_malformed_regression_keys_are_errors(tmp_path):
+    for line in ("Failed: ST-0 TC-3", "Failed: ST-0/TC-x", "Known: nothing"):
+        label = line.split(":")[0]
+        other = "Known: none" if label == "Failed" else "Failed: none"
+        reg = f"Run: yes\n{line}\n{other}"
+        assert "rep-regression" in [
+            i.code for i in _lint(tmp_path, _report(regression=reg)).issues
+        ], line

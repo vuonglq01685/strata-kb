@@ -8,7 +8,7 @@ from strata_kb import models, planingest, planstatus, testflow, ticketclaim
 from strata_kb.hub import HubHandle
 from tests.conftest import make_fed_entry
 from tests.test_missionlint import MISSION_ID
-from tests.test_testreport import _d, _report
+from tests.test_testreport import REG_OK, _d, _report
 
 STORY = f"{MISSION_ID}-US2"  # the published ticket of the `plan_hub` plan
 KIDS = (f"{STORY}.web", f"{STORY}.api")
@@ -21,13 +21,14 @@ def _text(
     *,
     guilty: str = "",
     date: str = "2026-11-14",
-    regression: str = "size 4, passed 4, failed 0",
+    regression: str = REG_OK,
     rds: str = "",
 ) -> str:
     text = _report(
         verdict=verdict,
         defects=_d(1, guilty) if guilty else "",
         rds=rds,
+        regression=regression,
         rows=f"| AC1 | TC-01 | {'PASS' if verdict == 'PASS' else 'FAIL'} | a.ts | |",
     )
     return (
@@ -35,7 +36,6 @@ def _text(
         .replace("Round: 1", f"Round: {n}")
         .replace("# R1", f"# R{n}")
         .replace("2026-11-14", date)
-        .replace("size 4, passed 4, failed 0", regression)
     )
 
 
@@ -160,12 +160,9 @@ def test_missing_claims_db_means_no_testing(plan_hub):
     assert not ticketclaim.claims_db_path(plan_hub.root).exists()
 
 
-def _failed(*keys: str, date: str, ran: bool = True) -> str:
-    return (
-        "size 4, passed 2, failed 2\nFailed: " + ", ".join(keys)
-        if keys
-        else "size 4, passed 4, failed 0"
-    )
+def _failed(*keys: str, known: tuple[str, ...] = ()) -> str:
+    failed = ", ".join(keys) or "none"
+    return f"Run: yes\nFailed: {failed}\nKnown: {', '.join(known) or 'none'}"
 
 
 def test_known_failure_dedupes_and_closes():
@@ -175,12 +172,10 @@ def test_known_failure_dedupes_and_closes():
         1,
         "FAIL",
         date="2026-11-10",
-        regression=_failed("ST-0/TC-3", date=""),
+        regression=_failed("ST-0/TC-3"),
         rds=rd,
     )
-    b = _rep(
-        "ST-B", 1, "FAIL", date="2026-11-11", regression=_failed("ST-0/TC-3", date="")
-    )
+    b = _rep("ST-B", 1, "FAIL", date="2026-11-11", regression=_failed("ST-0/TC-3"))
     facts = _facts(reports={"ST-A": (a,), "ST-B": (b,)})
     known = testflow.known_failures(facts)
     assert known["ST-0/TC-3"].story == "ST-A"
@@ -280,3 +275,96 @@ def test_doctor_reports_duplicate_testers_only_for_hub_and_tester(git_kb, plan_h
 
     assert errors("ba") == [] and errors("dev") == []
     assert len(errors("tester")) == 1
+
+
+def test_rd_and_regression_defect_keys_open_known_failures():
+    rd = "### RD1 — old bug   Story: ST-0 · TC-4 · S2 · P1\n\n"
+    rep = _rep("ST-A", 1, rds=rd, regression=_failed(), date="2026-11-10")
+    assert testflow.known_failures(_facts(reports={"ST-A": (rep,)})) == {
+        "ST-0/TC-4": testflow.KnownFailure("ST-0/TC-4", "ST-A", 1, "RD1")
+    }
+
+
+def test_round_that_skipped_regression_closes_nothing():
+    a = _rep(
+        "ST-A",
+        1,
+        "FAIL",
+        guilty="ST-A.web",
+        regression=_failed("ST-0/TC-3"),
+        date="2026-11-10",
+    )
+    skipped = _rep(
+        "ST-B",
+        1,
+        "FAIL",
+        guilty="ST-B.web",
+        date="2026-11-11",
+        regression="Run: no (story TCs failed)\nFailed: none\nKnown: none",
+    )
+    facts = _facts(reports={"ST-A": (a,), "ST-B": (skipped,)})
+    assert list(testflow.known_failures(facts)) == ["ST-0/TC-3"]
+
+
+def test_known_listing_keeps_the_key_open_and_counts_a_duplicate():
+    a = _rep("ST-A", 1, regression=_failed("ST-0/TC-3"), date="2026-11-10")
+    b = _rep("ST-B", 1, regression=_failed(known=("ST-0/TC-3",)), date="2026-11-11")
+    known = testflow.known_failures(_facts(reports={"ST-A": (a,), "ST-B": (b,)}))
+    assert known["ST-0/TC-3"].duplicates == ("ST-B R1",)
+
+
+# --- golden report: skill output -> report-ingest -> hub -> known failures ----
+
+
+def _publish_ingested(hub: Path, tmp_path: Path, report: str) -> testflow.TestFacts:
+    """Run `kb report-ingest` on a tester repo holding `report` and copy the
+    generated `shop-test` document into the hub as a federation entry."""
+    import shutil
+
+    from tests.test_testingest import run_tests, write_repo
+
+    root = tmp_path / "tester"
+    root.mkdir()
+    write_repo(root, report=report)
+    assert run_tests(root).skipped == []
+    entry = make_fed_entry(
+        hub / "federation", "shop", "shop-test", title="shop — tests",
+        tags=["test", "generated"],
+    )  # fmt: skip
+    shutil.rmtree(entry / "shop-test")
+    shutil.copytree(root / "kb" / "shop-test", entry / "shop-test")
+    return testflow.load_facts(HubHandle(root=hub))
+
+
+def test_golden_report_end_to_end_opens_dedupes_and_closes(plan_hub, tmp_path):
+    from tests.test_testreport import _golden
+
+    facts = _publish_ingested(plan_hub.root, tmp_path, _golden())
+    (rep,) = facts.reports["ST-1"]
+    assert rep.regression_failed == ("ST-0/TC-3", "ST-0/TC-4")
+    assert rep.known == ("ST-0/TC-5",)
+    open_ = testflow.known_failures(facts)
+    assert set(open_) == {"ST-0/TC-3", "ST-0/TC-4"}
+    assert open_["ST-0/TC-4"].rd_id == "RD1" and open_["ST-0/TC-4"].story == "ST-1"
+
+    other = _rep("ST-9", 1, regression=_failed("ST-0/TC-4"), date="2026-11-15")
+    dup = testflow.known_failures(
+        _facts(reports={"ST-1": facts.reports["ST-1"], "ST-9": (other,)})
+    )
+    assert dup["ST-0/TC-4"].duplicates == ("ST-9 R1",)
+    assert "ST-0/TC-3" not in dup  # ST-9 ran the suite and TC-3 passed
+
+    clean = _rep("ST-9", 1, date="2026-11-15")  # regression ran, nothing failed
+    closed = testflow.known_failures(
+        _facts(reports={"ST-1": facts.reports["ST-1"], "ST-9": (clean,)})
+    )
+    assert closed == {}
+
+    skipped = _rep(
+        "ST-9", 1, "FAIL", guilty="ST-9.web", date="2026-11-15",
+        regression="Run: no (story TCs failed)\nFailed: none\nKnown: none",
+    )  # fmt: skip
+    kept = testflow.known_failures(
+        _facts(reports={"ST-1": facts.reports["ST-1"], "ST-9": (skipped,)})
+    )
+    assert set(kept) == {"ST-0/TC-3", "ST-0/TC-4"}

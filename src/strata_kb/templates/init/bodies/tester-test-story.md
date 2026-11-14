@@ -103,10 +103,13 @@ first; when it is missing, stop and tell the Tester to run
       confirmed regression failure:
       - Key it `<closed story id>/TC-<k>` and ask the hub:
         `curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" "$STRATA_KB_HUB_URL/api/tests/known-failures"`
-        (a GET; use exactly this shape). If the key has an
-        open known-failure, it is not a new defect and not attributed to
-        this story: list it under `## Regression` as
-        `known: <story> R<n> RD<k>` (or `BUG-<n>`), and move on. Never print
+        (a GET; use exactly this shape; it answers a JSON object whose keys
+        are the open known failures). If curl exits non-zero or the answer is
+        empty or not a JSON object, **stop the round** and release whatever is
+        held (`kb test-env unlock`, `kb claim release <story>`): never treat a
+        failed call as "no known failures". If the key is an open known
+        failure, it is not a new defect and not attributed to this story: list
+        it on the `Known:` line of `## Regression` and move on. Never print
         the token.
       - Otherwise attribute it with `kb test-env changed <story>` (the files
         this story's child PRs changed). It is a **story regression** only
@@ -123,7 +126,8 @@ first; when it is missing, stop and tell the Tester to run
         on a guess.
    6. **Post-check.** `kb test-env version` again. A changed commit means
       the round is void: `BLOCKED-ENV`. Then `kb test-env unlock`.
-   A round whose story TCs failed skips the regression run.
+   A round whose story TCs failed skips the regression run; its report says
+   `Run: no (story TCs failed)`.
 9. **Round outcome.**
    | Outcome | When |
    |---|---|
@@ -144,9 +148,24 @@ first; when it is missing, stop and tell the Tester to run
     the story, `Regression: yes|no`, steps to reproduce, expected, actual,
     evidence and environment; a `Regression: yes` defect also carries its
     broken TC, baseline and overlap lines. One `### RD<k>` per outside
-    regression, naming the `closed` story. Evidence images are PNG or WebP
+    regression, naming the `closed` story and its TC
+    (`Story: <closed story id> · TC-<k>`). Evidence images are PNG or WebP
     under `reports/<story>/assets/`. No env var value or credential in the
-    text. Run `kb report lint reports/<story>/R<n>.md` until it exits 0.
+    text. Write `## Regression` as exactly these lines (a PASS report always
+    says `Run: yes`; every key is `<closed story id>/TC-<k>`):
+
+    ```
+    ## Regression
+    Run: yes
+    Failed: ST-0/TC-3, ST-0/TC-4
+    Known: ST-0/TC-5
+    ```
+
+    or `Run: no (<reason>)` when the regression run was skipped. `Failed: none`
+    and `Known: none` when empty. `Failed:` holds every confirmed regression
+    failure that is new: each `Regression: yes` defect's broken TC and each
+    `RD<k>`'s story and TC; `Known:` holds the keys the hub already knew.
+    Run `kb report lint reports/<story>/R<n>.md` until it exits 0.
 11. **Q2 review.** Dispatch the `test-report-reviewer` subagent under the
     review contract below. It checks that the verdict follows the evidence,
     every defect was reproduced through MCP and assigned to the right child,
