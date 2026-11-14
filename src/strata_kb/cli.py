@@ -460,6 +460,16 @@ def init(
             "  4. kb publish    (or /kb-publish)"
             "  # sends the plan; needs intake: and a hub registry entry"
         )
+    elif resolved == "tester":
+        typer.echo("  1. Fill hub: and intake: in .kb/config.yaml")
+        typer.echo(
+            "  2. kb mcp-setup   (or /kb-mcp-setup)"
+            "  # writes STRATA_KB_HUB_URL / STRATA_KB_HTTP_TOKEN into .env"
+        )
+        typer.echo(
+            "  3. Open this repo in Claude Code / Copilot Chat / Cursor and "
+            "run /tester-env-setup"
+        )
     else:  # dev
         typer.echo(
             "  1. Fill hub: in .kb/config.yaml with the main hub URL/path — "
@@ -480,6 +490,7 @@ def init(
     quickstart_name = {
         "ba": "QUICKSTART-BA.md",
         "dev": "QUICKSTART-DEV.md",
+        "tester": "QUICKSTART-TESTER.md",
     }.get(resolved, "QUICKSTART.md")
     typer.echo(f"  (details: {quickstart_name})")
 
@@ -490,7 +501,7 @@ def upgrade(
         False, "--no-pr", help="Stop after the commit: no push, no PR."
     ),
 ) -> None:
-    """Refresh this ba/dev repo's scaffold on a new branch and open a PR (never merges)."""
+    """Refresh this ba/dev/tester repo's scaffold on a new branch and open a PR (never merges)."""
     from strata_kb.upgradecmd import upgrade as run_upgrade
 
     result = run_upgrade(Path("."), open_pr=not no_pr)

@@ -3287,7 +3287,7 @@ def test_an_old_pdf_only_source_gitignore_is_refreshed_on_re_init(tmp_path):
     assert text.splitlines()[1:] == ["*", "!.gitignore"]
 
 
-@pytest.mark.parametrize("kind", ["hub", "child", "ba", "dev"])
+@pytest.mark.parametrize("kind", ["hub", "child", "ba", "dev", "tester"])
 def test_kind_flag_round_trips_every_value(tmp_path: Path, kind: str):
     # RepoKind is a StrEnum (1.14.1): the value typer hands back must still be
     # the bare string that lands in config.yaml, for every kind.

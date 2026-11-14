@@ -245,6 +245,37 @@ def scaffold_dev_local_overrides(target: Path, report: InitReport) -> None:
     _scaffold_local_overrides(target, report, DEV_LOCAL_OVERRIDES)
 
 
+# Created once, never refreshed — the tester repo's own review criteria.
+TESTER_LOCAL_OVERRIDES: dict[str, str] = {
+    "docs/test-review-rubric.local.md": "test-review-rubric-local-stub.md",
+    CODEOWNERS_PATH: "codeowners-tester",
+}
+
+
+def scaffold_tester_local_overrides(target: Path, report: InitReport) -> None:
+    """Create the tester repo's create-once files (`.local.md` override, CODEOWNERS)."""
+    _scaffold_local_overrides(target, report, TESTER_LOCAL_OVERRIDES)
+
+
+# Kind `tester` — system/integration test repo. Consumes the shared KB and
+# tickets, publishes only its generated `<repo_id>-test` report document.
+# Skill wrappers are added with the tester skills.
+TESTER_TEMPLATES: dict[str, str] = {
+    **MCP_CLIENT_TEMPLATES,
+    ".kb/config.yaml": "config-tester.yaml",
+    ".gitattributes": "gitattributes-child.txt",
+    ".mcp.json": "mcp-tester.json",
+    ".cursor/mcp.json": "cursor-mcp-tester.json",
+    ".claude/settings.json": "claude-settings-auto.json",
+    "QUICKSTART-TESTER.md": "QUICKSTART-tester.md",
+    "docs/test-review-rubric.md": "test-review-rubric.md",
+    "docs/templates/test-cases.md": "test-cases-template.md",
+    "docs/templates/test-report.md": "test-report-template.md",
+    ".kb/test-env.example.yaml": "test-env.example.yaml",
+    "tests/fixtures/login.ts": "playwright-login-fixture.ts",
+}
+
+
 # Kind `dev` — product code repo. It consumes the shared KB while implementing
 # BA tickets and publishes knowledge about its OWN source code. Like
 # BA_TEMPLATES this is deliberately NOT merged with COMMON_TEMPLATES: a dev
@@ -345,6 +376,7 @@ SCAFFOLDED_WORKFLOW_NAMES: frozenset[str] = frozenset(
         CHILD_TEMPLATES,
         BA_TEMPLATES,
         DEV_TEMPLATES,
+        TESTER_TEMPLATES,
     )
     for rel in templates
     if rel.startswith(".github/workflows/")
@@ -416,6 +448,17 @@ _PLAN_DOC_LINE = ".kb/*-plan/"
 _BA_INDEX_LINE = ".kb/index.yaml"
 # Full-auto runner state and logs: local to the machine running it.
 _AUTO_DIR_LINE = ".kb/auto/"
+# Tester repo: secrets, Playwright output, the local run log, generated
+# `-test` doc, and tickets fetched next to a story's cases.
+_TESTER_IGNORE_LINES = (
+    ".kb/*-test/",
+    _AUTO_DIR_LINE,
+    ".env",
+    "test-results/",
+    "playwright-report/",
+    ".kb/runlog/",
+    "tests/*/ticket.md",
+)
 
 
 def _ensure_kb_doc_ignored(target: Path, line: str, report: InitReport) -> None:
@@ -472,8 +515,7 @@ def template_map(kind: str) -> dict[str, str]:
     if kind == KIND_DEV:
         return dict(DEV_TEMPLATES)
     if kind == KIND_TESTER:
-        # Task 2 adds the tester scaffold; until then fail cleanly.
-        raise ValueError("kind 'tester' has no scaffold templates yet")
+        return dict(TESTER_TEMPLATES)
     extra = HUB_TEMPLATES if kind == KIND_HUB else CHILD_TEMPLATES
     return {**COMMON_TEMPLATES, **extra}
 
@@ -832,7 +874,7 @@ def init_repo(
         if rel == ".gitignore":
             _apply_gitignore(dest, text, report)
             continue
-        if rel == _SETTINGS_REL and kind in (KIND_BA, KIND_DEV):
+        if rel == _SETTINGS_REL and kind in (KIND_BA, KIND_DEV, KIND_TESTER):
             continue  # merged by _apply_settings, once the langs are known
         if dest.exists() and rel in PROTECTED_FILES and not force:
             report.skipped.append(rel)
@@ -848,6 +890,10 @@ def init_repo(
         _ensure_kb_doc_ignored(target, _BA_INDEX_LINE, report)
         _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
         scaffold_ba_local_overrides(target, report)
+    if kind == KIND_TESTER:
+        for line in _TESTER_IGNORE_LINES:
+            _ensure_kb_doc_ignored(target, line, report)
+        scaffold_tester_local_overrides(target, report)
     if kind == KIND_DEV:
         _ensure_kb_doc_ignored(target, _CODE_DOC_LINE, report)
         _ensure_kb_doc_ignored(target, _AUTO_DIR_LINE, report)
@@ -874,7 +920,7 @@ def init_repo(
                     f"langs: [{', '.join(recorded)}]; hand-edit langs: there "
                     "to change it"
                 )
-    if kind in (KIND_BA, KIND_DEV):
+    if kind in (KIND_BA, KIND_DEV, KIND_TESTER):
         _apply_settings(
             target / _SETTINGS_REL,
             _render(
