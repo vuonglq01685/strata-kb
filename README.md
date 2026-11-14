@@ -92,7 +92,7 @@ automatic. A ticket or spec cites sections in a
 `kb-context` block pinned to the hub's commit, so `kb resolve` can tell you
 later whether what it cited still says the same thing.
 
-### Federation: hub, child, ba, dev
+### Federation: hub, child, ba, dev, tester, tester
 
 One repo holds the shared, searchable copy; the others author or consume.
 
@@ -108,6 +108,10 @@ One repo holds the shared, searchable copy; the others author or consume.
                     +---------+        read-only
                     |   hub   |<------------------ ba
                     +----+----+        (publishes its own plan)
+                         |   ^
+                         |   |  read-only
+                         |   +--------------- tester
+                         |        (publishes its own -test doc, by PR)
                          |
               kb query / MCP / Web UI
 ```
@@ -176,7 +180,7 @@ keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Does not host the shared service. | [Child](docs/src/guide-child.en.md) |
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets and mission plans grounded in the KB, gated by CI Definition-of-Ready checks. Publishes only its own plan (`<repo_id>-plan`). | [BA](docs/src/guide-ba.en.md) |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through an agent workflow. Publishes knowledge about *its own code* (`-code` generated, `-svc` curated), never outside documents. | [Dev](docs/src/guide-dev.en.md) |
-| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a signed `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup` and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
+| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup` and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and the
 MCP client is wired in `.mcp.json` and `.cursor/mcp.json`; each guide lists them
