@@ -306,3 +306,22 @@ SEVERITIES: tuple[str, ...] = ("S1", "S2", "S3", "S4")
 # tell "line absent" from "line present but blank".
 SEVERITY_RE = re.compile(r"^>[ \t]*Severity:[ \t]*(.*?)[ \t]*$", re.M)
 RELATED_TICKET_RE = re.compile(r"^>[ \t]*Related ticket:[ \t]*(.*?)[ \t]*$", re.M)
+
+
+_LIST_ITEM_RE = re.compile(r"^(?:[-*]|\d+\.)\s+(.+)$")
+
+
+def alternate_flows(text: str) -> list[str]:
+    """Visible list items under `### Alternate / exception flows` inside
+    `## Use cases`; `[]` when the subsection is absent."""
+    items: list[str] = []
+    in_uc = in_alt = False
+    for raw in mdmask._visible_text(text).splitlines():
+        line = raw.strip()
+        if line.startswith("# ") or line.startswith("## "):
+            in_uc, in_alt = line == "## Use cases", False
+        elif in_uc and line.startswith("#"):
+            in_alt = line == "### Alternate / exception flows"
+        elif in_alt and (m := _LIST_ITEM_RE.match(line)):
+            items.append(m.group(1).strip())
+    return items

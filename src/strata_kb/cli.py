@@ -122,6 +122,9 @@ app.add_typer(claim_app, name="claim")
 test_env_app = typer.Typer(help="Tester repo: the declared test environment.")
 app.add_typer(test_env_app, name="test-env")
 
+testcase_app = typer.Typer(help="Tester repo: test case specs.")
+app.add_typer(testcase_app, name="testcase")
+
 l3_app = typer.Typer(help="L3 fidelity review: findings and reviewer confirmation.")
 app.add_typer(l3_app, name="l3")
 
@@ -4837,6 +4840,49 @@ _KB_DIR_OPT = typer.Option(Path(".kb"), help="KB directory")
 def _exit_with(code: int) -> None:
     if code:
         raise typer.Exit(code)
+
+
+@testcase_app.command("lint")
+def testcase_lint(
+    file: Path = typer.Argument(..., help="Test case spec file"),
+    ticket: Path | None = typer.Option(
+        None, "--ticket", help="Fetched ticket (default tests/<story>/ticket.md)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: bool = typer.Option(False, "--hub", help="Fetch the ticket from the hub"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check a test case spec against its ticket. Exit 0 PASS, 1 FAIL."""
+    from strata_kb import testcases, ticketfetch
+
+    try:
+        text = file.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    story = testcases.parse(text).story
+    spec_dir = Path("tests") / story
+    ticket_text: str | None = None
+    if hub:
+        try:
+            ticket_text = ticketfetch.render(_hub_or_exit("", kb_dir), story)
+        except ticketfetch.TicketFetchError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    else:
+        path = ticket or spec_dir / "ticket.md"
+        try:
+            ticket_text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if ticket is not None:
+                typer.secho(f"cannot read {path}", fg=typer.colors.RED)
+                raise typer.Exit(1) from None
+        except OSError as exc:
+            typer.secho(f"cannot read {path}: {exc}", fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    report = testcases.lint(text, ticket_text, spec_dir=spec_dir)
+    typer.echo(json.dumps(report.to_json()) if json_output else report.render("TC"))
+    _exit_with(0 if report.passed else 1)
 
 
 @test_env_app.command("check")
