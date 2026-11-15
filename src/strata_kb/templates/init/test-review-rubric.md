@@ -64,7 +64,9 @@ strategy PR. The senior-tester review gates that PR as it does test cases.
       **BLOCKER**
 - [ ] Each row's Why cites evidence (a requirement, an incident, a defect, a
       change), not a bare opinion. **BLOCKER**
-- [ ] Types and Tools agree with `.kb/test-env.yaml`. **SUGGESTED**
+- [ ] Types and Tools agree with the environment: with `.kb/test-env.yaml`
+      when `.kb/test-env.yaml` exists, otherwise with the planned environments
+      marked "not set up yet". **SUGGESTED**
 - [ ] Nothing in scope is silently missing: every mission, story or KB area
       the scope names is a row, or is stated as out of scope. **SUGGESTED**
 - [ ] A reorder in an amend states in the change log what evidence changed.
