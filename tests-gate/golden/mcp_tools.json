@@ -439,6 +439,47 @@
       "type": "object"
     }
   },
+  "kb_report_fetch": {
+    "description": "The `kb report fetch` text: a test report the Tester published, read\nfrom the hub's `<tester-repo>-test` by story id (latest round unless\n`round` is given), with a `> Fetched from hub:` line. Text only; the\nscreenshots need the CLI.",
+    "inputSchema": {
+      "properties": {
+        "round": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Round"
+        },
+        "story": {
+          "title": "Story",
+          "type": "string"
+        }
+      },
+      "required": [
+        "story"
+      ],
+      "title": "kb_report_fetchArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "kb_report_fetchOutput",
+      "type": "object"
+    }
+  },
   "kb_resolve": {
     "description": "Accept a kb-context block (or the raw ticket text containing one); return the cited sections at their pinned version + freshness ok/stale/broken.",
     "inputSchema": {

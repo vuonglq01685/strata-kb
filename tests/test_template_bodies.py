@@ -814,7 +814,12 @@ AUTO_OPENING = (
 )
 PRE_AUTO = Path(__file__).parent / "fixtures" / "bodies-pre-auto"
 
-BA_AUTO_BODIES = ["ba-ticket-author", "ba-mission-plan", "ba-answer-questions"]
+BA_AUTO_BODIES = [
+    "ba-ticket-author",
+    "ba-mission-plan",
+    "ba-answer-questions",
+    "ba-bug-report",
+]
 DEV_AUTO_BODIES = [
     "dev-implement-ticket",
     "dev-design",
@@ -965,6 +970,11 @@ _BA_GATES = {
         "never commits, pushes or publishes",
         "The BA accepts with `kb_question_confirm_blocks`",
         'Split proposal: "The BA accepts, edits or rejects"',
+    ],
+    "bodies/ba-bug-report.md": [
+        "Ask, don't guess",  # intake
+        "the BA accepts the SA's proposal or picks another repo",  # first responder
+        "Tick NO `## Definition of Ready` box",  # the BA ticks them
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }
@@ -2518,3 +2528,36 @@ def test_gate_lists_open_and_waiting_rows_with_status_all(name):
     off = _off_path(name)
     assert 'kb_question_list(ticket=<id>, status="all")' in off, name
     assert "open or waiting" in off, name
+
+
+def test_ba_bug_report_body_from_report():
+    text = _normal(_raw("bodies/ba-bug-report.md"))
+    for phrase in (
+        "## --from-report <story> R<n> RD<k>",
+        "kb report fetch <story> --round <n> --out <tmp>",
+        "> From report: <story> R<n> RD<k>",
+        "> Related ticket:",
+        "## Auto mode",
+        "auto/BUG-<n>",
+        "AUTO-RESULT:",
+    ):
+        assert phrase in text, phrase
+
+
+def test_ba_bug_report_from_report_uses_the_blocks_closed_story():
+    text = _normal(_raw("bodies/ba-bug-report.md"))
+    assert "`> Related ticket: <closed-story>`" in text or (
+        "`Story: <closed-story>` → `> Related ticket: <closed-story>`" in text
+    )
+    assert "`<closed-story>/TC-<k>`" in text
+    assert "closed story `<story>`" not in text
+
+
+def test_ba_bug_report_auto_uses_only_allowed_git_commands():
+    auto = _normal(_auto_section("bodies/ba-bug-report.md"))
+    for denied in ("ls-remote", "git show", "git switch --detach"):
+        assert denied not in auto, denied
+    assert "git branch -r --list 'origin/auto/BUG-*'" in auto
+    assert "kb report fetch <story> --round <n> --out tickets/bugs/BUG-<n>" in auto
+    assert "Tick no `## Definition of Ready` box on a bug" in auto
+    assert "auto/BUG-<m>-r<N>" in auto

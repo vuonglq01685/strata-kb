@@ -47,6 +47,8 @@ ASSETS_DIR = "assets"
 ASSET_REF_RE = re.compile(rf"{ASSETS_DIR}/([0-9a-f]{{64}}\.(?:png|webp))")
 _DROPPED_SECTIONS = ("## Review record", "## Definition of Ready")
 _ATX_RE = re.compile(r"^(#{1,6})(?=[ \t]|$)")
+# a fetched test report (`kb report fetch --out`) is never a ticket
+_REPORT_FILE_RE = re.compile(r"report-R[1-9][0-9]*\.md")
 _SENTENCE_RE = re.compile(r"^(.+?[.!?])(?:\s|$)")
 
 
@@ -324,6 +326,8 @@ def _select(
     ticket_texts: dict[str, str] = {}
     ticket_files: dict[str, Path] = {}
     for path in sorted(tickets_dir.rglob("*.md")):
+        if _REPORT_FILE_RE.fullmatch(path.name):
+            continue
         if path.stem in ticket_files:
             raise PlanIngestError(
                 f"duplicate ticket id {path.stem}: "

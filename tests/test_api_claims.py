@@ -274,6 +274,31 @@ def test_get_survives_plan_read_failure(web_client, hub_with_ticket, auth, monke
     assert len(r.json()["claims"]) == 1
 
 
+def test_close_done_keeps_reopened_claim(web_client, plan_hub, auth, monkeypatch):
+    from dataclasses import replace
+
+    from strata_kb import planstatus
+
+    ticket = US[1]
+    assert (
+        web_client.post(
+            "/api/claims", json={"ticket": ticket, "holder": "a@m1"}, headers=auth
+        ).status_code
+        == 201
+    )
+    real = planstatus.next_from_hub
+
+    def reopened(*a, **k):
+        stories, unparented, notes = real(*a, **k)
+        mark = lambda rows: [  # noqa: E731
+            replace(r, status="done", test_status="reopened") for r in rows
+        ]
+        return mark(stories), mark(unparented), notes
+
+    monkeypatch.setattr(planstatus, "next_from_hub", reopened)
+    assert len(web_client.get("/api/claims", headers=auth).json()["claims"]) == 1
+
+
 def test_body_too_large_413(web_client, hub_with_ticket, auth):
     hub_with_ticket(rev=1)
     r = web_client.post(

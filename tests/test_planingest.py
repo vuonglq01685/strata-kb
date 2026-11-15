@@ -888,3 +888,14 @@ def test_planingest_fails_closed_on_bad_parent_bug(tmp_path: Path):
     assert str(exc.value).startswith("parent bug BUG-12 fails lint: ")
     assert str(exc.value).endswith(" — nothing published")
     assert tree(doc_dir) == before
+
+
+def test_fetched_report_files_in_bug_folders_are_not_tickets(tmp_path: Path):
+    _write_bug(tmp_path, _bug_text())
+    for bug in ("BUG-12", "BUG-13"):
+        folder = tmp_path / "tickets" / "bugs" / bug
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "report-R1.md").write_text("# R1\n", encoding="utf-8")
+    report = run_plan(tmp_path)
+    assert report.published == ["BUG-12"]
+    assert "report-R1" not in doc_file(tmp_path, "tickets.raw.md")

@@ -81,7 +81,9 @@ def env(tmp_path: Path, monkeypatch):
         lambda h, repo=None, for_repo=None: (tickets["stories"], [], []),
     )
     monkeypatch.setattr(picker, "pick_dev", lambda h, root, repo_id, skip=(): TASK)
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): TASK)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): TASK
+    )
     return tmp_path, kb_dir, hub, tickets
 
 
@@ -808,7 +810,9 @@ class ParkedQaThread:
 
 
 def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): None
+    )
     script = Script()
     with caplog.at_level(logging.ERROR):
         outcome = once(env, script, cfg=cfg_of("ba"), qa_thread=ParkedQaThread())
@@ -819,7 +823,9 @@ def test_parked_only_stops_the_loop(env, monkeypatch, caplog):
 
 
 def test_review_parked_stop_hint_names_the_pr(env, monkeypatch, caplog):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): None
+    )
     pr = "https://github.com/o/r/pull/7"
     parked = ParkedQaThread(review_prs={"T-a": pr})
     with caplog.at_level(logging.ERROR):
@@ -828,7 +834,9 @@ def test_review_parked_stop_hint_names_the_pr(env, monkeypatch, caplog):
 
 
 def test_parked_stop_lists_every_ticket_sorted(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): None
+    )
     parked = ParkedQaThread(parked={"T-b", "T-a"})
     assert once(env, Script(), cfg=cfg_of("ba"), qa_thread=parked) == "stopped"
     assert autostate.load(env[1]).stop_reason == "parked: T-a, T-b"
@@ -842,7 +850,9 @@ def test_parked_with_task_left_keeps_running(env):
 
 
 def test_parked_with_unparked_question_idles(env, monkeypatch):
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): None)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): None
+    )
     outcome = once(env, Script(), cfg=cfg_of("ba"), qa_thread=ParkedQaThread(False))
     assert outcome == "idle"
 
@@ -1145,7 +1155,9 @@ def _loop_args(env):
 
 def test_ba_runner_makes_no_claims(env, monkeypatch):
     ba_task = Task("ba-ticket-author", "US1")
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): ba_task)
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): ba_task
+    )
     claims = FakeClaims()
     assert (
         once(env, Script(TaskResult("done")), cfg=cfg_of("ba"), claims=claims) == "ran"
@@ -1673,7 +1685,9 @@ def test_parked_tickets_are_beaten_while_waiting(cenv, monkeypatch):
 def test_ba_parked_task_is_not_picked_again(env, monkeypatch):
     _view(monkeypatch, "OPEN")
     skips: list = []
-    monkeypatch.setattr(picker, "pick_ba", lambda root, kb, skip=(): skips.append(skip))
+    monkeypatch.setattr(
+        picker, "pick_ba", lambda root, kb, skip=(), candidates=(): skips.append(skip)
+    )
     _park(env, f"ba-ticket-author:US1 {PR_URL}")
     once(env, Script(), cfg=cfg_of("ba"))
     assert "ba-ticket-author:US1" in skips[-1]
@@ -1759,3 +1773,113 @@ def test_run_once_beat_stops_when_branch_restore_raises(cenv, monkeypatch):
     assert calls == ["other"]
     assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
     assert claims.of("phase") == [("phase", "US1", "publishing")]
+
+
+@pytest.mark.parametrize(
+    ("status", "test_status", "expected"),
+    [("done", "reopened", True), ("done", "", False), ("ready", "", True)],
+)
+def test_still_ready_here_counts_reopened(monkeypatch, status, test_status, expected):
+    row = StoryStatus("US1", "M-x", "t", status, (), (), "svc", test_status=test_status)
+    monkeypatch.setattr(picker, "plan_next", lambda *_a, **_k: ([row], [], []))
+    assert runner_mod._still_ready_here(None, "svc", "US1") is expected  # type: ignore[arg-type]
+
+
+def test_runner_ba_candidates_read_failure_is_no_candidates(env, monkeypatch, caplog):
+    from strata_kb import bugcandidates
+
+    def boom(hub, plan_stories=None, facts=None):
+        raise runner_mod.hubapi.OldHubError("hub too old")
+
+    got = []
+
+    def pick(root, kb, skip=(), candidates=()):
+        got.append(list(candidates))
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", boom)
+    monkeypatch.setattr(picker, "pick_ba", pick)
+    with caplog.at_level(logging.WARNING):
+        assert once(env, Script(), cfg=cfg_of("ba")) == "idle"
+    assert got == [[]]
+    assert "bug candidates not read" in caplog.text
+
+
+def test_runner_ba_open_candidate_blocks_done_and_is_picked(env, monkeypatch):
+    from strata_kb import bugcandidates
+    from strata_kb.bugcandidates import Candidate
+
+    env[3]["stories"] = [S("US3", "done")]
+    cand = Candidate("US3/R1/RD1", "US3", 1, "RD1", False)
+    seen = []
+
+    def found(hub, plan_stories=None, facts=None):
+        seen.append(plan_stories)
+        return [cand]
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", found)
+    got = []
+
+    def pick(root, kb, skip=(), candidates=()):
+        got.append(list(candidates))
+        return TASK
+
+    monkeypatch.setattr(picker, "pick_ba", pick)
+    assert once(env, Script(TaskResult("done")), cfg=cfg_of("ba")) == "ran"
+    assert got == [[cand]]
+    assert seen[0] == {"US3"}
+
+
+def test_runner_ba_other_candidate_read_error_waits(env, monkeypatch):
+    from strata_kb import bugcandidates
+
+    def boom(hub, plan_stories=None, facts=None):
+        raise KbError("hub 500")
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", boom)
+    assert once(env, Script(), cfg=cfg_of("ba")) == "waiting"
+
+
+BA_PARKED = "ba-bug-report:--from-report S1 R2 RD1 https://github.com/o/r/pull/7"
+
+
+def test_ba_candidates_read_only_this_repos_plan(env, monkeypatch):
+    from strata_kb import bugcandidates
+
+    plans = {"svc": [S("US-mine", "done")], "other": [S("US-theirs", "done")]}
+    monkeypatch.setattr(
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: (plans.get(repo, []), [], []),
+    )
+    seen = []
+
+    def found(hub, plan_stories=None, facts=None):
+        seen.append(plan_stories)
+        return []
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", found)
+    assert runner_mod._ba_candidates(env[2], "svc") == []
+    assert seen == [{"US-mine"}]
+
+
+def test_closed_bug_pr_is_skipped_not_redrafted(env, monkeypatch):
+    _view(monkeypatch, "CLOSED")
+    state = autostate.AutoState(None, 0, (), None, "", waiting_review=(BA_PARKED,))
+    out = runner_mod._review_check(
+        env[0], env[1], state, view_pr=lambda root, ref: {"state": "CLOSED"}
+    )
+    key = "ba-bug-report:--from-report S1 R2 RD1"
+    assert out.waiting_review == ()
+    assert key in out.skipped
+    assert key in runner_mod._skip(out)
+
+
+def test_parked_key_with_spaces_is_skipped_and_kept_whole(env, monkeypatch):
+    state = autostate.AutoState(None, 0, (), None, "", waiting_review=(BA_PARKED,))
+    assert "ba-bug-report:--from-report S1 R2 RD1" in runner_mod._skip(state)
+    _view(monkeypatch, state="MERGED")
+    out = runner_mod._review_check(
+        env[0], env[1], state, view_pr=lambda root, ref: {"state": "MERGED"}
+    )
+    assert out.last_done == "ba-bug-report:--from-report S1 R2 RD1"
+    assert out.waiting_review == ()

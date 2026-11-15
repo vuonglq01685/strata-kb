@@ -2189,6 +2189,9 @@ def svc_note(
     ticket: str = typer.Option(..., "--ticket", help="Ticket / US id"),
     title: str = typer.Option(..., "--title", help="Ticket title"),
     refs: str = typer.Option("", "--refs", help="Domain refs, comma-separated"),
+    fixes: str = typer.Option(
+        "", "--fixes", help="Test round this ticket fixes, R<n> (adds fix:R<n>)"
+    ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config)"),
     no_refresh: bool = typer.Option(
@@ -2232,7 +2235,7 @@ def svc_note(
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
     note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
 
-    report = svcnote.add_note(kb_dir, rid, service, note)
+    report = svcnote.add_note(kb_dir, rid, service, note, fixes=fixes)
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
@@ -5084,6 +5087,61 @@ def test_stale(
         raise typer.Exit(1)
     if findings:
         raise typer.Exit(2)
+
+
+@report_app.command("fetch")
+def report_fetch(
+    story: str = typer.Argument(..., help="Story id"),
+    round_: int | None = typer.Option(
+        None, "--round", min=1, help="Round (default: the latest published)"
+    ),
+    child: str | None = typer.Option(
+        None, "--child", help="Child ticket id: write to docs/impl/<child>/"
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="Write into this directory (default: docs/impl/<id>/)"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+) -> None:
+    """Read a test report from the hub and save it as report-R<n>.md, with the
+    screenshots it references under assets/. Always overwrites."""
+    import shutil
+
+    from strata_kb import reportfetch
+    from strata_kb.planstatus import safe_name
+
+    handle = _hub_or_exit(hub, kb_dir)
+    try:
+        n, text = reportfetch.render(handle, story, round_)
+        files, missing = reportfetch.assets_of(handle, story, n)
+    except reportfetch.ReportFetchError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if child is not None and not safe_name(child):
+        typer.secho(f"'{child}' is not a ticket id", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    folder = out or Path("docs") / "impl" / (child or story)
+    path = folder / f"report-R{n}.md"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+        if files:
+            (folder / "assets").mkdir(exist_ok=True)
+        for f in files:
+            shutil.copyfile(f, folder / "assets" / f.name)
+    except OSError as exc:
+        typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    for name in missing:
+        typer.secho(
+            f"warning: assets/{name} is not in the hub clone — open it on the hub at /assets/{name}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    typer.echo(str(path))
 
 
 @report_app.command("lint")

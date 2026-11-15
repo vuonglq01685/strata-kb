@@ -12,8 +12,9 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from strata_kb import planstatus, ticket, ticketfetch, ticketlint
+from strata_kb import planrev, planstatus, ticket, ticketfetch, ticketlint
 from strata_kb.doctor import Issue
+from strata_kb.errors import KbError
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
 from strata_kb.lintcore import LintReport
@@ -75,6 +76,32 @@ def hub_issues(
     return issues
 
 
+def closed_story_issues(
+    ticket_id: str, parent_id: str, local_revision: int, hub: HubHandle | None
+) -> list[Issue]:
+    """Refuse an amend (local revision above the published one) or a new child
+    when the ticket's story is `closed` on the hub; no hub -> a warning."""
+    unchecked = [Issue("warning", "story status not checked (hub unreachable)")]
+    if hub is None:
+        return unchecked
+    story = parent_id or ticket_id
+    try:
+        repos, _ = planstatus.hub_plans(hub)
+        rows = [s for r in repos for m in r.missions for s in m.stories]
+        rows += [s for r in repos for s in r.unparented]
+        if not any(s.us_id == story and s.test_status == "closed" for s in rows):
+            return []
+        try:
+            published = planrev.parse_revision(ticketfetch.render(hub, ticket_id)) or 1
+        except ticketfetch.TicketNotOnHub:
+            published = None
+    except KbError:
+        return unchecked
+    if published is None or local_revision > published:
+        return [Issue("error", "story is closed — write a new story")]
+    return []
+
+
 def lint(
     text: str,
     hub: HubHandle | None,
@@ -89,6 +116,11 @@ def lint(
     report = ticketlint.lint(text, hub, ticket_id=ticket_id, path=path, **kwargs)
     is_parent = (ticket.ticket_kind(text) or "").startswith("parent")
     tid = ticket_id or (path.stem if path else None)
+    if hub is not None and tid and ticket.ticket_type(text) == "story":
+        pin = ticket.parent_story_pin(text)
+        report.issues += closed_story_issues(
+            tid, pin[0] if pin else "", planrev.parse_revision(text) or 1, hub
+        )
     if (
         hub is None
         or tid is None

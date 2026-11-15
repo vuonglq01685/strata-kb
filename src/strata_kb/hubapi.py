@@ -23,10 +23,14 @@ from strata_kb.resolve import ResolvedRef
 Http = Callable[..., tuple[int, bytes]]
 
 PLAN_ROUTE = "/api/plan/next"
+KNOWN_ROUTE = "/api/tests/known-failures"
 REGISTRY_ROUTE = "/api/registry/entry"
 RESOLVE_ROUTE = "/api/resolve"
 NOT_REGISTERED = "repo_not_registered"
 OLD_HUB = "hub is older than 1.35 — upgrade the hub first"
+
+
+OLD_HUB_KNOWN = "hub is older than 1.37.3 — its known failures do not say which are logged; upgrade the hub first"
 
 
 class OldHubError(KbError):
@@ -101,6 +105,19 @@ class HubApi:
             )
         except (KeyError, TypeError) as exc:
             raise self._bad_body(PLAN_ROUTE) from exc
+
+    def known_failures(self) -> dict[str, dict]:
+        """key -> {story, round, rd_id, duplicates, logged} of the hub's open
+        regression failures."""
+        data = self._json("GET", KNOWN_ROUTE, KNOWN_ROUTE)
+        try:
+            if any("logged" not in v for v in data.values()):
+                raise OldHubError(OLD_HUB_KNOWN)
+            for v in data.values():
+                _ = (v["story"], int(v["round"]), v["rd_id"])  # shape check
+        except (KeyError, TypeError, ValueError) as exc:
+            raise self._bad_body(KNOWN_ROUTE) from exc
+        return data
 
     def registry_entry(self, repo_id: str) -> dict | None:
         """The repo's registry facts; None when the hub does not list it."""

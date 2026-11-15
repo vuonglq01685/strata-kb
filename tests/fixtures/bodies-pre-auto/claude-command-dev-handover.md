@@ -76,7 +76,7 @@ cache path was taken); run the full suite and linters (`cmd.test` and
 plan file) and paste the real output, since a completion claim without it is
 not accepted — into the PR goes only the command line and its summary lines;
 record service history by running `kb svc note <service> --ticket <id> --title
-"<title>" --refs "<refs>"` for each service touched so the entries land in
+"<title>" --refs "<refs>"` (in fix mode, when a `docs/impl/<id>/report-R<n>.md` was fetched, add `--fixes R<n>`: the round from that file name, which puts `fix:R<n>` in the row; the file is git-ignored, so read it from the working tree, highest `R<n>`; the PR title in fix mode is `fix(<id>): R<n> defects D<k>[, D<k>]`) for each service touched so the entries land in
 this same PR (`kb svc note` regenerates `<repo_id>-code` from the working
 tree first, so a service the ticket added is found once its files are
 tracked (`git add`); if this repo has no `<repo_id>-svc` yet —

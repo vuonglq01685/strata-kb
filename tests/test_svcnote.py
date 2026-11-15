@@ -534,3 +534,90 @@ def test_natural_key_orders_mixed_ids():
         "T-2",
         "T-10",
     ]
+
+
+def _history(seeded: Path) -> str:
+    return (seeded / ".kb" / "demo-svc" / "history.md").read_text(encoding="utf-8")
+
+
+def _add(seeded: Path, fixes: str = "", refs=("svc.a",)) -> None:
+    svcnote.add_note(
+        seeded / ".kb",
+        "demo",
+        "airspace-service",
+        _note(ticket="T-1", refs=refs),
+        fixes=fixes,
+    )
+
+
+def test_fixes_appends_fix_ref(seeded):
+    _add(seeded)
+    _add(seeded, fixes="R1")
+    assert "| svc.a, fix:R1 |" in _history(seeded)
+
+
+def test_fixes_rerun_keeps_both_no_duplicate(seeded):
+    _add(seeded, fixes="R1")
+    _add(seeded, fixes="R2")
+    _add(seeded, fixes="R2")
+    text = _history(seeded)
+    assert text.count("fix:R1") == 1
+    assert text.count("fix:R2") == 1
+    assert text.count("svc.a") == 1
+
+
+def test_plain_rerun_keeps_fix_refs(seeded):
+    _add(seeded, fixes="R1")
+    _add(seeded, refs=("svc.b",))
+    text = _history(seeded)
+    assert "fix:R1" in text
+    assert "svc.a" in text
+    assert "svc.b" in text
+
+
+def test_fixes_with_different_refs_keeps_old_domain_ref(seeded):
+    _add(seeded, refs=("svc.a",))
+    _add(seeded, fixes="R1", refs=("svc.c",))
+    assert "| svc.a, svc.c, fix:R1 |" in _history(seeded)
+
+
+def test_escaped_pipe_ref_survives_merge(seeded):
+    _add(seeded, refs=("a|b",))
+    _add(seeded, fixes="R1", refs=("svc.c",))
+    assert "| a\\|b, svc.c, fix:R1 |" in _history(seeded)
+
+
+@pytest.mark.parametrize("bad", ["2", "R0", "R01"])
+def test_bad_round_rejected(seeded, bad):
+    with pytest.raises(svcnote.SvcNoteError):
+        _add(seeded, fixes=bad)
+
+
+def test_hub_reads_fix_done(seeded):
+    from strata_kb import missionnext
+
+    _add(seeded, fixes="R1")
+    assert missionnext.fix_rounds_from_history(_history(seeded)) == {
+        "T-1": frozenset({1})
+    }
+
+
+def test_cli_fixes_option(seeded):
+    result = runner.invoke(
+        app,
+        [
+            "svc",
+            "note",
+            "airspace-service",
+            "--kb-dir",
+            str(seeded / ".kb"),
+            "--ticket",
+            "T",
+            "--title",
+            "t",
+            "--fixes",
+            "R1",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "fix:R1" in _history(seeded)

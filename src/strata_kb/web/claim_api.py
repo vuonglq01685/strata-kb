@@ -202,7 +202,7 @@ def build_claim_routes(config: ServerConfig) -> list[Route]:
                 done |= {
                     (repo, s.us_id)
                     for s in [*stories, *unparented]
-                    if s.status == "done"
+                    if s.status == "done" and s.test_status != "reopened"
                 }
         except Exception:  # a plan read must never fail the listing
             logger.exception("claims: plan read failed; not closing done tickets")

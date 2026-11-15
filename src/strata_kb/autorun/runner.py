@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal, cast
 
 import yaml
 
-from strata_kb import claimclient, cloud, ghrest, gitio, hubapi
+from strata_kb import bugcandidates, claimclient, cloud, ghrest, gitio, hubapi
 from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -34,6 +35,7 @@ from strata_kb.claimclient import (
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
+from strata_kb.missionnext import StoryStatus
 
 logger = logging.getLogger("strata_kb.autorun.runner")
 
@@ -189,6 +191,23 @@ def _stop(
     return "stopped"
 
 
+def _ba_candidates(
+    hub: HubHandle | hubapi.HubApi,
+    repo: str,
+    rows: Sequence[StoryStatus] | None = None,
+) -> list[bugcandidates.Candidate]:
+    """Open bug candidates of this BA's plan stories (`rows`, else read here). An
+    old hub has none; any other read failure raises KbError to the caller."""
+    if rows is None:
+        stories, unparented, _notes = picker.plan_next(hub, repo=repo)
+        rows = [*stories, *unparented]
+    try:
+        return bugcandidates.open_candidates(hub, {t.us_id for t in rows})
+    except hubapi.OldHubError as exc:
+        logger.warning("bug candidates not read: %s", exc)
+        return []
+
+
 def _check_done(
     cfg: KBConfig, hub: HubHandle | hubapi.HubApi, qa: qa_mod.QaClient
 ) -> Outcome | None:
@@ -196,7 +215,9 @@ def _check_done(
     answer yet (transient, never a task failure); None to carry on."""
     try:
         stories, unparented, _notes = picker.plan_next(
-            hub, require_target=cfg.kind == "dev"
+            hub,
+            require_target=cfg.kind == "dev",
+            repo=cfg.repo_id if cfg.kind == "ba" else None,
         )
     except KbError as exc:
         logger.warning("hub plan not read: %s", exc)
@@ -207,11 +228,19 @@ def _check_done(
     except KbError as exc:
         logger.warning("open questions not read: %s", exc)
         return "waiting"
+    try:
+        n_candidates = (
+            len(_ba_candidates(hub, cfg.repo_id, [*stories, *unparented])) if ba else 0
+        )
+    except KbError as exc:
+        logger.warning("bug candidates not read: %s", exc)
+        return "waiting"
     finished, why = all_done(
         stories,
         unparented,
         ba=ba,
         open_questions=open_questions,
+        open_candidates=n_candidates,
         repo_id=cfg.repo_id,
     )
     if finished:
@@ -222,7 +251,7 @@ def _check_done(
 
 def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     """Task keys the pick passes over: done-but-repicked, and bugs awaiting a split."""
-    parked = (e.partition(" ")[0] for e in state.waiting_review)
+    parked = (e.rpartition(" ")[0] for e in state.waiting_review)
     return (
         *state.skipped,
         *(f"dev-fix-bug:{b}" for b in state.waiting_split),
@@ -250,8 +279,9 @@ def _review_check(
     stays parked while another task is current, and only one is queued per
     turn; it is queued when the task slot is free."""
     kept, merged, queued = [], None, state.task
+    skipped = state.skipped
     for entry in state.waiting_review:
-        key, _, url = entry.partition(" ")
+        key, _, url = entry.rpartition(" ")
         number = url.rpartition("/pull/")[2]
         try:
             if not _own_pr(root, url):
@@ -273,11 +303,14 @@ def _review_check(
                 kept.append(entry)
         elif pr_state == "CLOSED":
             logger.warning("parked PR %s of %s closed without merging", url, key)
+            if key.startswith("ba-bug-report:") and key not in skipped:
+                # a rejected bug draft must not be re-drafted every cycle
+                skipped = (*skipped, key)
         else:
             kept.append(entry)
     if len(kept) == len(state.waiting_review):
         return state
-    state = replace(state, waiting_review=tuple(kept))
+    state = replace(state, waiting_review=tuple(kept), skipped=skipped)
     if merged is not None:
         state = replace(state, last_done=merged, same_pick=0)
     if state.task is None and queued is not None:
@@ -359,7 +392,7 @@ def _claim_pick(
     repo_id: str,
 ) -> Task | None:
     """The first candidate this Dev wins the claim on; raises `_Early("idle")`
-    when other Devs hold every ready ticket."""
+    when other Devs hold every open ticket."""
     held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
     candidates = picker.dev_candidates(hub, root, repo_id, skip=_skip(state), held=held)
     for task in candidates:
@@ -371,7 +404,7 @@ def _claim_pick(
         except ParentStoryError as exc:  # a parent is never a task
             logger.info("%s; trying the next ticket", exc)
     if candidates:
-        logger.info("every ready ticket is held by another Dev or unknown to the hub")
+        logger.info("every open ticket is held by another Dev or unknown to the hub")
         raise _Early("idle")
     return None
 
@@ -379,11 +412,12 @@ def _claim_pick(
 def _still_ready_here(
     hub: HubHandle | hubapi.HubApi, repo_id: str, ticket: str
 ) -> bool:
-    """The plan still lists `ticket` as ready and routed to `repo_id`. Reads the
+    """The plan still lists `ticket` as ready or reopened and routed to `repo_id`. Reads the
     whole plan: the same client-side routing test as the pick."""
     stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(
-        t.us_id == ticket and picker.runnable_here(t, repo_id)
+        t.us_id == ticket
+        and (picker.runnable_here(t, repo_id) or picker.reopened_here(t, repo_id))
         for t in (*stories, *unparented)
     )
 
@@ -416,7 +450,12 @@ def _task_for(
             raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
-        return picker.pick_ba(root, kb_dir, skip=_skip(state))
+        try:
+            candidates = _ba_candidates(hub, cfg.repo_id)
+        except KbError as exc:  # a failed read never fails the pick
+            logger.warning("bug candidates not read: %s", exc)
+            candidates = []
+        return picker.pick_ba(root, kb_dir, skip=_skip(state), candidates=candidates)
     if claims is None:
         return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
@@ -704,7 +743,7 @@ def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> No
     """Keep the claim alive while the loop waits on questions."""
     if claims is None:
         return
-    keys = (state.task, *(e.partition(" ")[0] for e in state.waiting_review))
+    keys = (state.task, *(e.rpartition(" ")[0] for e in state.waiting_review))
     for ticket in dict.fromkeys(filter(None, map(_ticket_of, keys))):
         claims.beat(ticket)
 

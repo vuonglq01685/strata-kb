@@ -8,6 +8,7 @@ import pytest
 
 from strata_kb import planstatus
 from strata_kb.autorun.picker import Task, _ba_tasks, dev_candidates, pick_ba, pick_dev
+from strata_kb.bugcandidates import Candidate
 from strata_kb.errors import KbError
 from strata_kb.missionnext import StoryStatus
 
@@ -651,3 +652,101 @@ def test_ba_tasks_never_author_bug_rows():
         ],
     }
     assert [t.arg for t in _ba_tasks(data)] == ["--amend M-x-US1"]
+
+
+def _reopened(us_id: str, target=REPO, depends_on=(), **extra) -> StoryStatus:
+    return StoryStatus(
+        us_id,
+        "M-x",
+        "t",
+        "done",
+        (),
+        depends_on,
+        target,
+        test_status="reopened",
+        **extra,
+    )
+
+
+def test_reopened_child_picked_before_ready():
+    ready = StoryStatus("S2", "M-x", "t", "ready", (), (), REPO)
+    tasks = list(picker_dev_tasks([ready, _reopened("S1.web")], [], REPO))
+    assert tasks[0] == Task("dev-implement-ticket", "S1.web")
+
+
+def test_reopened_bug_goes_to_fix_bug_after_stories():
+    ready_bug = StoryStatus("BUG-4", "", "t", "ready", (), (), REPO)
+    tasks = list(
+        picker_dev_tasks([_reopened("S1.web")], [_reopened("BUG-3"), ready_bug], REPO)
+    )
+    assert tasks[:3] == [
+        Task("dev-implement-ticket", "S1.web"),
+        Task("dev-fix-bug", "BUG-3"),
+        Task("dev-fix-bug", "BUG-4"),
+    ]
+
+
+def test_reopened_picked_only_in_its_own_repo():
+    assert list(picker_dev_tasks([_reopened("S1.web", "dev-one")], [], "dev-one")) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]
+
+
+def test_reopened_other_repo_not_picked():
+    assert list(picker_dev_tasks([_reopened("S1.web", "dev-two")], [], "dev-one")) == []
+
+
+def test_reopened_ignores_depends_on():
+    row = _reopened("S1.web", depends_on=("S0",))
+    assert list(picker_dev_tasks([row], [], REPO)) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]
+
+
+def test_reopened_parent_not_picked():
+    parent = _reopened("S1", None, is_parent=True)
+    child = _reopened("S1.web", parent="S1")
+    assert list(picker_dev_tasks([parent, child], [], REPO)) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]
+
+
+def _cand(story: str, rnd: int, rd: str) -> Candidate:
+    return Candidate(f"{story}/R{rnd}/{rd}", story, rnd, rd, False)
+
+
+def test_pick_ba_candidate_after_blockers_before_drafts(tmp_path: Path):
+    stories = [
+        _story("US1", "draft", ["DoR 1/3 ticked"]),
+        _story("US2", "blocked", ["D2 OPEN (owner: ba)"], mission="M-y"),
+    ]
+    run = _runner(stories)
+    cands = [_cand("S1", 2, "RD1")]
+    skip: list[str] = []
+    seen = []
+    for _ in range(3):
+        t = pick_ba(tmp_path, tmp_path, run, skip=skip, candidates=cands)
+        seen.append(t)
+        skip.append(t.key)
+    assert seen == [
+        Task("ba-mission-plan", "--amend M-y"),
+        Task("ba-bug-report", "--from-report S1 R2 RD1"),
+        Task("ba-ticket-author", "--amend US1"),
+    ]
+
+
+def test_pick_ba_skips_skipped_candidate(tmp_path: Path):
+    cands = [_cand("S1", 2, "RD1"), _cand("S1", 2, "RD2")]
+    skip = ["ba-bug-report:--from-report S1 R2 RD1"]
+    assert pick_ba(
+        tmp_path, tmp_path, _runner([]), skip=skip, candidates=cands
+    ) == Task("ba-bug-report", "--from-report S1 R2 RD2")
+
+
+@pytest.mark.parametrize("extra", [{}, {"own_fix_ready": True}])
+def test_row_both_ready_and_reopened_yields_one_task(extra):
+    row = StoryStatus(
+        "BUG-3", "", "t", "ready", (), (), REPO, test_status="reopened", **extra
+    )
+    tasks = list(picker_dev_tasks([], [row], REPO))
+    assert tasks == [Task("dev-fix-bug", "BUG-3")]

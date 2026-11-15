@@ -594,7 +594,7 @@ hoặc `{repo_id, kind, workflow?, auto_merge?}`; `auto_merge` mặc định là
 
 ## 6.3 Các công cụ MCP
 
-Server cung cấp mười bốn công cụ. Chỉ `kb_question_ask` và `kb_question_answer` ghi.
+Server cung cấp các công cụ sau. Chỉ `kb_question_ask`, `kb_question_answer`, `kb_question_propose_blocks` và `kb_question_confirm_blocks` ghi.
 
 | Công cụ | Mục đích |
 |---|---|
@@ -607,6 +607,7 @@ Server cung cấp mười bốn công cụ. Chỉ `kb_question_ask` và `kb_ques
 | `kb_ticket_stale` | báo cáo trích dẫn cũ cho một ticket hay mission: trích dẫn mà hub đã sửa hoặc làm mất kể từ khi được ghim, và các section `-code` đã dời |
 | `kb_mission_lint` | cổng Definition-of-Ready cho mission |
 | `kb_ticket_fetch` | một ticket BA đã publish, đọc từ `<ba-repo>-plan` của hub theo id |
+| `kb_report_fetch` | một báo cáo test mà Tester đã publish, đọc từ hub theo story và `round` tuỳ chọn (mặc định là round mới nhất); cùng nội dung với `kb report fetch` |
 | `kb_question_ask` | **ghi.** Hỏi BA một câu về ticket đã publish; trả `Q<id>` |
 | `kb_question_list` | liệt kê câu hỏi của ticket với trạng thái suy ra (`open`, `waiting`, `answered`, hoặc `all`) |
 | `kb_question_answer` | **ghi.** Ghi lại câu trả lời của BA cho một câu hỏi đang mở |
@@ -615,7 +616,7 @@ Server cung cấp mười bốn công cụ. Chỉ `kb_question_ask` và `kb_ques
 
 Skill BA gọi mọi công cụ trừ `kb_ticket_fetch`, `kb_question_ask` và `kb_doctor_hub`; skill Dev
 gọi `kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`, `kb_ticket_lint`,
-`kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask` và `kb_question_list`.
+`kb_ticket_check`, `kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask` và `kb_question_list`.
 
 ## 6.4 Những gì server thực thi
 

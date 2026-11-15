@@ -290,6 +290,7 @@ ALLOW = [
     "mcp__strata-kb__*",
     "Bash(kb mission *)",
     "Bash(kb ticket *)",
+    "Bash(kb report fetch*)",
     "Bash(kb publish*)",
     "Bash(kb svc *)",
     "Bash(kb impl *)",

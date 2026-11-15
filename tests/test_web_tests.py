@@ -349,3 +349,32 @@ def test_unreadable_strategy_does_not_break_list(
     resp = web_client_logged_in.get("/ui/tests")
     assert resp.status_code == 200
     assert "could not be read" in resp.text and STORY in resp.text
+
+
+def _fail_with_rd(hub):
+    kw = {
+        "verdict": "FAIL",
+        "regression": "Run: yes\nFailed: ST-0/TC-3\nKnown: none",
+        "rds": RD,
+    }
+    _publish(hub, STORY, _text(STORY, 1, guilty=f"{STORY}.web", **kw))
+
+
+def test_api_known_failures_has_logged(web_client_logged_in, plan_hub, tmp_path):
+    from tests.test_bugcandidates import publish_bug
+
+    _fail_with_rd(plan_hub)
+    url = "/api/tests/known-failures"
+    assert web_client_logged_in.get(url).json()["ST-0/TC-3"]["logged"] is False
+    publish_bug(plan_hub.root, tmp_path, f"{STORY} R1 RD1")
+    assert web_client_logged_in.get(url).json()["ST-0/TC-3"]["logged"] is True
+
+
+def test_test_report_candidates_hide_logged(web_client_logged_in, plan_hub, tmp_path):
+    from tests.test_bugcandidates import publish_bug
+
+    _fail_with_rd(plan_hub)
+    url = "/ui/tests?status=candidates"
+    assert "ST-0/TC-3" in web_client_logged_in.get(url).text
+    publish_bug(plan_hub.root, tmp_path, f"{STORY} R1 RD1")
+    assert "ST-0/TC-3" not in web_client_logged_in.get(url).text

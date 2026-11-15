@@ -50,7 +50,7 @@ def test_parse_args_flag_beats_env_and_config(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_lists_exactly_fourteen_tools(fed_hub):
+async def test_lists_exactly_the_served_tools(fed_hub):
     server = create_server(_config(fed_hub))
     async with connect_client(server, raise_exceptions=True) as client:
         tools = await client.list_tools()
@@ -65,6 +65,7 @@ async def test_lists_exactly_fourteen_tools(fed_hub):
             "kb_question_confirm_blocks",
             "kb_question_list",
             "kb_question_propose_blocks",
+            "kb_report_fetch",
             "kb_resolve",
             "kb_search",
             "kb_ticket_check",
@@ -946,6 +947,25 @@ async def test_kb_ticket_fetch_returns_the_published_ticket(plan_hub):
     assert "## Acceptance Criteria" in out
     assert "M-nope-US9 is not on the hub" in missing
     assert "is not a ticket id" in bad
+
+
+@pytest.mark.anyio
+async def test_kb_report_fetch_returns_report_text(plan_hub):
+    from tests.test_testflow import STORY, publish_tests
+    from tests.test_testflow import _text as report_text
+
+    publish_tests(plan_hub.root, "tester-one", STORY, report_text(STORY, 1, "FAIL"))
+    server = create_server(_config(plan_hub.root))
+    async with connect_client(server, raise_exceptions=True) as client:
+        out = _text(await client.call_tool("kb_report_fetch", {"story": STORY}))
+        r1 = _text(
+            await client.call_tool("kb_report_fetch", {"story": STORY, "round": 1})
+        )
+        bad = _text(
+            await client.call_tool("kb_report_fetch", {"story": STORY, "round": 4})
+        )
+    assert f"§{STORY}.R1" in out and out == r1
+    assert "published rounds: R1" in bad
 
 
 @pytest.mark.anyio

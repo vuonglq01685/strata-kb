@@ -17,3 +17,8 @@
 # Assets of a fetched ticket (`kb ticket fetch`) are hub-derived screenshots
 # that may hold personal data — derivable from the hub, never committed.
 */assets/
+
+# A test report fetched from the hub (`kb report fetch`) is derivable from it —
+# the Tester repo owns the source, so never commit the copy (its screenshots
+# land in */assets/, ignored above).
+*/report-R*.md

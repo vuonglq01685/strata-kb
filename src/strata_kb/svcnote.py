@@ -199,8 +199,8 @@ def _parse_existing_rows(l2_text: str, section_id: str) -> dict[str, Note]:
         # A 1-tuple round-trips the joined text byte-for-byte through
         # ", ".join(note.refs) (joining a single element is a no-op)
         # without guessing where the original boundaries were. These
-        # reconstructed Notes are only ever re-rendered whole, never
-        # inspected element-wise, so this is safe.
+        # reconstructed Notes are only re-rendered whole or merged by
+        # `_merge_refs`, which re-splits on ", " (CLI refs never hold one).
         refs = (refs_field,) if refs_field else ()
         rows[ticket] = Note(ticket=ticket, title=title, refs=refs)
     return rows
@@ -260,7 +260,28 @@ def _load_manifest(path: Path, doc_id: str) -> models.Manifest:
         raise SvcNoteError(f"{doc_id}: could not read {path} ({exc})") from exc
 
 
-def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteReport:
+_ROUND_RE = re.compile(r"R[1-9][0-9]*")
+# The `fix:R<n>` refs written here are read by `missionnext._FIX_REF_RE` (an
+# import cycle prevents sharing one pattern): keep the two in step.
+
+
+def _merge_refs(
+    existing: tuple[str, ...], new: tuple[str, ...], fixes: str
+) -> tuple[str, ...]:
+    """Existing row refs first, then new ones, then `fix:<fixes>`,
+    de-duplicated. Every re-run merges: earlier domain refs and recorded
+    `fix:R<n>` (the hub's only evidence a test round was answered) survive."""
+    # existing is the joined-cell 1-tuple (see `_parse_existing_rows`)
+    old = [r.strip() for e in existing for r in e.split(", ") if r.strip()]
+    merged = [*old, *new, *([f"fix:{fixes}"] if fixes else [])]
+    return tuple(dict.fromkeys(merged))
+
+
+def add_note(
+    kb_dir: Path, repo_id: str, service: str, note: Note, fixes: str = ""
+) -> SvcNoteReport:
+    if fixes and not _ROUND_RE.fullmatch(fixes):
+        raise SvcNoteError(f"--fixes must look like R1, R2, ... (got {fixes!r})")
     # Normalize the incoming ticket the same way `_parse_existing_rows`
     # normalizes one read back (`.strip()` on each captured group) — otherwise
     # a whitespace-padded id (a pasted or shell-quoted ticket, e.g. "M-1 ")
@@ -392,6 +413,11 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     else:
         action = "added"
 
+    prior = rows.get(note.ticket)
+    if prior is not None:
+        note = replace(note, refs=_merge_refs(prior.refs, note.refs, fixes))
+    elif fixes:
+        note = replace(note, refs=_merge_refs((), note.refs, fixes))
     rows[note.ticket] = note
     ordered = [rows[t] for t in sorted(rows, key=_natural_key)]
 

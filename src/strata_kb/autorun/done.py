@@ -16,11 +16,12 @@ def all_done(
     *,
     ba: bool,
     open_questions: int = 0,
+    open_candidates: int = 0,
     repo_id: str | None = None,
 ) -> tuple[bool, str]:
     """(True, "all N tickets done") or (False, first reason). Both roles need
     every story and unparented ticket `done`: the BA loop does not stop while
-    Dev work is open. BA also needs no open question, and names a story still
+    Dev work is open. BA also needs no open question or open bug candidate, and names a story still
     to write (`to-draft`/`draft`/`blocked`) before one merely `ready`. No
     tickets at all is not done: an empty hub is a hub the plan has not reached
     yet. A Dev (`repo_id` given) counts only rows routed to its repo or not routed yet."""
@@ -36,12 +37,22 @@ def all_done(
         tickets = [t for t in tickets if t.target_repo in (repo_id, None)]
     if not tickets:
         return False, "no tickets"
-    open_ = [t for t in tickets if t.status != "done"]
+    # a Dev also owes a reopened ticket (`done` but failed its test round)
+    open_ = [
+        t
+        for t in tickets
+        if t.status != "done" or (not ba and t.test_status == "reopened")
+    ]
     if ba:
         open_.sort(key=lambda t: t.status not in _BA_FIRST)  # stable
     if open_:
-        return False, f"{open_[0].us_id} {open_[0].status}"
+        first = open_[0]
+        reason = first.status if first.status != "done" else first.test_status
+        return False, f"{first.us_id} {reason}"
     if ba and open_questions:
         noun = "question" if open_questions == 1 else "questions"
         return False, f"{open_questions} open {noun}"
+    if ba and open_candidates:
+        noun = "candidate" if open_candidates == 1 else "candidates"
+        return False, f"{open_candidates} open bug {noun}"
     return True, f"all {len(tickets)} tickets done"

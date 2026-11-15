@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from strata_kb import gitio, planstatus
+from strata_kb.bugcandidates import Candidate
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.hubapi import HubApi
@@ -71,13 +72,15 @@ def _mission_next(root: Path, tree: Path, run) -> dict:
         ) from exc
 
 
-def _ba_tasks(data: dict) -> Iterator[Task]:
+def _ba_tasks(data: dict, candidates: Sequence[Candidate] = ()) -> Iterator[Task]:
     stories = data["stories"]
     rows = (*stories, *data.get("unparented", ()))
     # an unwritten child is drafted like any story (phase 3)
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
+    for c in candidates:
+        yield Task("ba-bug-report", f"--from-report {c.story} R{c.round} {c.rd_id}")
     # bugs have their own skill (ba-bug-report); the story author must not touch them
     rows = tuple(s for s in rows if not s["us_id"].startswith("BUG-"))
     for s in rows:
@@ -96,10 +99,14 @@ def _first(tasks: Iterable[Task], skip: Collection[str]) -> Task | None:
 
 
 def pick_ba(
-    root: Path, kb_dir: Path, run=subprocess.run, skip: Collection[str] = ()
+    root: Path,
+    kb_dir: Path,
+    run=subprocess.run,
+    skip: Collection[str] = (),
+    candidates: Sequence[Candidate] = (),
 ) -> Task | None:
-    """Mission blocker, then a draft ticket to amend, then the next ticket to
-    write. First match in mission order within each rule whose key is not in
+    """Mission blocker, then a bug to draft from a regression candidate, then a
+    draft ticket to amend, then the next ticket to write. First match in mission order within each rule whose key is not in
     `skip`. The plan is read from origin/<default> (`_plan_tree`)."""
     try:
         tree = _plan_tree(root, kb_dir)
@@ -111,7 +118,7 @@ def pick_ba(
         if tree != root:  # a snapshot `kb publish` would mirror it from .kb/
             gitio.worktree_remove(root, tree)
     try:
-        return _first(_ba_tasks(data), skip)
+        return _first(_ba_tasks(data, candidates), skip)
     except (KeyError, TypeError) as exc:
         raise KbError(
             f"kb mission next gave unexpected JSON: {str(data)[:MAX_STDERR]!r}"
@@ -130,13 +137,19 @@ def _has_test_workflow(root: Path) -> bool:
 
 
 def plan_next(
-    hub: HubHandle | HubApi, for_repo: str | None = None, require_target: bool = False
+    hub: HubHandle | HubApi,
+    for_repo: str | None = None,
+    require_target: bool = False,
+    repo: str | None = None,
 ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
     """The hub's plan: over its API on cloud, off the cloned hub otherwise.
-    With `for_repo`, only the items targeting that Dev repo."""
+    With `for_repo`, only the items targeting that Dev repo; with `repo`, only
+    that repo's plan."""
     if isinstance(hub, HubApi):
-        return hub.plan_next(for_repo=for_repo, require_target=require_target)
-    return planstatus.next_from_hub(hub, for_repo=for_repo)
+        return hub.plan_next(
+            repo=repo, for_repo=for_repo, require_target=require_target
+        )
+    return planstatus.next_from_hub(hub, repo=repo, for_repo=for_repo)
 
 
 def runnable_here(t: StoryStatus, repo_id: str) -> bool:
@@ -147,8 +160,19 @@ def runnable_here(t: StoryStatus, repo_id: str) -> bool:
     return not t.is_parent and t.status == "ready" and t.target_repo in (None, repo_id)
 
 
+def reopened_here(t: StoryStatus, repo_id: str) -> bool:
+    """`t` failed a test round (still `done`) and this Dev owns the fix."""
+    return (
+        t.status == "done"
+        and t.test_status == "reopened"
+        and not t.is_parent
+        and t.target_repo in (repo_id, None)
+    )
+
+
 def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
-    """Ready tickets routed to `repo_id` whose dependencies are done. `done`
+    """Reopened tickets routed here (dependencies ignored), then ready tickets
+    routed to `repo_id` whose dependencies are done. `done`
     spans every repo's rows: a dependency may be built elsewhere. A ready row
     with no target only exists on a hub without dev repos (no routing): every
     runner may take it."""
@@ -157,6 +181,14 @@ def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     def ready(t: StoryStatus) -> bool:
         return runnable_here(t, repo_id) and all(d in done for d in t.depends_on)
 
+    # reopened first, dependencies ignored: they were done when it first passed
+    rows = (*stories, *unparented)
+    for t in rows:
+        if reopened_here(t, repo_id) and not t.us_id.startswith("BUG-"):
+            yield Task("dev-implement-ticket", t.us_id)
+    for t in rows:
+        if reopened_here(t, repo_id) and t.us_id.startswith("BUG-"):
+            yield Task("dev-fix-bug", t.us_id)
     for u in unparented:
         if ready(u) and u.us_id.startswith("BUG-"):
             yield Task("dev-fix-bug", u.us_id)
@@ -176,8 +208,9 @@ def dev_candidates(
     held: Collection[str] = (),
 ) -> list[Task]:
     """Every task the Dev may take, in pick order: the CI workflow first, then
-    a ready bug, then a ready unparented ticket, then each ready story, all
-    routed to `repo_id` with dependencies done. Tasks whose key is in `skip`, or whose ticket is in
+    reopened tickets (stories, then bugs), then a ready bug, a ready unparented
+    ticket, each ready story, all routed to `repo_id` (ready ones with
+    dependencies done). Tasks whose key is in `skip`, or whose ticket is in
     `held` (claimed by another Dev), are left out."""
     if not _has_test_workflow(root):
         tasks: Iterable[Task] = [Task("dev-test-workflow", "")]

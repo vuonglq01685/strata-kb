@@ -134,6 +134,12 @@ def _check_steps(text: str) -> list[Issue]:
     ]
 
 
+FROM_REPORT_RE = re.compile(
+    r"^>[ \t]*From report:[ \t]*(\S+)[ \t]+R([1-9]\d*)[ \t]+(RD[1-9]\d*)[ \t]*$", re.M
+)
+_FROM_REPORT_LINE_RE = re.compile(r"^>\s*From report:.*$", re.M)
+
+
 def _check_headers(text: str) -> list[Issue]:
     visible = ticket.header_block(text)
     issues: list[Issue] = []
@@ -156,6 +162,11 @@ def _check_headers(text: str) -> list[Issue]:
                     "error",
                     f"'> Related ticket:' must be a ticket id or `none` (got '{value}')",
                 )
+            )
+    for line in _FROM_REPORT_LINE_RE.findall(visible):
+        if FROM_REPORT_RE.fullmatch(line) is None:
+            issues.append(
+                Issue("error", "'> From report:' must be '<story> R<n> RD<k>'")
             )
     # Raw text, unmasked: planrev.parent_pin reads it that way, so lint and
     # publish must agree on what counts as a parent-mission line.

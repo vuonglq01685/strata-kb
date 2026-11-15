@@ -519,3 +519,14 @@ def test_child_bug_with_dependencies_blocked_by_passes_against_its_parent():
 def test_child_bug_blocked_by_outside_dependencies_fails_against_its_parent():
     out = _errors(_child_lint(_written_child("BUG-7.api", deps=False)))
     assert any("Blocked by" in e for e in out)
+
+
+def test_buglint_from_report_shape():
+    ok = _bug().replace(
+        "> Related ticket: none\n",
+        "> Related ticket: none\n> From report: ST-1 R2 RD3\n",
+    )
+    assert not [i for i in buglint._check_headers(ok) if "From report" in i.message]
+    bad = ok.replace("ST-1 R2 RD3", "S RD1")
+    msgs = [i.message for i in buglint._check_headers(bad)]
+    assert "'> From report:' must be '<story> R<n> RD<k>'" in msgs

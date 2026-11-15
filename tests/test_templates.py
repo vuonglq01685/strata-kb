@@ -3812,12 +3812,14 @@ def test_ba_bug_report_proposes_first_responder_and_splits_with_child_of():
         ):
             assert needle in text, f"{name} missing {needle}"
         assert "never guess it from the symptom" not in text, name
-        assert "## Auto mode" not in text, name
 
 
 def test_ba_bug_report_command_copy_carries_child_of():
     text = _normalised(_read_init_template("claude-command-ba-bug-report.md"))
-    assert 'argument-hint: "[what broke | --child-of BUG-<n>]"' in text
+    assert (
+        'argument-hint: "[what broke | --child-of BUG-<n> | --from-report <story> R<n> RD<k>]"'
+        in text
+    )
     for needle in (
         "--child-of BUG-<n>",
         "> Kind: parent bug",

@@ -3,6 +3,8 @@
 > Severity: S2
 > Revision: 1
 > Related ticket: none
+<!-- Optional header line `> From report: <story> R<n> RD<k>`: the Tester
+report defect this bug logs (a bug made from a known failure). -->
 <!-- Optional header line `> Target repo: <repo-id>`: the dev repo the fix
 lands in. -->
 
