@@ -129,7 +129,10 @@ run.
 ## Change log                  (planrev format)
 ```
 
-- `> Plan:` names the BA repo whose missions and stories the ids refer to.
+- `> Plan:` names the one BA repo whose missions and stories the ids refer
+  to (one tester repo per BA repo, as the tester role enforces). In a
+  docs-only project with no BA repo registered yet it is `—`, and lint then
+  allows KB-area rows only. *(Call.)*
 - `> Revision:` and `## Change log` use `planrev` (same columns `Rev | Date |
   Trigger | What changed | Affected | Review`). Strategy triggers:
   `kb-context`, `plan` (a pinned mission/ticket revision moved), `coverage`
@@ -141,7 +144,10 @@ run.
 
 ### D2. Priority order table
 
-- **Rank**: positive integer, 1 = test first. Ties allowed (same tier).
+- **Rank**: positive integer, 1 = test first, ties allowed (same tier); or
+  `last` = deliberately left to the end (tested after every ranked and
+  unranked story, never a `coverage` gap). This is how a Tester keeps a
+  story or area out of the order without the finding coming back. *(Call.)*
 - **Target**, exactly one of:
   - a mission id `M-<slug>`;
   - a story id `M-<slug>-US<n>` (or a bug id `BUG-<n>`);
@@ -173,16 +179,25 @@ For each story S, the **most specific** match wins:
 
 Story ordering for the machine:
 
-- ranked stories first, by rank;
-- within a rank, and for all unranked stories after the ranked ones, the BA
-  plan order `planstatus` already gives (mission `## Sequencing`, `Depends
-  on`), with a story never placed before a story it depends on.
+1. **retests first**: `fix-done` stories and testable bugs (`BUG-<n>`), as the
+   tester role already rules (retest before new); among them, by rank, then
+   plan order;
+2. ranked stories, by rank;
+3. unranked stories;
+4. `last` stories.
+
+Within a tier (same rank, or the unranked group), the BA plan order
+`planstatus` already gives (mission `## Sequencing`, `Depends on`), with a
+story never placed before a story it depends on **in the same tier**.
+`Depends on` does not pull a story up from a lower tier: the rank means what
+the Tester wrote. *(Call.)*
 
 Coverage, computed with the same pass:
 
 - **rows with no story** — normal in docs-only; shown as "no ticket yet";
 - **testable stories outside the strategy** — shown, and counted as a
-  `coverage` finding by `kb test stale`.
+  `coverage` finding by `kb test stale`. Bugs never count: they are retested
+  through the retest tier and are not planned in the strategy. *(Call.)*
 
 ### D4. Drift — `kb test stale`
 
@@ -194,7 +209,7 @@ output. Findings:
 | `broken-target` | a row's mission/story id is not on the hub | error |
 | `pin-moved` | a row's `rev N` ≠ the target's current revision | warning |
 | `kb-context` | a kb-context ref is stale or broken (reuse `ticketstale._kb_context_refs` / `resolve_refs`) | warning / error |
-| `coverage` | a testable story matches no row | warning |
+| `coverage` | a testable story (not a bug) matches no row, `last` rows included | warning |
 | `tc-revision` | any `tests/<story>/test-cases.md` `Ticket revision` ≠ the ticket's current revision (the check `testcases.py` already does, run over every spec) | warning |
 
 - Exit code non-zero only on errors.
@@ -244,6 +259,8 @@ The menu label stays **Test Report** (the owner's term); `/ui/tests` gets:
   rows with no story, testable stories outside the strategy, drift
   findings. Read-only, built from the federation like the other test pages.
 - the story page shows the story's rank and matching row.
+- several BA repos on one hub → one Strategy panel per published strategy,
+  each labelled by its `> Plan:`; `/ui/tests/strategy?repo=<tester-repo-id>`.
 
 ### D8. Machine order and auto
 
@@ -267,10 +284,15 @@ warning.
 
 - may re-pin, re-point a row whose id was renamed or split (by the
   citations), add rows for uncovered stories, **and change ranks** when the
-  evidence supports it (O4);
+  evidence supports it **and** the reviewer agrees (O4);
 - each change is one `**Auto decision:**` line under `## Change log`; a
   fresh-context reviewer gets the rows, the evidence and the pick and
-  answers agree/object; on an objection decide once more, then go;
+  answers agree/object; on an objection decide once more. A re-pin,
+  re-point or added row then goes ahead (as in `ba-mission-plan`); a **rank
+  change** objected to twice is dropped, the rank stays, and the Auto
+  decision line records the proposal for the Tester;
+- an uncovered story the agent judges not worth a rank is added as a
+  `last` row, so the `coverage` finding clears and the loop stops;
 - the change-log row's Review cell starts with `auto`; a rank change adds
   the `priority` trigger;
 - lint, Q1, PR on `auto/strategy`, merge publishes;
@@ -303,6 +325,13 @@ body in `templates/init/bodies/tester-strategy.md`):
 2. **Machine order**: `kb test next`, `/tester-test-story` with no argument.
 3. **Auto**: `pick_tester` steps, Auto mode of `/tester-strategy --amend`,
    `auto-reordered` badge. Ships with tester `kb auto`.
+
+The first implementation plan covers **phase 1 only**. Phases 2 and 3 must
+work on cloud like BA/Dev auto does; there the hub is reached through
+`HubApi`, which today serves `plan_next`, `registry_entry` and `resolve`
+only. Those phases add the hub API routes they need (strategy order and
+drift for a tester repo) with an older-hub fallback, planned with them.
+*(Call.)*
 
 ## Constraints
 
@@ -337,3 +366,10 @@ body in `templates/init/bodies/tester-strategy.md`):
 - `coverage` (story outside the strategy) is a drift finding, so auto
   re-grounds when new stories become testable.
 - The `auto-reordered` badge clears only on a human revision.
+- Builder-check calls: rank `last` (deliberate exclusion, clears `coverage`,
+  stops the auto loop); bugs not in `coverage`, retested first; retests
+  (`fix-done`, bugs) before ranks, as the tester role rules; `Depends on`
+  orders inside a tier only; a twice-objected auto rank change is dropped
+  (O4 says "reviewer agrees"); `> Plan:` is one BA repo or `—`; one panel
+  per strategy on a multi-BA hub; first plan = phase 1, phases 2–3 add hub
+  API routes for cloud.
