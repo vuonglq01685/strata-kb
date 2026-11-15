@@ -19,6 +19,13 @@ knowledge base and tickets; it never changes them.
    `.kb/test-env.yaml` (env var names only; values live in `.env`) and verifies it.
    `.kb/test-env.example.yaml` shows the shape.
 
+## Plan the testing
+
+5. **Write the test strategy.** Run `/tester-strategy` before the first
+   `/tester-test-story`: it writes `docs/test-strategy.md` (what to test first
+   and why) and opens a PR. When the stale issue opens (`kb test stale`), run
+   `/tester-strategy --amend`. The strategy never blocks `/tester-test-story`.
+
 ## Layout
 
 ```
@@ -28,7 +35,9 @@ tests/<story-id>/test-cases.md   test case specification
 tests/<story-id>/tc<NN>.spec.ts  one script per test case
 tests/fixtures/login.ts          login fixture
 reports/<story-id>/R<n>.md       report of round n
+docs/test-strategy.md            priority order, from /tester-strategy
 docs/test-review-rubric.md       review criteria (+ .local.md override)
 ```
 
-Templates: `docs/templates/test-cases.md`, `docs/templates/test-report.md`.
+Templates: `docs/templates/test-cases.md`, `docs/templates/test-report.md`,
+`docs/templates/test-strategy.md`.
