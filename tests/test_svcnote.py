@@ -571,7 +571,20 @@ def test_plain_rerun_keeps_fix_refs(seeded):
     _add(seeded, refs=("svc.b",))
     text = _history(seeded)
     assert "fix:R1" in text
+    assert "svc.a" in text
     assert "svc.b" in text
+
+
+def test_fixes_with_different_refs_keeps_old_domain_ref(seeded):
+    _add(seeded, refs=("svc.a",))
+    _add(seeded, fixes="R1", refs=("svc.c",))
+    assert "| svc.a, svc.c, fix:R1 |" in _history(seeded)
+
+
+def test_escaped_pipe_ref_survives_merge(seeded):
+    _add(seeded, refs=("a|b",))
+    _add(seeded, fixes="R1", refs=("svc.c",))
+    assert "| a\\|b, svc.c, fix:R1 |" in _history(seeded)
 
 
 @pytest.mark.parametrize("bad", ["2", "R0", "R01"])
