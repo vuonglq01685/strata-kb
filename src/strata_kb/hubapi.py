@@ -30,7 +30,7 @@ NOT_REGISTERED = "repo_not_registered"
 OLD_HUB = "hub is older than 1.35 — upgrade the hub first"
 
 
-OLD_HUB_KNOWN = "hub is older than 1.38 — its known failures do not say which are logged; upgrade the hub first"
+OLD_HUB_KNOWN = "hub is older than 1.37.3 — its known failures do not say which are logged; upgrade the hub first"
 
 
 class OldHubError(KbError):
