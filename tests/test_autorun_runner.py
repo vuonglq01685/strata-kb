@@ -1789,7 +1789,7 @@ def test_runner_ba_candidates_read_failure_is_no_candidates(env, monkeypatch, ca
     from strata_kb import bugcandidates
 
     def boom(hub, plan_stories=None, facts=None):
-        raise KbError("hub too old")
+        raise runner_mod.hubapi.OldHubError("hub too old")
 
     got = []
 
@@ -1827,3 +1827,27 @@ def test_runner_ba_open_candidate_blocks_done_and_is_picked(env, monkeypatch):
     assert once(env, Script(TaskResult("done")), cfg=cfg_of("ba")) == "ran"
     assert got == [[cand]]
     assert seen[0] == {"US3"}
+
+
+def test_runner_ba_other_candidate_read_error_waits(env, monkeypatch):
+    from strata_kb import bugcandidates
+
+    def boom(hub, plan_stories=None, facts=None):
+        raise KbError("hub 500")
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", boom)
+    assert once(env, Script(), cfg=cfg_of("ba")) == "waiting"
+
+
+BA_PARKED = "ba-bug-report:--from-report S1 R2 RD1 https://github.com/o/r/pull/7"
+
+
+def test_parked_key_with_spaces_is_skipped_and_kept_whole(env, monkeypatch):
+    state = autostate.AutoState(None, 0, (), None, "", waiting_review=(BA_PARKED,))
+    assert "ba-bug-report:--from-report S1 R2 RD1" in runner_mod._skip(state)
+    _view(monkeypatch, state="MERGED")
+    out = runner_mod._review_check(
+        env[0], env[1], state, view_pr=lambda root, ref: {"state": "MERGED"}
+    )
+    assert out.last_done == "ba-bug-report:--from-report S1 R2 RD1"
+    assert out.waiting_review == ()

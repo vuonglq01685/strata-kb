@@ -814,7 +814,12 @@ AUTO_OPENING = (
 )
 PRE_AUTO = Path(__file__).parent / "fixtures" / "bodies-pre-auto"
 
-BA_AUTO_BODIES = ["ba-ticket-author", "ba-mission-plan", "ba-answer-questions"]
+BA_AUTO_BODIES = [
+    "ba-ticket-author",
+    "ba-mission-plan",
+    "ba-answer-questions",
+    "ba-bug-report",
+]
 DEV_AUTO_BODIES = [
     "dev-implement-ticket",
     "dev-design",
@@ -965,6 +970,11 @@ _BA_GATES = {
         "never commits, pushes or publishes",
         "The BA accepts with `kb_question_confirm_blocks`",
         'Split proposal: "The BA accepts, edits or rejects"',
+    ],
+    "bodies/ba-bug-report.md": [
+        "Ask, don't guess",  # intake
+        "the BA accepts the SA's proposal or picks another repo",  # first responder
+        "Tick NO `## Definition of Ready` box",  # the BA ticks them
     ],
     **{n: ["go/no-go"] for n in KB_PUBLISH_COPIES},
 }

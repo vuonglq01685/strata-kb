@@ -107,3 +107,22 @@ def test_cite_outside_the_header_does_not_log(plan_hub, tmp_path):
     publish_tests(plan_hub.root, "tester-one", STORY, fail_report(1))
     publish_bug(plan_hub.root, tmp_path, body_cite=f"{STORY} R1 RD1")
     assert [c.logged for c in bugcandidates.candidates(plan_hub)] == [False]
+
+
+def test_open_candidates_drop_story_defects_and_invalid_ids():
+    class Api(bugcandidates.HubApi):
+        def __init__(self):
+            pass
+
+        def known_failures(self):
+            def e(story, rd):
+                return {"story": story, "round": 1, "rd_id": rd, "logged": False}
+
+            return {
+                "ST-0/TC-1": e("ST-0", ""),
+                "ST-0/TC-2": e("ST-0", "RD0"),
+                "../x/TC-3": e("../x", "RD1"),
+                "ST-0/TC-4": e("ST-0", "RD4"),
+            }
+
+    assert [c.key for c in bugcandidates.open_candidates(Api())] == ["ST-0/TC-4"]

@@ -194,14 +194,14 @@ def _stop(
 def _ba_candidates(
     hub: HubHandle | hubapi.HubApi, rows: Sequence[StoryStatus] | None = None
 ) -> list[bugcandidates.Candidate]:
-    """Open bug candidates of the plan's stories (`rows`, else read here);
-    unreadable (an old hub too) is none: a failed read never fails the pick."""
+    """Open bug candidates of the plan's stories (`rows`, else read here). An
+    old hub has none; any other read failure raises KbError to the caller."""
+    if rows is None:
+        stories, unparented, _notes = picker.plan_next(hub)
+        rows = [*stories, *unparented]
     try:
-        if rows is None:
-            stories, unparented, _notes = picker.plan_next(hub)
-            rows = [*stories, *unparented]
         return bugcandidates.open_candidates(hub, {t.us_id for t in rows})
-    except KbError as exc:  # OldHubError included
+    except hubapi.OldHubError as exc:
         logger.warning("bug candidates not read: %s", exc)
         return []
 
@@ -224,12 +224,17 @@ def _check_done(
     except KbError as exc:
         logger.warning("open questions not read: %s", exc)
         return "waiting"
+    try:
+        n_candidates = len(_ba_candidates(hub, [*stories, *unparented])) if ba else 0
+    except KbError as exc:
+        logger.warning("bug candidates not read: %s", exc)
+        return "waiting"
     finished, why = all_done(
         stories,
         unparented,
         ba=ba,
         open_questions=open_questions,
-        open_candidates=len(_ba_candidates(hub, [*stories, *unparented])) if ba else 0,
+        open_candidates=n_candidates,
         repo_id=cfg.repo_id,
     )
     if finished:
@@ -240,7 +245,7 @@ def _check_done(
 
 def _skip(state: autostate.AutoState) -> tuple[str, ...]:
     """Task keys the pick passes over: done-but-repicked, and bugs awaiting a split."""
-    parked = (e.partition(" ")[0] for e in state.waiting_review)
+    parked = (e.rpartition(" ")[0] for e in state.waiting_review)
     return (
         *state.skipped,
         *(f"dev-fix-bug:{b}" for b in state.waiting_split),
@@ -269,7 +274,7 @@ def _review_check(
     turn; it is queued when the task slot is free."""
     kept, merged, queued = [], None, state.task
     for entry in state.waiting_review:
-        key, _, url = entry.partition(" ")
+        key, _, url = entry.rpartition(" ")
         number = url.rpartition("/pull/")[2]
         try:
             if not _own_pr(root, url):
@@ -435,9 +440,12 @@ def _task_for(
             raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
-        return picker.pick_ba(
-            root, kb_dir, skip=_skip(state), candidates=_ba_candidates(hub)
-        )
+        try:
+            candidates = _ba_candidates(hub)
+        except KbError as exc:  # a failed read never fails the pick
+            logger.warning("bug candidates not read: %s", exc)
+            candidates = []
+        return picker.pick_ba(root, kb_dir, skip=_skip(state), candidates=candidates)
     if claims is None:
         return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
@@ -725,7 +733,7 @@ def _beat_waiting(claims: RunnerClaims | None, state: autostate.AutoState) -> No
     """Keep the claim alive while the loop waits on questions."""
     if claims is None:
         return
-    keys = (state.task, *(e.partition(" ")[0] for e in state.waiting_review))
+    keys = (state.task, *(e.rpartition(" ")[0] for e in state.waiting_review))
     for ticket in dict.fromkeys(filter(None, map(_ticket_of, keys))):
         claims.beat(ticket)
 
