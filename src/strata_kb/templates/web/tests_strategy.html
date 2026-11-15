@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block main %}
+<div class="reader">
+  <div class="page-head">
+    <p class="crumbs"><a href="/ui/tests">Test Report</a> <span class="sep">/</span> Strategy</p>
+    <h1 style="font-size:26px">Test strategy</h1>
+    <p class="meta-line"><span class="note">rev {{ view.strategy.revision }}{% if view.strategy.plan %} · plan {{ view.strategy.plan }}{% endif %}</span></p>
+  </div>
+  <article class="reader-body md-body">{{ text_html | safe }}</article>
+  <div class="panel">
+    <div class="panel-head"><h2>Order</h2><span class="note">{{ view.order | length }}</span></div>
+    {% for p in view.order %}
+    <div class="queue-row">
+      <span class="note">tier {{ p.tier }}</span>
+      <span class="cite">{{ ('#' ~ p.row.rank) if p.row and p.row.rank else 'last' if p.row else '—' }}</span>
+      <a class="file" href="/ui/tests/{{ p.story | urlencode }}">{{ p.story }}</a>
+      <span class="file">{{ p.row.target if p.row else '—' }}</span>
+      <span class="note">{{ story_status.get(p.story, '') }}</span>
+      <span class="note">{{ p.how }}</span>
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No testable stories.</p></div>
+    {% endfor %}
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Rows</h2><span class="note">{{ view.rows | length }}</span></div>
+    {% for row, placed in view.rows %}
+    <div class="queue-row">
+      <span class="cite">{{ ('#' ~ row.rank) if row.rank else 'last' }}</span>
+      <span class="file">{{ row.target }}</span>
+      <span class="note">{% for s, st in placed %}{{ s }}{% if st %} ({{ st }}){% endif %}{{ ', ' if not loop.last }}{% else %}no ticket yet{% endfor %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if view.empty_rows %}
+  <div class="panel">
+    <div class="panel-head"><h2>No ticket yet</h2><span class="note">{{ view.empty_rows | length }}</span></div>
+    {% for row in view.empty_rows %}
+    <div class="queue-row"><span class="file">{{ row.target }}</span><span class="note">{{ row.why }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if view.outside %}
+  <div class="panel">
+    <div class="panel-head"><h2>Outside the strategy</h2><span class="note">{{ view.outside | length }}</span></div>
+    {% for s in view.outside %}
+    <div class="queue-row"><a class="file" href="/ui/tests/{{ s | urlencode }}">{{ s }}</a></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if view.findings %}
+  <div class="panel">
+    <div class="panel-head"><h2>Findings</h2><span class="note">{{ view.findings | length }}</span></div>
+    {% for f in view.findings %}
+    <div class="queue-row">
+      <span class="badge badge-pending">{{ f.code }}</span>
+      <span class="file">{{ f.subject }}</span>
+      <span class="note">{{ f.level }}: {{ 'hub read failed (see hub log)' if f.code == 'hub-read' else f.message }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

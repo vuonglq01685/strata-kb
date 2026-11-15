@@ -5,7 +5,7 @@ from importlib import resources
 import pytest
 
 BASE = resources.files("strata_kb").joinpath("templates/init")
-SKILLS = ("tester-env-setup", "tester-test-story")
+SKILLS = ("tester-env-setup", "tester-test-story", "tester-strategy")
 
 
 def _body(name: str) -> str:
@@ -237,3 +237,40 @@ def test_only_no_version_check_may_be_confirmed_by_hand():
     t = " ".join(_body("tester-test-story").split())
     assert "every printed reason is `no version_check`" in t
     assert "`not in test-env apps` included" in t
+
+
+def test_strategy_body_names_its_commands_and_modes():
+    t = _body("tester-strategy")
+    for p in (
+        "kb strategy lint",
+        "kb test stale --json",
+        "kb context new",
+        "kb report-ingest",
+        "--amend",
+        "kb mission next --from-hub --json",
+        "Auto mode is not available yet",
+        "`broken-target`",
+        "`pin-moved`",
+        "`coverage`",
+        "`kb-context`",
+        "`tc-revision`",
+        "kb context new --refs",
+        "leave it\n     for `/tester-test-story`",
+        "point the Tester to New mode",
+        "git switch -c strategy/rev-<N> origin/<default>",
+        "docs/test-review-rubric.local.md",
+        "never blocks `/tester-test-story`",
+    ):
+        assert p in t, p
+
+
+def test_rubric_has_the_strategy_axes():
+    r = BASE.joinpath("test-review-rubric.md").read_text(encoding="utf-8")
+    assert "## Strategy axes" in r
+    axes = r.split("## Strategy axes", 1)[1]
+    assert len([ln for ln in axes.splitlines() if ln.startswith("- [ ]")]) == 5
+    for key in ("High", "evidence", ".kb/test-env.yaml", "silently missing", "reorder"):
+        assert key in axes, key
+    for key in ("High", "evidence"):
+        line = next(ln for ln in axes.split("- [ ]") if key in ln)
+        assert "**BLOCKER**" in line, key

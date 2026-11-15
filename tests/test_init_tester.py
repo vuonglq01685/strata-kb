@@ -18,7 +18,7 @@ def test_init_tester_scaffolds_exactly_the_tester_set(tmp_path):
 
 def test_init_tester_has_all_four_wrappers_per_skill(tmp_path):
     init_repo(tmp_path, "tester")
-    for skill in ("tester-env-setup", "tester-test-story"):
+    for skill in ("tester-env-setup", "tester-test-story", "tester-strategy"):
         for rel in (
             f".claude/skills/{skill}/SKILL.md",
             f".claude/commands/{skill}.md",
@@ -336,3 +336,28 @@ def test_doctor_treats_the_test_doc_as_generated_and_hints_mcp(tmp_path, monkeyp
     res = CliRunner().invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
     assert res.exit_code == 1
     assert "a ba, dev or tester repo needs no hub clone" in res.output
+
+
+def test_tester_scaffold_has_stale_workflow(tmp_path):
+    import yaml
+
+    init_repo(tmp_path, "tester")
+    path = tmp_path / ".github/workflows/kb-test-stale.yml"
+    text = path.read_text(encoding="utf-8")
+    assert "kb test stale --md" in text and "{version}" not in text
+    wf = yaml.safe_load(text)
+    assert wf["permissions"]["issues"] == "write" and "schedule" in wf[True]
+
+
+def test_init_tester_scaffolds_the_strategy_template_and_skill(tmp_path):
+    init_repo(tmp_path, "tester")
+    assert (tmp_path / "docs/templates/test-strategy.md").is_file()
+    assert (tmp_path / ".claude/skills/tester-strategy/SKILL.md").is_file()
+
+
+def test_tester_allow_covers_the_strategy_commands():
+    for cmd in (
+        "kb strategy lint docs/test-strategy.md --hub",
+        "kb test stale --json",
+    ):
+        assert _permitted_by_tester(cmd), cmd

@@ -66,10 +66,12 @@ def parse_change_log(text: str) -> list[ChangeRow]:
     return out
 
 
-def check_revision(text: str) -> list[lintcore.Issue]:
+def check_revision(
+    text: str, triggers: frozenset[str] = TRIGGERS
+) -> list[lintcore.Issue]:
     """Absent `Revision` is a warning (read as 1). Otherwise the change log
     must hold exactly one row per revision 2..N, in order, and every Trigger
-    must be one of `TRIGGERS`."""
+    must be one of `triggers`."""
     issues: list[lintcore.Issue] = []
     revision = parse_revision(text)
     if revision is None:
@@ -97,10 +99,10 @@ def check_revision(text: str) -> list[lintcore.Issue]:
             lintcore.Issue(
                 "error",
                 f"change log rev {r.rev}: unknown Trigger '{t}' "
-                f"(allowed: {', '.join(sorted(TRIGGERS))})",
+                f"(allowed: {', '.join(sorted(triggers))})",
             )
             for t in r.triggers
-            if t not in TRIGGERS
+            if t not in triggers
         ]
     return issues
 

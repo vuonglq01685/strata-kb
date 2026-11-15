@@ -55,6 +55,21 @@ Used after the run, before the report PR.
 - [ ] Evidence images exist, are PNG or WebP, and show what the row claims.
       **SUGGESTED**
 
+## Strategy axes
+
+Used on `docs/test-strategy.md` after it passes `kb strategy lint`, before the
+strategy PR. The senior-tester review gates that PR as it does test cases.
+
+- [ ] Every High-risk area of the scope has a row in `## Priority order`.
+      **BLOCKER**
+- [ ] Each row's Why cites evidence (a requirement, an incident, a defect, a
+      change), not a bare opinion. **BLOCKER**
+- [ ] Types and Tools agree with `.kb/test-env.yaml`. **SUGGESTED**
+- [ ] Nothing in scope is silently missing: every mission, story or KB area
+      the scope names is a row, or is stated as out of scope. **SUGGESTED**
+- [ ] A reorder in an amend states in the change log what evidence changed.
+      **SUGGESTED**
+
 ## Report format
 
 A review returns a table and a verdict line, nothing else:

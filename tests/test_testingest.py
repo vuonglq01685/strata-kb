@@ -15,6 +15,7 @@ from strata_kb.cli import app
 from tests.test_testcases import STORY, _dir, _spec
 from tests.test_testreport import _d
 from tests.test_testreport import _report as _base_report
+from tests.test_teststrategy import STRATEGY
 
 SPEC_FILES = ("tc01.spec.ts", "tc02.spec.ts", "tc03.spec.ts")
 PNG = b"\x89PNG-evidence"
@@ -48,6 +49,16 @@ def run_tests(root: Path, children=lambda _s: ()) -> testingest.TestIngestReport
     return testingest.run(
         root, root / "kb", "shop", root / "tests", root / "reports", children
     )
+
+
+TEMPLATE = (
+    Path(__file__).parents[1] / "src/strata_kb/templates/init/test-strategy-template.md"
+).read_text(encoding="utf-8")
+
+
+def write_strategy(root: Path, text: str) -> None:
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs/test-strategy.md").write_text(text, encoding="utf-8")
 
 
 def doc_file(root: Path, name: str) -> str:
@@ -195,3 +206,82 @@ def test_pass_report_missing_a_tc_row_is_skipped(tmp_path):
     one_row = THREE_ROWS.splitlines()[0]
     write_repo(tmp_path, report=_base_report(rows=one_row))
     _only_cases_published(tmp_path, "TC-02")
+
+
+def test_strategy_section_ships_first(tmp_path):
+    write_repo(tmp_path, spec=_spec(), report=_report())
+    write_strategy(tmp_path, STRATEGY)
+    rep = run_tests(tmp_path)
+    assert rep.published[0] == "strategy"
+    assert "strategy.md" in rep.files_written and "strategy.raw.md" in rep.files_written
+    manifest = models.load_yaml_model(
+        tmp_path / "kb/shop-test/_manifest.yaml", models.Manifest
+    )
+    assert manifest.sections[0].file == "strategy"
+
+
+def test_lint_failing_strategy_is_skipped_stories_still_ship(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, TEMPLATE)
+    rep = run_tests(tmp_path)
+    assert "strategy" not in rep.published
+    assert any(f == "docs/test-strategy.md" for f, _ in rep.skipped)
+    assert rep.published
+
+
+def test_strategy_alone_publishes_a_doc(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "kb").mkdir()
+    write_strategy(tmp_path, STRATEGY)
+    assert run_tests(tmp_path).published == ["strategy"]
+
+
+def test_story_folder_named_strategy_is_skipped(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    d = tmp_path / "tests" / "strategy"
+    d.mkdir()
+    (d / "test-cases.md").write_text(_spec(), encoding="utf-8")
+    write_strategy(tmp_path, STRATEGY)
+    rep = run_tests(tmp_path)
+    assert ("tests/strategy/test-cases.md", "reserved name 'strategy'") in rep.skipped
+    assert rep.published.count("strategy") == 1
+
+
+def _with_image(strategy: str, src: str) -> str:
+    # inside a kept section: l3_body drops the trailing Review record
+    return strategy.replace(
+        "Re-run P1 on every fix.", f"Re-run P1 on every fix.\n\n![x]({src})", 1
+    )
+
+
+def test_strategy_image_ships_hashed_and_ref_rewritten(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, _with_image(STRATEGY, "assets/x.png"))
+    (tmp_path / "docs/assets").mkdir()
+    (tmp_path / "docs/assets/x.png").write_bytes(PNG)
+    rep = run_tests(tmp_path)
+    name = f"{hashlib.sha256(PNG).hexdigest()}.png"
+    assert rep.published[0] == "strategy"
+    assert f"assets/{name}" in doc_file(tmp_path, "strategy.raw.md")
+    assert "assets/x.png" not in doc_file(tmp_path, "strategy.raw.md")
+    assert (tmp_path / "kb/shop-test/assets" / name).is_file()
+
+
+def test_strategy_with_missing_image_is_skipped_stories_ship(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, _with_image(STRATEGY, "assets/nope.png"))
+    rep = run_tests(tmp_path)
+    assert "strategy" not in rep.published and rep.published
+    assert [f for f, _ in rep.skipped] == ["docs/test-strategy.md"]
+
+
+def test_lint_clean_strategy_with_image_ships(tmp_path):
+    from strata_kb import teststrategy
+
+    text = _with_image(STRATEGY, "assets/x.png")
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, text)
+    (tmp_path / "docs/assets").mkdir()
+    (tmp_path / "docs/assets/x.png").write_bytes(PNG)
+    assert teststrategy.lint(text, tmp_path / "docs").passed
+    assert run_tests(tmp_path).published[0] == "strategy"

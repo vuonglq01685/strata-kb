@@ -274,13 +274,15 @@ TESTER_TEMPLATES: dict[str, str] = {
     "docs/test-review-rubric.md": "test-review-rubric.md",
     "docs/templates/test-cases.md": "test-cases-template.md",
     "docs/templates/test-report.md": "test-report-template.md",
+    "docs/templates/test-strategy.md": "test-strategy-template.md",
     ".kb/test-env.example.yaml": "test-env.example.yaml",
     ".github/workflows/kb-publish.yml": "kb-publish-tester.yml",
     ".github/workflows/kb-publish-request.yml": "kb-publish-request-tester.yml",
     ".github/workflows/kb-test-lint.yml": "kb-test-lint.yml",
+    ".github/workflows/kb-test-stale.yml": "kb-test-stale.yml",
     **{
         path: resource
-        for skill in ("tester-env-setup", "tester-test-story")
+        for skill in ("tester-env-setup", "tester-test-story", "tester-strategy")
         for path, resource in (
             (f".claude/skills/{skill}/SKILL.md", f"claude-skill-{skill}.md"),
             (f".claude/commands/{skill}.md", f"claude-command-{skill}.md"),
@@ -661,6 +663,8 @@ _SETTINGS_REL = ".claude/settings.json"
 TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb test-env *)",
     "Bash(kb testcase *)",
+    "Bash(kb strategy lint*)",
+    "Bash(kb test stale*)",
     "Bash(kb report*)",
     "Bash(kb report-ingest*)",
     "Bash(npx playwright test*)",

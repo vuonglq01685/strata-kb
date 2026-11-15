@@ -180,7 +180,7 @@ keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Does not host the shared service. | [Child](docs/src/guide-child.en.md) |
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets and mission plans grounded in the KB, gated by CI Definition-of-Ready checks. Publishes only its own plan (`<repo_id>-plan`). | [BA](docs/src/guide-ba.en.md) |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through an agent workflow. Publishes knowledge about *its own code* (`-code` generated, `-svc` curated), never outside documents. | [Dev](docs/src/guide-dev.en.md) |
-| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup` and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
+| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup`, `/tester-strategy` (the test strategy, `docs/test-strategy.md`) and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and the
 MCP client is wired in `.mcp.json` and `.cursor/mcp.json`; each guide lists them
@@ -222,7 +222,7 @@ daily use.
 | Command | Purpose |
 |---|---|
 | `kb init` | Scaffold or refresh a repo of a given kind |
-| `kb upgrade` | Refresh a ba/dev repo's scaffold on a new branch and open a PR (never merges) |
+| `kb upgrade` | Refresh a ba/dev/tester repo's scaffold on a new branch and open a PR (never merges) |
 | `kb docker-setup` | Prepare Docker (hub: `.env`, token, start; child: pull image) |
 | `kb mcp-setup` | Write the hub's HTTP MCP credentials into a reader repo's `.env` and verify them |
 | `kb ingest` | Parse a PDF, split into sections, write L3, scaffold L1/L2 |
@@ -256,6 +256,8 @@ daily use.
 | `kb pr` | `lint`, `find`, `view`, `open`, `checks`, `merge`, `edit`: pull requests over the GitHub REST API (what the skills call instead of `gh pr`) |
 | `kb claim` | Ticket claims on the hub for several Devs on one repo, and Tester claims on a story: `take`, `update`, `release`, `list` |
 | `kb test-env` | Tester repo: the test environment in `.kb/test-env.yaml` — `check`, `verify`, `reset`, `seed`, `version`, `deployed`, `changed`, `lock`, `unlock` |
+| `kb strategy lint` | Check a tester repo's `docs/test-strategy.md` (structure, priority order, KB context, review) |
+| `kb test stale` | Drift of a tester repo's strategy and test cases against the hub (`--md` is the issue body the scheduled workflow keeps) |
 | `kb testcase lint` | Check a story's `tests/<story-id>/test-cases.md` against its ticket |
 | `kb report lint` | Check a test report `reports/<story-id>/R<n>.md` (verdict, defects, evidence, secrets) |
 | `kb report-ingest` | Build `.kb/<repo_id>-test/` from the lint-clean test cases and reports of a `tester` repo |

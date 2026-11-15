@@ -22,6 +22,7 @@ from strata_kb import (
     planstatus,
     testcases,
     testreport,
+    teststrategy,
 )
 from strata_kb.codeingest import core
 from strata_kb.codeingest.types import CodeSection
@@ -71,6 +72,43 @@ def _section(sid: str, group: str, text: str, summary: str) -> CodeSection | Non
         l2_md="\n\n".join(extract_tables(l3)),
         l3_md=l3,
     )
+
+
+def _ship_strategy(
+    root: Path, out: TestIngestReport, assets: dict[str, bytes]
+) -> list[CodeSection]:
+    path = root / teststrategy.STRATEGY_FILE
+    if not path.is_file():
+        return []
+    text = _read(path)
+    reason = planingest.lint_reason(teststrategy.lint(text, path.parent))
+    files: dict[str, bytes] = {}
+    if not reason:
+        attached = planingest.attach_images(
+            text,
+            teststrategy.image_srcs(text),
+            ASSETS_DIR,
+            path.parent,
+            "strategy",
+        )
+        if isinstance(attached, str):
+            reason = attached
+        else:
+            text, files = attached[0], dict(attached[1])
+    sec = (
+        None
+        if reason
+        else _section(
+            teststrategy.SECTION_ID,
+            teststrategy.SECTION_ID,
+            text,
+            f"{len(teststrategy.parse(text).rows)} priority rows",
+        )
+    )
+    if sec is None:
+        out.skipped.append((teststrategy.STRATEGY_FILE, reason or "no '# ' title line"))
+    assets.update(files)
+    return [sec] if sec else []
 
 
 def _ship_report(
@@ -183,11 +221,19 @@ def run(
         )
     root = repo_root.resolve()
     out = TestIngestReport(doc_id=doc_id)
-    sections: list[CodeSection] = []
     assets: dict[str, bytes] = {}
+    sections = _ship_strategy(root, out, assets)
     for story_dir in sorted(p for p in tests_dir.iterdir() if p.is_dir()):
         spec_path = story_dir / CASES_FILE
         if not spec_path.is_file():
+            continue
+        if story_dir.name == teststrategy.SECTION_ID:
+            out.skipped.append(
+                (
+                    planingest.rel_path(spec_path, root),
+                    f"reserved name '{teststrategy.SECTION_ID}'",
+                )
+            )
             continue
         if not planstatus.safe_name(story_dir.name):
             out.skipped.append(

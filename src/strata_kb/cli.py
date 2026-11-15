@@ -125,6 +125,12 @@ app.add_typer(test_env_app, name="test-env")
 testcase_app = typer.Typer(help="Tester repo: test case specs.")
 app.add_typer(testcase_app, name="testcase")
 
+strategy_app = typer.Typer(help="Tester repo: the test strategy.")
+app.add_typer(strategy_app, name="strategy")
+
+test_app = typer.Typer(help="Tester repo: drift of the strategy and test cases.")
+app.add_typer(test_app, name="test")
+
 report_app = typer.Typer(help="Tester repo: test reports.")
 app.add_typer(report_app, name="report")
 
@@ -4978,6 +4984,92 @@ def testcase_lint(
     report = testcases.lint(text, ticket_text, spec_dir=spec_dir)
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("TC"))
     _exit_with(0 if report.passed else 1)
+
+
+@strategy_app.command("lint")
+def strategy_lint(
+    file: Path = typer.Argument(
+        Path("docs/test-strategy.md"), help="Test strategy file"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: bool = typer.Option(
+        False, "--hub", help="Also check targets and pins against the hub"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check the test strategy (offline; --hub adds drift). Exit 0 PASS, 1 FAIL."""
+    from strata_kb import strategyhub, teststrategy
+
+    try:
+        text = file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    report = teststrategy.lint(text, file.parent)
+    if hub:
+        report.issues += strategyhub.lint_against_hub(text, _hub_or_exit("", kb_dir))
+    typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
+    _exit_with(0 if report.passed else 1)
+
+
+@test_app.command("stale")
+def test_stale(
+    file: Path = typer.Option(
+        Path("docs/test-strategy.md"), "--file", help="Test strategy file"
+    ),
+    tests_dir: Path = typer.Option(Path("tests"), help="Test cases directory"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    md: bool = typer.Option(False, "--md", help="Emit the Markdown issue body"),
+) -> None:
+    """Drift of the test strategy and test cases against the hub. Exit 0 none,
+    2 warnings only, 1 any error. Never blocks testing."""
+    from strata_kb import strategyhub, teststrategy
+
+    handle = _hub_or_exit(hub, kb_dir)
+    note = ""
+    try:
+        text = file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        text = None
+        note = (
+            f"kb test stale: cannot read {file} ({exc}), "
+            "only test case revisions checked"
+            if file.exists()
+            else f"kb test stale: no {file}, only test case revisions checked"
+        )
+    findings: list[strategyhub.Finding] = []
+    if text is None:
+        plan = case_plan = strategyhub.plan_view(handle, None, all_plans=True)
+    else:
+        strategy = teststrategy.parse(text)
+        plan = strategyhub.plan_view(handle, strategy.plan)
+        findings = strategyhub.strategy_findings(text, strategy, plan, handle)
+        # `> Plan: —` names no BA repo, but case revisions still need every plan
+        case_plan = (
+            plan
+            if strategy.plan
+            else strategyhub.plan_view(handle, None, all_plans=True)
+        )
+    findings += strategyhub.case_findings(tests_dir, case_plan)
+    if json_output:
+        typer.echo(json.dumps([vars(f) for f in findings]))
+    elif md:
+        typer.echo(strategyhub.render_markdown(findings), nl=False)
+    else:
+        for f in findings:
+            typer.echo(f"[{f.level}] {f.code} {f.subject}: {f.message}")
+        if not findings:
+            typer.echo("kb test stale: nothing stale")
+    if note and not json_output:
+        typer.echo(note, err=True)
+    if any(f.level == "error" for f in findings):
+        raise typer.Exit(1)
+    if findings:
+        raise typer.Exit(2)
 
 
 @report_app.command("lint")

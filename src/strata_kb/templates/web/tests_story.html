@@ -6,6 +6,9 @@
     <h1 style="font-size:26px">{{ story }}</h1>
     <p class="meta-line">{% if ticket_href %}<a href="{{ ticket_href }}">ticket</a>{% else %}<span class="note">unknown story</span>{% endif %}</p>
   </div>
+  {% if placement %}
+  <p class="meta-line"><span class="badge badge-pending">{{ 'Rank ' ~ placement.rank if placement.rank else 'Last' }}</span> <span class="note">{{ placement.target }}</span></p>
+  {% endif %}
   <div class="panel">
     <div class="panel-head"><h2>Rounds</h2><span class="note">{{ reports | length }}</span></div>
     {% for r in reports %}

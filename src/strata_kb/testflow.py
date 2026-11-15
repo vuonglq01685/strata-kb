@@ -104,6 +104,16 @@ def section_text(hub: HubHandle, section_id: str) -> str | None:
     return None
 
 
+def strategy_texts(hub: HubHandle) -> dict[str, str]:
+    """Tester repo id -> markdown of its published `strategy` section."""
+    out: dict[str, str] = {}
+    for doc_id, doc in _test_docs(hub):
+        for sec in doc.manifest.sections:
+            if sec.id == "strategy" and (text := _section_text(doc, sec)):
+                out[doc_id.removesuffix("-test")] = text
+    return out
+
+
 def _read_report(doc: ticketcheck.LoadedDoc, sec: models.SectionEntry) -> Report | None:
     text = _section_text(doc, sec)
     if text is None:
