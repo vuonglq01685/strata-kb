@@ -14,6 +14,7 @@ The tester loop closes: a FAIL report now reaches Dev as reopened work, Dev fixe
 - **Bug candidates.** A regression defect in a report is a candidate. It counts as logged when a published bug's header has `> From report: <story> R<n> RD<k>`. `/api/tests/known-failures` gains `logged`, the Test Report list shows open candidates only, and `kb ticket lint` checks the header line. Against an old hub BA auto mode warns and carries on with no candidates (the `HubApi.known_failures` call raises a clear error).
 - **`kb auto` for BA drafts bugs from candidates.** After mission blockers, the BA picks an open candidate and runs `ba-bug-report --from-report <story> R<n> RD<k>`. BA is not done while candidates are open. `ba-bug-report` gains an Auto mode with a fresh-context DoR reviewer.
 - **`kb ticket lint` refuses amending a closed story.** An amend (a local revision above the published one) of a closed story, or a new child under a closed parent, is an error: `story is closed — write a new story`.
+- **`kb test next [--file] [--kb-dir] [--hub] [--json] [--all]`.** Lists the testable stories in strategy order (plan order without a strategy), with tier, rank and how to test. Exit 0 found, 3 nothing testable, 1 error. `/tester-test-story` with no argument runs it, proposes the first story and asks the Tester to confirm; the Tester auto allowlist gains `Bash(kb test next*)`.
 - **Upgrade.** Hub first, then `kb upgrade` in ba and dev repos.
 
 ## 1.37.2 — 2026-11-15
