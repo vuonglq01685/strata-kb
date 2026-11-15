@@ -63,3 +63,29 @@ def test_dev_auto_allowlist_permits_report_fetch():
     )
     allow = json.loads(raw.read_text(encoding="utf-8"))["permissions"]["allow"]
     assert "Bash(kb report fetch*)" in allow
+
+
+@pytest.mark.parametrize("name", FIX_BODIES)
+def test_fix_mode_saves_mcp_report_and_branches_first(name):
+    section = _fix_section(name)
+    assert "returns text only" in section
+    assert "save it yourself as `docs/impl/<id>/report-R<n>.md`" in section
+    assert "Fetched from hub" in section
+    assert "0. Branch first" in section
+    assert "git switch -c fix/<id>-R<n> FETCH_HEAD" in section
+    assert "ACs decide" in section
+    assert "State the mode in your first reply" in section
+
+
+@pytest.mark.parametrize("name", FIX_BODIES)
+def test_auto_fix_branch_replaces_reentry_branch_rules(name):
+    text = _body(name)
+    auto = text[text.index("## Auto mode") :]
+    assert "replaces the Re-entry and branch-and-base rules" in auto
+
+
+def test_handover_overrides_title_and_reads_gitignored_report():
+    text = _body("dev-handover.md")
+    assert "the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]`, replacing" in text
+    assert "git-ignored" in text
+    assert "highest `R<n>`" in text

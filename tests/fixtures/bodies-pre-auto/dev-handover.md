@@ -82,7 +82,7 @@ hub.
   "<refs>"` so the entries land in this same PR. In fix mode (the ticket
   was reopened and `dev-implement-ticket` or `dev-fix-bug` fetched a
   `docs/impl/<id>/report-R<n>.md`) add `--fixes R<n>`, the round read from
-  that file name: the row's refs then carry `fix:R<n>`, which is how a
+  that file name (the file is git-ignored: read it from the working tree, highest `R<n>`): the row's refs then carry `fix:R<n>`, which is how a
   later run tells this round is recorded. `kb svc note`
   regenerates `<repo_id>-code` from the working tree first, so a
   service the ticket added is found once its files are tracked

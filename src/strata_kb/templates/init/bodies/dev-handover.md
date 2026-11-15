@@ -82,7 +82,7 @@ hub.
   "<refs>"` so the entries land in this same PR. In fix mode (the ticket
   was reopened and `dev-implement-ticket` or `dev-fix-bug` fetched a
   `docs/impl/<id>/report-R<n>.md`) add `--fixes R<n>`, the round read from
-  that file name: the row's refs then carry `fix:R<n>`, which is how a
+  that file name (the file is git-ignored: read it from the working tree, highest `R<n>`): the row's refs then carry `fix:R<n>`, which is how a
   later run tells this round is recorded. `kb svc note`
   regenerates `<repo_id>-code` from the working tree first, so a
   service the ticket added is found once its files are tracked
@@ -269,7 +269,7 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 **A denied command.** A command the permission system denies ends the run: report `command-denied <command>` to the orchestrator, which ends `AUTO-RESULT: failed command-denied <command>`. Never work around a denial: no other shell, no edit of the settings. The one exception is a denied `kb` command that has a `strata-kb` MCP tool: it counts as no CLI: run the MCP tool and carry on.
 
-In fix mode (a `docs/impl/<id>/report-R<n>.md` is on the branch) the row to look for is one whose refs contain `fix:R<n>`, and the branch is `fix/<id>-R<n>`; a row for an earlier round does not count.
+In fix mode the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]`, replacing the `--title` above and in the branch rule. In fix mode (a `docs/impl/<id>/report-R<n>.md` is in the working tree; it is git-ignored, so it is never on the branch; use the highest `R<n>`) the row to look for is one whose refs contain `fix:R<n>`, and the branch is `fix/<id>-R<n>`; a row for an earlier round does not count.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head <branch> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run `git fetch origin && git merge origin/<default-branch>` (`<default-branch>` is `default_branch` in `kb auto status --json`: the squash merge leaves the ticket branch behind `origin/<default-branch>`, and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it in here), then `kb publish` once (on a `behind origin/` refusal merge once more and retry once), then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR is this machine's crashed run only when a local `<branch>` exists and `git rev-parse <branch>` equals the `headRefOid` of the PR that `kb pr find --head <branch> --state open --json` returns, or `git log --format=%H <branch>..<headRefOid>` prints nothing (the local branch holds the PR head plus commits a crash left unpushed). Then `git fetch origin && git switch auto/<ticket-id>` (a bug: `fix/<BUG-id>` or `hotfix/<BUG-id>`), then `git pull origin <branch>`, and continue at step 3 of the branch rule below (the CI step). Any other open PR is not this machine's: do not switch, push, continue or merge it. Run `kb claim update <ticket-id> --phase review --pr <url>` and end `AUTO-RESULT: done` (the ticket waits on that PR).
 

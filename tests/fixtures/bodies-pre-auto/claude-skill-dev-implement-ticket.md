@@ -193,13 +193,15 @@ edit above it.
 
 Check this FIRST, on every entry. Run `kb mission next --from-hub --json` (MCP: `kb_mission_next`) and find this ticket's row. When it has `"test_status": "reopened"`, the Tester failed it and left a report: /dev-implement-ticket runs in **fix mode**. Otherwise this section does not apply.
 
-This is a fix, not a build: there is **no design or plan stage** (skip Ground, Placeholders, `dev-design`, `dev-plan`); the report is the spec.
+State the mode in your first reply. This is a fix, not a build: there is **no design or plan stage** (skip Ground, Placeholders, `dev-design`, `dev-plan`). Still run: the Freshness re-check, Intake and Questions. Re-entry's merged-PR and open-PR checks look at `fix/<id>-R<n>`, never the ticket's original branch.
+The report lists the defects; the ticket's ACs decide the expected behaviour. Fix-mode branches are `fix/<id>-R<n>` (capital R, one per test round); `-r<N>` branches are retries of an earlier attempt, a different thing.
 
-1. Fetch the report: `kb report fetch <story> --child <id>` (MCP: `kb_report_fetch`). `<story>` is the row's `parent`, or the ticket id itself when the row has no `parent`. It writes `docs/impl/<id>/report-R<n>.md`; `R<n>` is the round in that file name.
-2. Read the defects. Each is `### D<k> — <symptom>` with `Guilty: <child id> · Regression: yes|no · Severity · Priority`, then steps, expected and actual. Take every defect with `Guilty: <id>` (this ticket). List the defects of other children in your reply and under the PR's `## Notes`; touch none of them.
+0. Branch first. `<n>` is the round of the report (step 1: fetch the report before you branch, then return here). `git fetch origin <base>` where `<base>` is the default branch (`default_branch` in `kb auto status --json`), then `git switch -c fix/<id>-R<n> FETCH_HEAD`. Never check out `main`.
+1. Fetch the report: `kb report fetch <story> --child <id>`. `<story>` is the row's `parent`, or the ticket id itself when the row has no `parent`. The CLI writes `docs/impl/<id>/report-R<n>.md`. On the MCP path `kb_report_fetch(story, round)` returns text only: save it yourself as `docs/impl/<id>/report-R<n>.md`, with `n` from its `> Fetched from hub: … §<story>.R<n>` line (the same way Intake saves `ticket.md`). Either way `R<n>` is the round in the file name; `dev-handover` reads it from there.
+2. Read the defects. Each is `### D<k> — <symptom>` with `Guilty: <child id> · Regression: yes|no · Severity · Priority`, then steps, expected and actual. Take every defect with `Guilty: <id>` (this ticket). A `Regression: yes` defect: name the files your earlier change touched (`git log` on this ticket's work) and look there first. List the defects of other children in your reply and under the PR's `## Notes`; touch none of them.
 3. For each of your defects, in order: reproduce it as a **failing test** (see it fail), find the root cause, fix it, see the test pass.
 4. Run the full suite, and paste the real output as `dev-handover` requires.
-5. Branch `fix/<id>-R<n>`, then run `/dev-handover`: it passes `--fixes R<n>` to `kb svc note`, so the history row carries `fix:R<n>`, and the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]` (the defects you fixed).
+5. Run `/dev-handover`: it passes `--fixes R<n>` to `kb svc note`, so the history row carries `fix:R<n>`, and the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]` (the defects you fixed).
 
 ## Hard rules
 
