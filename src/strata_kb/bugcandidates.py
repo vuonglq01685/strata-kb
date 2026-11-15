@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from strata_kb import planstatus, testflow
+from strata_kb import planstatus, testflow, ticket
 from strata_kb.buglint import FROM_REPORT_RE
 from strata_kb.hub import HubHandle
 from strata_kb.hubapi import HubApi
@@ -28,13 +28,18 @@ def _cited(hub: HubHandle) -> set[tuple[str, int, str]]:
             if not entry.id.startswith("BUG-"):
                 continue
             section = planstatus._l3_section(fed, manifest.id, entry)
-            for m in FROM_REPORT_RE.finditer(section or ""):
+            if section is None:
+                continue
+            header = ticket.header_block(planstatus._restore(entry.title, section))
+            for m in FROM_REPORT_RE.finditer(header):
                 out.add((m.group(1), int(m.group(2)), m.group(3)))
     return out
 
 
-def candidates(hub: HubHandle) -> list[Candidate]:
-    facts = testflow.load_facts(hub)
+def candidates(
+    hub: HubHandle, facts: testflow.TestFacts | None = None
+) -> list[Candidate]:
+    facts = facts or testflow.load_facts(hub)
     logged_keys = {
         d.key
         for story, n, rd in _cited(hub)
@@ -50,7 +55,9 @@ def candidates(hub: HubHandle) -> list[Candidate]:
 
 
 def open_candidates(
-    hub: HubHandle | HubApi, plan_stories: set[str] | None = None
+    hub: HubHandle | HubApi,
+    plan_stories: set[str] | None = None,
+    facts: testflow.TestFacts | None = None,
 ) -> list[Candidate]:
     if isinstance(hub, HubApi):
         found = [
@@ -58,7 +65,7 @@ def open_candidates(
             for key, v in hub.known_failures().items()
         ]
     else:
-        found = candidates(hub)
+        found = candidates(hub, facts)
     return [
         c
         for c in found

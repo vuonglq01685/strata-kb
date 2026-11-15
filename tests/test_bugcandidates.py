@@ -22,13 +22,17 @@ def fail_report(n: int, date: str = "2026-11-14") -> str:
     return _text(STORY, n, guilty=f"{STORY}.web", date=date, **KW)
 
 
-def publish_bug(hub: Path, tmp_path: Path, *cites: str) -> None:
+def publish_bug(hub: Path, tmp_path: Path, *cites: str, body_cite: str = "") -> None:
     """A BA repo `ba-bug` whose BUG-12 carries one `> From report:` per cite."""
     root = tmp_path / "ba-bug"
     lines = "".join(f"> From report: {c}\n" for c in cites)
     text = _bug_text(()).replace(
         "> Related ticket: none\n", f"> Related ticket: none\n{lines}", 1
     )
+    if body_cite:  # same line, but in the body (a comment), not the header
+        text = text.replace(
+            "## Summary\n", f"## Summary\n<!--\n> From report: {body_cite}\n-->\n", 1
+        )
     write_repo(root, {}, {"bugs/BUG-12.md": text})
     assert run_plan(root).skipped == []
     entry = make_fed_entry(
@@ -97,3 +101,9 @@ def test_open_candidates_over_hubapi():
             }
 
     assert [c.key for c in bugcandidates.open_candidates(Api())] == ["ST-0/TC-3"]
+
+
+def test_cite_outside_the_header_does_not_log(plan_hub, tmp_path):
+    publish_tests(plan_hub.root, "tester-one", STORY, fail_report(1))
+    publish_bug(plan_hub.root, tmp_path, body_cite=f"{STORY} R1 RD1")
+    assert [c.logged for c in bugcandidates.candidates(plan_hub)] == [False]

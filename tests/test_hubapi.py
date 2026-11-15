@@ -210,11 +210,27 @@ def test_hubapi_story_keeps_test_overlay_fields():
     assert (old.test_status, old.test_round, old.regression_bug) == ("", 0, False)
 
 
+GOOD = {"story": "S", "round": 1, "rd_id": "RD1", "logged": False}
+
+
 def test_hubapi_known_failures(monkeypatch):
     c = hubapi.HubApi("http://hub:1", "t")
     seen = []
     monkeypatch.setattr(
-        c, "_json", lambda m, t, r, **kw: seen.append((m, t)) or {"a/TC-1": {}}
+        c, "_json", lambda m, t, r, **kw: seen.append((m, t)) or {"a/TC-1": GOOD}
     )
-    assert c.known_failures() == {"a/TC-1": {}}
+    assert c.known_failures() == {"a/TC-1": GOOD}
     assert seen == [("GET", "/api/tests/known-failures")]
+
+
+def test_hubapi_known_failures_old_hub_without_logged(monkeypatch):
+    import pytest
+
+    c = hubapi.HubApi("http://hub:1", "t")
+    body = {"a/TC-1": {"story": "S", "round": 1, "rd_id": "RD1"}}
+    monkeypatch.setattr(c, "_json", lambda *a, **k: body)
+    with pytest.raises(hubapi.OldHubError):
+        c.known_failures()
+    body["a/TC-1"] = {"logged": False}
+    with pytest.raises(hubapi.KbError, match="unexpected body"):
+        c.known_failures()

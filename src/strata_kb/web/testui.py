@@ -147,7 +147,7 @@ def test_routes(config: ServerConfig) -> list[Route]:
             unreadable = ["strategy"]
         candidates = []
         if status == "candidates":
-            open_keys = {c.key for c in bugcandidates.open_candidates(hub)}
+            open_keys = {c.key for c in bugcandidates.open_candidates(hub, facts=facts)}
             candidates = [
                 k for k in testflow.known_failures(facts).values() if k.key in open_keys
             ]

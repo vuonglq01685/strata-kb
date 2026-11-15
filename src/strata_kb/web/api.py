@@ -378,8 +378,9 @@ def build_routes(config: ServerConfig) -> list[Route]:
         hub = hub_handle(config)
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
-        found = testflow.known_failures(testflow.load_facts(hub))
-        logged = {c.key: c.logged for c in bugcandidates.candidates(hub)}
+        facts = testflow.load_facts(hub)
+        found = testflow.known_failures(facts)
+        logged = {c.key: c.logged for c in bugcandidates.candidates(hub, facts)}
         return JSONResponse(
             {
                 key: {

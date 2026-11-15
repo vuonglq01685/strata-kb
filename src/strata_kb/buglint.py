@@ -135,7 +135,7 @@ def _check_steps(text: str) -> list[Issue]:
 
 
 FROM_REPORT_RE = re.compile(
-    r"^>\s*From report:\s*(\S+)\s+R([1-9]\d*)\s+(RD[1-9]\d*)\s*$", re.M
+    r"^>[ \t]*From report:[ \t]*(\S+)[ \t]+R([1-9]\d*)[ \t]+(RD[1-9]\d*)[ \t]*$", re.M
 )
 _FROM_REPORT_LINE_RE = re.compile(r"^>\s*From report:.*$", re.M)
 
