@@ -51,6 +51,14 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 - A candidate logged twice: two BA runs must not draft two bugs for one `RD`.
 - A `closed` story silently reopened by an amend.
 
+## Owner answers
+
+| # | Answer |
+|---|---|
+| B1 | Dev/BA `kb auto` still exits when nothing is left to do; a later run picks up new work. No idle waiting for the Tester. |
+| B2 | Dev pick order: reopened tickets first, then `BUG-<n>` fixes, then `ready` tickets. |
+| B3 | A regression defect (`RD<k>`) goes through the BA (`BUG-<n>` drafted, reviewed in the PR, published) before a Dev sees it. A story defect (`D<k>`, guilty child) reopens the ticket straight for the Dev, as base design D3 says (Q2 already reviewed the report). |
+
 ## Approaches
 
 | | Approach | Trade-off | |
@@ -91,8 +99,12 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
   `dev-fix-bug`, which gets the same fix mode (E3) and `--fixes R<n>`
   handover. *(Call: the two ticket shapes differ, so each skill keeps its
   own.)*
-- "Reopened is open work" everywhere a Dev ticket is judged finished:
-  `autorun/done.all_done`, the runner's `_still_ready_here`, and the hub's
+- Order (B2): reopened first (story children before reopened bugs), then
+  ready bugs, then ready unparented tickets, then ready stories.
+- "Reopened is open work" everywhere a Dev ticket is judged finished, so a
+  run that finds a reopened ticket works it instead of exiting (B1: a run
+  with nothing open still exits): `autorun/done.all_done`, the runner's
+  `_still_ready_here`, and the hub's
   `web/claim_api.close_done_tickets` (which today closes a Dev claim on any
   row with `status == "done"`, a reopened child included). *(Call: claims
   are not statuses; this is allowed under "no hub status change".)*
@@ -166,6 +178,7 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
   (not logged) candidate whose closed story belongs to this BA repo's plan.
 - Source: local hub → `testflow.known_failures`; cloud → the hub API
   `/api/tests/known-failures` (exists; gains `logged`).
+- An open candidate is open work for the BA's `all_done` too (B1).
 - `ba-bug-report` gains an Auto mode section like `ba-ticket-author`'s
   (branch `auto/BUG-<n>`, lint, PR, the merge publishes); the BA merge policy
   is unchanged.
