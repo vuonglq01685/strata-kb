@@ -21,6 +21,7 @@ from strata_kb.lintcore import LintReport
 
 SKIP_NOTE = "cross-repo id check skipped — pass repo_id"
 _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError, OSError)
+CLOSED_SKIP_NOTE = "closed-story check skipped — pass ticket_id"
 CLAIM_NOTE = "claim check skipped (needs the hub API)"
 
 
@@ -87,12 +88,14 @@ def closed_story_issues(
     story = parent_id or ticket_id
     try:
         repos, _ = planstatus.hub_plans(hub)
+        if not repos:
+            return unchecked
         rows = [s for r in repos for m in r.missions for s in m.stories]
         rows += [s for r in repos for s in r.unparented]
         if not any(s.us_id == story and s.test_status == "closed" for s in rows):
             return []
         try:
-            published = planrev.parse_revision(ticketfetch.render(hub, ticket_id))
+            published = planrev.parse_revision(ticketfetch.render(hub, ticket_id)) or 1
         except ticketfetch.TicketNotOnHub:
             published = None
     except KbError:
@@ -116,12 +119,9 @@ def lint(
     report = ticketlint.lint(text, hub, ticket_id=ticket_id, path=path, **kwargs)
     is_parent = (ticket.ticket_kind(text) or "").startswith("parent")
     tid = ticket_id or (path.stem if path else None)
-    if (
-        hub is not None
-        and tid
-        and not is_parent
-        and ticket.ticket_type(text) == "story"
-    ):
+    if hub is not None and tid is None and ticket.ticket_type(text) == "story":
+        report.notes.append(CLOSED_SKIP_NOTE)
+    if hub is not None and tid and ticket.ticket_type(text) == "story":
         pin = ticket.parent_story_pin(text)
         report.issues += closed_story_issues(
             tid, pin[0] if pin else "", planrev.parse_revision(text) or 1, hub
