@@ -5113,7 +5113,7 @@ def report_fetch(
     handle = _hub_or_exit(hub, kb_dir)
     try:
         n, text = reportfetch.render(handle, story, round_)
-        files = reportfetch.assets_of(handle, story, n)
+        files, missing = reportfetch.assets_of(handle, story, n)
     except reportfetch.ReportFetchError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
@@ -5132,6 +5132,12 @@ def report_fetch(
     except OSError as exc:
         typer.secho(f"could not write '{path}': {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
+    for name in missing:
+        typer.secho(
+            f"warning: assets/{name} is not in the hub clone — open it on the hub at /assets/{name}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     typer.echo(str(path))
 
 

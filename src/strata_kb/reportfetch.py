@@ -5,9 +5,10 @@ report shape with one provenance line under the H1."""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
-from strata_kb import gitio, query, testflow
+from strata_kb import gitio, kinds, models, query, testflow, ticketcheck
 from strata_kb.errors import KbError
 from strata_kb.federation import load_federation
 from strata_kb.hub import HubHandle
@@ -30,14 +31,35 @@ def _round_re(story: str) -> re.Pattern[str]:
     return re.compile(rf"{re.escape(story)}\.R([1-9]\d*)")
 
 
-def _holders(hub: HubHandle, story: str) -> dict[int, str]:
-    """Round -> id of the `-test` doc publishing it."""
+@dataclass(frozen=True)
+class _Holder:
+    repo: str
+    doc_id: str
+    folder: Path
+    doc: ticketcheck.LoadedDoc
+    sec: models.SectionEntry
+
+
+def _holders(hub: HubHandle, story: str) -> dict[int, _Holder]:
+    """Round -> the `-test` doc entry publishing it (first one wins)."""
     pat = _round_re(story)
-    out: dict[int, str] = {}
-    for doc_id, doc in testflow._test_docs(hub):
-        for sec in doc.manifest.sections:
-            if m := pat.fullmatch(sec.id):
-                out.setdefault(int(m[1]), doc_id)
+    out: dict[int, _Holder] = {}
+    for fed in load_federation(hub.federation_dir):
+        for entry in sorted(fed.index.docs, key=lambda d: d.id):
+            if not kinds.is_test_doc(entry.title, entry.tags):
+                continue
+            folder = query.doc_dir(fed.kb_dir, entry.id)
+            if folder is None:
+                continue
+            try:
+                doc = ticketcheck.load_doc_dir(folder, entry.id)
+            except ticketcheck.DocLoadError:
+                continue
+            for sec in doc.manifest.sections:
+                if m := pat.fullmatch(sec.id):
+                    out.setdefault(
+                        int(m[1]), _Holder(fed.meta.repo_id, entry.id, folder, doc, sec)
+                    )
     return out
 
 
@@ -47,8 +69,8 @@ def rounds(hub: HubHandle, story: str) -> list[int]:
     return sorted(_holders(hub, story))
 
 
-def _pick(hub: HubHandle, story: str, round_: int | None) -> tuple[int, str]:
-    """`(round, doc_id)` of the wanted round (the latest by default)."""
+def _pick(hub: HubHandle, story: str, round_: int | None) -> tuple[int, _Holder]:
+    """`(round, holder)` of the wanted round (the latest by default)."""
     _check_story(story)
     held = _holders(hub, story)
     if not held:
@@ -64,47 +86,43 @@ def _pick(hub: HubHandle, story: str, round_: int | None) -> tuple[int, str]:
     return n, held[n]
 
 
-def render(hub: HubHandle, story: str, round_: int | None = None) -> tuple[int, str]:
-    """`(round, markdown)`: the report as the Tester wrote it, with a
-    `> Fetched from hub:` line under the H1."""
-    n, doc = _pick(hub, story, round_)
-    text = testflow.section_text(hub, f"{story}.R{n}")
+def _render(story: str, n: int, h: _Holder, hub: HubHandle) -> str:
+    text = testflow._section_text(h.doc, h.sec)
     if text is None:
-        raise ReportFetchError(f"{doc} lists {story}.R{n} but its text cannot be read")
+        raise ReportFetchError(
+            f"{h.doc_id} lists {story}.R{n} but its text cannot be read"
+        )
     try:
         rev = gitio.head_commit(hub.root)[:7]
     except gitio.GitError as exc:
         raise ReportFetchError(str(exc)) from exc
-    repo = doc.removesuffix("-test")
     heading, _, body = text.partition("\n")
     provenance = (
-        f"> Fetched from hub: {repo}:{doc} §{story}.R{n} @ {rev} — do not edit."
+        f"> Fetched from hub: {h.repo}:{h.doc_id} §{story}.R{n} @ {rev} — do not edit."
     )
-    return n, f"{heading}\n\n{provenance}\n\n{body.strip(chr(10))}\n"
+    return f"{heading}\n\n{provenance}\n\n{body.strip(chr(10))}\n"
 
 
-def assets_of(hub: HubHandle, story: str, round_: int) -> list[Path]:
-    """Files under the `-test` doc's `assets/` that the report references.
-    A symlinked `assets/`, one resolving outside the hub, or a symlinked file
-    holds nothing."""
-    _, doc = _pick(hub, story, round_)
-    names = dict.fromkeys(ASSET_REF_RE.findall(render(hub, story, round_)[1]))
-    folder = next(
-        (
-            f / ASSETS_DIR
-            for fed in load_federation(hub.federation_dir)
-            if (f := query.doc_dir(fed.kb_dir, doc)) and f.is_dir()
-        ),
-        None,
-    )
-    if (
-        folder is None
-        or folder.is_symlink()
-        or not folder.resolve().is_relative_to(hub.root.resolve())
-    ):
-        return []
-    return [
+def render(hub: HubHandle, story: str, round_: int | None = None) -> tuple[int, str]:
+    """`(round, markdown)`: the report as the Tester wrote it, with a
+    `> Fetched from hub:` line under the H1."""
+    n, h = _pick(hub, story, round_)
+    return n, _render(story, n, h, hub)
+
+
+def assets_of(hub: HubHandle, story: str, round_: int) -> tuple[list[Path], list[str]]:
+    """`(found, missing)` for the assets the report references: files under
+    the `-test` doc's `assets/`, and the names of those not on disk (diverted
+    to the object store) or symlinked. A symlinked `assets/`, or one resolving
+    outside the hub, holds nothing."""
+    n, h = _pick(hub, story, round_)
+    names = dict.fromkeys(ASSET_REF_RE.findall(_render(story, n, h, hub)))
+    folder = h.folder / ASSETS_DIR
+    if folder.is_symlink() or not folder.resolve().is_relative_to(hub.root.resolve()):
+        return [], list(names)
+    found = [
         folder / n
         for n in names
         if (folder / n).is_file() and not (folder / n).is_symlink()
     ]
+    return found, [n for n in names if folder / n not in found]

@@ -54,8 +54,39 @@ def test_assets_copied_only_when_referenced_and_regular(plan_hub):
     (folder / "assets").mkdir()
     (folder / "assets" / f"{sha}.png").write_bytes(b"png")
     (folder / "assets" / f"{other}.png").write_bytes(b"x")  # unreferenced
-    got = reportfetch.assets_of(plan_hub, STORY, 1)
-    assert [p.name for p in got] == [f"{sha}.png"]
+    got, missing = reportfetch.assets_of(plan_hub, STORY, 1)
+    assert [p.name for p in got] == [f"{sha}.png"] and missing == []
+
+
+def _hub_with_image(plan_hub):
+    sha = "a" * 64
+    text = _text(STORY, 1, "FAIL").replace(
+        "staging, seed a.", f"seed a ![](assets/{sha}.png)"
+    )
+    publish_tests(plan_hub.root, "tester-one", STORY, text)
+    folder = next(plan_hub.root.glob("federation/**/tester-one-test"))
+    return f"{sha}.png", folder
+
+
+def test_assets_missing_from_clone_are_reported(plan_hub):
+    name, _ = _hub_with_image(plan_hub)
+    assert reportfetch.assets_of(plan_hub, STORY, 1) == ([], [name])
+
+
+def test_symlinked_asset_file_is_missing(plan_hub, tmp_path):
+    name, folder = _hub_with_image(plan_hub)
+    (folder / "assets").mkdir()
+    (tmp_path / "secret.png").write_bytes(b"s")
+    (folder / "assets" / name).symlink_to(tmp_path / "secret.png")
+    assert reportfetch.assets_of(plan_hub, STORY, 1) == ([], [name])
+
+
+def test_symlinked_assets_dir_holds_nothing(plan_hub, tmp_path):
+    name, folder = _hub_with_image(plan_hub)
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / name).write_bytes(b"s")
+    (folder / "assets").symlink_to(tmp_path / "out")
+    assert reportfetch.assets_of(plan_hub, STORY, 1) == ([], [name])
 
 
 def _invoke(plan_hub, tmp_path, monkeypatch, *args):
@@ -78,6 +109,21 @@ def test_cli_default_dir_is_story_and_out_overrides(plan_hub, tmp_path, monkeypa
     assert (tmp_path / "docs" / "impl" / STORY / "report-R1.md").is_file()
     res = _invoke(plan_hub, tmp_path, monkeypatch, STORY, "--out", str(tmp_path / "o"))
     assert res.exit_code == 0 and (tmp_path / "o" / "report-R1.md").is_file()
+
+
+def test_cli_warns_on_missing_asset(plan_hub, tmp_path, monkeypatch):
+    name, _ = _hub_with_image(plan_hub)
+    result = _invoke(plan_hub, tmp_path, monkeypatch, STORY)
+    assert result.exit_code == 0, result.output
+    assert f"warning: assets/{name} is not in the hub clone" in result.output
+    assert (tmp_path / "docs/impl" / STORY / "report-R1.md").is_file()
+
+
+def test_cli_unsafe_child_writes_nothing(plan_hub, tmp_path, monkeypatch):
+    publish_tests(plan_hub.root, "tester-one", STORY, _text(STORY, 1, "FAIL"))
+    result = _invoke(plan_hub, tmp_path, monkeypatch, STORY, "--child", "../x")
+    assert result.exit_code == 1
+    assert not (tmp_path / "docs").exists() and not (tmp_path / "x").exists()
 
 
 def test_cli_unknown_round_writes_nothing(plan_hub, tmp_path, monkeypatch):
