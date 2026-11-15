@@ -3,10 +3,14 @@ It ranks what to test first and why. You are the Tester; you open the PR and
 never merge it: a human does. The strategy never blocks `/tester-test-story`:
 a story is tested whether or not the strategy has a row for it.
 
-Modes: no argument is **New**; `--amend` is **Amend**. Read `.kb/test-env.yaml`
-first (Types and Tools must agree with it); when it is missing, stop and tell
-the Tester to run `/tester-env-setup`. Never commit `.env`, and never write a
-secret into the strategy: environments point at `.kb/test-env.yaml`.
+Modes: no argument is **New**; `--amend` is **Amend**. `.kb/test-env.yaml` is optional:
+a strategy can be written from documents alone, before any code or
+environment exists. When the file exists, read it first: Types and Tools
+must agree with it. When it is missing, write the planned environments
+(front end, API, database, tools) under `## Environments & data`, mark them
+"not set up yet", and tell the Tester to run `/tester-env-setup` before the first `/tester-test-story`.
+Never commit `.env`, and never write a secret into the strategy:
+environments point at `.kb/test-env.yaml`.
 
 ## New
 
@@ -53,10 +57,13 @@ secret into the strategy: environments point at `.kb/test-env.yaml`.
    the next revision; find `<default>` as in `/tester-test-story`). Run
    `kb test stale --json`. When `docs/test-strategy.md` does not exist, the
    only finding is `tc-revision`: stop and point the Tester to New mode. No
-   findings: say so and stop.
+   findings and no environment change (see step 2): say so and stop.
 2. **One change per finding**, by code, proposed to the Tester one at a time,
    each approved or rejected by the Tester. Apply only the approved ones.
    - `pin-moved`: re-pin the row (`rev <N>`).
+   - `.kb/test-env.yaml` now exists but `## Environments & data` still says
+     "not set up yet" (check this even with no finding): point the section at
+     the file and align Types and Tools with it, trigger `scope`.
    - `broken-target`: re-point the row to the new target, or drop it.
    - `coverage`: add a row, or a `last` row, for the story or area with none.
    - `kb-context`: refresh the block with `kb context new --refs "<refs>"`

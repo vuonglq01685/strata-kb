@@ -264,11 +264,21 @@ def test_strategy_body_names_its_commands_and_modes():
         assert p in t, p
 
 
+def test_strategy_does_not_need_a_test_environment():
+    # Docs-only projects write the strategy before any environment exists.
+    t = _body("tester-strategy")
+    assert "stop and tell" not in t
+    assert "`.kb/test-env.yaml` is optional" in t
+    assert "not set up yet" in t
+    assert "`/tester-env-setup` before the first `/tester-test-story`" in t
+
+
 def test_rubric_has_the_strategy_axes():
     r = BASE.joinpath("test-review-rubric.md").read_text(encoding="utf-8")
     assert "## Strategy axes" in r
     axes = r.split("## Strategy axes", 1)[1]
     assert len([ln for ln in axes.splitlines() if ln.startswith("- [ ]")]) == 5
+    assert "when `.kb/test-env.yaml` exists" in axes
     for key in ("High", "evidence", ".kb/test-env.yaml", "silently missing", "reorder"):
         assert key in axes, key
     for key in ("High", "evidence"):
