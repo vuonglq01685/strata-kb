@@ -21,7 +21,6 @@ from strata_kb.lintcore import LintReport
 
 SKIP_NOTE = "cross-repo id check skipped — pass repo_id"
 _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError, OSError)
-CLOSED_SKIP_NOTE = "closed-story check skipped — pass ticket_id or a file path"
 CLAIM_NOTE = "claim check skipped (needs the hub API)"
 
 
@@ -117,8 +116,6 @@ def lint(
     report = ticketlint.lint(text, hub, ticket_id=ticket_id, path=path, **kwargs)
     is_parent = (ticket.ticket_kind(text) or "").startswith("parent")
     tid = ticket_id or (path.stem if path else None)
-    if hub is not None and tid is None and ticket.ticket_type(text) == "story":
-        report.notes.append(CLOSED_SKIP_NOTE)
     if hub is not None and tid and ticket.ticket_type(text) == "story":
         pin = ticket.parent_story_pin(text)
         report.issues += closed_story_issues(
