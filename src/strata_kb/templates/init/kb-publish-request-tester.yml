@@ -1,4 +1,5 @@
-# Merge = publish. A push to main that changes tests/ or reports/ tags the
+# Merge = publish. A push to main that changes tests/, reports/ or the test
+# strategy (docs/test-strategy.md, docs/assets/) tags the
 # merged commit kb-publish/<ts> and dispatches kb-publish.yml on that tag, so
 # the intake still sees an OIDC ref of refs/tags/kb-publish/* (it refuses any
 # other ref). A tag created with GITHUB_TOKEN does not trigger workflows, but
@@ -11,7 +12,7 @@ name: kb-publish-request
 on:
   push:
     branches: [main]
-    paths: ["tests/**", "reports/**"]
+    paths: ["tests/**", "reports/**", "docs/test-strategy.md", "docs/assets/**"]
   workflow_dispatch:
 permissions:
   contents: write   # create the kb-publish/<ts> tag

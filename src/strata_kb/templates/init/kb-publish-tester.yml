@@ -1,8 +1,9 @@
-# CI publishes this repo's test report (`<repo_id>-test`, built from tests/ and
-# reports/) to the kb-hub via the intake service — OIDC, zero secrets.
+# CI publishes this repo's test report (`<repo_id>-test`, built from tests/,
+# reports/ and docs/test-strategy.md) to the kb-hub via the intake service —
+# OIDC, zero secrets.
 # Trigger: `kb publish` on a dev machine creates and pushes a kb-publish/* tag.
-# Or: a push to main that changes tests/ or reports/ — kb-publish-request.yml
-# creates the tag and dispatches this workflow on it.
+# Or: a push to main that changes tests/, reports/ or the test strategy —
+# kb-publish-request.yml creates the tag and dispatches this workflow on it.
 # Requirements: `intake: <url>` in .kb/config.yaml (committed). No GH_TOKEN,
 # no KB_HUB_URL — the intake service holds the only hub credential.
 name: kb-publish
