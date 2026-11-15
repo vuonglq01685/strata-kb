@@ -461,6 +461,98 @@ def _task_for(
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
 
 
+def _park(
+    state: autostate.AutoState, stories: Sequence[str], until: float
+) -> tuple[str, ...]:
+    """`state.waiting` with each story held until `until` (a re-park moves it)."""
+    parked = {e.partition(" ")[0]: e for e in state.waiting}
+    parked.update({s: f"{s} {int(until)}" for s in stories})
+    return tuple(parked.values())
+
+
+def _tester_task(
+    root: Path,
+    kb_dir: Path,
+    cfg: KBConfig,
+    hub: HubHandle | hubapi.HubApi,
+    state: autostate.AutoState,
+    claims_client: claimclient.ClaimClient | None,
+    now,
+) -> tuple[Task | None, autostate.AutoState]:
+    """The tester's next task (no stored one) and the state with the stories the
+    pick found not deployed parked. `_Early` "done" when nothing is testable,
+    "idle" when every candidate is held or cooling. None: all candidates skipped."""
+    if not isinstance(hub, HubHandle) or claims_client is None:
+        raise KbError("a tester repo needs a local hub and a claim client")
+    t = now()
+    pick = picker.pick_tester(
+        root,
+        kb_dir,
+        hub,
+        claims_client=claims_client,
+        skip=_skip(state),
+        waiting=autostate.waiting_stories(state, t),
+    )
+    if pick.cooled:
+        state = replace(
+            state, waiting=_park(state, pick.cooled, t + cfg.auto.idle_interval)
+        )
+        autostate.save(kb_dir, state)
+    if pick.cause == "nothing":
+        logger.info("auto mode finished: nothing testable")
+        raise _Early("done")
+    if pick.cause == "waiting":
+        logger.info("every testable story is held or waiting")
+        raise _Early("idle")
+    return pick.task, state
+
+
+def _settle_tester(
+    kb_dir: Path,
+    state: autostate.AutoState,
+    result: claude.TaskResult,
+    now,
+    idle: float,
+) -> Outcome | None:
+    """The tester-only results; None when `_settle` handles `result` as for BA."""
+    until = now() + idle
+    if result.kind == "blocked-env":
+        story, reason = result.ids
+        if reason == "env-locked":  # every story waits for the environment
+            autostate.save(
+                kb_dir, replace(state, task=None, attempts=0, env_wait_until=until)
+            )
+            logger.info("environment locked by another round; waiting")
+            return "idle"
+        waiting = _park(state, [str(story)], until)
+        autostate.save(kb_dir, replace(state, task=None, attempts=0, waiting=waiting))
+        logger.info("%s is blocked (%s); trying the next story", story, reason)
+        return "ran"
+    if result.kind == "incomplete":
+        attempts = state.attempts + 1
+        if attempts >= MAX_ATTEMPTS:
+            skipped = (*state.skipped, *filter(None, [state.task]))
+            autostate.save(
+                kb_dir, replace(state, task=None, attempts=0, skipped=skipped)
+            )
+            logger.warning(
+                "%s ended incomplete %d times; skipping it", state.task, attempts
+            )
+            return "ran"
+        # attempts survives the cleared task: run_once keeps it for the re-pick
+        waiting = _park(state, [str(result.ids[0])], until)
+        autostate.save(
+            kb_dir, replace(state, task=None, attempts=attempts, waiting=waiting)
+        )
+        logger.info(
+            "%s ended incomplete (%d/%d)", result.ids[0], attempts, MAX_ATTEMPTS
+        )
+        return "ran"
+    if result.kind == "failed" and result.reason.startswith("test-review"):
+        return _stop(kb_dir, replace(state, attempts=MAX_ATTEMPTS), result.reason)
+    return None
+
+
 def _settle(
     kb_dir: Path,
     state: autostate.AutoState,
@@ -468,13 +560,18 @@ def _settle(
     backoff: Backoff,
     sleep,
     claims: RunnerClaims | None = None,
+    *,
+    tester: tuple | None = None,
 ) -> Outcome:
+    """`tester` is `(now, idle_interval)` for a tester repo, else None."""
     if result.kind == "usage-limit":
         delay = backoff.next()
         logger.warning("usage limit: %s; retrying in %ds", result.reason, delay)
         sleep(delay)
         return "ran"
     backoff.reset()
+    if tester is not None and (early := _settle_tester(kb_dir, state, result, *tester)):
+        return early
     if result.kind == "done":
         done = replace(
             state,
@@ -584,10 +681,12 @@ def run_once(
     backoff: Backoff | None = None,
     qa_thread: QaThread | None = None,
     claims: RunnerClaims | None = None,
+    tester_claims: claimclient.ClaimClient | None = None,
 ) -> Outcome:
     """One step of the loop. `cfg` is the config as just read (rule 1: a switch
     flipped between tasks stops the loop at the boundary). `claims` (dev repos
-    only) makes the step claim its ticket before working it."""
+    only) makes the step claim its ticket before working it. `tester_claims`
+    (tester repos only) is the hub client the pick reads held claims with."""
     if cfg.kind != "dev":
         claims = None
     state = autostate.load(kb_dir)
@@ -601,7 +700,11 @@ def run_once(
             "Run `kb auto on`, then `kb auto run`.",
             claims=claims,
         )
-    finished = _check_done(cfg, hub, qa)
+    tester = cfg.kind == "tester"
+    if tester and state.env_wait_until and state.env_wait_until > now():
+        logger.info("environment locked by another round; waiting")
+        return "idle"
+    finished = None if tester else _check_done(cfg, hub, qa)
     if finished is not None:
         return finished
     if cfg.kind == "ba":
@@ -613,14 +716,19 @@ def run_once(
         state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_review:
         state = _review_check(root, kb_dir, state, ghrest.view_pr)
-    if state.waiting_on:
+    if state.waiting_on and not tester:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
         if not ready:
             logger.info("waiting on questions %s", list(state.waiting_on))
             return "waiting"
     try:
-        task = _task_for(root, kb_dir, cfg, hub, state, claims)
+        if tester and not state.task:
+            task, state = _tester_task(
+                root, kb_dir, cfg, hub, state, tester_claims, now
+            )
+        else:
+            task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
     except (UnknownTicketError, ParentStoryError) as exc:
@@ -667,7 +775,11 @@ def run_once(
     if task.key == state.last_done:
         return _repicked(kb_dir, state, task)
     if state.task != task.key or state.last_done or state.same_pick:
-        state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
+        # a tester re-pick of a story that ended incomplete keeps its attempts
+        keep = state.attempts if tester and state.task is None else 0
+        state = replace(
+            state, task=task.key, attempts=keep, last_done=None, same_pick=0
+        )
         autostate.save(kb_dir, state)
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
     # read before the heartbeat thread starts: an OSError here must not leak it
@@ -711,7 +823,15 @@ def run_once(
         if beat is not None and beat.lost:
             return _claim_lost(kb_dir, state, claims, ticket)
         _after_task(claims, ticket, result)
-    return _settle(kb_dir, state, result, backoff or Backoff(), sleep, claims)
+    return _settle(
+        kb_dir,
+        state,
+        result,
+        backoff or Backoff(),
+        sleep,
+        claims,
+        tester=(now, cfg.auto.idle_interval) if tester else None,
+    )
 
 
 def _claim_lost(
@@ -753,6 +873,8 @@ def _resolve_hub(
     cfg: KBConfig, kb_dir: Path, hub_flag: str = ""
 ) -> HubHandle | hubapi.HubApi:
     if cloud.is_cloud():  # read the hub live; nothing is cloned
+        if cfg.kind == "tester":
+            raise KbError("kb auto for a tester repo needs a local hub, not cloud")
         return hubapi.from_env()
     handle = resolve_hub(require_hub(hub_flag or cfg.hub, kb_dir))
     if handle is None:
@@ -822,6 +944,8 @@ def run_loop(
     if claims is _BUILD:
         claims = build_claims(root, kb_dir, cfg)
     deps["claims"] = claims
+    if cfg.kind == "tester" and "tester_claims" not in deps:
+        deps["tester_claims"] = claimclient.from_env()
     qa_thread = None
     if cfg.kind == "ba":
         run_task = deps.get("run_task", claude.run_task)

@@ -62,10 +62,11 @@ class Script:
     """A `run_task` double: returns the scripted results in order."""
 
     def __init__(self, *results: TaskResult):
-        self.results, self.prompts = list(results), []
+        self.results, self.prompts, self.kinds = list(results), [], []
 
-    def __call__(self, root, prompt, *, log_dir):
+    def __call__(self, root, prompt, *, log_dir, kind=""):
         self.prompts.append(prompt)
+        self.kinds.append(kind)
         return self.results.pop(0)
 
 
