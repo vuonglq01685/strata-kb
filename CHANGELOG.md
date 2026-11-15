@@ -7,11 +7,11 @@ All notable changes to Strata are recorded here. This project follows
 
 A `tester` repo gains a test strategy: `docs/test-strategy.md` ranks what to test first, with the reasons, and the hub shows it. Phase 1: a Tester writes and amends it by hand. `kb test next` (phase 2) and automatic runs (phase 3) are not built.
 
-- **Strategy file and `/tester-strategy`.** `kb init`/`kb upgrade` add `docs/test-strategy.md` (from `docs/templates/test-strategy.md`) and the `/tester-strategy` skill. The skill writes a new strategy, or amends one with `--amend`. Order rules: the most specific match wins (story, then mission, then KB area); retests first, then rank, then unranked, then `last`; `Depends on` only inside one rank. The test-review rubric gains Strategy axes. The tester auto allowlist gains `kb strategy lint*` and `kb test stale*`.
+- **Strategy file and `/tester-strategy`.** `kb init`/`kb upgrade` add the template `docs/templates/test-strategy.md` and the `/tester-strategy` skill, which writes `docs/test-strategy.md` (new, or amended with `--amend`). Order rules: the most specific match wins (story, then mission, then KB area); retests first, then rank, then unranked, then `last`; `Depends on` only inside one rank. The test-review rubric gains Strategy axes. The tester auto allowlist gains `kb strategy lint*` and `kb test stale*`.
 - **`kb strategy lint [file] [--hub] [--json]`.** Checks structure, priority order, KB context and review of the strategy file; `--hub` checks the stories against the hub.
 - **`kb report-ingest` ships section `strategy`.** Images go through assets. A strategy that fails lint is skipped, and the folder `tests/strategy` is reserved.
 - **Hub UI.** A Strategy panel on `/ui/tests` (revision, date, top ranks, a `needs re-grounding` badge, or "could not be read"), a page `/ui/tests/strategy?repo=`, and the rank on the story page.
-- **`kb test stale [--hub] [--json|--md]`.** Reports drift of the strategy and test cases against the hub; exit `0` current, `2` stale, `1` error. `kb init`/`kb upgrade` scaffold `.github/workflows/kb-test-stale.yml`, which keeps one issue labelled `kb-test-stale`.
+- **`kb test stale [--hub URL] [--file F] [--json|--md]`.** Reports drift of the strategy and test cases against the hub (`--hub` defaults to `STRATA_KB_HUB` or the config); exit `0` nothing found, `2` warnings only, `1` any error (broken drift or no hub). `kb init`/`kb upgrade` scaffold `.github/workflows/kb-test-stale.yml`, which keeps one issue labelled `kb-test-stale`.
 - **Upgrade.** Run `kb upgrade` in tester repos to add the template, the skill and the workflow. No new dependency.
 
 ## 1.37.0 — 2026-11-14
