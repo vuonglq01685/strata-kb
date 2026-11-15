@@ -149,7 +149,12 @@ def test_tester_scaffold_publishes_via_ci_with_report_ingest(tmp_path):
             encoding="utf-8"
         )
     )
-    assert req[True]["push"]["paths"] == ["tests/**", "reports/**"]
+    assert req[True]["push"]["paths"] == [
+        "tests/**",
+        "reports/**",
+        "docs/test-strategy.md",
+        "docs/assets/**",
+    ]
     assert "actions/workflows/kb-publish.yml/dispatches" in (
         tmp_path / ".github/workflows/kb-publish-request.yml"
     ).read_text(encoding="utf-8")
