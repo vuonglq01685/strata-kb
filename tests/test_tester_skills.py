@@ -41,8 +41,8 @@ def test_test_story_body_orders_the_pipeline():
 
 def test_test_story_body_never_merges():
     t = _body("tester-test-story")
-    assert "Never merge it" in t  # manual mode: a human merges
     manual = t[: t.index("\n## Auto mode")]
+    assert "Never merge it" in manual  # manual mode: a human merges
     assert "kb pr merge" not in manual and "gh pr merge" not in manual
 
 
@@ -320,10 +320,13 @@ def test_test_story_auto_mode_section():
         "failed test-review no-subagents",
         "failed test-review <id>",
         "incomplete <story>",
-        "--phase review",
+        "--phase review --pr <pr-url>",
+        "--state all --json",
+        "report-pr-closed <pr-url>",
+        "kb claim take <story>",
+        "do not release the claim after `kb pr open`",
     ):
         assert needle in auto, needle
-    assert "Never merge it" in t
     assert "reserved for the unattended runner" not in t
 
 

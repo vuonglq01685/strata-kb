@@ -260,8 +260,11 @@ The runner starts this skill as `/tester-test-story <story>`. Nobody answers que
 
 - The `test_status` is `closed`: end `AUTO-RESULT: done`.
 - The `test_status` is `reopened`, and `origin/<default>` holds a `reports/<story>/R<n>.md` whose round is the latest published round: end `AUTO-RESULT: done`.
-- An open PR exists for the branch. Find it with `kb pr find --head test/<story>-R<n> --state open --json`. A crashed run left it: `git switch test/<story>-R<n>` and continue at step 3 of the merge rule below.
-- The branch `test/<story>-R<n>` exists on `origin` and has no PR: the run crashed after its push. Switch to it and continue at step 12 (Publish), at `kb pr open`.
+- Look up the report PR with `kb pr find --head test/<story>-R<n> --state all --json`:
+  - Merged: run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
+  - Closed and not merged: a human closed it, so it is final. Release the claim when this machine holds it (ignore exit 3), never reopen the PR, and end `AUTO-RESULT: failed report-pr-closed <pr-url>`.
+  - Open: a crashed run left it. Run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), then `git switch test/<story>-R<n>` and continue at step 3 of the merge rule below.
+- No PR, but the branch `test/<story>-R<n>` exists on `origin`: the run crashed after its push. Run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), then switch to the branch and continue at step 12 (Publish), at `kb pr open`.
 - None of these: do the work from Step 1.
 
 **Deploy check (step 2).** The manual-confirm exception does not apply. Ask nobody. Exit 4 for any reason ends `AUTO-RESULT: blocked-env <story> not-deployed`. Take no lock and no claim first.
@@ -280,11 +283,11 @@ Neither is a failure. The runner retries the story later.
 **The merge rule (step 12).** In an unattended run, this rule replaces "Never merge it". A manual run never merges. Never run `kb publish`.
 
 1. Commit and push as step 12 says.
-2. Open the PR with `kb pr open`.
+2. Open the PR with `kb pr open`. In Auto mode, do not release the claim after `kb pr open`, as manual step 12 does: keep it until the merge rule below says to release it.
 3. Wait for the checks with `kb pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`) and fix it (for example, a lint finding in the report or the test cases). Commit, `git push origin HEAD`, and watch again: up to 2 fix rounds in all. Still red after the second round: release the lock and the claim, then end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
-4. Every check green: `kb pr merge --squash --delete-branch`. When the merge is refused for want of an approving review, release the lock with `kb test-env unlock`, keep the claim (set its phase with `kb claim update <story> --phase review`), and do not retry: end `AUTO-RESULT: blocked-review <pr-url>`. A human reviews and merges the PR. The runner does not pick this story again while the claim is held.
+4. Every check green: `kb pr merge --squash --delete-branch`. When the merge is refused for want of an approving review, run `kb claim update <story> --phase review --pr <pr-url>` (the claim is then held without a TTL) and `kb test-env unlock` if the lock is still held, and do not retry: end `AUTO-RESULT: blocked-review <pr-url>`. A human reviews and merges the PR. The runner frees the claim once a human merges or closes the PR.
 5. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
-6. After the merge, the `kb-publish-request` workflow on `main` publishes the report. Then run `kb claim release <story>` and end `AUTO-RESULT: done`.
+6. After the merge, the `kb-publish-request` workflow on `<default>` publishes the report. Then run `kb claim release <story>` and end `AUTO-RESULT: done`.
 
 A story in claim phase `review` or `publishing` is held: the runner does not pick it again.
 
@@ -300,4 +303,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 - `AUTO-RESULT: blocked-env <story> <env-locked|not-deployed|env-unhealthy|claim-taken>`
 - `AUTO-RESULT: incomplete <story>`
 
-Use `done` when the report PR is merged, or the work was already finished. Write no text after `done`. A tester run never ends `blocked-qa` or `blocked-split`. Use `blocked-review` when the merge needs an approving review the agent may not give. Use `failed` for anything else, and always give a reason on the same line: `test-review no-subagents`, `test-review <id>`, or `ci-red <pr-url>`. A `failed test-review` result stops the runner until a human acts. `blocked-env` and `incomplete` are not failures: the runner retries later.
+Use `done` when the report PR is merged, or the work was already finished. Write no text after `done`. A tester run never ends `blocked-qa` or `blocked-split`. Use `blocked-review` when the merge needs an approving review the agent may not give. Use `failed` for anything else, and always give a reason after `failed` on the same line, for example `test-review no-subagents`, `test-review <id>`, `ci-red <pr-url>` or `report-pr-closed <pr-url>`. A `failed test-review` result stops the runner until a human acts. `blocked-env` and `incomplete` are not failures: the runner retries later.
