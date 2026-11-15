@@ -271,14 +271,28 @@ def test_order_retest_ranked_unranked_last():
 
 
 def test_depends_on_inside_tier_only():
-    st = _strat(_row(1, "A"), _row(1, "B"), _row(1, "C"), _row(None, "D"))
+    st = _strat(_row(1, "A"), _row(1, "B"), _row(1, "C"), _row(3, "D"), _row(2, "E"))
     stories = [
         _info("A", deps=["B"], pos=0),
         _info("B", pos=1),
         _info("C", deps=["D"], pos=2),
         _info("D", pos=3),
+        _info("E", pos=4),
     ]
-    assert [p.story for p in teststrategy.order(st, stories)] == ["B", "A", "C", "D"]
+    got = [p.story for p in teststrategy.order(st, stories)]
+    assert got == ["B", "A", "C", "E", "D"]
+
+
+def test_retests_order_by_rank_then_last_then_unmatched():
+    st = _strat(_row(1, "X"), _row(None, "Y"))
+    stories = [
+        _info("Y", retest=True, pos=0),
+        _info("Z", retest=True, pos=1),
+        _info("X", retest=True, pos=2),
+    ]
+    got = teststrategy.order(st, stories)
+    assert [p.story for p in got] == ["X", "Y", "Z"]
+    assert {p.tier for p in got} == {0}
 
 
 def test_dependency_cycle_terminates():

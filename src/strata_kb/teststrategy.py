@@ -5,6 +5,7 @@ the hub or the CLI."""
 from __future__ import annotations
 
 import contextlib
+import math
 import re
 from dataclasses import dataclass
 
@@ -274,14 +275,9 @@ def place(strategy: Strategy | None, story: StoryInfo) -> Placement:
     return Placement(story.us_id, row, how, tier)
 
 
-def _sort_tier(items: list[tuple[Placement, StoryInfo]]) -> list[Placement]:
-    """Priority topological pass; a cycle emits the lowest remaining story."""
-
-    def key(it: tuple[Placement, StoryInfo]) -> tuple[int, int, str]:
-        p, s = it
-        return (p.row.rank or 0 if p.row else 0, s.plan_pos, s.us_id)
-
-    left = sorted(items, key=key)
+def _sort_group(items: list[tuple[Placement, StoryInfo]]) -> list[Placement]:
+    """Plan-order topological pass; a cycle emits the lowest remaining story."""
+    left = sorted(items, key=lambda it: (it[1].plan_pos, it[1].us_id))
     ids = {s.us_id for _, s in left}
     out: list[Placement] = []
     while left:
@@ -300,11 +296,17 @@ def _sort_tier(items: list[tuple[Placement, StoryInfo]]) -> list[Placement]:
 
 
 def order(strategy: Strategy | None, stories: list[StoryInfo]) -> list[Placement]:
+    """Groups are (tier, rank); `last` and unmatched rank after every number."""
     placed = [(place(strategy, s), s) for s in stories]
+
+    def group(it: tuple[Placement, StoryInfo]) -> tuple[int, float]:
+        p = it[0]
+        return (p.tier, p.row.rank if p.row and p.row.rank else math.inf)
+
     return [
         p
-        for tier in range(4)
-        for p in _sort_tier([it for it in placed if it[0].tier == tier])
+        for g in sorted({group(it) for it in placed})
+        for p in _sort_group([it for it in placed if group(it) == g])
     ]
 
 
