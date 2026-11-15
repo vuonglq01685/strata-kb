@@ -175,8 +175,7 @@ def test_tester_settings_are_auto_plus_the_tester_extras(tmp_path):
         initcmd.TESTER_DENY
     )
     assert got["hooks"] == auto["hooks"]
-    for rule in ("Bash(kb pr merge*)", "Bash(gh pr merge*)"):
-        assert rule in got["permissions"]["deny"]
+    assert "Bash(gh pr merge*)" in got["permissions"]["deny"]
 
 
 def test_ba_and_dev_settings_do_not_gain_tester_rules(tmp_path):
@@ -367,3 +366,46 @@ def test_tester_allow_covers_the_strategy_commands():
         "kb test next --json",
     ):
         assert _permitted_by_tester(cmd), cmd
+
+
+def _deny(path):
+    return json.loads(path.read_text(encoding="utf-8"))["permissions"]["deny"]
+
+
+def test_fresh_tester_settings_drop_kb_pr_merge_but_keep_the_other_merge_denies(
+    tmp_path,
+):
+    init_repo(tmp_path, "tester")
+    deny = _deny(tmp_path / ".claude/settings.json")
+    assert "Bash(kb pr merge*)" not in deny
+    assert "Bash(gh pr merge*)" in deny and "Bash(gh pr merge*--admin*)" in deny
+    assert "Bash(kb pr merge*--admin*)" in deny
+
+
+def _seed_retired(root, kind):
+    init_repo(root, kind)
+    path = root / ".claude/settings.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["permissions"]["deny"] += ["Bash(kb pr merge*)", "Bash(mine*)"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def test_tester_refresh_removes_the_retired_deny_and_keeps_the_rest(tmp_path):
+    path = _seed_retired(tmp_path, "tester")
+    before = _deny(path)
+    init_repo(tmp_path, "tester", force=False)
+    after = _deny(path)
+    assert "Bash(kb pr merge*)" not in after
+    assert after == [d for d in before if d != "Bash(kb pr merge*)"]
+
+
+def test_dev_refresh_keeps_kb_pr_merge_deny(tmp_path):
+    path = _seed_retired(tmp_path, "dev")
+    init_repo(tmp_path, "dev", force=False)
+    assert "Bash(kb pr merge*)" in _deny(path)
+
+
+def test_retired_deny_list():
+    assert initcmd.RETIRED_TESTER_DENY == ("Bash(kb pr merge*)",)
+    assert not set(initcmd.RETIRED_TESTER_DENY) & set(initcmd.TESTER_DENY)

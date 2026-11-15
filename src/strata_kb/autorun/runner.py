@@ -7,16 +7,26 @@ run, like `codesync.runner`; only a stop rule, or "every ticket is done", ends i
 
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal, cast
 
 import yaml
 
-from strata_kb import bugcandidates, claimclient, cloud, ghrest, gitio, hubapi
+from strata_kb import (
+    bugcandidates,
+    claimclient,
+    cloud,
+    ghrest,
+    gitio,
+    hubapi,
+    testenv,
+)
 from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -101,7 +111,80 @@ def _switch_refusals(root: Path) -> list[str]:
     return reasons
 
 
-def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
+PROBE_TIMEOUT = 60
+_CHROMIUM_PROBE = (
+    "const {chromium}=require('@playwright/test');"
+    "(async()=>{const b=await chromium.launch();await b.close();})()"
+    ".catch(e=>{console.error(String(e).split('\\n')[0]);process.exit(1);})"
+)
+_RETIRED_DENY = "Bash(kb pr merge*)"
+
+
+def _playwright_refusal(root: Path, run: Callable) -> str | None:
+    """Why Playwright with headless Chromium is not usable here; None = usable."""
+    for cmd in (
+        ["npx", "--no-install", "playwright", "--version"],
+        ["node", "-e", _CHROMIUM_PROBE],
+    ):
+        try:
+            done = run(
+                cmd,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=PROBE_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            why = str(exc)
+        else:
+            if done.returncode == 0:
+                continue
+            why = (done.stderr or "").strip().splitlines()[:1]
+            why = why[0] if why else f"exit {done.returncode}"
+        return f"Playwright with Chromium is not usable here: {why}"
+    return None
+
+
+def _tester_refusals(
+    root: Path, kb_dir: Path, run: Callable = subprocess.run
+) -> list[str]:
+    reasons: list[str] = []
+    if cloud.is_cloud():
+        reasons.append("tester auto runs on the Tester's machine, not on cloud")
+    try:
+        env = testenv.load(root)
+        verified = testenv.verify(root, run=run) == 0
+    except testenv.TestEnvError:
+        env, verified = None, False
+    if not verified:
+        reasons.append("test environment not verified -- run `/tester-env-setup`")
+    for app in env.apps if env else ():
+        if app.version_check is None:
+            reasons.append(
+                f"app `{app.repo}` has no version_check: auto cannot confirm a deploy"
+            )
+    if (why := _playwright_refusal(root, run)) is not None:
+        reasons.append(why)
+    try:
+        settings = json.loads(
+            (root / ".claude/settings.json").read_text(encoding="utf-8-sig")
+        )
+        deny = settings["permissions"]["deny"]
+    except (OSError, ValueError, KeyError, TypeError):
+        deny = []
+    if isinstance(deny, list) and _RETIRED_DENY in deny:
+        reasons.append("run `kb init --kind tester` to refresh the auto-mode settings")
+    try:
+        claimclient.from_env()
+    except KbError as exc:
+        reasons.append(f"the hub claim API is not set: {exc}")
+    return reasons
+
+
+def preflight(
+    root: Path, kb_dir: Path, hub: str = "", run: Callable = subprocess.run
+) -> list[str]:
     """Why `kb auto run` must refuse to start; empty = go. `hub` is the
     `--hub` flag (empty = config)."""
     cfg = load_config(kb_dir)
@@ -110,14 +193,17 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
         reasons.append("auto mode is switched off -- run `kb auto on`")
     if cfg.auto.enabled:
         reasons.extend(_switch_refusals(root))
-    if cfg.kind not in ("ba", "dev"):
+    if cfg.kind not in ("ba", "dev", "tester"):
         reasons.append(
-            f"repo kind is '{cfg.kind or 'unset'}', auto mode needs 'ba' or 'dev'"
+            f"repo kind is '{cfg.kind or 'unset'}', "
+            "auto mode needs 'ba', 'dev' or 'tester'"
         )
     if not cfg.intake:
         reasons.append(
             "`intake:` is empty in .kb/config.yaml, so a merged PR would never publish"
         )
+    if cfg.kind == "tester":  # before the registry read, which returns early
+        reasons += _tester_refusals(root, kb_dir, run)
     found, auto_merge, why = _registry_facts(kb_dir, cfg, hub)
     if why:
         reasons.append(f"the hub registry could not be read: {why}")
@@ -130,7 +216,7 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             "so intake would not merge its publish PRs"
         )
     reasons += _old_hub_refusal(cfg)
-    if cfg.kind in ("ba", "dev"):
+    if cfg.kind in ("ba", "dev", "tester"):
         reasons += ghpolicy.refusals(root, cfg.kind)
     return reasons
 

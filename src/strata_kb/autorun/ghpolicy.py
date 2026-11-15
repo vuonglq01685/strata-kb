@@ -15,9 +15,9 @@ import yaml
 from strata_kb import ghrest, gitio, initcmd
 from strata_kb.errors import KbError
 
-REQUIRED_JOBS = {"dev": ("pr-lint",), "ba": ("lint",)}
+REQUIRED_JOBS = {"dev": ("pr-lint",), "ba": ("lint",), "tester": ("lint",)}
 KB_TEST_WORKFLOW = ".github/workflows/kb-test.yml"
-_GUIDE = {"dev": "Dev", "ba": "BA"}
+_GUIDE = {"dev": "Dev", "ba": "BA", "tester": "Tester"}
 _READ_ERRORS = (KbError, OSError, ValueError, yaml.YAMLError)
 _SHAPE_ERRORS = (AttributeError, TypeError, KeyError)  # an unexpected response shape
 _Counted = tuple[set[str], bool]  # (required contexts, code-owner review on)
