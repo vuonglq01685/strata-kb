@@ -256,6 +256,7 @@ daily use.
 | `kb pr` | `lint`, `find`, `view`, `open`, `checks`, `merge`, `edit`: pull requests over the GitHub REST API (what the skills call instead of `gh pr`) |
 | `kb claim` | Ticket claims on the hub for several Devs on one repo, and Tester claims on a story: `take`, `update`, `release`, `list` |
 | `kb test-env` | Tester repo: the test environment in `.kb/test-env.yaml` — `check`, `verify`, `reset`, `seed`, `version`, `deployed`, `changed`, `lock`, `unlock` |
+| `kb strategy lint` | Check a tester repo's `docs/test-strategy.md` (structure, priority order, KB context, review) |
 | `kb testcase lint` | Check a story's `tests/<story-id>/test-cases.md` against its ticket |
 | `kb report lint` | Check a test report `reports/<story-id>/R<n>.md` (verdict, defects, evidence, secrets) |
 | `kb report-ingest` | Build `.kb/<repo_id>-test/` from the lint-clean test cases and reports of a `tester` repo |
