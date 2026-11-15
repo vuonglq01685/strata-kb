@@ -92,7 +92,7 @@ The runner starts this skill as `/tester-strategy --amend`, when `kb test stale`
 **Allowed changes.** Apply these without asking the Tester; one change per finding, as in `--amend` step 2:
 
 - `pin-moved`: re-pin the row.
-- `broken-target`: re-point a renamed or split target when the citations show the rename or split. Otherwise leave the row and record an Auto decision line proposing the drop for the Tester. Auto never drops a row.
+- `broken-target`: re-point a renamed or split target when the citations show the rename or split. Otherwise change nothing and end `AUTO-RESULT: failed broken-target <target>` (a drop is the Tester's call; name the target and the proposed drop above the result line). Auto never drops a row.
 - `coverage`: add a row for an uncovered story, or a `last` row for a story you judge not worth a rank, so the finding clears.
 - `kb-context`: refresh the block (trigger `kb-context`).
 - `.kb/test-env.yaml` alignment (trigger `scope`).
@@ -100,9 +100,9 @@ The runner starts this skill as `/tester-strategy --amend`, when `kb test stale`
 
 `tc-revision` is not a strategy change: leave it. Nothing else changes.
 
-**Decisions.** Write each change as one `**Auto decision:**` line: the finding, what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row. A change that is only a re-pin needs no reviewer. For a re-point, an added row, a `last` row, a `kb-context` refresh, a `scope` alignment or a rank change, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the strategy rows, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once:
+**Decisions.** Write each change as one `**Auto decision:**` line: the finding, what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row. For a re-pin, a re-point, an added row, a `last` row, a `kb-context` refresh, a `scope` alignment or a rank change, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the strategy rows, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once:
 
-- a re-point, added row or `last` row then goes ahead as you decide;
+- a re-pin, re-point, added row, `last` row, `kb-context` refresh or `scope` alignment then goes ahead as you decide;
 - a rank change that is objected to twice is dropped: leave the ranks as they are and record the proposal (the old and new rank, the evidence) in its Auto decision line for the Tester.
 
 **Revise.** As `--amend` step 3. The Review cell starts with `auto`, for example `auto: reviewer agreed`. A rank change that stands adds the trigger `priority`.
@@ -124,4 +124,4 @@ End the reply with exactly one line, and make it the last line. Nothing follows 
 
 - `AUTO-RESULT: done`: the PR is merged, or the work was already finished. Write no text after `done`.
 - `AUTO-RESULT: blocked-review <pr-url>`: the merge needs an approving review the agent may not give.
-- `AUTO-RESULT: failed <reason>`: always a reason on the same line: `lint`, `ci-red <pr-url>`, `test-review <id>` or `test-review no-subagents`, or `no-strategy`.
+- `AUTO-RESULT: failed <reason>`: always a reason on the same line: `lint`, `ci-red <pr-url>`, `test-review <id>` or `test-review no-subagents`, `no-strategy` or `broken-target <target>`.

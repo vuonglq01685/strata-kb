@@ -399,12 +399,21 @@ def test_auto_reordered(rows, want):
     assert teststrategy.auto_reordered(_log(*rows)) == want
 
 
-def test_auto_decision_lines_under_change_log_still_lint_clean():
-    text = STRATEGY + (
-        "\n## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
-        "|---|---|---|---|---|---|\n"
-        "| 2 | 2026-11-20 | scope | re-pin | M-checkout | auto: agreed |\n\n"
-        "**Auto decision:** pin-moved; re-pin to rev 3; reviewer agreed.\n"
-    ).replace("> Revision: 1", "> Revision: 2")
+_EMPTY_ROW = "|   |   |   |   |   |   |\n"
+_AMENDED = STRATEGY.replace("> Revision: 1", "> Revision: 2").replace(
+    _EMPTY_ROW, "| 2 | 2026-11-20 | scope | re-pin | M-checkout | auto: agreed |\n"
+)
+_DECISION = "\n**Auto decision:** pin-moved; re-pin to rev 3; reviewer agreed.\n"
+
+
+def test_auto_decision_line_under_change_log_table_lints_clean():
+    text = _AMENDED.replace("agreed |\n", "agreed |\n" + _DECISION, 1)
+    assert _DECISION in text
     report = teststrategy.lint(text)
     assert report.passed, report.issues
+
+
+def test_auto_change_log_row_control_fails_when_revision_not_bumped():
+    # negative control: the same row without the revision bump must fail lint
+    text = _AMENDED.replace("> Revision: 2", "> Revision: 1")
+    assert not teststrategy.lint(text).passed

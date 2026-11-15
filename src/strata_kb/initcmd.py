@@ -677,6 +677,9 @@ TESTER_ALLOW: tuple[str, ...] = (
     'Bash(curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" '
     '"$STRATA_KB_HUB_URL/api/tests/known-failures")',
     "Bash(git remote show origin)",
+    # Read-only: the tester auto bodies check out a fresh default and list spent branches.
+    "Bash(git switch --detach origin/*)",
+    "Bash(git ls-remote --heads origin *)",
 )
 # The merge is per mode in the skill body: auto merges under policy C, a
 # manual run leaves it to a human. The tester never publishes by hand.
