@@ -359,7 +359,7 @@ def _claim_pick(
     repo_id: str,
 ) -> Task | None:
     """The first candidate this Dev wins the claim on; raises `_Early("idle")`
-    when other Devs hold every ready ticket."""
+    when other Devs hold every open ticket."""
     held = claims.held_by_others(state.task.partition(":")[2] if state.task else None)
     candidates = picker.dev_candidates(hub, root, repo_id, skip=_skip(state), held=held)
     for task in candidates:
@@ -371,7 +371,7 @@ def _claim_pick(
         except ParentStoryError as exc:  # a parent is never a task
             logger.info("%s; trying the next ticket", exc)
     if candidates:
-        logger.info("every ready ticket is held by another Dev or unknown to the hub")
+        logger.info("every open ticket is held by another Dev or unknown to the hub")
         raise _Early("idle")
     return None
 
@@ -379,7 +379,7 @@ def _claim_pick(
 def _still_ready_here(
     hub: HubHandle | hubapi.HubApi, repo_id: str, ticket: str
 ) -> bool:
-    """The plan still lists `ticket` as ready and routed to `repo_id`. Reads the
+    """The plan still lists `ticket` as ready or reopened and routed to `repo_id`. Reads the
     whole plan: the same client-side routing test as the pick."""
     stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(

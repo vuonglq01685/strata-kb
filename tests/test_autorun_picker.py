@@ -685,6 +685,12 @@ def test_reopened_bug_goes_to_fix_bug_after_stories():
     ]
 
 
+def test_reopened_picked_only_in_its_own_repo():
+    assert list(picker_dev_tasks([_reopened("S1.web", "dev-one")], [], "dev-one")) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]
+
+
 def test_reopened_other_repo_not_picked():
     assert list(picker_dev_tasks([_reopened("S1.web", "dev-two")], [], "dev-one")) == []
 

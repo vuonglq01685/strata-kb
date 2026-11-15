@@ -150,14 +150,16 @@ def runnable_here(t: StoryStatus, repo_id: str) -> bool:
 def reopened_here(t: StoryStatus, repo_id: str) -> bool:
     """`t` failed a test round (still `done`) and this Dev owns the fix."""
     return (
-        t.test_status == "reopened"
+        t.status == "done"
+        and t.test_status == "reopened"
         and not t.is_parent
         and t.target_repo in (repo_id, None)
     )
 
 
 def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
-    """Ready tickets routed to `repo_id` whose dependencies are done. `done`
+    """Reopened tickets routed here (dependencies ignored), then ready tickets
+    routed to `repo_id` whose dependencies are done. `done`
     spans every repo's rows: a dependency may be built elsewhere. A ready row
     with no target only exists on a hub without dev repos (no routing): every
     runner may take it."""
@@ -193,8 +195,9 @@ def dev_candidates(
     held: Collection[str] = (),
 ) -> list[Task]:
     """Every task the Dev may take, in pick order: the CI workflow first, then
-    a ready bug, then a ready unparented ticket, then each ready story, all
-    routed to `repo_id` with dependencies done. Tasks whose key is in `skip`, or whose ticket is in
+    reopened tickets (stories, then bugs), then a ready bug, a ready unparented
+    ticket, each ready story, all routed to `repo_id` (ready ones with
+    dependencies done). Tasks whose key is in `skip`, or whose ticket is in
     `held` (claimed by another Dev), are left out."""
     if not _has_test_workflow(root):
         tasks: Iterable[Task] = [Task("dev-test-workflow", "")]

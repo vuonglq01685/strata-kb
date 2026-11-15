@@ -279,6 +279,16 @@ def test_done_ticket_page_closes_its_held_claim(admin_client, plan_hub, store):
     assert store.last_closed(REPO, TICKET).close_reason == "done"
 
 
+def test_reopened_ticket_page_keeps_its_held_claim(
+    admin_client, plan_hub, store, monkeypatch
+):
+    _take(store)
+    _mark_done(plan_hub)
+    monkeypatch.setattr(planui, "_is_reopened", lambda *_: True)
+    assert admin_client.get(PAGE).status_code == 200
+    assert len(store.held(REPO, TICKET)) == 1
+
+
 @pytest.mark.parametrize("status", ["draft", "blocked"])
 def test_draft_or_blocked_ticket_page_shows_no_claim(
     admin_client, store, monkeypatch, status

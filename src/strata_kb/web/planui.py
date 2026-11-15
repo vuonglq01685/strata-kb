@@ -102,6 +102,12 @@ def _story_status(hub: HubHandle, repo: str, story: str) -> tuple[str, tuple[str
     return (item.status, item.reasons) if item else ("", ())
 
 
+def _is_reopened(hub: HubHandle, repo: str, story: str) -> bool:
+    """The ticket failed a test round: its Dev claim stays live."""
+    item = next((r for r in _plan_rows(hub, repo) if r.us_id == story), None)
+    return item is not None and item.test_status == "reopened"
+
+
 def _test_view(hub: HubHandle, repo: str, story: str) -> dict:
     """Test status, regression flag and report rounds of one ticket for its
     page; rounds are those of the ticket's own report (a child shows its
@@ -266,7 +272,11 @@ def plan_routes(
         content_html, toc = uidata.inject_heading_anchors(md_render(ticket.markdown))
         db = claims_db_path(hub.root)
         ticket_status, reasons = _story_status(hub, found_repo, story)
-        if ticket_status == "done" and db.exists():  # never create the DB on GET
+        if (
+            ticket_status == "done"
+            and db.exists()
+            and not _is_reopened(hub, found_repo, story)
+        ):  # never create the DB on GET
             try:
                 ClaimStore(db, ttl=ttl).close_done({(found_repo, story)})
             except (sqlite3.Error, KbError, OSError):

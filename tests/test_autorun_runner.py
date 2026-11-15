@@ -1759,3 +1759,13 @@ def test_run_once_beat_stops_when_branch_restore_raises(cenv, monkeypatch):
     assert calls == ["other"]
     assert FakeBeat.events == [("init", 900), ("start", "US1"), ("stop",)]
     assert claims.of("phase") == [("phase", "US1", "publishing")]
+
+
+@pytest.mark.parametrize(
+    ("status", "test_status", "expected"),
+    [("done", "reopened", True), ("done", "", False), ("ready", "", True)],
+)
+def test_still_ready_here_counts_reopened(monkeypatch, status, test_status, expected):
+    row = StoryStatus("US1", "M-x", "t", status, (), (), "svc", test_status=test_status)
+    monkeypatch.setattr(picker, "plan_next", lambda *_a, **_k: ([row], [], []))
+    assert runner_mod._still_ready_here(None, "svc", "US1") is expected  # type: ignore[arg-type]
