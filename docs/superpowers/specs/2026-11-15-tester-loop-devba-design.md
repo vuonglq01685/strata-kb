@@ -32,7 +32,9 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 5. `/ba-bug-report --from-report <story> RD<k>` drafts `BUG-<n>` prefilled
    from the regression defect, with `> From report: <story> R<n> RD<k>`.
 6. A published bug citing a candidate marks it logged: it leaves the open
-   candidates (hub list, `kb mission next`, BA picker).
+   candidates (hub Test Report list, known-failures API, BA picker).
+   *(Call: listing candidates in `kb mission next --from-hub` (base D10) is
+   not built and stays out of this block.)*
 7. BA auto picks open bug candidates (after mission blockers, before drafting).
 8. `kb ticket lint` refuses an amend of a ticket whose story is `closed`.
 
@@ -85,6 +87,15 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
   ready), in plan order. A reopened unsplit story is its own guilty child.
 - A reopened row is not blocked by `depends_on` (its deps were done when it
   was built).
+- A reopened bug (`BUG-<n>`, or a bug child `BUG-<n>.<repo>`) goes to
+  `dev-fix-bug`, which gets the same fix mode (E3) and `--fixes R<n>`
+  handover. *(Call: the two ticket shapes differ, so each skill keeps its
+  own.)*
+- "Reopened is open work" everywhere a Dev ticket is judged finished:
+  `autorun/done.all_done`, the runner's `_still_ready_here`, and the hub's
+  `web/claim_api.close_done_tickets` (which today closes a Dev claim on any
+  row with `status == "done"`, a reopened child included). *(Call: claims
+  are not statuses; this is allowed under "no hub status change".)*
 - `plan_next` already carries `test_status` (`StoryStatus`); the hub API
   JSON must carry it too (check `HubApi.plan_next` serialises it; add it if
   not).
@@ -103,22 +114,30 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 - Branch `fix/<id>-R<n>`; PR title `fix(<id>): R<n> defects D1, D2`.
 - No design/plan stage (anti-goal); the ticket's ACs stay the oracle.
 - Auto mode: same steps; `AUTO-RESULT: done` after merge + publish, as today.
+- The "Already finished" crash check (in `dev-implement-ticket` and
+  `dev-handover`) looks for a history row carrying `fix:R<n>` in fix mode,
+  not just any row for the ticket (the original build's row exists).
 
 ### E4. `--fixes R<n>` in `kb svc note` and `/dev-handover`
 
 - `kb svc note <svc> --ticket <id> --title … [--refs …] --fixes R<n>`:
-  appends `fix:R<n>` to the row's refs (comma-joined, de-duplicated). The row
-  is upserted by ticket id as today, so earlier `fix:R<m>` refs are kept.
+  appends `fix:R<n>` to the row's refs (comma-joined, de-duplicated).
+  `svcnote.add_note` replaces the whole row today, so `--fixes` (and any
+  re-run) must merge the existing row's refs first, keeping earlier
+  `fix:R<m>` and domain refs.
 - `R<n>` validated: `R[1-9][0-9]*`.
 - `/dev-handover` in fix mode passes `--fixes R<n>` (the round from the
   fetched report's file name).
 - Hub effect is already built: `missionnext.fix_rounds_from_history` →
   `testflow.story_test_status` → `fix-done`.
 
-### E5. `/ba-bug-report --from-report <story> RD<k>`
+### E5. `/ba-bug-report --from-report <story> R<n> RD<k>`
 
-- Reads the report (`kb report fetch <story> --out <tmp>`; round = the
-  latest round that holds `RD<k>`), takes the RD block: symptom → title,
+- The round is part of the argument: `RD<k>` is numbered per report, so
+  `<story> RD<k>` alone is ambiguous across rounds. *(Call: changes the base
+  design's `<story> RD<k>` syntax.)*
+- Reads the report (`kb report fetch <story> --round <n> --out <tmp>`),
+  takes the RD block: symptom → title,
   steps/expected/actual, evidence images (copied as bug attachments, the
   existing bug image path), environment line, the closed story it broke
   (`Story:`) as the related ticket.
@@ -143,7 +162,7 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 ### E7. BA auto picks candidates
 
 - `pick_ba`: after mission blockers, before draft amends, yield
-  `Task("ba-bug-report", "--from-report <story> RD<k>")` for each open
+  `Task("ba-bug-report", "--from-report <story> R<n> RD<k>")` (from `KnownFailure.story/round/rd_id`) for each open
   (not logged) candidate whose closed story belongs to this BA repo's plan.
 - Source: local hub → `testflow.known_failures`; cloud → the hub API
   `/api/tests/known-failures` (exists; gains `logged`).
@@ -153,9 +172,17 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 
 ### E8. Closed-story amend refusal
 
-- `kb ticket lint` (BA repo, with hub reachable): a ticket at revision ≥ 2
-  whose story (the ticket itself, or its parent story) is `closed` on the hub
-  → error `story is closed — write a new ticket`. Hub unreachable → warning.
+- `kb ticket lint` (BA repo, with hub reachable): an **amend** is a local
+  `> Revision:` higher than the revision published on the hub. An amend of a
+  ticket whose story (the ticket itself, or its parent story) is `closed` on
+  the hub → error `story is closed — write a new story`. A ticket already at
+  its published revision is not an amend and passes (CI lints unchanged
+  parents too). Hub unreachable → warning.
+- A **new child** under a closed parent story is refused the same way: once
+  any round passed, every child of the story is `closed`
+  (`testflow.story_test_status`), so a new child could never be tested.
+  *(Calls: amend = above published revision; the replacement is a new
+  story.)*
 - Mission amends are not blocked (a mission may add stories).
 
 ## Release
@@ -183,4 +210,9 @@ open. Block 1 closes it, by hand and in `kb auto` for BA and Dev. Block 2
 - Reopened tickets ignore `depends_on`.
 - Known-failures API gains `logged`; logged keys still guard regression runs.
 - BA picks candidates after mission blockers, before ticket drafting.
-- Closed-story refusal only for tickets, not missions.
+- Closed-story refusal only for tickets, not missions; amend = local revision
+  above the published one; a new child under a closed story is refused too.
+- Reopened bugs use `dev-fix-bug`'s own fix mode.
+- `--from-report` takes `<story> R<n> RD<k>`.
+- Candidates are not added to `kb mission next` in this block.
+- Claims treat reopened as open work (hub claim close included).
