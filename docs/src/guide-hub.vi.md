@@ -594,7 +594,7 @@ hoặc `{repo_id, kind, workflow?, auto_merge?}`; `auto_merge` mặc định là
 
 ## 6.3 Các công cụ MCP
 
-Server cung cấp các công cụ sau. Chỉ `kb_question_ask` và `kb_question_answer` ghi.
+Server cung cấp các công cụ sau. Chỉ `kb_question_ask`, `kb_question_answer`, `kb_question_propose_blocks` và `kb_question_confirm_blocks` ghi.
 
 | Công cụ | Mục đích |
 |---|---|

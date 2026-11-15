@@ -607,7 +607,7 @@ the hub root, `kb-code-sync.yaml` holds the code-sync baseline. A registry entry
 
 ## 6.3 The MCP tools
 
-The server exposes these tools. Only `kb_question_ask` and `kb_question_answer` write.
+The server exposes these tools. Only `kb_question_ask`, `kb_question_answer`, `kb_question_propose_blocks` and `kb_question_confirm_blocks` write.
 
 | Tool | Purpose |
 |---|---|
