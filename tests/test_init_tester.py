@@ -336,3 +336,14 @@ def test_doctor_treats_the_test_doc_as_generated_and_hints_mcp(tmp_path, monkeyp
     res = CliRunner().invoke(app, ["doctor", "--kb-dir", str(tmp_path / ".kb")])
     assert res.exit_code == 1
     assert "a ba, dev or tester repo needs no hub clone" in res.output
+
+
+def test_tester_scaffold_has_stale_workflow(tmp_path):
+    import yaml
+
+    init_repo(tmp_path, "tester")
+    path = tmp_path / ".github/workflows/kb-test-stale.yml"
+    text = path.read_text(encoding="utf-8")
+    assert "kb test stale --md" in text and "{version}" not in text
+    wf = yaml.safe_load(text)
+    assert wf["permissions"]["issues"] == "write" and "schedule" in wf[True]

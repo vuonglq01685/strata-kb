@@ -65,7 +65,7 @@ def testable(row: StoryStatus, kids: list[StoryStatus]) -> bool:
     return row.status == "done"
 
 
-def _texts(hub: HubHandle, ba_repo: str) -> dict[str, str]:
+def _texts(hub: HubHandle, ba_repo: str | None) -> dict[str, str]:
     out: dict[str, str] = {}
     for fed, manifest in planstatus.plan_docs(hub, ba_repo):
         for s in manifest.sections:
@@ -79,8 +79,12 @@ def _cites(texts: dict[str, str], key: str) -> frozenset[teststrategy.Area]:
     return teststrategy.citations(texts[key]) if key in texts else frozenset()
 
 
-def plan_view(hub: HubHandle, ba_repo: str | None) -> PlanView:
-    if ba_repo is None:
+def plan_view(
+    hub: HubHandle, ba_repo: str | None, *, all_plans: bool = False
+) -> PlanView:
+    """`all_plans`: no BA repo named, read every plan on the hub (what
+    `kb test stale` does when there is no strategy to name one)."""
+    if ba_repo is None and not all_plans:
         return PlanView([], {}, frozenset(), {}, frozenset())
     repos, _ = planstatus.hub_plans(hub, ba_repo)
     texts = _texts(hub, ba_repo)
@@ -206,6 +210,23 @@ def case_findings(tests_dir: Path, plan: PlanView) -> list[Finding]:
                 )
             )
     return out
+
+
+def render_markdown(findings: list[Finding]) -> str:
+    """The issue body `kb-test-stale.yml` keeps up to date."""
+    if not findings:
+        return "The test strategy and the test cases match the hub.\n"
+    lines = [
+        f"{len(findings)} finding(s): the test strategy or the test cases no "
+        "longer match the hub. Testing is not blocked.",
+        "",
+        "| Code | Subject | Message |",
+        "| --- | --- | --- |",
+    ]
+    for f in findings:
+        message = f.message.replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| {f.code} | {f.subject} | {message} |")
+    return "\n".join(lines) + "\n"
 
 
 def lint_against_hub(text: str, hub: HubHandle) -> list[Issue]:

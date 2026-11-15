@@ -140,3 +140,51 @@ def test_cli_strategy_lint_hub_flags_broken_target(plan_hub, tmp_path):
     assert runner.invoke(app, args).exit_code == 0
     res = runner.invoke(app, [*args, "--hub"])
     assert res.exit_code == 1 and "M-checkout" in res.output
+
+
+def _stale(plan_hub, tmp_path, rows=None, *extra):
+    import json
+
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+
+    file = tmp_path / "s.md"
+    if rows is not None:
+        file.write_text(_doc(rows), encoding="utf-8")
+    args = ["test", "stale", "--file", str(file), "--tests-dir", str(tmp_path / "t")]
+    res = CliRunner().invoke(app, [*args, "--hub", str(plan_hub.root), *extra])
+    return res, (json.loads(res.stdout) if "--json" in extra else None)
+
+
+CLEAN = ROWS.replace("| 3 | M-nope-US1 | rev 1 | Low | gone | UI |\n", "")
+
+
+def test_cli_test_stale_exit_codes(plan_hub, tmp_path):
+    res, found = _stale(plan_hub, tmp_path, CLEAN, "--json")
+    assert res.exit_code == 0 and found == []
+    res, found = _stale(
+        plan_hub, tmp_path, CLEAN.replace("rev 1 | High", "rev 2 | High"), "--json"
+    )
+    assert res.exit_code == 2 and [f["code"] for f in found] == ["pin-moved"]
+    res, found = _stale(plan_hub, tmp_path, ROWS, "--json")
+    assert res.exit_code == 1 and found[0]["code"] == "broken-target"
+
+
+def test_cli_test_stale_md_and_text(plan_hub, tmp_path):
+    res, _ = _stale(plan_hub, tmp_path, ROWS, "--md")
+    assert res.exit_code == 1 and "| Code | Subject | Message |" in res.stdout
+    res, _ = _stale(plan_hub, tmp_path, CLEAN)
+    assert res.exit_code == 0 and "nothing stale" in res.output
+
+
+def test_cli_test_stale_without_strategy_checks_case_revisions(plan_hub, tmp_path):
+    spec = tmp_path / "t" / STORY / "test-cases.md"
+    spec.parent.mkdir(parents=True)
+    spec.write_text(
+        f"# Cases\n\n> Story: {STORY} · Children: — · Ticket revision: 7\n",
+        encoding="utf-8",
+    )
+    res, found = _stale(plan_hub, tmp_path, None, "--json")
+    assert res.exit_code == 2
+    assert [(f["code"], f["subject"]) for f in found] == [("tc-revision", STORY)]

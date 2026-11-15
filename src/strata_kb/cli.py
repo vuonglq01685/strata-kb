@@ -128,6 +128,9 @@ app.add_typer(testcase_app, name="testcase")
 strategy_app = typer.Typer(help="Tester repo: the test strategy.")
 app.add_typer(strategy_app, name="strategy")
 
+test_app = typer.Typer(help="Tester repo: drift of the strategy and test cases.")
+app.add_typer(test_app, name="test")
+
 report_app = typer.Typer(help="Tester repo: test reports.")
 app.add_typer(report_app, name="report")
 
@@ -5007,6 +5010,55 @@ def strategy_lint(
         report.issues += strategyhub.lint_against_hub(text, _hub_or_exit("", kb_dir))
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
     _exit_with(0 if report.passed else 1)
+
+
+@test_app.command("stale")
+def test_stale(
+    file: Path = typer.Option(
+        Path("docs/test-strategy.md"), "--file", help="Test strategy file"
+    ),
+    tests_dir: Path = typer.Option(Path("tests"), help="Test cases directory"),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    md: bool = typer.Option(False, "--md", help="Emit the Markdown issue body"),
+) -> None:
+    """Drift of the test strategy and test cases against the hub. Exit 0 none,
+    2 warnings only, 1 any error. Never blocks testing."""
+    from strata_kb import strategyhub, teststrategy
+
+    handle = _hub_or_exit(hub, kb_dir)
+    note = ""
+    try:
+        text = file.read_text(encoding="utf-8")
+    except OSError:
+        text = None
+        note = f"kb test stale: no {file}, only test case revisions checked"
+    if text is None:
+        plan = strategyhub.plan_view(handle, None, all_plans=True)
+        findings: list[strategyhub.Finding] = []
+    else:
+        strategy = teststrategy.parse(text)
+        plan = strategyhub.plan_view(handle, strategy.plan)
+        findings = strategyhub.strategy_findings(text, strategy, plan, handle)
+    findings += strategyhub.case_findings(tests_dir, plan)
+    if json_output:
+        typer.echo(json.dumps([vars(f) for f in findings]))
+    elif md:
+        typer.echo(strategyhub.render_markdown(findings), nl=False)
+    else:
+        for f in findings:
+            typer.echo(f"[{f.level}] {f.code} {f.subject}: {f.message}")
+        if not findings:
+            typer.echo("kb test stale: nothing stale")
+    if note and not json_output:
+        typer.echo(note, err=True)
+    if any(f.level == "error" for f in findings):
+        raise typer.Exit(1)
+    if findings:
+        raise typer.Exit(2)
 
 
 @report_app.command("lint")
