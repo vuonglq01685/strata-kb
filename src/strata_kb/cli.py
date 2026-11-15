@@ -5101,7 +5101,9 @@ def test_next(
     json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
     all_: bool = typer.Option(False, "--all", help="Every testable story, not one"),
 ) -> None:
-    """The next story to test, by the test strategy. Exit 3 when none is testable."""
+    """The next story to test, by the test strategy (`--all`: every testable one).
+    `--json`: `[{story, tier, rank: int|"last"|null, how, target: str|null}]`.
+    Exit 0 found, 3 none testable, 1 the strategy's plan is not on the hub."""
     from strata_kb import strategyhub, teststrategy
 
     handle = _hub_or_exit(hub, kb_dir)
@@ -5115,7 +5117,11 @@ def test_next(
             "kb test next: strategy names no plan, plan order over every plan",
             err=True,
         )
-    placed = strategyhub.next_stories(handle, strategy)
+    try:
+        placed = strategyhub.next_stories(handle, strategy)
+    except LookupError as exc:
+        typer.echo(f"kb test next: {exc}", err=True)
+        raise typer.Exit(1) from None
     if not all_:
         placed = placed[:1]
 
@@ -5141,8 +5147,9 @@ def test_next(
         )
     else:
         for p in placed:
+            r = rank(p)
             typer.echo(
-                f"{p.story}  tier={p.tier} rank={'-' if rank(p) is None else rank(p)}"
+                f"{p.story}  tier={p.tier} rank={'-' if r is None else r}"
                 f" how={p.how} row={p.row.target if p.row else '-'}"
             )
     if not placed:

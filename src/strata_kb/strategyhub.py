@@ -128,6 +128,8 @@ def next_stories(hub: HubHandle, strategy: Strategy | None) -> list[Placement]:
         if strategy and strategy.plan
         else plan_view(hub, None, all_plans=True)
     )
+    if strategy and strategy.plan and not plan.status:
+        raise LookupError(f"no plan for '{strategy.plan}' on the hub")
     return teststrategy.order(
         strategy, [s for s in plan.stories if s.us_id in plan.testable]
     )
