@@ -188,6 +188,18 @@ edit above it.
     "two tickets in flight; switch branches first".
   Then skip finished phases and offer the next one.
 
+## Fix mode (reopened)
+
+Check this FIRST, on every entry. Run `kb mission next --from-hub --json` (MCP: `kb_mission_next`) and find this ticket's row. When it has `"test_status": "reopened"`, the Tester failed it and left a report: /dev-implement-ticket runs in **fix mode**. Otherwise this section does not apply.
+
+This is a fix, not a build: there is **no design or plan stage** (skip Ground, Placeholders, `dev-design`, `dev-plan`); the report is the spec.
+
+1. Fetch the report: `kb report fetch <story> --child <id>` (MCP: `kb_report_fetch`). `<story>` is the row's `parent`, or the ticket id itself when the row has no `parent`. It writes `docs/impl/<id>/report-R<n>.md`; `R<n>` is the round in that file name.
+2. Read the defects. Each is `### D<k> — <symptom>` with `Guilty: <child id> · Regression: yes|no · Severity · Priority`, then steps, expected and actual. Take every defect with `Guilty: <id>` (this ticket). List the defects of other children in your reply and under the PR's `## Notes`; touch none of them.
+3. For each of your defects, in order: reproduce it as a **failing test** (see it fail), find the root cause, fix it, see the test pass.
+4. Run the full suite, and paste the real output as `dev-handover` requires.
+5. Branch `fix/<id>-R<n>`, then run `/dev-handover`: it passes `--fixes R<n>` to `kb svc note`, so the history row carries `fix:R<n>`, and the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]` (the defects you fixed).
+
 ## Hard rules
 
 - A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.

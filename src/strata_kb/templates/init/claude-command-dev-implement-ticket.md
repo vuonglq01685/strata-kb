@@ -148,6 +148,18 @@ installed); no branch matching the ticket id while on the default branch
 offers `git switch -c <ticket-id>`; a current branch naming a different
 ticket STOPs — two tickets in flight, switch branches first.
 
+## Fix mode (reopened)
+
+Check this FIRST, on every entry. Run `kb mission next --from-hub --json` (MCP: `kb_mission_next`) and find this ticket's row. When it has `"test_status": "reopened"`, the Tester failed it and left a report: /dev-implement-ticket runs in **fix mode**. Otherwise this section does not apply.
+
+This is a fix, not a build: there is **no design or plan stage** (skip Ground, Placeholders, `dev-design`, `dev-plan`); the report is the spec.
+
+1. Fetch the report: `kb report fetch <story> --child <id>` (MCP: `kb_report_fetch`). `<story>` is the row's `parent`, or the ticket id itself when the row has no `parent`. It writes `docs/impl/<id>/report-R<n>.md`; `R<n>` is the round in that file name.
+2. Read the defects. Each is `### D<k> — <symptom>` with `Guilty: <child id> · Regression: yes|no · Severity · Priority`, then steps, expected and actual. Take every defect with `Guilty: <id>` (this ticket). List the defects of other children in your reply and under the PR's `## Notes`; touch none of them.
+3. For each of your defects, in order: reproduce it as a **failing test** (see it fail), find the root cause, fix it, see the test pass.
+4. Run the full suite, and paste the real output as `dev-handover` requires.
+5. Branch `fix/<id>-R<n>`, then run `/dev-handover`: it passes `--fixes R<n>` to `kb svc note`, so the history row carries `fix:R<n>`, and the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]` (the defects you fixed).
+
 ## Hard rules
 
 - A ticket without a resolvable `kb-context` is not implementable — send it back, never improvise the missing context.
@@ -217,6 +229,8 @@ The runner starts this skill as `/dev-implement-ticket <us-id>`. Nobody answers 
     **AC impact:** <which ACs change, which do not>
 
 Ask one decision per question: two decisions are two questions. Name no internal id (DD12, SA-1, R1-13, G-3) unless the same text says what it is. The `context` names a place a reader can open, such as `design.md §9.3 — test T4`, never a review-round code.
+
+**Fix mode.** When `## Fix mode (reopened)` applies, run its steps as written, with no design or plan stage; every Auto rule here still holds. In fix mode the **Already finished** check below looks for a `hist.*` row whose refs contain `fix:R<n>` (not just this ticket id) and uses the branch `fix/<id>-R<n>`: a row for an earlier round does not mean this round is done.
 
 **Already finished.** The runner re-runs a task after a crash, so check first. Run `kb pr find --head auto/<ticket-id> --state merged --json`. A merged PR means the code is in and only the history row or the publish can be missing. Look in `.kb/<repo_id>-svc/` for this ticket id in a `hist.*` row (`kb svc note` wrote it). Row present: run `kb doctor`; when it advises `kb publish`, run `git fetch origin && git merge origin/<default-branch>` (`<default-branch>` is `default_branch` in `kb auto status --json`: the squash merge leaves the ticket branch behind `origin/<default-branch>`, and `kb publish` refuses to run from it with `behind origin/<default-branch> — pull, then kb publish`; the `hist` row is on the default branch after the merge, and a headless run never checks that branch out, so it merges it in here), then `kb publish` once (on a `behind origin/` refusal merge once more and retry once), then end `AUTO-RESULT: done`. Row missing: end `AUTO-RESULT: failed merged-without-history <pr-url>`. With no merged PR, look for an open one (`--state open`). An open PR is this machine's crashed run only when a local `auto/<ticket-id>` exists and `git rev-parse auto/<ticket-id>` equals the `headRefOid` of the PR that `kb pr find --head auto/<ticket-id> --state open --json` returns, or `git log --format=%H auto/<ticket-id>..<headRefOid>` prints nothing (the local branch holds the PR head plus commits a crash left unpushed). Then `git fetch origin && git switch auto/<ticket-id>`, then `git pull origin auto/<ticket-id>`, check what the branch already holds, and continue at the CI step of `dev-handover`'s branch rule. Any other open PR is not this machine's: do not switch, push, continue or merge it. Run `kb claim update <ticket-id> --phase review --pr <url>` and end `AUTO-RESULT: done` (the ticket waits on that PR).
 
