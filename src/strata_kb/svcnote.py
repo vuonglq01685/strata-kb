@@ -260,7 +260,29 @@ def _load_manifest(path: Path, doc_id: str) -> models.Manifest:
         raise SvcNoteError(f"{doc_id}: could not read {path} ({exc})") from exc
 
 
-def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteReport:
+_ROUND_RE = re.compile(r"R[1-9][0-9]*")
+_FIX_REF_RE = re.compile(r"fix:R[1-9][0-9]*")
+
+
+def _merge_refs(
+    existing: tuple[str, ...], new: tuple[str, ...], fixes: str
+) -> tuple[str, ...]:
+    """Existing row refs first, then new ones, de-duplicated. A plain re-run
+    replaces the domain refs but never drops a recorded `fix:R<n>` — it is
+    the hub's only evidence that a test round was answered."""
+    # existing is the joined-cell 1-tuple (see `_parse_existing_rows`)
+    old = [r.strip() for e in existing for r in e.split(", ") if r.strip()]
+    if not fixes:
+        old = [r for r in old if _FIX_REF_RE.fullmatch(r)]
+    merged = [*old, *new, *([f"fix:{fixes}"] if fixes else [])]
+    return tuple(dict.fromkeys(merged))
+
+
+def add_note(
+    kb_dir: Path, repo_id: str, service: str, note: Note, fixes: str = ""
+) -> SvcNoteReport:
+    if fixes and not _ROUND_RE.fullmatch(fixes):
+        raise SvcNoteError(f"--fixes must look like R1, R2, ... (got {fixes!r})")
     # Normalize the incoming ticket the same way `_parse_existing_rows`
     # normalizes one read back (`.strip()` on each captured group) — otherwise
     # a whitespace-padded id (a pasted or shell-quoted ticket, e.g. "M-1 ")
@@ -392,6 +414,11 @@ def add_note(kb_dir: Path, repo_id: str, service: str, note: Note) -> SvcNoteRep
     else:
         action = "added"
 
+    prior = rows.get(note.ticket)
+    if prior is not None:
+        note = replace(note, refs=_merge_refs(prior.refs, note.refs, fixes))
+    elif fixes:
+        note = replace(note, refs=_merge_refs((), note.refs, fixes))
     rows[note.ticket] = note
     ordered = [rows[t] for t in sorted(rows, key=_natural_key)]
 

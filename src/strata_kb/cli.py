@@ -2189,6 +2189,9 @@ def svc_note(
     ticket: str = typer.Option(..., "--ticket", help="Ticket / US id"),
     title: str = typer.Option(..., "--title", help="Ticket title"),
     refs: str = typer.Option("", "--refs", help="Domain refs, comma-separated"),
+    fixes: str = typer.Option(
+        "", "--fixes", help="Test round this ticket fixes, R<n> (adds fix:R<n>)"
+    ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     repo_id: str = typer.Option("", "--repo-id", help="Repo ID (default: config)"),
     no_refresh: bool = typer.Option(
@@ -2232,7 +2235,7 @@ def svc_note(
     ref_list = tuple(r.strip() for r in refs.split(",") if r.strip())
     note = svcnote.Note(ticket=ticket, title=title, refs=ref_list)
 
-    report = svcnote.add_note(kb_dir, rid, service, note)
+    report = svcnote.add_note(kb_dir, rid, service, note, fixes=fixes)
 
     if json_out:
         typer.echo(json.dumps(dataclasses.asdict(report), indent=2))
