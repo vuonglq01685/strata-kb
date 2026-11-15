@@ -1,8 +1,11 @@
+import json
 from importlib import resources
 
 import pytest
+from typer.testing import CliRunner
 
 from strata_kb import lintcore, teststrategy
+from strata_kb.cli import app
 
 STRATEGY = """\
 # Test strategy — Acme
@@ -140,3 +143,57 @@ def test_template_parses_with_example_rows():
         .read_text(encoding="utf-8")
     )
     assert len(teststrategy.parse(text).rows) == 3
+
+
+TEMPLATE = (
+    resources.files("strata_kb.templates.init")
+    .joinpath("test-strategy-template.md")
+    .read_text(encoding="utf-8")
+)
+
+
+def test_clean_strategy_passes():
+    report = teststrategy.lint(STRATEGY)
+    assert report.passed, report.issues
+
+
+@pytest.mark.parametrize(
+    "edit, code",
+    [
+        (("| 1 | M-checkout | rev 3 |", "| one | M-checkout | rev 3 |"), "st-row"),
+        (("| M-checkout | rev 3 |", "| M-checkout | — |"), "st-row"),
+        (("[acme:srs §4.2] | — |", "[acme:srs §4.2] | rev 1 |"), "st-row"),
+        (("| High | payment", "| Severe | payment"), "st-row"),
+        (("| rev 3 |", "| rev ٣ |"), "st-row"),
+        (("M-checkout-US5 | rev 2", "M-checkout | rev 3"), "st-duplicate"),
+        (("> Plan: ba-one", "> Plan: —"), "st-plan"),
+        (("> Plan: ba-one\n", ""), "st-plan"),
+        (("    - acme:srs §4.2\n", "    - acme:srs §9\n"), "st-kb-context"),
+        (("| pass |", "| fail |"), "st-review"),
+    ],
+)
+def test_lint_errors(edit, code):
+    assert edit[0] in STRATEGY
+    report = teststrategy.lint(STRATEGY.replace(*edit))
+    assert not report.passed and code in {i.code for i in report.issues}
+
+
+def test_plan_dash_ok_with_only_area_rows():
+    text = STRATEGY.replace("> Plan: ba-one", "> Plan: —")
+    text = "\n".join(ln for ln in text.splitlines() if "M-checkout" not in ln)
+    assert teststrategy.lint(text).passed
+
+
+def test_template_fails_on_placeholders():
+    assert "st-placeholder" in {i.code for i in teststrategy.lint(TEMPLATE).issues}
+
+
+def test_cli_strategy_lint_exit_codes(tmp_path):
+    good, bad = tmp_path / "good.md", tmp_path / "bad.md"
+    good.write_text(STRATEGY, encoding="utf-8")
+    bad.write_text(TEMPLATE, encoding="utf-8")
+    runner = CliRunner()
+    assert runner.invoke(app, ["strategy", "lint", str(good)]).exit_code == 0
+    assert runner.invoke(app, ["strategy", "lint", str(bad)]).exit_code == 1
+    res = runner.invoke(app, ["strategy", "lint", str(good), "--json"])
+    assert json.loads(res.output)

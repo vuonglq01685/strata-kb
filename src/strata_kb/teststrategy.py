@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass
 
 from strata_kb import kbcontext, lintcore, planrev
+from strata_kb.lintcore import Issue, LintReport
+from strata_kb.mdmask import visible_body
 
 STRATEGY_FILE = "docs/test-strategy.md"
 SECTION_ID = "strategy"
@@ -35,6 +37,10 @@ HEADINGS: tuple[str, ...] = (
 
 _PLAN_RE = re.compile(r"^>[ \t]*Plan:[ \t]*(.*?)[ \t]*$", re.M)
 _PIN_RE = re.compile(r"^rev\s+(\d+)$")
+_STRICT_PIN_RE = re.compile(r"rev [0-9]+")
+_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # as planstatus; not imported
+_PLACEHOLDER_RE = re.compile(r"<(?!br\b)[a-z][\w .-]*>|(?<!\w)…(?!\w)")
+_NO_PIN = ("—", "-")
 
 
 @dataclass(frozen=True)
@@ -128,3 +134,92 @@ def citations(text: str) -> frozenset[Area]:
             Area(r.repo_id, r.doc_id, r.section_id) for r in kbcontext.parse(text).refs
         }
     return frozenset(found)
+
+
+def _err(msg: str, code: str) -> Issue:
+    return Issue(level="error", message=msg, code=code)
+
+
+def _row_issues(cells: list[str], seen: set[str]) -> list[Issue]:
+    rank, target, pin, risk, why, _types = cells
+    out: list[Issue] = []
+    if not _rank(rank)[0]:
+        out.append(
+            _err(f"{target}: Rank must be a positive integer or `last`", "st-row")
+        )
+    is_area = _area(target) is not None
+    if not is_area and not _NAME_RE.fullmatch(target):
+        out.append(_err(f"bad Target: {target!r}", "st-row"))
+    elif is_area and pin not in _NO_PIN:
+        out.append(_err(f"{target}: a KB area takes Pin `—`", "st-row"))
+    elif not is_area and not _STRICT_PIN_RE.fullmatch(pin):
+        out.append(_err(f"{target}: Pin must be `rev <N>`", "st-row"))
+    if risk not in RISKS:
+        out.append(_err(f"{target}: Risk must be one of {', '.join(RISKS)}", "st-row"))
+    if not why.strip():
+        out.append(_err(f"{target}: Why is empty", "st-row"))
+    if target in seen:
+        out.append(_err(f"{target} appears in more than one row", "st-duplicate"))
+    seen.add(target)
+    return out
+
+
+def _order_issues(text: str) -> list[Issue]:
+    rows = lintcore.table_rows(lintcore.section_body(text, ORDER_HEADING) or "")
+    if tuple(c.strip() for c in rows[0]) != ORDER_HEADER if rows else True:
+        return [
+            _err(
+                f"{ORDER_HEADING}: header must be {' | '.join(ORDER_HEADER)}",
+                "st-heading",
+            )
+        ]
+    out: list[Issue] = []
+    seen: set[str] = set()
+    for cells in rows[1:]:
+        if len(cells) != len(ORDER_HEADER):
+            out.append(
+                _err(f"row {cells[0]!r}: expected {len(ORDER_HEADER)} cells", "st-row")
+            )
+            continue
+        out += _row_issues(cells, seen)
+    return out
+
+
+def _plan_issues(text: str, st: Strategy) -> list[Issue]:
+    if _PLAN_RE.search(text) is None:
+        return [_err("missing `> Plan:` line (`—` when no plan)", "st-plan")]
+    if st.plan is None and any(r.area is None for r in st.rows):
+        return [_err("`> Plan: —` but rows name missions/stories", "st-plan")]
+    return []
+
+
+def _context_issues(text: str, st: Strategy) -> list[Issue]:
+    try:
+        refs = kbcontext.parse(text).refs
+    except kbcontext.KBContextError as exc:
+        return [_err(f"kb-context: {exc}", "st-kb-context")]
+    return [
+        _err(f"{r.target} is not among the kb-context refs", "st-kb-context")
+        for r in st.rows
+        if r.area
+        and not any(
+            lintcore.cite_matches_ref(ref, r.area.repo, r.area.doc, r.area.section)
+            for ref in refs
+        )
+    ]
+
+
+def lint(text: str) -> LintReport:
+    """Offline structure check; hub-backed checks live with the CLI."""
+    text = visible_body(text) + "\n"
+    st = parse(text)
+    issues = lintcore.check_title(text) + lintcore.check_headings(text, HEADINGS)
+    issues += _order_issues(text)
+    issues += _plan_issues(text, st)
+    if _PLACEHOLDER_RE.search(text):
+        issues.append(_err("placeholder left in the document", "st-placeholder"))
+    issues += _context_issues(text, st)
+    if not lintcore.review_passed(text):
+        issues.append(_err("Q1 has not passed", "st-review"))
+    issues += planrev.check_revision(text, TRIGGERS)
+    return LintReport(issues=issues)

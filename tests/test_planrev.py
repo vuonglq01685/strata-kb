@@ -165,3 +165,9 @@ def test_demotions_mission_without_revision_line_is_rev1():
 
 def test_check_revision_accepts_question_trigger():
     assert planrev.check_revision(_doc(2, _row(2, "question"))) == []
+
+
+def test_check_revision_custom_triggers():
+    text = _doc(2, _row(2, "priority"))
+    assert planrev.check_revision(text) != []  # unknown to the BA set
+    assert planrev.check_revision(text, frozenset({"priority"})) == []

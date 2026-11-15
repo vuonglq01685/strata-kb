@@ -125,6 +125,9 @@ app.add_typer(test_env_app, name="test-env")
 testcase_app = typer.Typer(help="Tester repo: test case specs.")
 app.add_typer(testcase_app, name="testcase")
 
+strategy_app = typer.Typer(help="Tester repo: the test strategy.")
+app.add_typer(strategy_app, name="strategy")
+
 report_app = typer.Typer(help="Tester repo: test reports.")
 app.add_typer(report_app, name="report")
 
@@ -4977,6 +4980,26 @@ def testcase_lint(
             raise typer.Exit(1) from None
     report = testcases.lint(text, ticket_text, spec_dir=spec_dir)
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("TC"))
+    _exit_with(0 if report.passed else 1)
+
+
+@strategy_app.command("lint")
+def strategy_lint(
+    file: Path = typer.Argument(
+        Path("docs/test-strategy.md"), help="Test strategy file"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+) -> None:
+    """Check the test strategy offline. Exit 0 PASS, 1 FAIL."""
+    from strata_kb import teststrategy
+
+    try:
+        text = file.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    report = teststrategy.lint(text)
+    typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
     _exit_with(0 if report.passed else 1)
 
 
