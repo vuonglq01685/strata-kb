@@ -36,11 +36,18 @@ def all_done(
         tickets = [t for t in tickets if t.target_repo in (repo_id, None)]
     if not tickets:
         return False, "no tickets"
-    open_ = [t for t in tickets if t.status != "done"]
+    # a Dev also owes a reopened ticket (`done` but failed its test round)
+    open_ = [
+        t
+        for t in tickets
+        if t.status != "done" or (not ba and t.test_status == "reopened")
+    ]
     if ba:
         open_.sort(key=lambda t: t.status not in _BA_FIRST)  # stable
     if open_:
-        return False, f"{open_[0].us_id} {open_[0].status}"
+        first = open_[0]
+        reason = first.status if first.status != "done" else first.test_status
+        return False, f"{first.us_id} {reason}"
     if ba and open_questions:
         noun = "question" if open_questions == 1 else "questions"
         return False, f"{open_questions} open {noun}"

@@ -651,3 +651,54 @@ def test_ba_tasks_never_author_bug_rows():
         ],
     }
     assert [t.arg for t in _ba_tasks(data)] == ["--amend M-x-US1"]
+
+
+def _reopened(us_id: str, target=REPO, depends_on=(), **extra) -> StoryStatus:
+    return StoryStatus(
+        us_id,
+        "M-x",
+        "t",
+        "done",
+        (),
+        depends_on,
+        target,
+        test_status="reopened",
+        **extra,
+    )
+
+
+def test_reopened_child_picked_before_ready():
+    ready = StoryStatus("S2", "M-x", "t", "ready", (), (), REPO)
+    tasks = list(picker_dev_tasks([ready, _reopened("S1.web")], [], REPO))
+    assert tasks[0] == Task("dev-implement-ticket", "S1.web")
+
+
+def test_reopened_bug_goes_to_fix_bug_after_stories():
+    ready_bug = StoryStatus("BUG-4", "", "t", "ready", (), (), REPO)
+    tasks = list(
+        picker_dev_tasks([_reopened("S1.web")], [_reopened("BUG-3"), ready_bug], REPO)
+    )
+    assert tasks[:3] == [
+        Task("dev-implement-ticket", "S1.web"),
+        Task("dev-fix-bug", "BUG-3"),
+        Task("dev-fix-bug", "BUG-4"),
+    ]
+
+
+def test_reopened_other_repo_not_picked():
+    assert list(picker_dev_tasks([_reopened("S1.web", "dev-two")], [], "dev-one")) == []
+
+
+def test_reopened_ignores_depends_on():
+    row = _reopened("S1.web", depends_on=("S0",))
+    assert list(picker_dev_tasks([row], [], REPO)) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]
+
+
+def test_reopened_parent_not_picked():
+    parent = _reopened("S1", None, is_parent=True)
+    child = _reopened("S1.web", parent="S1")
+    assert list(picker_dev_tasks([parent, child], [], REPO)) == [
+        Task("dev-implement-ticket", "S1.web")
+    ]

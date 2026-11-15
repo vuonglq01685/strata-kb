@@ -152,3 +152,19 @@ def test_all_done_waits_for_pending_own_fix():
         "BUG-7", "", "t", "done", ("1/1 done", "own fix done"), (), "api", True
     )
     assert all_done([S("US1", "done")], [done], ba=False, repo_id="api")[0]
+
+
+def test_all_done_false_while_reopened():
+    row = StoryStatus(
+        "S1.web", "M-x", "t", "done", (), (), "web-app", test_status="reopened"
+    )
+    assert all_done([row], [], ba=False, repo_id="web-app") == (
+        False,
+        "S1.web reopened",
+    )
+    assert all_done([row], [], ba=False, repo_id="api") == (False, "no tickets")
+    other = StoryStatus("S2", "M-x", "t", "done", (), (), "api")
+    assert all_done([row, other], [], ba=False, repo_id="api") == (
+        True,
+        "all 1 tickets done",
+    )

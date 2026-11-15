@@ -147,6 +147,15 @@ def runnable_here(t: StoryStatus, repo_id: str) -> bool:
     return not t.is_parent and t.status == "ready" and t.target_repo in (None, repo_id)
 
 
+def reopened_here(t: StoryStatus, repo_id: str) -> bool:
+    """`t` failed a test round (still `done`) and this Dev owns the fix."""
+    return (
+        t.test_status == "reopened"
+        and not t.is_parent
+        and t.target_repo in (repo_id, None)
+    )
+
+
 def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     """Ready tickets routed to `repo_id` whose dependencies are done. `done`
     spans every repo's rows: a dependency may be built elsewhere. A ready row
@@ -157,6 +166,14 @@ def _dev_tasks(stories, unparented, repo_id: str) -> Iterator[Task]:
     def ready(t: StoryStatus) -> bool:
         return runnable_here(t, repo_id) and all(d in done for d in t.depends_on)
 
+    # reopened first, dependencies ignored: they were done when it first passed
+    rows = (*stories, *unparented)
+    for t in rows:
+        if reopened_here(t, repo_id) and not t.us_id.startswith("BUG-"):
+            yield Task("dev-implement-ticket", t.us_id)
+    for t in rows:
+        if reopened_here(t, repo_id) and t.us_id.startswith("BUG-"):
+            yield Task("dev-fix-bug", t.us_id)
     for u in unparented:
         if ready(u) and u.us_id.startswith("BUG-"):
             yield Task("dev-fix-bug", u.us_id)

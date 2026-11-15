@@ -383,7 +383,8 @@ def _still_ready_here(
     whole plan: the same client-side routing test as the pick."""
     stories, unparented, _notes = picker.plan_next(hub, require_target=True)
     return any(
-        t.us_id == ticket and picker.runnable_here(t, repo_id)
+        t.us_id == ticket
+        and (picker.runnable_here(t, repo_id) or picker.reopened_here(t, repo_id))
         for t in (*stories, *unparented)
     )
 
