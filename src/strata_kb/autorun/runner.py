@@ -470,6 +470,10 @@ def _park(
     return tuple(parked.values())
 
 
+def _counts(counts: dict[str, int]) -> tuple[str, ...]:
+    return tuple(f"{k} {n}" for k, n in counts.items())
+
+
 def _tester_task(
     root: Path,
     kb_dir: Path,
@@ -529,24 +533,38 @@ def _settle_tester(
         logger.info("%s is blocked (%s); trying the next story", story, reason)
         return "ran"
     if result.kind == "incomplete":
-        attempts = state.attempts + 1
-        if attempts >= MAX_ATTEMPTS:
-            skipped = (*state.skipped, *filter(None, [state.task]))
+        key = state.task or ""
+        counts = {
+            e.rpartition(" ")[0]: int(e.rpartition(" ")[2]) for e in state.incomplete
+        }
+        count = counts.pop(key, 0) + 1
+        if count >= MAX_ATTEMPTS:
+            skipped = (*state.skipped, key)
             autostate.save(
-                kb_dir, replace(state, task=None, attempts=0, skipped=skipped)
+                kb_dir,
+                replace(
+                    state,
+                    task=None,
+                    attempts=0,
+                    skipped=skipped,
+                    incomplete=_counts(counts),
+                ),
             )
-            logger.warning(
-                "%s ended incomplete %d times; skipping it", state.task, attempts
-            )
+            logger.warning("%s ended incomplete %d times; skipping it", key, count)
             return "ran"
-        # attempts survives the cleared task: run_once keeps it for the re-pick
+        counts[key] = count
         waiting = _park(state, [str(result.ids[0])], until)
         autostate.save(
-            kb_dir, replace(state, task=None, attempts=attempts, waiting=waiting)
+            kb_dir,
+            replace(
+                state,
+                task=None,
+                attempts=0,
+                waiting=waiting,
+                incomplete=_counts(counts),
+            ),
         )
-        logger.info(
-            "%s ended incomplete (%d/%d)", result.ids[0], attempts, MAX_ATTEMPTS
-        )
+        logger.info("%s ended incomplete (%d/%d)", key, count, MAX_ATTEMPTS)
         return "ran"
     if result.kind == "failed" and result.reason.startswith("test-review"):
         return _stop(kb_dir, replace(state, attempts=MAX_ATTEMPTS), result.reason)
@@ -575,6 +593,9 @@ def _settle(
     if result.kind == "done":
         done = replace(
             state,
+            incomplete=tuple(
+                e for e in state.incomplete if e.rpartition(" ")[0] != state.task
+            ),
             task=None,
             attempts=0,
             waiting_on=(),
@@ -775,11 +796,7 @@ def run_once(
     if task.key == state.last_done:
         return _repicked(kb_dir, state, task)
     if state.task != task.key or state.last_done or state.same_pick:
-        # a tester re-pick of a story that ended incomplete keeps its attempts
-        keep = state.attempts if tester and state.task is None else 0
-        state = replace(
-            state, task=task.key, attempts=keep, last_done=None, same_pick=0
-        )
+        state = replace(state, task=task.key, attempts=0, last_done=None, same_pick=0)
         autostate.save(kb_dir, state)
     ticket = task.arg if task.skill in CLAIMED_SKILLS else None
     # read before the heartbeat thread starts: an OSError here must not leak it
@@ -895,6 +912,7 @@ def resume(kb_dir: Path) -> None:
                 attempts=0,
                 same_pick=0,
                 skipped=(),
+                incomplete=(),
                 publish_retry=None,
             ),
         )
@@ -918,6 +936,12 @@ def build_claims(root: Path, kb_dir: Path, cfg: KBConfig) -> RunnerClaims | None
     return RunnerClaims(
         root, kb_dir, claimclient.from_env(), claimclient.holder_name(root)
     )
+
+
+def build_tester_claims(cfg: KBConfig) -> claimclient.ClaimClient | None:
+    """The hub claim client a tester pick reads with; None for other kinds.
+    Raises KbError when the hub env is not set."""
+    return claimclient.from_env() if cfg.kind == "tester" else None
 
 
 def _release_on_exit(
@@ -944,8 +968,8 @@ def run_loop(
     if claims is _BUILD:
         claims = build_claims(root, kb_dir, cfg)
     deps["claims"] = claims
-    if cfg.kind == "tester" and "tester_claims" not in deps:
-        deps["tester_claims"] = claimclient.from_env()
+    if "tester_claims" not in deps:
+        deps["tester_claims"] = build_tester_claims(cfg)
     qa_thread = None
     if cfg.kind == "ba":
         run_task = deps.get("run_task", claude.run_task)

@@ -1328,6 +1328,7 @@ def auto_run(
                     qa=qa,
                     run_task=task_runner,
                     claims=runner.build_claims(root, kb_dir, cfg),
+                    tester_claims=runner.build_tester_claims(cfg),
                 )
                 typer.echo(outcome)
                 code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE

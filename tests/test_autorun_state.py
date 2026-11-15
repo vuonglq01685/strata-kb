@@ -216,3 +216,25 @@ def test_bad_waiting_shape_is_rejected(tmp_path, extra):
     }
     with pytest.raises(ValueError):
         _parse(raw)
+
+
+def test_incomplete_round_trips_and_old_json_loads(tmp_path):
+    save(tmp_path, replace(EMPTY, incomplete=("tester-test-story:S1 1",)))
+    assert load(tmp_path).incomplete == ("tester-test-story:S1 1",)
+    assert EMPTY.incomplete == ()  # old files without the key load as ()
+
+
+@pytest.mark.parametrize("bad", ["S1 1", ["S1"], ["S1 x"], [3]])
+def test_bad_incomplete_shape_is_rejected(bad):
+    from strata_kb.autorun.state import _parse
+
+    raw = {
+        "task": None,
+        "attempts": 0,
+        "waiting_on": [],
+        "stop_reason": None,
+        "updated_at": "",
+        "incomplete": bad,
+    }
+    with pytest.raises(ValueError, match="incomplete"):
+        _parse(raw)

@@ -42,6 +42,8 @@ class AutoState:
     waiting: tuple[str, ...] = ()
     # epoch until which the tester env is not retried
     env_wait_until: float | None = None
+    # "<task key> <count>": tester tasks that ended `incomplete`, per task
+    incomplete: tuple[str, ...] = ()
 
 
 _WAITING_RE = re.compile(r"\S+ \d+")
@@ -103,6 +105,11 @@ def _parse(raw: object) -> AutoState:
         isinstance(env_wait, bool) or not isinstance(env_wait, int | float)
     ):
         raise ValueError("env_wait_until must be a number or null")
+    inc = raw.get("incomplete", [])
+    if not isinstance(inc, list) or not all(
+        isinstance(k, str) and _WAITING_RE.fullmatch(k) for k in inc
+    ):
+        raise ValueError('incomplete must be a list of "<key> <int>" strings')
     return AutoState(
         task,
         attempts,
@@ -117,6 +124,7 @@ def _parse(raw: object) -> AutoState:
         tuple(review),
         tuple(waiting_env),
         env_wait,
+        tuple(inc),
     )
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -118,17 +119,71 @@ def test_env_locked_idles_until_time_passes(env):
     assert step(env, Script(TaskResult("done")), Picks(task_pick())) == "ran"
 
 
-def test_incomplete_twice_skips_story_without_stopping(env):
-    inc = TaskResult("incomplete", ("M-x-US1",))
-    assert step(env, Script(inc), Picks(task_pick())) == "ran"
+class Board:
+    """A `pick_tester` double over ordered stories that honours `skip` and
+    `waiting`, like the real picker."""
+
+    def __init__(self, *tasks: Task):
+        self.tasks = tasks
+
+    def __call__(
+        self, root, kb_dir, hub, *, claims_client, skip=(), waiting=frozenset()
+    ):
+        live = [t for t in self.tasks if t.key not in skip]
+        if not live:
+            return picker.TesterPick(None, "skipped")
+        for t in live:
+            if t.arg not in waiting:
+                return picker.TesterPick(t, "task")
+        return picker.TesterPick(None, "waiting")
+
+
+def _step(env, script, board):
+    return step(env, script, board)
+
+
+INC1 = TaskResult("incomplete", ("M-x-US1",))
+
+
+def test_incomplete_once_is_not_skipped(env):
+    assert _step(env, Script(INC1), Board(T1, T2)) == "ran"
     st = autostate.load(env[1])
-    assert (st.task, st.attempts, st.skipped) == (None, 1, ())
+    assert st.skipped == () and st.attempts == 0 and st.task is None
+    assert st.incomplete == (f"{T1.key} 1",)
     assert st.waiting == (f"M-x-US1 {int(NOW) + IDLE}",)
-    assert step(env, Script(inc), Picks(task_pick())) == "ran"
+
+
+def test_failed_story_after_an_incomplete_one_does_not_stop(env):
+    board = Board(T1, T2)
+    assert _step(env, Script(INC1), board) == "ran"
+    script = Script(TaskResult("failed", (), "boom"))
+    assert _step(env, script, board) == "ran"  # B is picked: A is parked
+    assert script.prompts and "M-x-US2" in script.prompts[0]
     st = autostate.load(env[1])
-    assert st.skipped == (T1.key,) and st.attempts == 0 and st.stop_reason is None
-    # nothing else left: every candidate skipped -> the existing stop
-    assert step(env, Script(), Picks(picker.TesterPick(None, "skipped"))) == "stopped"
+    assert st.attempts == 1 and st.stop_reason is None
+
+
+def test_incomplete_done_incomplete_skips_the_flaky_story(env):
+    board = Board(T1, T2)
+    assert _step(env, Script(INC1), board) == "ran"
+    assert _step(env, Script(TaskResult("done")), board) == "ran"  # B
+    # A's wait expires
+    state = autostate.load(env[1])
+    autostate.save(env[1], replace(state, waiting=()))
+    assert _step(env, Script(INC1), board) == "ran"  # A again
+    st = autostate.load(env[1])
+    assert st.skipped == (T1.key,) and st.incomplete == () and st.stop_reason is None
+
+
+def test_done_clears_the_task_incomplete_count(env):
+    autostate.save(env[1], replace(autostate.load(env[1]), incomplete=(f"{T1.key} 1",)))
+    assert _step(env, Script(TaskResult("done")), Board(T1)) == "ran"
+    assert autostate.load(env[1]).incomplete == ()
+
+
+def test_every_story_skipped_stops_with_the_existing_message(env):
+    autostate.save(env[1], replace(autostate.load(env[1]), skipped=(T1.key,)))
+    assert _step(env, Script(), Board(T1)) == "stopped"
     assert "every task left was skipped" in (autostate.load(env[1]).stop_reason or "")
 
 
@@ -164,8 +219,18 @@ def test_run_loop_exits_done_on_nothing(env, monkeypatch):
         "QaThread",
         lambda *a: pytest.fail("no Q&A thread for a tester"),
     )
+
+    def no_sleep(seconds):
+        raise AssertionError(f"loop slept {seconds}s instead of finishing")
+
     code = run_loop(
-        root, kb_dir, hub=hub, qa=FakeQa(), run_task=Script(), tester_claims=object()
+        root,
+        kb_dir,
+        sleep=no_sleep,
+        hub=hub,
+        qa=FakeQa(),
+        run_task=Script(),
+        tester_claims=object(),
     )
     assert code == 0
 
