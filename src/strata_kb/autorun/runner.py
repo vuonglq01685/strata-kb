@@ -354,18 +354,49 @@ def _own_pr(root: Path, url: str) -> bool:
     return url.partition("://")[2].partition("/")[2].lower().startswith(f"{slug}/pull/")
 
 
+TESTER_STORY = "tester-test-story:"
+
+
+def _release_report_claim(
+    kb_dir: Path,
+    claims_client: claimclient.ClaimClient | None,
+    story: str,
+    reason: str,
+) -> bool:
+    """Free our hub claim on a story whose report PR a human settled. True when
+    released or never held here; False (entry stays parked) on a release error."""
+    local = claimclient.LocalClaims(kb_dir)
+    held = local.get(story)
+    if held is None:
+        return True
+    try:
+        if claims_client is None:
+            raise KbError("no claim client")
+        claims_client.release(held[0], held[1], reason)
+    except KbError as exc:
+        logger.warning("claim on %s not released: %s", story, exc)
+        return False
+    local.drop(story)
+    return True
+
+
 def _review_check(
     root: Path,
     kb_dir: Path,
     state: autostate.AutoState,
     view_pr=ghrest.view_pr,
+    *,
+    kind: str = "",
+    claims_client: claimclient.ClaimClient | None = None,
 ) -> autostate.AutoState:
     """Drop parked PRs a human dealt with: closed unmerged is forgotten; open,
     or unreadable, stays parked. Merged: a ticket skill (CLAIMED_SKILLS) is
     queued as the current task, because its `done` includes `kb publish`, which
     its "Already finished" path runs; other skills count `done`. A merged ticket
     stays parked while another task is current, and only one is queued per
-    turn; it is queued when the task slot is free."""
+    turn; it is queued when the task slot is free. A tester report key
+    (`tester-test-story:<story>`) also frees its hub claim, merged or closed (a
+    closed one is skipped); a failed release keeps the entry parked."""
     kept, merged, queued = [], None, state.task
     skipped = state.skipped
     for entry in state.waiting_review:
@@ -381,6 +412,18 @@ def _review_check(
         except (KbError, KeyError, TypeError) as exc:
             logger.warning("parked PR %s not read: %s", url, exc)
             kept.append(entry)
+            continue
+        story = key[len(TESTER_STORY) :] if key.startswith(TESTER_STORY) else ""
+        if kind == "tester" and story and pr_state in ("MERGED", "CLOSED"):
+            merged_pr = pr_state == "MERGED"
+            reason = "report merged" if merged_pr else "report PR closed"
+            if not _release_report_claim(kb_dir, claims_client, story, reason):
+                kept.append(entry)
+            elif merged_pr:
+                merged = key
+            else:
+                logger.warning("parked PR %s of %s closed without merging", url, key)
+                skipped = (*skipped, key) if key not in skipped else skipped
             continue
         if pr_state == "MERGED":
             if _ticket_of(key) is None:
@@ -824,7 +867,14 @@ def run_once(
     if state.waiting_split:
         state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_review:
-        state = _review_check(root, kb_dir, state, ghrest.view_pr)
+        state = _review_check(
+            root,
+            kb_dir,
+            state,
+            ghrest.view_pr,
+            kind=cfg.kind,
+            claims_client=tester_claims,
+        )
     if state.waiting_on and not tester:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)

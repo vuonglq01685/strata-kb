@@ -254,3 +254,75 @@ def test_dev_failed_still_counts_attempts(env):
         lambda s: None,
     )
     assert out == "ran" and autostate.load(kb_dir).attempts == 1
+
+
+# --- parked report PRs (kb claim released once a human settles the PR) -------
+
+PR = "https://github.com/o/r/pull/7"
+REPORT_KEY = "tester-test-story:M-x-US1"
+
+
+class Releases:
+    def __init__(self, error: Exception | None = None):
+        self.calls, self.error = [], error
+
+    def release(self, claim_id, token, reason):
+        if self.error:
+            raise self.error
+        self.calls.append((claim_id, token, reason))
+
+
+def _review(env, monkeypatch, pr_state, client, held=True):
+    from strata_kb.claimclient import LocalClaims
+
+    root, kb_dir, _ = env
+    if held:
+        LocalClaims(kb_dir).put("M-x-US1", 9, "tok")
+    autostate.save(
+        kb_dir,
+        replace(autostate.load(kb_dir), waiting_review=(f"{REPORT_KEY} {PR}",)),
+    )
+    monkeypatch.setattr(runner_mod, "_own_pr", lambda r, u: True)
+    return runner_mod._review_check(
+        root,
+        kb_dir,
+        autostate.load(kb_dir),
+        lambda r, n: {"state": pr_state},
+        kind="tester",
+        claims_client=client,
+    )
+
+
+def test_merged_report_releases_claim_and_counts_done(env, monkeypatch):
+    from strata_kb.claimclient import LocalClaims
+
+    client = Releases()
+    state = _review(env, monkeypatch, "MERGED", client)
+    assert client.calls == [(9, "tok", "report merged")]
+    assert LocalClaims(env[1]).get("M-x-US1") is None
+    assert state.waiting_review == () and state.last_done == REPORT_KEY
+    assert state.skipped == ()
+
+
+def test_closed_report_releases_claim_and_skips(env, monkeypatch):
+    client = Releases()
+    state = _review(env, monkeypatch, "CLOSED", client)
+    assert client.calls == [(9, "tok", "report PR closed")]
+    assert state.waiting_review == () and state.skipped == (REPORT_KEY,)
+    assert state.last_done is None
+
+
+def test_release_error_keeps_the_entry_and_the_token(env, monkeypatch):
+    from strata_kb.claimclient import LocalClaims
+
+    state = _review(env, monkeypatch, "MERGED", Releases(KbError("hub down")))
+    assert state.waiting_review == (f"{REPORT_KEY} {PR}",)
+    assert state.last_done is None
+    assert LocalClaims(env[1]).get("M-x-US1") == (9, "tok")
+
+
+def test_merged_report_without_local_token_just_counts_done(env, monkeypatch):
+    client = Releases()
+    state = _review(env, monkeypatch, "MERGED", client, held=False)
+    assert client.calls == [] and state.last_done == REPORT_KEY
+    assert state.waiting_review == ()
