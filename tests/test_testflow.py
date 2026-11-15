@@ -76,6 +76,45 @@ def publish_tests(hub: Path, repo: str, story: str, *reports: str) -> None:
     )
 
 
+def publish_strategy(hub: Path, repo: str, text: str) -> None:
+    """Add (or create) the `strategy` group of the `<repo>-test` doc, as
+    `kb report-ingest` ships `docs/test-strategy.md`."""
+    doc = f"{repo}-test"
+    folder = hub / "federation" / repo / doc
+    if not folder.exists():
+        entry = make_fed_entry(
+            hub / "federation",
+            repo,
+            doc,
+            title=f"{repo} — tests",
+            tags=["test", "generated"],
+        )
+        folder = entry / doc
+        (folder / "ch1.md").unlink()
+        (folder / "ch1.raw.md").unlink()
+        manifest = models.load_yaml_model(folder / "_manifest.yaml", models.Manifest)
+        models.save_yaml_model(
+            folder / "_manifest.yaml", manifest.model_copy(update={"sections": []})
+        )
+    title = planingest.section_title(text)
+    l3 = f"## strategy {title}\n\n{planingest.l3_body(text)}\n"
+    for suffix in ("md", "raw.md"):
+        (folder / f"strategy.{suffix}").write_text(l3, encoding="utf-8")
+    manifest = models.load_yaml_model(folder / "_manifest.yaml", models.Manifest)
+    section = models.SectionEntry(
+        id="strategy", title=title, summary="", status="summarized", file="strategy"
+    )
+    models.save_yaml_model(
+        folder / "_manifest.yaml",
+        manifest.model_copy(
+            update={
+                "sections": [s for s in manifest.sections if s.id != "strategy"]
+                + [section]
+            }
+        ),
+    )
+
+
 def _statuses(hub: HubHandle) -> dict[str, tuple[str, str]]:
     repos, _ = planstatus.hub_plans(hub)
     rows = [s for r in repos for m in r.missions for s in m.stories]

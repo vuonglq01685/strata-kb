@@ -4988,10 +4988,14 @@ def strategy_lint(
     file: Path = typer.Argument(
         Path("docs/test-strategy.md"), help="Test strategy file"
     ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: bool = typer.Option(
+        False, "--hub", help="Also check targets and pins against the hub"
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
-    """Check the test strategy offline. Exit 0 PASS, 1 FAIL."""
-    from strata_kb import teststrategy
+    """Check the test strategy (offline; --hub adds drift). Exit 0 PASS, 1 FAIL."""
+    from strata_kb import strategyhub, teststrategy
 
     try:
         text = file.read_text(encoding="utf-8")
@@ -4999,6 +5003,8 @@ def strategy_lint(
         typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
     report = teststrategy.lint(text)
+    if hub:
+        report.issues += strategyhub.lint_against_hub(text, _hub_or_exit("", kb_dir))
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
     _exit_with(0 if report.passed else 1)
 
