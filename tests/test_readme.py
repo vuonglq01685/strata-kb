@@ -348,6 +348,7 @@ _MCP_TOOLS = (
     "kb_ticket_stale",
     "kb_mission_lint",
     "kb_ticket_fetch",
+    "kb_report_fetch",
     "kb_question_ask",
     "kb_question_list",
     "kb_question_answer",
@@ -356,7 +357,7 @@ _MCP_TOOLS = (
 )
 
 
-def test_hub_guide_lists_all_fourteen_mcp_tools():
+def test_hub_guide_lists_all_mcp_tools():
     for lang in ("en", "vi"):
         text = (REPO_ROOT / "docs/src" / f"guide-hub.{lang}.md").read_text(
             encoding="utf-8"
@@ -455,17 +456,17 @@ def test_guides_document_ticket_qa_in_both_languages():
             assert "Q&A needs the shared hub server" in _normalised(text), lang
 
 
-def test_version_is_1_37_2_everywhere():
+def test_version_is_1_37_3_everywhere():
     import tomllib
 
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "1.37.2"
+    assert project["project"]["version"] == "1.37.3"
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     own = [p for p in lock["package"] if p["name"] == "strata-kb"]
-    assert [p["version"] for p in own] == ["1.37.2"]
+    assert [p["version"] for p in own] == ["1.37.3"]
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     first = changelog.split("\n## ", 2)[1]
-    assert first.startswith("1.37.2 — 2026-11-15")
+    assert first.startswith("1.37.3 — 2026-11-15")
 
 
 def test_docs_describe_structural_coverage():

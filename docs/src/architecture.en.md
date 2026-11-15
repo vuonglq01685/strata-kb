@@ -268,12 +268,12 @@ that order — and the server refuses to start without one. It searches only the
 hub's `federation/`, never its own working `.kb/`. That single rule is what makes
 "published" mean something.
 
-Fourteen MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
+Fifteen MCP tools are exposed: `kb_search`, `kb_get_section`, `kb_context_new`,
 `kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_stale`,
-`kb_ticket_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
+`kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
 `kb_mission_lint`, `kb_mission_next` and `kb_doctor_hub`. The three `kb_question_*`
 tools work on the ticket Q&A store, and `kb_question_ask` and `kb_question_answer`
-are the only MCP tools that write (see 8.5); the other twelve only read.
+are the only MCP tools that write (see 8.5); the other thirteen only read.
 
 ---
 

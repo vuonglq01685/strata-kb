@@ -267,12 +267,12 @@ tự đó — và server từ chối khởi động nếu không có. Nó chỉ 
 của hub, không bao giờ tìm trong `.kb/` làm việc của chính nó. Chính quy tắc đó
 làm cho từ "đã publish" có ý nghĩa.
 
-Mười bốn MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
+Mười lăm MCP tool được phơi ra: `kb_search`, `kb_get_section`, `kb_context_new`,
 `kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_stale`,
-`kb_ticket_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
+`kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask`, `kb_question_list`, `kb_question_answer`,
 `kb_mission_lint`, `kb_mission_next` và `kb_doctor_hub`. Ba tool `kb_question_*` làm việc với
 kho hỏi đáp ticket, và `kb_question_ask`, `kb_question_answer` là hai MCP tool duy nhất
-có ghi (xem 8.5); mười hai tool còn lại chỉ đọc.
+có ghi (xem 8.5); mười ba tool còn lại chỉ đọc.
 
 ---
 

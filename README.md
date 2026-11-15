@@ -180,7 +180,7 @@ keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Does not host the shared service. | [Child](docs/src/guide-child.en.md) |
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets and mission plans grounded in the KB, gated by CI Definition-of-Ready checks. Publishes only its own plan (`<repo_id>-plan`). | [BA](docs/src/guide-ba.en.md) |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through an agent workflow. Publishes knowledge about *its own code* (`-code` generated, `-svc` curated), never outside documents. | [Dev](docs/src/guide-dev.en.md) |
-| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup`, `/tester-strategy` (the test strategy, `docs/test-strategy.md`) and `/tester-test-story`; the Dev/BA hand-over and `kb auto` for `tester` are not built yet. | — (guide comes later) |
+| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup`, `/tester-strategy` (the test strategy, `docs/test-strategy.md`) and `/tester-test-story`. A FAIL report reopens the story for Dev (`kb report fetch`, fix mode) and a regression becomes a BA bug candidate; `kb auto` for `tester` is not built yet. | — (guide comes later) |
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and the
 MCP client is wired in `.mcp.json` and `.cursor/mcp.json`; each guide lists them
@@ -259,6 +259,7 @@ daily use.
 | `kb strategy lint` | Check a tester repo's `docs/test-strategy.md` (structure, priority order, KB context, review) |
 | `kb test stale` | Drift of a tester repo's strategy and test cases against the hub (`--md` is the issue body the scheduled workflow keeps) |
 | `kb testcase lint` | Check a story's `tests/<story-id>/test-cases.md` against its ticket |
+| `kb report fetch` | Read a published test report from the hub into `docs/impl/<id>/report-R<n>.md` (`--round`, `--child`, `--out`, `--hub`): Dev fix mode for a reopened ticket |
 | `kb report lint` | Check a test report `reports/<story-id>/R<n>.md` (verdict, defects, evidence, secrets) |
 | `kb report-ingest` | Build `.kb/<repo_id>-test/` from the lint-clean test cases and reports of a `tester` repo |
 | `kb auto` | Full-auto mode for `ba` and `dev` repos: `on`, `off`, `status`, `run`, `wait` |

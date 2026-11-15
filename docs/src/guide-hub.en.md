@@ -607,7 +607,7 @@ the hub root, `kb-code-sync.yaml` holds the code-sync baseline. A registry entry
 
 ## 6.3 The MCP tools
 
-The server exposes fourteen tools. Only `kb_question_ask` and `kb_question_answer` write.
+The server exposes these tools. Only `kb_question_ask` and `kb_question_answer` write.
 
 | Tool | Purpose |
 |---|---|
@@ -620,6 +620,7 @@ The server exposes fourteen tools. Only `kb_question_ask` and `kb_question_answe
 | `kb_ticket_stale` | the stale-citation report for one ticket or mission: citations the hub amended or lost since they were pinned, and moved `-code` sections |
 | `kb_mission_lint` | the mission Definition-of-Ready gate |
 | `kb_ticket_fetch` | a ticket a BA published, read from the hub's `<ba-repo>-plan` by id |
+| `kb_report_fetch` | a test report the Tester published, read from the hub by story and optional `round` (latest by default); the same text as `kb report fetch` |
 | `kb_question_ask` | **writes.** Ask the BA a question about a published ticket; returns `Q<id>` |
 | `kb_question_list` | list ticket questions with their derived state (`open`, `waiting`, `answered`, or `all`) |
 | `kb_question_answer` | **writes.** Record the BA's answer to an open question |
@@ -628,7 +629,7 @@ The server exposes fourteen tools. Only `kb_question_ask` and `kb_question_answe
 
 BA skills call every tool except `kb_ticket_fetch`, `kb_question_ask` and `kb_doctor_hub`;
 Dev skills call `kb_search`, `kb_get_section`, `kb_context_new`, `kb_resolve`,
-`kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask` and
+`kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask` and
 `kb_question_list`.
 
 ## 6.4 What the server enforces

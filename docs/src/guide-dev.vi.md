@@ -802,7 +802,7 @@ và `kb_question_answer` (BA). `asked_by` và `answered_by` là tên do người
 truyền `git config user.name`): để theo dõi, không phải xác thực. Giới hạn: 4000 ký tự cho câu
 hỏi hoặc câu trả lời, 1000 cho context, 100 cho tên, tối đa 50 câu hỏi mở cho mỗi ticket. Các
 công cụ MCP mà skill của bạn gọi: `kb_search`, `kb_get_section`, `kb_context_new`,
-`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask`,
 `kb_question_list`.
 
 ## 6.7 Tên dành riêng

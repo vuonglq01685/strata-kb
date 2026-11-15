@@ -814,7 +814,7 @@ Questions and answers live in the hub's Q&A store, written only through `kb_ques
 (the skills pass `git config user.name`): tracking, not authentication. Limits: 4000 characters
 for a question or answer, 1000 for context, 100 for names, at most 50 open questions per
 ticket. The MCP tools your skills call: `kb_search`, `kb_get_section`, `kb_context_new`,
-`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_question_ask`,
+`kb_resolve`, `kb_ticket_lint`, `kb_ticket_check`, `kb_ticket_fetch`, `kb_report_fetch`, `kb_question_ask`,
 `kb_question_list`.
 
 ## 6.7 Reserved names
