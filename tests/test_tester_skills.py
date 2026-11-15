@@ -41,8 +41,9 @@ def test_test_story_body_orders_the_pipeline():
 
 def test_test_story_body_never_merges():
     t = _body("tester-test-story")
-    assert "never merge" in t
-    assert "kb pr merge" not in t and "gh pr merge" not in t
+    assert "Never merge it" in t  # manual mode: a human merges
+    manual = t[: t.index("\n## Auto mode")]
+    assert "kb pr merge" not in manual and "gh pr merge" not in manual
 
 
 def test_test_story_body_pins_outcomes_and_rules():
@@ -102,9 +103,9 @@ def test_env_setup_body_keeps_secrets_out_of_yaml():
     assert t.index("kb test-env check") < t.index("kb test-env verify")
 
 
-@pytest.mark.parametrize("name", SKILLS)
+@pytest.mark.parametrize("name", ("tester-env-setup", "tester-strategy"))
 def test_bodies_have_no_auto_mode_section(name):
-    # kb auto for tester is phase 3; the settings allowlist test scans these.
+    # strategy auto is a later task; the settings allowlist test scans these.
     assert "\n## Auto mode" not in _body(name)
 
 
@@ -297,3 +298,47 @@ def test_test_story_no_argument_proposes_next_story():
 def test_changelog_mentions_test_next():
     log = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "kb test next" in log.split("## 1.37.2", 1)[0]
+
+
+def test_test_story_auto_mode_section():
+    from strata_kb.autorun.claude import TESTER_RESULT_FORMS
+
+    t = _body("tester-test-story")
+    assert "\n## Auto mode\n" in t
+    auto = t[t.index("\n## Auto mode\n") :]
+    assert auto.index("### Result line") > auto.index("kb auto status --json")
+    for form in TESTER_RESULT_FORMS:
+        assert f"`{form}`" in auto, form
+    for needle in (
+        "kb pr merge --squash --delete-branch",
+        "kb pr checks --watch",
+        "kb pr view --json",
+        "blocked-env <story> not-deployed",
+        "blocked-env <story> env-locked",
+        "blocked-env <story> claim-taken",
+        "blocked-env <story> env-unhealthy",
+        "failed test-review no-subagents",
+        "failed test-review <id>",
+        "incomplete <story>",
+        "--phase review",
+    ):
+        assert needle in auto, needle
+    assert "Never merge it" in t
+    assert "reserved for the unattended runner" not in t
+
+
+@pytest.mark.parametrize(
+    "rel",
+    (
+        ".claude/skills/tester-test-story/SKILL.md",
+        ".github/prompts/tester-test-story.prompt.md",
+        ".cursor/commands/tester-test-story.md",
+    ),
+)
+def test_rendered_test_story_skills_carry_the_auto_section(tmp_path, rel):
+    from tests.test_init_tester import init_repo
+
+    init_repo(tmp_path, "tester")
+    text = (tmp_path / rel).read_text(encoding="utf-8")
+    assert "\n## Auto mode\n" in text
+    assert "kb pr merge --squash --delete-branch" in text

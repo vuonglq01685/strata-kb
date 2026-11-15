@@ -1417,7 +1417,12 @@ def test_no_admin_merge_anywhere():
         assert "--admin" not in text, path
 
 
-MERGING_BODIES = ("dev-handover", "ba-ticket-author", "dev-test-workflow")
+MERGING_BODIES = (
+    "dev-handover",
+    "ba-ticket-author",
+    "dev-test-workflow",
+    "tester-test-story",
+)
 
 
 @pytest.mark.parametrize("name", MERGING_BODIES)
@@ -1454,7 +1459,7 @@ def test_runner_invoked_result_lists_allow_blocked_review(name):
     text = BASE.joinpath("bodies", f"{name}.md").read_text(encoding="utf-8")
     block = text.split("\n- `AUTO-RESULT: done`")[1].split("\n\n")[0]
     assert "- `AUTO-RESULT: blocked-review <pr-url>`" in "\n" + block
-    words = {"three": 3, "four": 4, "five": 5}
+    words = {"three": 3, "four": 4, "five": 5, "seven": 7}
     head = text.split("\n- `AUTO-RESULT: done`")[0]
     declared = re.findall(r"one of (\w+) forms", head)[-1]
     assert words[declared] == block.count("\n- `AUTO-RESULT:") + 1, name
