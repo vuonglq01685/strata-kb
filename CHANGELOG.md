@@ -7,6 +7,7 @@ All notable changes to Strata are recorded here. This project follows
 
 - **`/tester-strategy` works without a test environment.** A strategy can now be written from documents alone, before any code or environment exists. With no `.kb/test-env.yaml`, the skill writes the planned environments, marks them "not set up yet" and reminds the Tester to run `/tester-env-setup` before the first `/tester-test-story`. Before, it stopped and asked for the environment first. `--amend` aligns the section once `.kb/test-env.yaml` exists, and the Q1 Strategy axis checks against the planned environments when there is no file.
 - **Merging a strategy change publishes it.** `kb-publish-request.yml` in tester repos now also fires on `docs/test-strategy.md` and `docs/assets/**`. Before, a PR that changed only the strategy merged without publishing, and the hub kept the old strategy until the next test or report change.
+- **`kb strategy lint --hub` and `kb testcase lint --hub` read `STRATA_KB_HUB`.** Both flags ignored the variable and used only the hub in `.kb/config.yaml`, so in `kb-test-lint.yml` (which puts the token-bearing hub URL in `STRATA_KB_HUB`) they could not reach a private hub. They now use `STRATA_KB_HUB` when it is set, else the config.
 - **Upgrade:** run `kb upgrade` in tester repos.
 
 ## 1.37.1 — 2026-11-15

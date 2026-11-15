@@ -142,6 +142,45 @@ def test_cli_strategy_lint_hub_flags_broken_target(plan_hub, tmp_path):
     assert res.exit_code == 1 and "M-checkout" in res.output
 
 
+def test_cli_strategy_lint_hub_reads_strata_kb_hub_env(plan_hub, tmp_path, monkeypatch):
+    # CI puts the token-bearing hub URL in STRATA_KB_HUB, not in .kb/config.yaml.
+    from typer.testing import CliRunner
+
+    from strata_kb.cli import app
+    from tests.test_teststrategy import STRATEGY
+
+    file = tmp_path / "s.md"
+    file.write_text(STRATEGY, encoding="utf-8")
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "config.yaml").write_text("repo_id: tester-one\n", encoding="utf-8")
+    monkeypatch.setenv("STRATA_KB_HUB", str(plan_hub.root))
+    res = CliRunner().invoke(
+        app, ["strategy", "lint", str(file), "--kb-dir", str(kb), "--hub"]
+    )
+    assert res.exit_code == 1 and "M-checkout" in res.output, res.output
+
+
+def test_cli_testcase_lint_hub_reads_strata_kb_hub_env(tmp_path, monkeypatch):
+    import typer
+    from typer.testing import CliRunner
+
+    from strata_kb import cli
+
+    seen = []
+
+    def fake_hub(flag, kb_dir):
+        seen.append(flag)
+        raise typer.Exit(1)
+
+    monkeypatch.setattr(cli, "_hub_or_exit", fake_hub)
+    monkeypatch.setenv("STRATA_KB_HUB", "https://hub.example/x.git")
+    spec = tmp_path / "test-cases.md"
+    spec.write_text("# t\n> Story: S1\n", encoding="utf-8")
+    CliRunner().invoke(cli.app, ["testcase", "lint", str(spec), "--hub"])
+    assert seen == ["https://hub.example/x.git"]
+
+
 def _stale(plan_hub, tmp_path, rows=None, *extra):
     import json
 

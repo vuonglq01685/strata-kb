@@ -830,6 +830,12 @@ def _hub_or_reason(hub_flag: str, kb_dir: Path) -> tuple[HubHandle | None, str]:
     return handle, ""
 
 
+def _env_hub() -> str:
+    """STRATA_KB_HUB for a bool `--hub` flag (no typer envvar to fold it): CI
+    puts the token-bearing URL there, never in .kb/config.yaml."""
+    return os.environ.get("STRATA_KB_HUB", "")
+
+
 def _hub_or_exit(hub_flag: str, kb_dir: Path) -> HubHandle:
     """Hub is required: flag > env (typer envvar already folded) > .kb/config.yaml."""
     handle, reason = _hub_or_reason(hub_flag, kb_dir)
@@ -4950,7 +4956,11 @@ def testcase_lint(
         None, "--ticket", help="Fetched ticket (default <spec folder>/ticket.md)"
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
-    hub: bool = typer.Option(False, "--hub", help="Fetch the ticket from the hub"),
+    hub: bool = typer.Option(
+        False,
+        "--hub",
+        help="Fetch the ticket from the hub (STRATA_KB_HUB, else .kb/config.yaml)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
     """Check a test case spec against its ticket. Exit 0 PASS, 1 FAIL."""
@@ -4966,7 +4976,7 @@ def testcase_lint(
     ticket_text: str | None = None
     if hub:
         try:
-            ticket_text = ticketfetch.render(_hub_or_exit("", kb_dir), story)
+            ticket_text = ticketfetch.render(_hub_or_exit(_env_hub(), kb_dir), story)
         except ticketfetch.TicketFetchError as exc:
             typer.secho(str(exc), fg=typer.colors.RED)
             raise typer.Exit(1) from None
@@ -4993,7 +5003,9 @@ def strategy_lint(
     ),
     kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
     hub: bool = typer.Option(
-        False, "--hub", help="Also check targets and pins against the hub"
+        False,
+        "--hub",
+        help="Also check targets and pins against the hub (STRATA_KB_HUB, else .kb/config.yaml)",
     ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
 ) -> None:
@@ -5007,7 +5019,9 @@ def strategy_lint(
         raise typer.Exit(1) from None
     report = teststrategy.lint(text, file.parent)
     if hub:
-        report.issues += strategyhub.lint_against_hub(text, _hub_or_exit("", kb_dir))
+        report.issues += strategyhub.lint_against_hub(
+            text, _hub_or_exit(_env_hub(), kb_dir)
+        )
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
     _exit_with(0 if report.passed else 1)
 
