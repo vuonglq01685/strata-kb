@@ -21,8 +21,8 @@ from strata_kb import (
     planrev,
     planstatus,
     strategyhub,
-    teststrategy,
     testflow,
+    teststrategy,
 )
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
