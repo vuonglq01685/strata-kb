@@ -5,9 +5,11 @@ import shutil
 
 import pytest
 
+from strata_kb import strategyhub
 from strata_kb.serving.accounts import Accounts
 from tests.test_planingest import MISSION_ID
-from tests.test_testflow import STORY, _text, publish_tests
+from tests.test_strategyhub import STRATEGY_FOR_PLAN_HUB
+from tests.test_testflow import STORY, _text, publish_strategy, publish_tests
 
 SHA = "a" * 64
 REPO = "tester-one"
@@ -221,3 +223,63 @@ def test_held_claim_story_without_report_opens_an_empty_state(
     page = web_client_logged_in.get(href)
     assert page.status_code == 200 and "No report yet." in page.text
     assert web_client_logged_in.get("/ui/tests/ST-NOPE").status_code == 404
+
+
+def _strategy_page(client, url="/ui/tests/strategy"):
+    return _main(client.get(url).text)
+
+
+def test_panel_lists_strategy_with_rank_and_badge(web_client_logged_in, plan_hub):
+    publish_strategy(plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB)
+    main = _main(web_client_logged_in.get("/ui/tests").text)
+    assert "Strategy" in main and 'href="/ui/tests/strategy?repo=tester-one"' in main
+    assert "#1" in main and MISSION_ID in main and "1 story" in main
+
+
+def test_needs_regrounding_badge_on_pin_moved(web_client_logged_in, plan_hub):
+    publish_strategy(
+        plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB.replace("rev 1", "rev 9")
+    )
+    assert "needs re-grounding" in web_client_logged_in.get("/ui/tests").text
+
+
+def test_strategy_page_shows_order_gaps_and_findings(web_client_logged_in, plan_hub):
+    publish_strategy(plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB)
+    page = _strategy_page(web_client_logged_in)
+    assert f"{MISSION_ID}-US1" in page
+    assert "no ticket yet" in page and "M-nope-US1" in page
+    assert "broken-target" in page
+
+
+def test_strategy_page_unknown_repo_is_404(web_client_logged_in, plan_hub):
+    publish_strategy(plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB)
+    assert web_client_logged_in.get("/ui/tests/strategy?repo=nope").status_code == 404
+    assert web_client_logged_in.get("/ui/tests/strategy").status_code == 200
+
+
+def test_no_strategy_keeps_story_list(web_client_logged_in, plan_hub):
+    _publish(plan_hub, STORY, _text(STORY, 1))
+    page = web_client_logged_in.get("/ui/tests").text
+    assert "No test strategy published" in page and STORY in page
+    assert web_client_logged_in.get("/ui/tests/strategy").status_code == 404
+
+
+def test_story_page_shows_rank(web_client_logged_in, plan_hub):
+    _publish(plan_hub, STORY, _text(STORY, 1))
+    publish_strategy(plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB)
+    page = _main(web_client_logged_in.get(f"/ui/tests/{STORY}").text)
+    assert "Rank 2" in page and STORY in page
+
+
+def test_unreadable_strategy_does_not_break_list(
+    web_client_logged_in, plan_hub, monkeypatch
+):
+    _publish(plan_hub, STORY, _text(STORY, 1))
+
+    def boom(hub):
+        raise ValueError("bad")
+
+    monkeypatch.setattr(strategyhub, "views", boom)
+    resp = web_client_logged_in.get("/ui/tests")
+    assert resp.status_code == 200
+    assert "could not be read" in resp.text and STORY in resp.text

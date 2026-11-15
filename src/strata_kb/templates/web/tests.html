@@ -9,6 +9,27 @@
       and the ticket status it gives. Bug candidates are regression failures not yet
       logged by an earlier report. Read-only.</p>
   </div>
+  {% if strategy_error %}
+  <div class="empty-state"><p>The test strategy could not be read.</p></div>
+  {% elif strategies %}
+  {% for st in strategies %}
+  <div class="panel">
+    <div class="panel-head"><h2><a href="/ui/tests/strategy?repo={{ st.repo | urlencode }}">Strategy</a>{% if st.plan %} — {{ st.plan }}{% endif %}</h2><span class="note">rev {{ st.revision }}</span>{% if st.regrounding %} <span class="badge badge-pending">needs re-grounding</span>{% endif %}</div>
+    {% for row, placed in st.top %}
+    <div class="queue-row">
+      <span class="cite">#{{ row.rank }}</span>
+      <span class="file">{{ row.target }}</span>
+      <span class="note">{{ placed | length }} stor{{ 'y' if placed | length == 1 else 'ies' }}</span>
+      <span class="note">{{ placed | map('last') | unique | join(', ') }}</span>
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No ranked rows.</p></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="note">No test strategy published.</p>
+  {% endif %}
   <p class="meta-line">
     {% for f in filters %}<a class="chip {{ 'on' if f == active else '' }}" href="/ui/tests?status={{ f }}">{{ 'bug candidates' if f == 'candidates' else f }}</a>
     {% endfor %}
