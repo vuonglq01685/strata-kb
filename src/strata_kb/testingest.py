@@ -74,7 +74,9 @@ def _section(sid: str, group: str, text: str, summary: str) -> CodeSection | Non
     )
 
 
-def _ship_strategy(root: Path, out: TestIngestReport) -> list[CodeSection]:
+def _ship_strategy(
+    root: Path, out: TestIngestReport, assets: dict[str, bytes]
+) -> list[CodeSection]:
     path = root / teststrategy.STRATEGY_FILE
     if not path.is_file():
         return []
@@ -82,6 +84,19 @@ def _ship_strategy(root: Path, out: TestIngestReport) -> list[CodeSection]:
     reason = planingest.lint_reason(teststrategy.lint(text)) or planingest.fence_reason(
         text
     )
+    files: dict[str, bytes] = {}
+    if not reason:
+        attached = planingest.attach_images(
+            text,
+            testreport._IMAGE_RE.findall(visible_body(text)),
+            ASSETS_DIR,
+            path.parent,
+            "strategy",
+        )
+        if isinstance(attached, str):
+            reason = attached
+        else:
+            text, files = attached[0], dict(attached[1])
     sec = (
         None
         if reason
@@ -94,6 +109,7 @@ def _ship_strategy(root: Path, out: TestIngestReport) -> list[CodeSection]:
     )
     if sec is None:
         out.skipped.append((teststrategy.STRATEGY_FILE, reason or "no '# ' title line"))
+    assets.update(files)
     return [sec] if sec else []
 
 
@@ -207,8 +223,8 @@ def run(
         )
     root = repo_root.resolve()
     out = TestIngestReport(doc_id=doc_id)
-    sections = _ship_strategy(root, out)
     assets: dict[str, bytes] = {}
+    sections = _ship_strategy(root, out, assets)
     for story_dir in sorted(p for p in tests_dir.iterdir() if p.is_dir()):
         spec_path = story_dir / CASES_FILE
         if not spec_path.is_file():

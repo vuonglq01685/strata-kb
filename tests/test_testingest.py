@@ -245,3 +245,31 @@ def test_story_folder_named_strategy_is_skipped(tmp_path):
     rep = run_tests(tmp_path)
     assert ("tests/strategy/test-cases.md", "reserved name 'strategy'") in rep.skipped
     assert rep.published.count("strategy") == 1
+
+
+def _with_image(strategy: str, src: str) -> str:
+    # inside a kept section: l3_body drops the trailing Review record
+    return strategy.replace(
+        "Re-run P1 on every fix.", f"Re-run P1 on every fix.\n\n![x]({src})", 1
+    )
+
+
+def test_strategy_image_ships_hashed_and_ref_rewritten(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, _with_image(STRATEGY, "assets/x.png"))
+    (tmp_path / "docs/assets").mkdir()
+    (tmp_path / "docs/assets/x.png").write_bytes(PNG)
+    rep = run_tests(tmp_path)
+    name = f"{hashlib.sha256(PNG).hexdigest()}.png"
+    assert rep.published[0] == "strategy"
+    assert f"assets/{name}" in doc_file(tmp_path, "strategy.raw.md")
+    assert "assets/x.png" not in doc_file(tmp_path, "strategy.raw.md")
+    assert (tmp_path / "kb/shop-test/assets" / name).is_file()
+
+
+def test_strategy_with_missing_image_is_skipped_stories_ship(tmp_path):
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, _with_image(STRATEGY, "assets/nope.png"))
+    rep = run_tests(tmp_path)
+    assert "strategy" not in rep.published and rep.published
+    assert [f for f, _ in rep.skipped] == ["docs/test-strategy.md"]
