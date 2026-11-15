@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from strata_kb import strategyhub, teststrategy, ticketclaim
 from strata_kb.cli import app
+from tests.test_missionlint import MISSION_ID
 from tests.test_planstatus import HISTORY, US
 from tests.test_strategyhub import STRATEGY_FOR_PLAN_HUB, US1, _doc
 from tests.test_testflow import _text, publish_tests
@@ -77,10 +78,9 @@ def test_cli_test_next_json_shape(plan_hub, tmp_path):
         "story": US1,
         "tier": 1,
         "rank": 1,
-        "how": item["how"],
-        "target": item["target"],
+        "how": "mission",
+        "target": MISSION_ID,
     }
-    assert item["how"] and item["target"]
 
 
 def test_cli_test_next_nothing_testable_exits_3(plan_hub, tmp_path):
