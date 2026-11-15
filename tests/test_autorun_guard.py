@@ -79,3 +79,14 @@ def test_cli_guard_stop_prints_the_block_decision(tmp_path):
     assert json.loads(res.stdout) == guard.stop_decision(
         {"last_assistant_message": "all done"}, AUTO
     )
+
+
+def test_guard_accepts_blocked_env_and_lists_tester_forms(tmp_path):
+    kb = tmp_path / ".kb"
+    kb.mkdir()
+    (kb / "config.yaml").write_text("kind: tester\n")
+    line = "AUTO-RESULT: blocked-env M-x-US3 env-locked"
+    assert guard.stop_decision({"last_assistant_message": line}, AUTO, kb) is None
+    out = guard.stop_decision({"last_assistant_message": "nope"}, AUTO, kb)
+    assert out is not None
+    assert all(form in out["reason"] for form in claude.TESTER_RESULT_FORMS)

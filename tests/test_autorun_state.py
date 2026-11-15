@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 
 import pytest
 
@@ -154,3 +155,64 @@ def test_waiting_review_must_be_strings(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         assert load(tmp_path) == EMPTY
     assert "state.json" in caplog.text
+
+
+def test_waiting_fields_round_trip_and_expire(tmp_path):
+    import time
+
+    from strata_kb.autorun.state import waiting_stories
+
+    now = int(time.time())
+    state = replace(
+        EMPTY, waiting=(f"S1 {now + 600}", f"S2 {now - 5}"), env_wait_until=now + 60.5
+    )
+    save(tmp_path, state)
+    got = load(tmp_path)
+    assert got.waiting == (f"S1 {now + 600}",) and got.env_wait_until == now + 60.5
+    assert waiting_stories(state, now) == frozenset({"S1"})
+    save(tmp_path, replace(state, env_wait_until=now - 1))
+    assert load(tmp_path).env_wait_until is None
+
+
+def test_old_json_without_waiting_loads(tmp_path):
+    d = tmp_path / "auto"
+    d.mkdir()
+    (d / "state.json").write_text(
+        json.dumps(
+            {
+                "task": None,
+                "attempts": 1,
+                "waiting_on": [],
+                "stop_reason": None,
+                "updated_at": "",
+            }
+        )
+    )
+    got = load(tmp_path)
+    assert got.attempts == 1 and got.waiting == () and got.env_wait_until is None
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"waiting": "S1 5"},
+        {"waiting": ["S1"]},
+        {"waiting": ["S1 x"]},
+        {"waiting": [3]},
+        {"env_wait_until": "soon"},
+        {"env_wait_until": True},
+    ],
+)
+def test_bad_waiting_shape_is_rejected(tmp_path, extra):
+    from strata_kb.autorun.state import _parse
+
+    raw = {
+        "task": None,
+        "attempts": 0,
+        "waiting_on": [],
+        "stop_reason": None,
+        "updated_at": "",
+        **extra,
+    }
+    with pytest.raises(ValueError):
+        _parse(raw)

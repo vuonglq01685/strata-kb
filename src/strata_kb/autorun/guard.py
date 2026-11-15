@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from strata_kb.autorun import claude
+from strata_kb.config import load_config
 from strata_kb.usage.transcript import _rows
 
 
@@ -33,7 +34,9 @@ def _last_assistant_text(payload: dict) -> str:
     return ""
 
 
-def stop_decision(payload: dict, env: Mapping[str, str]) -> dict | None:
+def stop_decision(
+    payload: dict, env: Mapping[str, str], kb_dir: Path = Path(".kb")
+) -> dict | None:
     """`None` = let the session end; else the Stop-hook block decision."""
     if env.get(claude.AUTO_TASK_ENV) != "1" or payload.get("stop_hook_active") is True:
         return None
@@ -43,7 +46,7 @@ def stop_decision(payload: dict, env: Mapping[str, str]) -> dict | None:
         or failure.reason.startswith("bad result line")
     ):
         return None
-    forms = "\n".join(claude.RESULT_FORMS)
+    forms = "\n".join(claude.result_forms(load_config(kb_dir).kind))
     return {
         "decision": "block",
         "reason": (

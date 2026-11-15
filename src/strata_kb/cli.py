@@ -2325,7 +2325,7 @@ def guard_stop(
         return
     # Always exit 0, silent on failure: a non-zero Stop hook would trap the session.
     try:
-        decision = guard.stop_decision(json.loads(sys.stdin.read()), os.environ)
+        decision = guard.stop_decision(json.loads(sys.stdin.read()), os.environ, kb_dir)
         if decision is not None:
             typer.echo(json.dumps(decision))
     except Exception as exc:  # noqa: BLE001 -- the hook must absorb every failure

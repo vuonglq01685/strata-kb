@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
+import time
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +38,13 @@ class AutoState:
     waiting_split: tuple[str, ...] = ()
     # "<task key> <pr url>": PRs on code-owned paths parked for a human review
     waiting_review: tuple[str, ...] = ()
+    # "<story> <until-epoch>": stories parked until then (tester env wait)
+    waiting: tuple[str, ...] = ()
+    # epoch until which the tester env is not retried
+    env_wait_until: float | None = None
+
+
+_WAITING_RE = re.compile(r"\S+ \d+")
 
 
 def _empty() -> AutoState:
@@ -84,6 +93,16 @@ def _parse(raw: object) -> AutoState:
     review = raw.get("waiting_review", [])
     if not isinstance(review, list) or not all(isinstance(k, str) for k in review):
         raise ValueError("waiting_review must be a list of strings")
+    waiting_env = raw.get("waiting", [])
+    if not isinstance(waiting_env, list) or not all(
+        isinstance(k, str) and _WAITING_RE.fullmatch(k) for k in waiting_env
+    ):
+        raise ValueError('waiting must be a list of "<id> <int>" strings')
+    env_wait = raw.get("env_wait_until")
+    if env_wait is not None and (
+        isinstance(env_wait, bool) or not isinstance(env_wait, int | float)
+    ):
+        raise ValueError("env_wait_until must be a number or null")
     return AutoState(
         task,
         attempts,
@@ -96,18 +115,37 @@ def _parse(raw: object) -> AutoState:
         publish_retry,
         tuple(split),
         tuple(review),
+        tuple(waiting_env),
+        env_wait,
     )
 
 
 def load(kb_dir: Path) -> AutoState:
     path = _auto_dir(kb_dir) / STATE_NAME
     try:
-        return _parse(json.loads(path.read_text(encoding="utf-8")))
+        state = _parse(json.loads(path.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return _empty()
     except (OSError, ValueError, KeyError) as exc:
         _log.warning("ignoring unreadable %s: %s", path, exc)
         return _empty()
+    now = time.time()
+    return replace(
+        state,
+        waiting=tuple(w for w in state.waiting if int(w.split()[1]) > now),
+        env_wait_until=(
+            state.env_wait_until
+            if state.env_wait_until is not None and state.env_wait_until > now
+            else None
+        ),
+    )
+
+
+def waiting_stories(state: AutoState, now: float) -> frozenset[str]:
+    """Stories still parked at `now`."""
+    return frozenset(
+        story for story, until in map(str.split, state.waiting) if int(until) > now
+    )
 
 
 def save(kb_dir: Path, state: AutoState) -> None:
