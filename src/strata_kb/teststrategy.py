@@ -33,7 +33,7 @@ HEADINGS: tuple[str, ...] = (
     "## Review record",
 )
 
-_PLAN_RE = re.compile(r"^>\s*Plan:\s*(.*?)\s*$", re.M)
+_PLAN_RE = re.compile(r"^>[ \t]*Plan:[ \t]*(.*?)[ \t]*$", re.M)
 _PIN_RE = re.compile(r"^rev\s+(\d+)$")
 
 
@@ -82,7 +82,7 @@ def _rank(cell: str) -> tuple[bool, int | None]:
     """(parseable, rank); `last` parses as rank None."""
     if cell.strip().lower() == LAST:
         return True, None
-    if cell.isdigit() and int(cell) > 0:
+    if re.fullmatch(r"[0-9]+", cell) and int(cell) > 0:
         return True, int(cell)
     return False, None
 

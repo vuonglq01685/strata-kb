@@ -1,5 +1,7 @@
 from importlib import resources
 
+import pytest
+
 from strata_kb import lintcore, teststrategy
 
 STRATEGY = """\
@@ -94,8 +96,15 @@ def test_plan_dash_is_none():
     )
 
 
-def test_unparseable_rank_row_is_dropped():
-    bad = STRATEGY.replace("| 1 | M-checkout |", "| soon | M-checkout |")
+def test_empty_plan_is_none_not_next_line():
+    assert (
+        teststrategy.parse(STRATEGY.replace("> Plan: ba-one", "> Plan:")).plan is None
+    )
+
+
+@pytest.mark.parametrize("rank", ["soon", "0", "²"])
+def test_unparseable_rank_row_is_dropped(rank):
+    bad = STRATEGY.replace("| 1 | M-checkout |", f"| {rank} | M-checkout |")
     assert [r.target for r in teststrategy.parse(bad).rows] == [
         "[acme:srs §4.2]",
         "M-checkout-US5",
