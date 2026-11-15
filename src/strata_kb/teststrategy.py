@@ -223,3 +223,91 @@ def lint(text: str) -> LintReport:
         issues.append(_err("Q1 has not passed", "st-review"))
     issues += planrev.check_revision(text, TRIGGERS)
     return LintReport(issues=issues)
+
+
+@dataclass(frozen=True)
+class StoryInfo:
+    us_id: str
+    mission_id: str  # "" when unparented
+    depends_on: tuple[str, ...]
+    retest: bool
+    citations: frozenset[Area]
+    mission_citations: frozenset[Area]
+    plan_pos: int
+
+
+@dataclass(frozen=True)
+class Placement:
+    story: str
+    row: Row | None
+    how: str  # "id" | "mission" | "area" | "outside"
+    tier: int  # 0 retest, 1 ranked, 2 unranked/outside, 3 `last`
+
+
+def _best(rows: list[Row]) -> Row | None:
+    return min(rows, key=lambda r: (r.rank is None, r.rank or 0), default=None)
+
+
+def _match(strategy: Strategy | None, story: StoryInfo) -> tuple[Row | None, str]:
+    rows = strategy.rows if strategy else ()
+    for target, how in ((story.us_id, "id"), (story.mission_id, "mission")):
+        row = next((r for r in rows if target and r.target == target), None)
+        if row:
+            return row, how
+    for cites in (story.citations, story.mission_citations):
+        row = _best(
+            [r for r in rows if r.area and any(r.area.covers(c) for c in cites)]
+        )
+        if row:
+            return row, "area"
+    return None, "outside"
+
+
+def place(strategy: Strategy | None, story: StoryInfo) -> Placement:
+    row, how = _match(strategy, story)
+    if story.retest:
+        tier = 0
+    elif row and row.rank is None:
+        tier = 3
+    else:
+        tier = 1 if row else 2
+    return Placement(story.us_id, row, how, tier)
+
+
+def _sort_tier(items: list[tuple[Placement, StoryInfo]]) -> list[Placement]:
+    """Priority topological pass; a cycle emits the lowest remaining story."""
+
+    def key(it: tuple[Placement, StoryInfo]) -> tuple[int, int, str]:
+        p, s = it
+        return (p.row.rank or 0 if p.row else 0, s.plan_pos, s.us_id)
+
+    left = sorted(items, key=key)
+    ids = {s.us_id for _, s in left}
+    out: list[Placement] = []
+    while left:
+        done = {p.story for p in out}
+        pick = next(
+            (
+                it
+                for it in left
+                if all(d in done or d not in ids for d in it[1].depends_on)
+            ),
+            left[0],
+        )
+        left.remove(pick)
+        out.append(pick[0])
+    return out
+
+
+def order(strategy: Strategy | None, stories: list[StoryInfo]) -> list[Placement]:
+    placed = [(place(strategy, s), s) for s in stories]
+    return [
+        p
+        for tier in range(4)
+        for p in _sort_tier([it for it in placed if it[0].tier == tier])
+    ]
+
+
+def empty_rows(strategy: Strategy, stories: list[StoryInfo]) -> list[Row]:
+    hit = {id(p.row) for p in (place(strategy, s) for s in stories) if p.row}
+    return [r for r in strategy.rows if id(r) not in hit]

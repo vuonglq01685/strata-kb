@@ -197,3 +197,106 @@ def test_cli_strategy_lint_exit_codes(tmp_path):
     assert runner.invoke(app, ["strategy", "lint", str(bad)]).exit_code == 1
     res = runner.invoke(app, ["strategy", "lint", str(good), "--json"])
     assert json.loads(res.output)
+
+
+# ---- placement and order ----------------------------------------------------
+
+
+def _a(doc, section, repo=None):
+    return teststrategy.Area(repo, doc, section)
+
+
+def _row(rank, target, area=None):
+    return teststrategy.Row(rank, target, area, None, "High", "w", "UI")
+
+
+def _strat(*rows):
+    return teststrategy.Strategy("p", 1, tuple(rows))
+
+
+def _info(us, mission="", deps=(), retest=False, cites=(), mcites=(), pos=0):
+    return teststrategy.StoryInfo(
+        us, mission, tuple(deps), retest, frozenset(cites), frozenset(mcites), pos
+    )
+
+
+S = _strat(
+    _row(1, "M-checkout"),
+    _row(None, "M-checkout-US5"),
+    _row(2, "[srs §4]", _a("srs", "4")),
+)
+S2 = _strat(_row(2, "[srs §4]", _a("srs", "4")), _row(1, "[srs §7]", _a("srs", "7")))
+
+
+def test_most_specific_match_wins():
+    p = teststrategy.place(
+        S, _info("M-checkout-US5", "M-checkout", cites={_a("srs", "4.1")})
+    )
+    assert (p.how, p.row.target, p.tier) == ("id", "M-checkout-US5", 3)
+    assert teststrategy.place(S, _info("M-checkout-US1", "M-checkout")).how == "mission"
+
+
+def test_area_match_uses_ticket_then_mission_cites_best_rank():
+    p = teststrategy.place(
+        S2, _info("M-x-US1", "M-x", mcites={_a("srs", "4.2"), _a("srs", "7")})
+    )
+    assert p.how == "area" and p.row.rank == 1
+
+
+def test_ticket_cites_shadow_mission_cites():
+    p = teststrategy.place(
+        S2, _info("M-x-US1", "M-x", cites={_a("srs", "4.2")}, mcites={_a("srs", "7")})
+    )
+    assert p.row.rank == 2
+
+
+def test_no_match_is_outside_and_no_strategy_too():
+    assert teststrategy.place(S, _info("Z-US1", "Z")).how == "outside"
+    p = teststrategy.place(None, _info("Z-US1", "Z"))
+    assert (p.how, p.row, p.tier) == ("outside", None, 2)
+
+
+def test_order_retest_ranked_unranked_last():
+    st = _strat(_row(1, "R1"), _row(2, "R2"), _row(None, "LAST"), _row(None, "RETEST"))
+    stories = [
+        _info("R2", pos=0),
+        _info("OUT", pos=1),
+        _info("RETEST", retest=True, pos=2),
+        _info("LAST", pos=3),
+        _info("R1", pos=4),
+    ]
+    got = teststrategy.order(st, stories)
+    assert [p.story for p in got] == ["RETEST", "R1", "R2", "OUT", "LAST"]
+    assert got[0].tier == 0 and got[0].row.target == "RETEST" and got[0].how == "id"
+
+
+def test_depends_on_inside_tier_only():
+    st = _strat(_row(1, "A"), _row(1, "B"), _row(1, "C"), _row(None, "D"))
+    stories = [
+        _info("A", deps=["B"], pos=0),
+        _info("B", pos=1),
+        _info("C", deps=["D"], pos=2),
+        _info("D", pos=3),
+    ]
+    assert [p.story for p in teststrategy.order(st, stories)] == ["B", "A", "C", "D"]
+
+
+def test_dependency_cycle_terminates():
+    st = _strat(_row(1, "X"), _row(1, "Y"))
+    got = teststrategy.order(
+        st, [_info("X", deps=["Y"], pos=0), _info("Y", deps=["X"], pos=1)]
+    )
+    assert sorted(p.story for p in got) == ["X", "Y"]
+
+
+def test_no_strategy_is_plan_order():
+    got = teststrategy.order(None, [_info("b", pos=1), _info("a", pos=0)])
+    assert [p.story for p in got] == ["a", "b"]
+
+
+def test_empty_rows_lists_rows_without_stories():
+    assert [r.target for r in teststrategy.empty_rows(S, [])] == [
+        r.target for r in S.rows
+    ]
+    got = teststrategy.empty_rows(S, [_info("M-checkout-US1", "M-checkout")])
+    assert [r.target for r in got] == ["M-checkout-US5", "[srs §4]"]
