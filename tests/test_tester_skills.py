@@ -249,6 +249,16 @@ def test_strategy_body_names_its_commands_and_modes():
         "--amend",
         "kb mission next --from-hub --json",
         "Auto mode is not available yet",
+        "`broken-target`",
+        "`pin-moved`",
+        "`coverage`",
+        "`kb-context`",
+        "`tc-revision`",
+        "kb context new --refs",
+        "leave it\n     for `/tester-test-story`",
+        "point the Tester to New mode",
+        "git switch -c strategy/rev-<N> origin/<default>",
+        "docs/test-review-rubric.local.md",
         "never blocks `/tester-test-story`",
     ):
         assert p in t, p

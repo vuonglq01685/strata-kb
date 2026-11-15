@@ -36,8 +36,9 @@ secret into the strategy: environments point at `.kb/test-env.yaml`.
    ignore.
 7. **Q1 review.** Dispatch the `test-case-reviewer` subagent in a fresh
    context, handing it only the path of `docs/test-strategy.md`,
-   `.kb/test-env.yaml` and `docs/test-review-rubric.md`, and asking for the
-   `## Strategy axes`. Name the model: the most capable one available. Never
+   `.kb/test-env.yaml`, `docs/test-review-rubric.md` and
+   `docs/test-review-rubric.local.md` (it wins where they disagree), and asking
+   for the `## Strategy axes`. Name the model: the most capable one available. Never
    pre-judge a finding. Append each round to `## Review record`; round 2
    verifies only. Pass when no BLOCKER stands and at most 2 SUGGESTED remain.
 8. **PR.** Commit `docs/test-strategy.md` (never `.env`), push with
@@ -47,13 +48,23 @@ secret into the strategy: environments point at `.kb/test-env.yaml`.
 
 ## `--amend`
 
-1. **Findings.** `kb test stale --json`. Group them by row. No findings: say
-   so and stop.
-2. **One change per finding**, proposed to the Tester one at a time, each
-   approved or rejected by the Tester: re-pin a moved target, re-point a
-   broken one, add a row (or a `last` row) for a story or area with none, or
-   change a rank, citing the evidence that moved it. Apply only the approved
-   ones. Auto mode is not available yet: the Tester decides every change.
+1. **Branch, then findings.** Run `git fetch origin`, then start from the
+   default branch: `git switch -c strategy/rev-<N> origin/<default>` (`<N>` is
+   the next revision; find `<default>` as in `/tester-test-story`). Run
+   `kb test stale --json`. When `docs/test-strategy.md` does not exist, the
+   only finding is `tc-revision`: stop and point the Tester to New mode. No
+   findings: say so and stop.
+2. **One change per finding**, by code, proposed to the Tester one at a time,
+   each approved or rejected by the Tester. Apply only the approved ones.
+   - `pin-moved`: re-pin the row (`rev <N>`).
+   - `broken-target`: re-point the row to the new target, or drop it.
+   - `coverage`: add a row, or a `last` row, for the story or area with none.
+   - `kb-context`: refresh the block with `kb context new --refs "<refs>"`
+     (fix or drop a broken ref); trigger `kb-context`.
+   - `tc-revision`: not a strategy change. Name it to the Tester and leave it
+     for `/tester-test-story`; propose no edit.
+   - a rank change, citing the evidence that moved it (trigger `priority`).
+   Auto mode is not available yet: the Tester decides every change.
 3. **Revise.** Bump `> Revision:` by one and append one change-log row with the
    trigger set (kb-context, plan, coverage, priority, scope; comma-separated),
    what changed, which sections, and the Review cell.

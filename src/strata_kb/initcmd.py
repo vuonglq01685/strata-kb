@@ -663,7 +663,7 @@ _SETTINGS_REL = ".claude/settings.json"
 TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb test-env *)",
     "Bash(kb testcase *)",
-    "Bash(kb strategy *)",
+    "Bash(kb strategy lint*)",
     "Bash(kb test stale*)",
     "Bash(kb report*)",
     "Bash(kb report-ingest*)",
