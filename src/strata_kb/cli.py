@@ -5002,10 +5002,10 @@ def strategy_lint(
 
     try:
         text = file.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         typer.secho(f"cannot read {file}: {exc}", fg=typer.colors.RED)
         raise typer.Exit(1) from None
-    report = teststrategy.lint(text)
+    report = teststrategy.lint(text, file.parent)
     if hub:
         report.issues += strategyhub.lint_against_hub(text, _hub_or_exit("", kb_dir))
     typer.echo(json.dumps(report.to_json()) if json_output else report.render("ST"))
@@ -5033,17 +5033,28 @@ def test_stale(
     note = ""
     try:
         text = file.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError) as exc:
         text = None
-        note = f"kb test stale: no {file}, only test case revisions checked"
+        note = (
+            f"kb test stale: cannot read {file} ({exc}), "
+            "only test case revisions checked"
+            if file.exists()
+            else f"kb test stale: no {file}, only test case revisions checked"
+        )
+    findings: list[strategyhub.Finding] = []
     if text is None:
-        plan = strategyhub.plan_view(handle, None, all_plans=True)
-        findings: list[strategyhub.Finding] = []
+        plan = case_plan = strategyhub.plan_view(handle, None, all_plans=True)
     else:
         strategy = teststrategy.parse(text)
         plan = strategyhub.plan_view(handle, strategy.plan)
         findings = strategyhub.strategy_findings(text, strategy, plan, handle)
-    findings += strategyhub.case_findings(tests_dir, plan)
+        # `> Plan: —` names no BA repo, but case revisions still need every plan
+        case_plan = (
+            plan
+            if strategy.plan
+            else strategyhub.plan_view(handle, None, all_plans=True)
+        )
+    findings += strategyhub.case_findings(tests_dir, case_plan)
     if json_output:
         typer.echo(json.dumps([vars(f) for f in findings]))
     elif md:

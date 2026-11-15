@@ -273,3 +273,15 @@ def test_strategy_with_missing_image_is_skipped_stories_ship(tmp_path):
     rep = run_tests(tmp_path)
     assert "strategy" not in rep.published and rep.published
     assert [f for f, _ in rep.skipped] == ["docs/test-strategy.md"]
+
+
+def test_lint_clean_strategy_with_image_ships(tmp_path):
+    from strata_kb import teststrategy
+
+    text = _with_image(STRATEGY, "assets/x.png")
+    write_repo(tmp_path, spec=_spec())
+    write_strategy(tmp_path, text)
+    (tmp_path / "docs/assets").mkdir()
+    (tmp_path / "docs/assets/x.png").write_bytes(PNG)
+    assert teststrategy.lint(text, tmp_path / "docs").passed
+    assert run_tests(tmp_path).published[0] == "strategy"

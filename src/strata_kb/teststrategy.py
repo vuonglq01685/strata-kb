@@ -8,8 +8,9 @@ import contextlib
 import math
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
-from strata_kb import kbcontext, lintcore, planrev
+from strata_kb import buglint, kbcontext, lintcore, planingest, planrev
 from strata_kb.lintcore import Issue, LintReport
 from strata_kb.mdmask import visible_body
 
@@ -36,7 +37,7 @@ HEADINGS: tuple[str, ...] = (
     "## Review record",
 )
 
-_PLAN_RE = re.compile(r"^>[ \t]*Plan:[ \t]*(.*?)[ \t]*$", re.M)
+_PLAN_RE = re.compile(r"^>[ \t]*Plan:[ \t]*(.*?)[ \t\r]*$", re.M)
 _PIN_RE = re.compile(r"^rev\s+(\d+)$")
 _STRICT_PIN_RE = re.compile(r"rev [0-9]+")
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # as planstatus; not imported
@@ -210,8 +211,36 @@ def _context_issues(text: str, st: Strategy) -> list[Issue]:
     ]
 
 
-def lint(text: str) -> LintReport:
+ASSETS_DIR = "assets"  # images live in docs/assets/ (png/webp)
+
+
+def image_srcs(text: str) -> list[str]:
+    return buglint._IMAGE_RE.findall(visible_body(text))
+
+
+def _ship_issues(text: str, base_dir: Path | None) -> list[Issue]:
+    """What `kb report-ingest` would drop the strategy for, so lint-clean
+    means it ships. `base_dir` (docs/) turns on the image existence check."""
+    out = [
+        _err(p, "st-image")
+        for src in dict.fromkeys(image_srcs(text))
+        for p in buglint.image_problems(src, ASSETS_DIR, base_dir)
+    ]
+    if base_dir is not None:
+        out += [
+            _err(f"image '{src}' is a symlink — copy the real file", "st-image")
+            for src in dict.fromkeys(image_srcs(text))
+            if not buglint.image_problems(src, ASSETS_DIR, base_dir)
+            and planingest.via_symlink(base_dir, src)
+        ]
+    if reason := planingest.fence_reason(text):
+        out.append(_err(reason, "st-fence"))
+    return out
+
+
+def lint(text: str, base_dir: Path | None = None) -> LintReport:
     """Offline structure check; hub-backed checks live with the CLI."""
+    raw = text
     text = visible_body(text) + "\n"
     st = parse(text)
     issues = lintcore.check_title(text) + lintcore.check_headings(text, HEADINGS)
@@ -223,6 +252,7 @@ def lint(text: str) -> LintReport:
     if not lintcore.review_passed(text):
         issues.append(_err("Q1 has not passed", "st-review"))
     issues += planrev.check_revision(text, TRIGGERS)
+    issues += _ship_issues(raw, base_dir)
     return LintReport(issues=issues)
 
 

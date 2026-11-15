@@ -293,6 +293,22 @@ def test_order_table_has_status_and_target(web_client_logged_in, plan_hub):
     assert f"{MISSION_ID}-US1" in order and "done" in order and MISSION_ID in order
 
 
+def test_strategy_page_hides_raw_git_error(web_client_logged_in, plan_hub, monkeypatch):
+    from strata_kb import gitio, ticketstale
+
+    def boom(*_a, **_k):
+        raise gitio.GitError("fatal: /srv/secret/hub.git")
+
+    monkeypatch.setattr(ticketstale, "resolve_refs", boom)
+    text = CLEAN + (
+        '\n## KB context\n```yaml\nkb-context:\n  version: "abc1234"\n'
+        "  refs:\n    - acme:srs §4.2\n  tags: []\n```\n"
+    )
+    publish_strategy(plan_hub.root, REPO, text)
+    page = _strategy_page(web_client_logged_in)
+    assert "hub read failed" in page and "/srv/secret" not in page
+
+
 def test_strategy_page_shows_order_gaps_and_findings(web_client_logged_in, plan_hub):
     publish_strategy(plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB)
     page = _strategy_page(web_client_logged_in)

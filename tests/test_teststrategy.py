@@ -184,6 +184,63 @@ def test_plan_dash_ok_with_only_area_rows():
     assert teststrategy.lint(text).passed
 
 
+def test_crlf_plan_line_parses():
+    st = teststrategy.parse(STRATEGY.replace("\n", "\r\n"))
+    assert st.plan == "ba-one"
+
+
+def test_rounds_section_is_optional_and_template_has_it():
+    assert "## Rounds" in TEMPLATE
+    assert "## Rounds" not in STRATEGY and teststrategy.lint(STRATEGY).passed
+    assert "missing required heading: '## Rounds'" not in {
+        i.message for i in teststrategy.lint(TEMPLATE).issues
+    }
+
+
+def _img(src):
+    return STRATEGY.replace(
+        "Re-run P1 on every fix.", f"Re-run P1 on every fix.\n\n![x]({src})", 1
+    )
+
+
+def test_lint_image_rules_need_base_dir(tmp_path):
+    docs = tmp_path / "docs"
+    (docs / "assets").mkdir(parents=True)
+    (docs / "assets/x.png").write_bytes(b"png")
+    (docs / "other.png").write_bytes(b"png")
+    assert teststrategy.lint(_img("assets/x.png"), docs).passed
+    assert teststrategy.lint(_img("assets/nope.png")).passed  # no base_dir: no check
+    for src in ("assets/nope.png", "other.png", "x/assets/y.png", "assets/x.gif"):
+        rep = teststrategy.lint(_img(src), docs)
+        assert "st-image" in {i.code for i in rep.issues}, src
+
+
+def test_lint_rejects_symlinked_image(tmp_path):
+    docs = tmp_path / "docs"
+    (docs / "assets").mkdir(parents=True)
+    (tmp_path / "real.png").write_bytes(b"png")
+    (docs / "assets/x.png").symlink_to(tmp_path / "real.png")
+    assert "st-image" in {
+        i.code for i in teststrategy.lint(_img("assets/x.png"), docs).issues
+    }
+
+
+def test_lint_rejects_fenced_h2():
+    text = STRATEGY.replace(
+        "Re-run P1 on every fix.", "Re-run P1 on every fix.\n\n```\n## x\n```", 1
+    )
+    assert "st-fence" in {i.code for i in teststrategy.lint(text).issues}
+
+
+def test_cli_strategy_lint_checks_images_and_reads_bytes(tmp_path):
+    (tmp_path / "s.md").write_text(_img("assets/nope.png"), encoding="utf-8")
+    res = CliRunner().invoke(app, ["strategy", "lint", str(tmp_path / "s.md")])
+    assert res.exit_code == 1 and "nope.png" in res.output
+    (tmp_path / "bin.md").write_bytes(b"\xff\xfe\x00bad")
+    res = CliRunner().invoke(app, ["strategy", "lint", str(tmp_path / "bin.md")])
+    assert res.exit_code == 1 and "cannot read" in res.output
+
+
 def test_template_fails_on_placeholders():
     assert "st-placeholder" in {i.code for i in teststrategy.lint(TEMPLATE).issues}
 

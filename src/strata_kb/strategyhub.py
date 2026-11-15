@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from strata_kb import (
+    kbcontext,
     planrev,
     planstatus,
     testcases,
@@ -158,19 +159,26 @@ def _id_findings(strategy: Strategy, plan: PlanView) -> list[Finding]:
     return out
 
 
+def _context_finding(r: ticketstale.StaleRef, text: str) -> Finding:
+    # a failed hub read is reported with the version as its citation; the
+    # web must not show the raw git error, so it gets its own code
+    if r.citation == kbcontext.parse(text).version:
+        logger.warning("kb-context hub read failed: %s", r.reason)
+        return Finding("hub-read", "error", r.citation, r.reason)
+    return Finding(
+        "kb-context",
+        "error" if r.status == "broken" else "warning",
+        r.citation,
+        r.reason,
+    )
+
+
 def strategy_findings(
     text: str, strategy: Strategy, plan: PlanView, hub: HubHandle
 ) -> list[Finding]:
     out = _id_findings(strategy, plan)
-    out += [
-        Finding(
-            "kb-context",
-            "error" if r.status == "broken" else "warning",
-            r.citation,
-            r.reason,
-        )
-        for r in ticketstale._kb_context_refs(text, hub)
-    ]
+    for r in ticketstale._kb_context_refs(text, hub):
+        out.append(_context_finding(r, text))
     out += [
         Finding("coverage", "warning", u, f"{u} is testable but matches no row")
         for u in _outside(strategy, plan)

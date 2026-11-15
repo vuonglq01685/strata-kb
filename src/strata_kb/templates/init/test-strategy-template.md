@@ -3,7 +3,8 @@
 > Plan: <ba-repo-id>
 
 ## Scope & objectives
-<!-- What is tested, what is not, and what this strategy is for. -->
+<!-- What is tested, what is not, and what this strategy is for.
+Images go in docs/assets/ (png/webp): `![caption](assets/<file>.png)`. -->
 
 ## Test levels & types
 <!-- One row per test type this repo runs. -->
@@ -22,6 +23,9 @@ KB area. Risk: High | Medium | Low. A target appears in at most one row. -->
 | 1 | M-checkout | rev 3 | High | payment path, money | UI, API |
 | 1 | [acme:srs §4.2] | — | High | refunds, no mission yet | API |
 | last | M-checkout-US5 | rev 2 | Low | static page | UI |
+
+## Rounds
+<!-- Optional: waves of ranks, and entry/exit per wave. Delete if unused. -->
 
 ## Environments & data
 <!-- Point at .kb/test-env.yaml; no secrets here. -->

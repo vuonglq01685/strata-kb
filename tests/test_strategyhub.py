@@ -188,3 +188,48 @@ def test_cli_test_stale_without_strategy_checks_case_revisions(plan_hub, tmp_pat
     res, found = _stale(plan_hub, tmp_path, None, "--json")
     assert res.exit_code == 2
     assert [(f["code"], f["subject"]) for f in found] == [("tc-revision", STORY)]
+
+
+KB_CONTEXT = """
+## KB context
+```yaml
+kb-context:
+  version: "abc1234"
+  refs:
+    - acme:srs §4.2
+  tags: []
+```
+"""
+
+
+def test_cli_test_stale_plan_dash_still_checks_case_revisions(plan_hub, tmp_path):
+    spec = tmp_path / "t" / STORY / "test-cases.md"
+    spec.parent.mkdir(parents=True)
+    spec.write_text(
+        f"# Cases\n\n> Story: {STORY} · Children: — · Ticket revision: 7\n",
+        encoding="utf-8",
+    )
+    rows = "| 1 | [acme:srs §4.2] | — | High | refunds | API |\n"
+    (tmp_path / "s.md").write_text(
+        _doc(rows).replace("> Plan: ba-one", "> Plan: —"), encoding="utf-8"
+    )
+    res, found = _stale(plan_hub, tmp_path, None, "--json")
+    assert [f["code"] for f in found if f["code"] == "tc-revision"] == ["tc-revision"]
+    assert res.exit_code in (1, 2)
+
+
+def test_cli_test_stale_unreadable_strategy_is_not_a_crash(plan_hub, tmp_path):
+    (tmp_path / "s.md").write_bytes(b"\xff\xfe\x00bad")
+    res, _ = _stale(plan_hub, tmp_path, None, "--json")
+    assert res.exit_code in (0, 2) and not isinstance(res.exception, UnicodeError)
+
+
+def test_hub_read_failure_gets_its_own_code(plan_hub, monkeypatch):
+    from strata_kb import gitio, ticketstale
+
+    def boom(*_a, **_k):
+        raise gitio.GitError("secret path /x")
+
+    monkeypatch.setattr(ticketstale, "resolve_refs", boom)
+    found = _found(TEXT + KB_CONTEXT, plan_hub)
+    assert [f.code for f in found if f.code == "hub-read"] == ["hub-read"]

@@ -81,14 +81,12 @@ def _ship_strategy(
     if not path.is_file():
         return []
     text = _read(path)
-    reason = planingest.lint_reason(teststrategy.lint(text)) or planingest.fence_reason(
-        text
-    )
+    reason = planingest.lint_reason(teststrategy.lint(text, path.parent))
     files: dict[str, bytes] = {}
     if not reason:
         attached = planingest.attach_images(
             text,
-            testreport._IMAGE_RE.findall(visible_body(text)),
+            teststrategy.image_srcs(text),
             ASSETS_DIR,
             path.parent,
             "strategy",

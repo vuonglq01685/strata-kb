@@ -55,7 +55,7 @@
     <div class="queue-row">
       <span class="badge badge-pending">{{ f.code }}</span>
       <span class="file">{{ f.subject }}</span>
-      <span class="note">{{ f.level }}: {{ f.message }}</span>
+      <span class="note">{{ f.level }}: {{ 'hub read failed (see hub log)' if f.code == 'hub-read' else f.message }}</span>
     </div>
     {% endfor %}
   </div>
