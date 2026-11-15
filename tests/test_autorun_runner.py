@@ -2016,3 +2016,10 @@ def test_preflight_kind_message_names_tester(env, monkeypatch):
     _write_config(kb_dir, TESTER.replace("tester", "hub"))
     (reason,) = preflight(root, kb_dir, run=w.run)
     assert "auto mode needs 'ba', 'dev' or 'tester'" in reason
+
+
+def test_tester_preflight_runs_the_resolved_npx_and_node(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"C:\\bin\\{name}.cmd")
+    assert preflight(root, kb_dir, run=w.run) == []
+    assert [c[0] for c in w.cmds] == ["C:\\bin\\npx.cmd", "C:\\bin\\node.cmd"]

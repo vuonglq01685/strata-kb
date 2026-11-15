@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import time
 from collections.abc import Callable, Sequence
@@ -126,6 +127,7 @@ def _playwright_refusal(root: Path, run: Callable) -> str | None:
         ["npx", "--no-install", "playwright", "--version"],
         ["node", "-e", _CHROMIUM_PROBE],
     ):
+        cmd = [shutil.which(cmd[0]) or cmd[0], *cmd[1:]]  # Windows: npx.cmd
         try:
             done = run(
                 cmd,
