@@ -3,7 +3,7 @@
 All notable changes to Strata are recorded here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 1.38.0 — 2026-11-15
+## 1.37.1 — 2026-11-15
 
 A `tester` repo gains a test strategy: `docs/test-strategy.md` ranks what to test first, with the reasons, and the hub shows it. Phase 1: a Tester writes and amends it by hand. `kb test next` (phase 2) and automatic runs (phase 3) are not built.
 

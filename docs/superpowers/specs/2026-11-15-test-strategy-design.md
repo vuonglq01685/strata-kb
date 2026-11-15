@@ -1,6 +1,6 @@
 # Test strategy — the Tester's plan and test order (design)
 
-Date: 2026-11-15 · Size: project (phased) · Version: 1.37.0 → 1.38.0 (phase 1)
+Date: 2026-11-15 · Size: project (phased) · Version: 1.37.0 → 1.37.1 (phase 1)
 
 Builds on the tester role (`2026-11-14-tester-role-design.md`, phase 1
 shipped in 1.37.0). Terms from there are reused: `tester` repo,
@@ -318,7 +318,7 @@ body in `templates/init/bodies/tester-strategy.md`):
 
 ## Phases
 
-1. **People (1.38.0)**: template, `kb strategy lint`, Q1 axes, ingest
+1. **People (1.37.1)**: template, `kb strategy lint`, Q1 axes, ingest
    section, hub panel + `/ui/tests/strategy` + story rank, D3 matching,
    `kb test stale` + scheduled workflow, `/tester-strategy` (new and
    `--amend`, attended).

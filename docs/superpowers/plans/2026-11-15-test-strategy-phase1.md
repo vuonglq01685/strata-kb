@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Version 1.37.0 → 1.38.0; CHANGELOG entry `## 1.38.0 — <release date>`.
+- Version 1.37.0 → 1.37.1; CHANGELOG entry `## 1.37.1 — <release date>`.
 - File path `docs/test-strategy.md`; template scaffolded as `docs/templates/test-strategy.md`; hub section id `strategy`, group `strategy`.
 - Priority order header row verbatim: `| Rank | Target | Pin | Risk | Why | Types |`.
 - Rank: integer ≥ 1 or `last`. Pin: `rev <N>` for an id target, `—` for a KB area. Risk: `High | Medium | Low`.
@@ -413,13 +413,13 @@ def test_unreadable_strategy_does_not_break_list(web_client_logged_in, plan_hub,
 
 ---
 
-### Task 9: Release 1.38.0
+### Task 9: Release 1.37.1
 
 **Files:**
 - Modify: `pyproject.toml`, `uv.lock` (own package version), `CHANGELOG.md`, `README.md` (tester row + command table: `kb strategy lint`, `kb test stale`, `/tester-strategy`), `tests/test_readme.py` (version asserts)
 - Test: `tests/test_readme.py`
 
-- [ ] **Step 1:** Update the three version asserts in `tests/test_readme.py` to `1.38.0` and the CHANGELOG first-line date — FAIL.
-- [ ] **Step 2:** Bump `pyproject.toml` and the strata-kb entry in `uv.lock`; write the CHANGELOG `## 1.38.0 — <date>` entry (one lead line, bullets: strategy file and `/tester-strategy`, `kb strategy lint`, `kb report-ingest` ships `strategy`, hub panel and page, `kb test stale` + `kb-test-stale.yml`, upgrade note: `kb upgrade` in tester repos adds the template, skill and workflow; no new dependency); README rows.
+- [ ] **Step 1:** Update the three version asserts in `tests/test_readme.py` to `1.37.1` and the CHANGELOG first-line date — FAIL.
+- [ ] **Step 2:** Bump `pyproject.toml` and the strata-kb entry in `uv.lock`; write the CHANGELOG `## 1.37.1 — <date>` entry (one lead line, bullets: strategy file and `/tester-strategy`, `kb strategy lint`, `kb report-ingest` ships `strategy`, hub panel and page, `kb test stale` + `kb-test-stale.yml`, upgrade note: `kb upgrade` in tester repos adds the template, skill and workflow; no new dependency); README rows.
 - [ ] **Step 3: Run** the full suite `pytest -q` — PASS.
-- [ ] **Step 4: Commit** `chore: release 1.38.0`.
+- [ ] **Step 4: Commit** `chore: release 1.37.1`.
