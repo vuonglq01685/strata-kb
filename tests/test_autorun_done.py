@@ -168,3 +168,13 @@ def test_all_done_false_while_reopened():
         True,
         "all 1 tickets done",
     )
+
+
+def test_all_done_ba_waits_for_candidates():
+    args = ([S("US1", "done")], [])
+    assert all_done(*args, ba=True, open_candidates=1) == (
+        False,
+        "1 open bug candidate",
+    )
+    assert all_done(*args, ba=True, open_candidates=2)[1] == "2 open bug candidates"
+    assert all_done(*args, ba=True)[0] is True

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal, cast
 
 import yaml
 
-from strata_kb import claimclient, cloud, ghrest, gitio, hubapi
+from strata_kb import bugcandidates, claimclient, cloud, ghrest, gitio, hubapi
 from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -34,6 +35,7 @@ from strata_kb.claimclient import (
 from strata_kb.config import AutoConfig, KBConfig, load_config, require_hub
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle, resolve_hub
+from strata_kb.missionnext import StoryStatus
 
 logger = logging.getLogger("strata_kb.autorun.runner")
 
@@ -189,6 +191,21 @@ def _stop(
     return "stopped"
 
 
+def _ba_candidates(
+    hub: HubHandle | hubapi.HubApi, rows: Sequence[StoryStatus] | None = None
+) -> list[bugcandidates.Candidate]:
+    """Open bug candidates of the plan's stories (`rows`, else read here);
+    unreadable (an old hub too) is none: a failed read never fails the pick."""
+    try:
+        if rows is None:
+            stories, unparented, _notes = picker.plan_next(hub)
+            rows = [*stories, *unparented]
+        return bugcandidates.open_candidates(hub, {t.us_id for t in rows})
+    except KbError as exc:  # OldHubError included
+        logger.warning("bug candidates not read: %s", exc)
+        return []
+
+
 def _check_done(
     cfg: KBConfig, hub: HubHandle | hubapi.HubApi, qa: qa_mod.QaClient
 ) -> Outcome | None:
@@ -212,6 +229,7 @@ def _check_done(
         unparented,
         ba=ba,
         open_questions=open_questions,
+        open_candidates=len(_ba_candidates(hub, [*stories, *unparented])) if ba else 0,
         repo_id=cfg.repo_id,
     )
     if finished:
@@ -417,7 +435,9 @@ def _task_for(
             raise _Early("ran")
         return Task(skill, arg)
     if cfg.kind == "ba":
-        return picker.pick_ba(root, kb_dir, skip=_skip(state))
+        return picker.pick_ba(
+            root, kb_dir, skip=_skip(state), candidates=_ba_candidates(hub)
+        )
     if claims is None:
         return picker.pick_dev(hub, root, cfg.repo_id, skip=_skip(state))
     return _claim_pick(root, hub, state, claims, cfg.repo_id)

@@ -2518,3 +2518,17 @@ def test_gate_lists_open_and_waiting_rows_with_status_all(name):
     off = _off_path(name)
     assert 'kb_question_list(ticket=<id>, status="all")' in off, name
     assert "open or waiting" in off, name
+
+
+def test_ba_bug_report_body_from_report():
+    text = _normal(_raw("bodies/ba-bug-report.md"))
+    for phrase in (
+        "## --from-report <story> R<n> RD<k>",
+        "kb report fetch <story> --round <n> --out <tmp>",
+        "> From report: <story> R<n> RD<k>",
+        "> Related ticket:",
+        "## Auto mode",
+        "auto/BUG-<n>",
+        "AUTO-RESULT:",
+    ):
+        assert phrase in text, phrase

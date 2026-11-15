@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from strata_kb import gitio, planstatus
+from strata_kb.bugcandidates import Candidate
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.hubapi import HubApi
@@ -71,13 +72,15 @@ def _mission_next(root: Path, tree: Path, run) -> dict:
         ) from exc
 
 
-def _ba_tasks(data: dict) -> Iterator[Task]:
+def _ba_tasks(data: dict, candidates: Sequence[Candidate] = ()) -> Iterator[Task]:
     stories = data["stories"]
     rows = (*stories, *data.get("unparented", ()))
     # an unwritten child is drafted like any story (phase 3)
     for s in stories:
         if any(_MISSION_BLOCKER.match(r) for r in s["reasons"]):
             yield Task("ba-mission-plan", f"--amend {s['mission_id']}")
+    for c in candidates:
+        yield Task("ba-bug-report", f"--from-report {c.story} R{c.round} {c.rd_id}")
     # bugs have their own skill (ba-bug-report); the story author must not touch them
     rows = tuple(s for s in rows if not s["us_id"].startswith("BUG-"))
     for s in rows:
@@ -96,10 +99,14 @@ def _first(tasks: Iterable[Task], skip: Collection[str]) -> Task | None:
 
 
 def pick_ba(
-    root: Path, kb_dir: Path, run=subprocess.run, skip: Collection[str] = ()
+    root: Path,
+    kb_dir: Path,
+    run=subprocess.run,
+    skip: Collection[str] = (),
+    candidates: Sequence[Candidate] = (),
 ) -> Task | None:
-    """Mission blocker, then a draft ticket to amend, then the next ticket to
-    write. First match in mission order within each rule whose key is not in
+    """Mission blocker, then a bug to draft from a regression candidate, then a
+    draft ticket to amend, then the next ticket to write. First match in mission order within each rule whose key is not in
     `skip`. The plan is read from origin/<default> (`_plan_tree`)."""
     try:
         tree = _plan_tree(root, kb_dir)
@@ -111,7 +118,7 @@ def pick_ba(
         if tree != root:  # a snapshot `kb publish` would mirror it from .kb/
             gitio.worktree_remove(root, tree)
     try:
-        return _first(_ba_tasks(data), skip)
+        return _first(_ba_tasks(data, candidates), skip)
     except (KeyError, TypeError) as exc:
         raise KbError(
             f"kb mission next gave unexpected JSON: {str(data)[:MAX_STDERR]!r}"

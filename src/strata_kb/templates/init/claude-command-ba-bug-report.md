@@ -1,11 +1,12 @@
 ---
 description: Log a bug or production hotfix as a BA ticket (environment, numbered steps, expected/actual result, screenshots), via the ba-bug-report skill
-argument-hint: "[what broke | --child-of BUG-<n>]"
+argument-hint: "[what broke | --child-of BUG-<n> | --from-report <story> R<n> RD<k>]"
 ---
 
 Invoke the `ba-bug-report` skill with the Skill tool and follow its
 workflow exactly. Pass "$ARGUMENTS" as what broke when given; when empty,
-ask for it during Intake.
+ask for it during Intake. `--from-report <story> R<n> RD<k>` drafts the bug
+from that regression defect of a tester's report (`kb report fetch`).
 
 Pipeline: Intake → Related ticket → Draft → Ground → Lint → Hand over. The
 bug is drafted from `docs/tickets/BUG-TEMPLATE.md` into

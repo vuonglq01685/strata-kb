@@ -8,6 +8,7 @@ import pytest
 
 from strata_kb import planstatus
 from strata_kb.autorun.picker import Task, _ba_tasks, dev_candidates, pick_ba, pick_dev
+from strata_kb.bugcandidates import Candidate
 from strata_kb.errors import KbError
 from strata_kb.missionnext import StoryStatus
 
@@ -708,3 +709,35 @@ def test_reopened_parent_not_picked():
     assert list(picker_dev_tasks([parent, child], [], REPO)) == [
         Task("dev-implement-ticket", "S1.web")
     ]
+
+
+def _cand(story: str, rnd: int, rd: str) -> Candidate:
+    return Candidate(f"{story}/R{rnd}/{rd}", story, rnd, rd, False)
+
+
+def test_pick_ba_candidate_after_blockers_before_drafts(tmp_path: Path):
+    stories = [
+        _story("US1", "draft", ["DoR 1/3 ticked"]),
+        _story("US2", "blocked", ["D2 OPEN (owner: ba)"], mission="M-y"),
+    ]
+    run = _runner(stories)
+    cands = [_cand("S1", 2, "RD1")]
+    skip: list[str] = []
+    seen = []
+    for _ in range(3):
+        t = pick_ba(tmp_path, tmp_path, run, skip=skip, candidates=cands)
+        seen.append(t)
+        skip.append(t.key)
+    assert seen == [
+        Task("ba-mission-plan", "--amend M-y"),
+        Task("ba-bug-report", "--from-report S1 R2 RD1"),
+        Task("ba-ticket-author", "--amend US1"),
+    ]
+
+
+def test_pick_ba_skips_skipped_candidate(tmp_path: Path):
+    cands = [_cand("S1", 2, "RD1"), _cand("S1", 2, "RD2")]
+    skip = ["ba-bug-report:--from-report S1 R2 RD1"]
+    assert pick_ba(
+        tmp_path, tmp_path, _runner([]), skip=skip, candidates=cands
+    ) == Task("ba-bug-report", "--from-report S1 R2 RD2")
