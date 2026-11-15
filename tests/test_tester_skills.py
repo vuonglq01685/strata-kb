@@ -284,3 +284,17 @@ def test_rubric_has_the_strategy_axes():
     for key in ("High", "evidence"):
         line = next(ln for ln in axes.split("- [ ]") if key in ln)
         assert "**BLOCKER**" in line, key
+
+
+def test_test_story_no_argument_proposes_next_story():
+    t = _body("tester-test-story")
+    head = t.split("## Steps", 1)[0]
+    assert "kb test next --json" in head and "exit 3" in head
+    assert "never blocks" in head
+
+
+def test_changelog_mentions_test_next():
+    from pathlib import Path
+
+    log = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "kb test next" in log.split("## 1.37.2", 1)[0]

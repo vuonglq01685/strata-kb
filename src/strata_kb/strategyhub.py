@@ -17,6 +17,7 @@ from strata_kb import (
     teststrategy,
     ticketstale,
 )
+from strata_kb.errors import KbError
 from strata_kb.lintcore import Issue
 from strata_kb.teststrategy import Placement, Row, StoryInfo, Strategy
 
@@ -121,6 +122,10 @@ def plan_view(
     )
 
 
+class PlanNotOnHub(KbError):
+    """The strategy names a plan the hub does not hold."""
+
+
 def next_stories(hub: HubHandle, strategy: Strategy | None) -> list[Placement]:
     """Testable stories in test order (plan order without a strategy)."""
     plan = (
@@ -128,8 +133,8 @@ def next_stories(hub: HubHandle, strategy: Strategy | None) -> list[Placement]:
         if strategy and strategy.plan
         else plan_view(hub, None, all_plans=True)
     )
-    if strategy and strategy.plan and not plan.status:
-        raise LookupError(f"no plan for '{strategy.plan}' on the hub")
+    if strategy and strategy.plan and not plan.texts:
+        raise PlanNotOnHub(f"no plan for '{strategy.plan}' on the hub")
     return teststrategy.order(
         strategy, [s for s in plan.stories if s.us_id in plan.testable]
     )

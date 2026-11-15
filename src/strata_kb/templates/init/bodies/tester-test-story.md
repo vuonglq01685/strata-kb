@@ -3,9 +3,18 @@ report only when the round ends `PASS` or `FAIL`. You are the Tester. You
 open the report PR; you never merge it in this phase — a human does.
 
 `<story>` is the story id given to the command (a parent story or an
-unsplit story). Ask for it when it is empty. Read `.kb/test-env.yaml`
-first; when it is missing, stop and tell the Tester to run
-`/tester-env-setup`.
+unsplit story). Read `.kb/test-env.yaml` first; when it is missing, stop and
+tell the Tester to run `/tester-env-setup`.
+
+## No story given
+
+When `<story>` is empty, run `kb test next --json`. Check the exit code before
+parsing: exit 3 means nothing is testable, so say so and stop; exit 1 means an
+error, so stop with the printed message. On exit 0 the output is a JSON list:
+propose its first story with its `how` and `rank`, and ask the Tester to
+confirm it or name another. A confirmed story continues at Step 1. The
+strategy never blocks testing: a story the Tester names is tested whatever
+the proposed order says.
 
 ## Hold-and-release rules
 

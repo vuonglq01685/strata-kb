@@ -665,6 +665,7 @@ TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb testcase *)",
     "Bash(kb strategy lint*)",
     "Bash(kb test stale*)",
+    "Bash(kb test next*)",
     "Bash(kb report*)",
     "Bash(kb report-ingest*)",
     "Bash(npx playwright test*)",

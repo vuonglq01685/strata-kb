@@ -5119,7 +5119,7 @@ def test_next(
         )
     try:
         placed = strategyhub.next_stories(handle, strategy)
-    except LookupError as exc:
+    except strategyhub.PlanNotOnHub as exc:
         typer.echo(f"kb test next: {exc}", err=True)
         raise typer.Exit(1) from None
     if not all_:

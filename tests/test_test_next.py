@@ -45,7 +45,7 @@ def test_next_stories_without_strategy_is_plan_order(plan_hub):
 
 def test_next_stories_unknown_plan_raises(plan_hub):
     strategy = teststrategy.parse(STRATEGY_FOR_PLAN_HUB.replace("ba-one", "nope"))
-    with pytest.raises(LookupError, match="no plan for 'nope'"):
+    with pytest.raises(strategyhub.PlanNotOnHub, match="no plan for 'nope'"):
         strategyhub.next_stories(plan_hub, strategy)
 
 
