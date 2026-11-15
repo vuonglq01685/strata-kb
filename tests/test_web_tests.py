@@ -236,11 +236,61 @@ def test_panel_lists_strategy_with_rank_and_badge(web_client_logged_in, plan_hub
     assert "#1" in main and MISSION_ID in main and "1 story" in main
 
 
+CLEAN = STRATEGY_FOR_PLAN_HUB.replace(
+    "| 3 | M-nope-US1 | rev 1 | Low | gone | UI |\n", ""
+)
+
+
 def test_needs_regrounding_badge_on_pin_moved(web_client_logged_in, plan_hub):
-    publish_strategy(
-        plan_hub.root, REPO, STRATEGY_FOR_PLAN_HUB.replace("rev 1", "rev 9")
-    )
+    publish_strategy(plan_hub.root, REPO, CLEAN)
+    assert "needs re-grounding" not in web_client_logged_in.get("/ui/tests").text
+    publish_strategy(plan_hub.root, REPO, CLEAN.replace("rev 1", "rev 9"))
     assert "needs re-grounding" in web_client_logged_in.get("/ui/tests").text
+
+
+def test_panel_shows_date_of_last_change_log_row(web_client_logged_in, plan_hub):
+    log = (
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 2 | 2026-11-20 | priority | x | - | ok |\n"
+    )
+    publish_strategy(plan_hub.root, REPO, CLEAN)
+    assert "2026-11-20" not in web_client_logged_in.get("/ui/tests").text
+    publish_strategy(plan_hub.root, REPO, CLEAN + log)
+    assert "2026-11-20" in web_client_logged_in.get("/ui/tests").text
+
+
+def test_failing_strategy_view_says_could_not_be_read(
+    web_client_logged_in, plan_hub, monkeypatch
+):
+    publish_strategy(plan_hub.root, REPO, CLEAN)
+
+    def boom(*a):
+        raise ValueError("bad")
+
+    monkeypatch.setattr(strategyhub, "_view", boom)
+    page = web_client_logged_in.get("/ui/tests").text
+    assert "could not be read" in page and "No test strategy published" not in page
+    assert "tester-one" in page
+
+
+def _raise(hub):
+    raise ValueError("x")
+
+
+def test_strategy_page_when_views_raise_is_not_404(
+    web_client_logged_in, plan_hub, monkeypatch
+):
+    monkeypatch.setattr(strategyhub, "views", _raise)
+    resp = web_client_logged_in.get("/ui/tests/strategy")
+    assert resp.status_code == 503 and "could not be read" in resp.text
+
+
+def test_order_table_has_status_and_target(web_client_logged_in, plan_hub):
+    publish_strategy(plan_hub.root, REPO, CLEAN)
+    page = _strategy_page(web_client_logged_in)
+    order = re.search(r"<h2>Order</h2>.*?</div>\s*</div>", page, re.S).group(0)
+    assert f"{MISSION_ID}-US1" in order and "done" in order and MISSION_ID in order
 
 
 def test_strategy_page_shows_order_gaps_and_findings(web_client_logged_in, plan_hub):

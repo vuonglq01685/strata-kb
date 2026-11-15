@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.routing import Route
 
-from strata_kb import planstatus, strategyhub, testflow
+from strata_kb import planrev, planstatus, strategyhub, testflow
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.serving.config import ServerConfig
@@ -103,8 +103,10 @@ def _panel(view: strategyhub.StrategyView) -> dict:
         ((r, placed) for r, placed in view.rows if r.rank is not None),
         key=lambda item: item[0].rank,
     )
+    log = planrev.parse_change_log(view.text)
     return {
         "repo": view.tester_repo,
+        "date": log[-1].date if log else "",
         "plan": view.strategy.plan,
         "revision": view.strategy.revision,
         "top": ranked[:TOP_RANKS],
@@ -133,12 +135,16 @@ def test_routes(config: ServerConfig) -> list[Route]:
             return _hub_unreachable()
         facts = testflow.load_facts(hub)
         rows = _rows(hub, facts)
-        strategies, strategy_error = [], False
+        strategies, unreadable = [], []
         try:
-            strategies = [_panel(v) for v in strategyhub.views(hub)]
+            views = strategyhub.views(hub)
+            strategies = [_panel(v) for v in views]
+            # views() skips a failing strategy; name it instead of hiding it
+            seen = {v.tester_repo for v in views}
+            unreadable = sorted(set(testflow.strategy_texts(hub)) - seen)
         except (KbError, ValueError, OSError):
             logger.exception("test strategy could not be read")
-            strategy_error = True
+            unreadable = ["strategy"]
         candidates = (
             list(testflow.known_failures(facts).values())
             if status == "candidates"
@@ -157,7 +163,7 @@ def test_routes(config: ServerConfig) -> list[Route]:
             candidates=candidates,
             any_reports=bool(rows),
             strategies=strategies,
-            strategy_error=strategy_error,
+            unreadable=unreadable,
         )
 
     def strategy_page(request: Request) -> HTMLResponse:
@@ -168,10 +174,15 @@ def test_routes(config: ServerConfig) -> list[Route]:
             views = strategyhub.views(hub)
         except (KbError, ValueError, OSError):
             logger.exception("test strategy could not be read")
-            views = []
+            return render_error_page(
+                config,
+                status=503,
+                title="Strategy unreadable",
+                detail="The test strategy could not be read.",
+            )
         repo = request.query_params.get("repo")
         pool = [v for v in views if v.tester_repo == repo] if repo else views
-        if len(pool) != 1 or (not repo and len(views) != 1):
+        if len(pool) != 1:
             return _not_found("Unknown strategy.")
         view = pool[0]
         return _render_page(
@@ -180,6 +191,7 @@ def test_routes(config: ServerConfig) -> list[Route]:
             screen="tests",
             title="Test strategy — Test Report",
             view=view,
+            story_status={s: st for _, placed in view.rows for s, st in placed},
             text_html=md_render(view.text),
         )
 

@@ -14,6 +14,8 @@
       <span class="note">tier {{ p.tier }}</span>
       <span class="cite">{{ ('#' ~ p.row.rank) if p.row and p.row.rank else 'last' if p.row else '—' }}</span>
       <a class="file" href="/ui/tests/{{ p.story | urlencode }}">{{ p.story }}</a>
+      <span class="file">{{ p.row.target if p.row else '—' }}</span>
+      <span class="note">{{ story_status.get(p.story, '') }}</span>
       <span class="note">{{ p.how }}</span>
     </div>
     {% else %}
