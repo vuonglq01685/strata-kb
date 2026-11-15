@@ -2,7 +2,7 @@
 
 `create_server()` registers the kb_search, kb_get_section, kb_context_new,
 kb_resolve, kb_ticket_lint, kb_ticket_check, kb_ticket_stale,
-kb_ticket_fetch, kb_question_ask, kb_question_list, kb_question_answer,
+kb_ticket_fetch, kb_report_fetch, kb_question_ask, kb_question_list, kb_question_answer,
 kb_question_propose_blocks, kb_question_confirm_blocks,
 kb_mission_lint, kb_mission_next and kb_doctor_hub tools over the hub
 federation (the question tools are the only ones that write, and only on a
@@ -502,6 +502,27 @@ def create_server(config: ServerConfig) -> MCPServer:
             try:
                 return ticketfetch.render(hub, ticket)
             except ticketfetch.TicketFetchError as exc:
+                return str(exc)
+
+        return await anyio.to_thread.run_sync(_run)
+
+    @mcp.tool()
+    @_canonical_docstring
+    async def kb_report_fetch(story: str, round: int | None = None) -> str:
+        """The `kb report fetch` text: a test report the Tester published, read
+        from the hub's `<tester-repo>-test` by story id (latest round unless
+        `round` is given), with a `> Fetched from hub:` line. Text only; the
+        screenshots need the CLI."""
+
+        def _run() -> str:
+            from strata_kb import reportfetch
+
+            hub = _hub()
+            if hub is None:
+                return HUB_DOWN
+            try:
+                return reportfetch.render(hub, story, round)[1]
+            except reportfetch.ReportFetchError as exc:
                 return str(exc)
 
         return await anyio.to_thread.run_sync(_run)
