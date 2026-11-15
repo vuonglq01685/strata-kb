@@ -367,12 +367,12 @@ def test_tester_prompt_lists_seven_forms():
     "reason", ["env-locked", "not-deployed", "env-unhealthy", "claim-taken"]
 )
 def test_parse_blocked_env(reason):
-    got = parse_result(f"x\nAUTO-RESULT: blocked-env M-x-US3 {reason}")
+    got = parse_result(f"x\nAUTO-RESULT: blocked-env M-x-US3 {reason}", "tester")
     assert got == TaskResult("blocked-env", ("M-x-US3", reason))
 
 
 def test_parse_incomplete():
-    assert parse_result("AUTO-RESULT: incomplete M-x-US3") == TaskResult(
+    assert parse_result("AUTO-RESULT: incomplete M-x-US3", "tester") == TaskResult(
         "incomplete", ("M-x-US3",)
     )
 
@@ -390,5 +390,15 @@ def test_parse_incomplete():
     ],
 )
 def test_parse_bad_tester_lines_fail(line):
-    got = parse_result(line)
+    got = parse_result(line, "tester")
+    assert got.kind == "failed" and got.reason.startswith("bad result line")
+
+
+@pytest.mark.parametrize("kind", ["", "ba", "dev"])
+@pytest.mark.parametrize(
+    "line",
+    ["AUTO-RESULT: blocked-env X not-deployed", "AUTO-RESULT: incomplete X"],
+)
+def test_tester_forms_fail_outside_tester_repos(kind, line):
+    got = parse_result(line, kind)
     assert got.kind == "failed" and got.reason.startswith("bad result line")

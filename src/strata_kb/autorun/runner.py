@@ -686,6 +686,7 @@ def run_once(
                 root,
                 claude.prompt_for(task.skill, task.arg, cfg.kind),
                 log_dir=autostate.log_dir(kb_dir),
+                **({"kind": "tester"} if cfg.kind == "tester" else {}),
             )
         except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
             result = claude.TaskResult("failed", (), f"runner error: {exc}")

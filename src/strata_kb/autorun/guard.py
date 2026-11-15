@@ -40,13 +40,14 @@ def stop_decision(
     """`None` = let the session end; else the Stop-hook block decision."""
     if env.get(claude.AUTO_TASK_ENV) != "1" or payload.get("stop_hook_active") is True:
         return None
-    failure = claude.parse_result(_last_assistant_text(payload))
+    kind = load_config(kb_dir).kind
+    failure = claude.parse_result(_last_assistant_text(payload), kind)
     if failure.kind != "failed" or not (
         failure.reason == "no result line"
         or failure.reason.startswith("bad result line")
     ):
         return None
-    forms = "\n".join(claude.result_forms(load_config(kb_dir).kind))
+    forms = "\n".join(claude.result_forms(kind))
     return {
         "decision": "block",
         "reason": (

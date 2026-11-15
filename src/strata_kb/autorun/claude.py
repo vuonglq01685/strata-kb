@@ -66,8 +66,11 @@ class TaskResult:
     meta: Mapping[str, object] = field(default_factory=dict, compare=False, hash=False)
 
 
-def parse_result(reply: str) -> TaskResult:
-    """The reply's last non-empty line must be the `AUTO-RESULT:` line."""
+def parse_result(reply: str, kind: str = "") -> TaskResult:
+    """The reply's last non-empty line must be the `AUTO-RESULT:` line.
+
+    The tester-only forms parse only when `kind` is "tester".
+    """
     lines = [line.strip() for line in reply.splitlines() if line.strip()]
     if not lines or not lines[-1].startswith(RESULT_PREFIX):
         return TaskResult("failed", (), "no result line")
@@ -86,11 +89,11 @@ def parse_result(reply: str) -> TaskResult:
         return TaskResult("blocked-split", (rest,))
     if word == "blocked-review" and _PR_URL.fullmatch(rest):
         return TaskResult("blocked-review", (rest,))
-    if word == "blocked-env":
+    if kind == "tester" and word == "blocked-env":
         story, _, reason = rest.partition(" ")
         if safe_name(story) and reason.strip() in ENV_REASONS:
             return TaskResult("blocked-env", (story, reason.strip()))
-    if word == "incomplete" and safe_name(rest):
+    if kind == "tester" and word == "incomplete" and safe_name(rest):
         return TaskResult("incomplete", (rest,))
     return TaskResult("failed", (), f"bad result line: {lines[-1][:200]}")
 
@@ -174,6 +177,7 @@ def run_task(
     timeout: int = DEFAULT_TIMEOUT,
     model: str = "",
     effort: str = "",
+    kind: str = "",
 ) -> TaskResult:
     cmd = [
         shutil.which(executable) or executable,
@@ -234,4 +238,4 @@ def run_task(
         )
     if problem:
         return _error(problem, meta)
-    return replace(parse_result(reply), meta=meta)
+    return replace(parse_result(reply, kind), meta=meta)
