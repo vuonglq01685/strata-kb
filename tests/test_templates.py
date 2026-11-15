@@ -3932,14 +3932,20 @@ def _auto_body_commands() -> list[tuple[str, str]]:
 def test_auto_commands_are_allowed():
     from fnmatch import fnmatchcase
 
+    from strata_kb.initcmd import TESTER_ALLOW
+
     allow = _auto_settings()["permissions"]["allow"]
+    tester_allow = [*allow, *TESTER_ALLOW]  # what a tester repo's settings get
     commands = _auto_body_commands()
     assert commands
     missing = [
         (name, cmd)
         for name, cmd in commands
         if cmd not in EXEMPT
-        and not any(fnmatchcase(f"Bash({cmd})", pat) for pat in allow)
+        and not any(
+            fnmatchcase(f"Bash({cmd})", pat)
+            for pat in (tester_allow if name.startswith("tester-") else allow)
+        )
     ]
     assert not missing, missing
 

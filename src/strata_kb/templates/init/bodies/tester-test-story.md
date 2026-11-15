@@ -24,7 +24,7 @@ the proposed order says.
   an open Tester claim). A stop never leaves either one held.
 - Update the claim phase as you go: `kb claim update <story> --phase <p>`
   with `cases`, `scripts`, `run`, `report`, `review`, `publishing`. Exit 3
-  from any `kb claim` or `kb test-env lock` call means the claim or lock is
+  from any claim or lock call (`kb claim update`, `kb test-env lock`) means the claim or lock is
   taken or lost: stop at once.
 - Secrets: credentials come from env vars only, through
   `tests/fixtures/login.ts`. Never write a value into a test case, script,
@@ -269,7 +269,7 @@ The runner starts this skill as `/tester-test-story <story>`. Nobody answers que
 
 **Deploy check (step 2).** The manual-confirm exception does not apply. Ask nobody. Exit 4 for any reason ends `AUTO-RESULT: blocked-env <story> not-deployed`. Take no lock and no claim first.
 
-**Lock and claim.** `kb test-env lock <story>` exit 3 ends `AUTO-RESULT: blocked-env <story> env-locked`. `kb claim take <story>` exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`. Exit 3 from a later `kb claim` or `kb test-env lock` call ends the same way. On every stop, the hold-and-release rules apply first: release what you hold, then write the result line.
+**Lock and claim.** `kb test-env lock <story>` exit 3 ends `AUTO-RESULT: blocked-env <story> env-locked`. `kb claim take <story>` exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`. Exit 3 from a later claim or lock call (`kb claim update`, `kb test-env lock`) ends the same way. On every stop, the hold-and-release rules apply first: release what you hold, then write the result line.
 
 **Reviews.** Every review must run as a subagent under the review contract. The fallback pass and the "PAUSE and hand to the Tester" rule do not apply. When you cannot dispatch a subagent, release what is held and end `AUTO-RESULT: failed test-review no-subagents`. A BLOCKER still standing after round 2 stops the task: release what is held, then end `AUTO-RESULT: failed test-review <id>`, where `<id>` is the TC or defect id (`TC-<n>` or `D<k>`) of the finding that stands.
 
