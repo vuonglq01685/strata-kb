@@ -2542,3 +2542,22 @@ def test_ba_bug_report_body_from_report():
         "AUTO-RESULT:",
     ):
         assert phrase in text, phrase
+
+
+def test_ba_bug_report_from_report_uses_the_blocks_closed_story():
+    text = _normal(_raw("bodies/ba-bug-report.md"))
+    assert "`> Related ticket: <closed-story>`" in text or (
+        "`Story: <closed-story>` → `> Related ticket: <closed-story>`" in text
+    )
+    assert "`<closed-story>/TC-<k>`" in text
+    assert "closed story `<story>`" not in text
+
+
+def test_ba_bug_report_auto_uses_only_allowed_git_commands():
+    auto = _normal(_auto_section("bodies/ba-bug-report.md"))
+    for denied in ("ls-remote", "git show", "git switch --detach"):
+        assert denied not in auto, denied
+    assert "git branch -r --list 'origin/auto/BUG-*'" in auto
+    assert "kb report fetch <story> --round <n> --out tickets/bugs/BUG-<n>" in auto
+    assert "Tick no `## Definition of Ready` box on a bug" in auto
+    assert "auto/BUG-<m>-r<N>" in auto

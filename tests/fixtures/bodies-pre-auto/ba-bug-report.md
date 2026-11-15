@@ -171,25 +171,33 @@ level only).
 ## --from-report <story> R<n> RD<k>
 
 Drafts a bug from regression defect `RD<k>` of the tester's round `R<n>`
-report of the closed story `<story>`. Intake is the report, not the BA.
+report of `<story>`, the story the tester tested (the report's owner). The
+defect's own closed story is the one its block names: `<closed-story>`.
+Intake is the report, not the BA.
 
 1. Stop if a published or local bug already cites it: a local
-   `tickets/bugs/BUG-*.md` whose header has `> From report: <story> R<n> RD<k>`
-   (or the same failure key `<story>/TC-<k>` named in its text), or a
-   published bug that does (`kb_search`; the hub lists the candidate as
+   `tickets/bugs/BUG-*.md` whose header has `> From report: <story> R<n> RD<k>`,
+   or a published bug that does (`kb_search`; the hub lists the candidate as
    logged). Name that bug and write nothing.
 2. Fetch the report: `kb report fetch <story> --round <n> --out <tmp>`
    (MCP `kb_report_fetch(story, round=<n>)` when the CLI is blocked). Find
-   the `RD<k>` block; no such block → stop and say so.
+   the `RD<k>` block; no such block → stop and say so. Its header reads
+   `### RD<k> — <symptom>  Story: <closed-story> · TC-<k> · …`:
+   `<closed-story>` is the ticket that regressed, not `<story>`. Stop as in
+   step 1 when a local or published bug names the same failure key
+   `<closed-story>/TC-<k>` in its text.
 3. Map the block, adding nothing it does not hold; a gap is `OPEN(<owner>)`:
    - symptom → the H1 title `# BUG-<n> — <symptom>` and `## Summary`;
    - its steps, expected and actual → `## Steps to reproduce` (numbered),
      `## Expected result`, `## Actual result`, error text verbatim;
    - evidence images → copy into `tickets/bugs/BUG-<n>/` as PNG or WebP and
      reference them in `## Attachments` (the report's own image files from
-     `--out <tmp>`);
+     `--out <tmp>`; Auto mode: its image bullet). When only the MCP tool
+     read the report, no image files come with it: write
+     `N/A — evidence images are on the hub with the report` and add an
+     `OPEN(tester)` row;
    - the environment line → `## Environment`;
-   - `Story:` → `> Related ticket: <story>`.
+   - the block's `Story: <closed-story>` → `> Related ticket: <closed-story>`.
 4. Add `> From report: <story> R<n> RD<k>` under the title, in the header
    block. Continue as the steps above from "Draft": take the next free
    `BUG-<n>`, find the first responder (3a), lint, hand over. Severity and

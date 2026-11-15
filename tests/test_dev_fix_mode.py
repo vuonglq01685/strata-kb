@@ -73,7 +73,10 @@ def test_fix_mode_saves_mcp_report_and_branches_first(name):
     assert "Fetched from hub" in section
     assert "0. Branch first" in section
     assert "git switch -c fix/<id>-R<n> FETCH_HEAD" in section
-    assert "ACs decide" in section
+    assert (
+        "`## Expected result` decides" if name == "dev-fix-bug.md" else "ACs decide"
+    ) in section
+    assert "`git switch fix/<id>-R<n>` instead" in section
     assert "State the mode in your first reply" in section
 
 
@@ -89,3 +92,9 @@ def test_handover_overrides_title_and_reads_gitignored_report():
     assert "the PR title is `fix(<id>): R<n> defects D<k>[, D<k>]`, replacing" in text
     assert "git-ignored" in text
     assert "highest `R<n>`" in text
+
+
+def test_dev_fix_bug_fix_mode_has_no_freshness_step_and_skips_intake_branch():
+    section = _fix_section("dev-fix-bug.md")
+    assert "Freshness" not in section
+    assert "Intake (not its branch step" in section

@@ -741,3 +741,12 @@ def test_pick_ba_skips_skipped_candidate(tmp_path: Path):
     assert pick_ba(
         tmp_path, tmp_path, _runner([]), skip=skip, candidates=cands
     ) == Task("ba-bug-report", "--from-report S1 R2 RD2")
+
+
+@pytest.mark.parametrize("extra", [{}, {"own_fix_ready": True}])
+def test_row_both_ready_and_reopened_yields_one_task(extra):
+    row = StoryStatus(
+        "BUG-3", "", "t", "ready", (), (), REPO, test_status="reopened", **extra
+    )
+    tasks = list(picker_dev_tasks([], [row], REPO))
+    assert tasks == [Task("dev-fix-bug", "BUG-3")]

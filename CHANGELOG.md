@@ -5,13 +5,13 @@ All notable changes to Strata are recorded here. This project follows
 
 ## 1.37.3 — 2026-11-15
 
-The tester loop closes: a FAIL report now reaches Dev as reopened work, Dev fixes it against the report, and a regression found in a test becomes a bug ticket for the BA. This is block 2 of 3; the release is tagged after block 3.
+The tester loop closes: a FAIL report now reaches Dev as reopened work, Dev fixes it against the report, and a regression found in a test becomes a bug ticket for the BA. This is block 1 of 3; the release is tagged after block 3.
 
 - **`kb report fetch <story> [--round N] [--child ID] [--out DIR] [--hub]`.** Reads a published test report from the hub and saves it as `docs/impl/<id>/report-R<n>.md` (latest round by default), with its assets; it warns when an asset is missing. `*/report-R*.md` is git-ignored. MCP: `kb_report_fetch(story, round=None)` returns the text only.
 - **`kb svc note … --fixes R<n>`.** Marks a service note as the fix for a test round; every re-run merges the existing refs.
 - **`kb auto` for Dev takes reopened tickets first.** Order: reopened stories and children first (reopened bugs go to `dev-fix-bug`), then ready bugs, unparented tickets and stories. `all_done` counts a reopened ticket as open Dev work. Closing done claims (`claim_api` and the ticket page in the plan UI) skips reopened rows, so the Dev keeps its claim.
 - **Fix mode.** `dev-implement-ticket` and `dev-fix-bug` gain `## Fix mode (reopened)`: fetch the report, fix the failed defects, hand over with `--fixes R<n>`. The Dev auto allowlist gains `Bash(kb report fetch*)`.
-- **Bug candidates.** A regression defect in a report is a candidate. It counts as logged when a published bug's header has `> From report: <story> R<n> RD<k>`. `/api/tests/known-failures` gains `logged`, the Test Report list shows open candidates only, and `kb ticket lint` checks the header line. Against an old hub the CLI stops with a clear error.
+- **Bug candidates.** A regression defect in a report is a candidate. It counts as logged when a published bug's header has `> From report: <story> R<n> RD<k>`. `/api/tests/known-failures` gains `logged`, the Test Report list shows open candidates only, and `kb ticket lint` checks the header line. Against an old hub BA auto mode warns and carries on with no candidates (the `HubApi.known_failures` call raises a clear error).
 - **`kb auto` for BA drafts bugs from candidates.** After mission blockers, the BA picks an open candidate and runs `ba-bug-report --from-report <story> R<n> RD<k>`. BA is not done while candidates are open. `ba-bug-report` gains an Auto mode with a fresh-context DoR reviewer.
 - **`kb ticket lint` refuses amending a closed story.** An amend (a local revision above the published one) of a closed story, or a new child under a closed parent, is an error: `story is closed — write a new story`.
 - **Upgrade.** Hub first, then `kb upgrade` in ba and dev repos.

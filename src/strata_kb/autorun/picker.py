@@ -137,13 +137,19 @@ def _has_test_workflow(root: Path) -> bool:
 
 
 def plan_next(
-    hub: HubHandle | HubApi, for_repo: str | None = None, require_target: bool = False
+    hub: HubHandle | HubApi,
+    for_repo: str | None = None,
+    require_target: bool = False,
+    repo: str | None = None,
 ) -> tuple[list[StoryStatus], list[StoryStatus], list[str]]:
     """The hub's plan: over its API on cloud, off the cloned hub otherwise.
-    With `for_repo`, only the items targeting that Dev repo."""
+    With `for_repo`, only the items targeting that Dev repo; with `repo`, only
+    that repo's plan."""
     if isinstance(hub, HubApi):
-        return hub.plan_next(for_repo=for_repo, require_target=require_target)
-    return planstatus.next_from_hub(hub, for_repo=for_repo)
+        return hub.plan_next(
+            repo=repo, for_repo=for_repo, require_target=require_target
+        )
+    return planstatus.next_from_hub(hub, repo=repo, for_repo=for_repo)
 
 
 def runnable_here(t: StoryStatus, repo_id: str) -> bool:

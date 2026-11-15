@@ -171,25 +171,33 @@ level only).
 ## --from-report <story> R<n> RD<k>
 
 Drafts a bug from regression defect `RD<k>` of the tester's round `R<n>`
-report of the closed story `<story>`. Intake is the report, not the BA.
+report of `<story>`, the story the tester tested (the report's owner). The
+defect's own closed story is the one its block names: `<closed-story>`.
+Intake is the report, not the BA.
 
 1. Stop if a published or local bug already cites it: a local
-   `tickets/bugs/BUG-*.md` whose header has `> From report: <story> R<n> RD<k>`
-   (or the same failure key `<story>/TC-<k>` named in its text), or a
-   published bug that does (`kb_search`; the hub lists the candidate as
+   `tickets/bugs/BUG-*.md` whose header has `> From report: <story> R<n> RD<k>`,
+   or a published bug that does (`kb_search`; the hub lists the candidate as
    logged). Name that bug and write nothing.
 2. Fetch the report: `kb report fetch <story> --round <n> --out <tmp>`
    (MCP `kb_report_fetch(story, round=<n>)` when the CLI is blocked). Find
-   the `RD<k>` block; no such block → stop and say so.
+   the `RD<k>` block; no such block → stop and say so. Its header reads
+   `### RD<k> — <symptom>  Story: <closed-story> · TC-<k> · …`:
+   `<closed-story>` is the ticket that regressed, not `<story>`. Stop as in
+   step 1 when a local or published bug names the same failure key
+   `<closed-story>/TC-<k>` in its text.
 3. Map the block, adding nothing it does not hold; a gap is `OPEN(<owner>)`:
    - symptom → the H1 title `# BUG-<n> — <symptom>` and `## Summary`;
    - its steps, expected and actual → `## Steps to reproduce` (numbered),
      `## Expected result`, `## Actual result`, error text verbatim;
    - evidence images → copy into `tickets/bugs/BUG-<n>/` as PNG or WebP and
      reference them in `## Attachments` (the report's own image files from
-     `--out <tmp>`);
+     `--out <tmp>`; Auto mode: its image bullet). When only the MCP tool
+     read the report, no image files come with it: write
+     `N/A — evidence images are on the hub with the report` and add an
+     `OPEN(tester)` row;
    - the environment line → `## Environment`;
-   - `Story:` → `> Related ticket: <story>`.
+   - the block's `Story: <closed-story>` → `> Related ticket: <closed-story>`.
 4. Add `> From report: <story> R<n> RD<k>` under the title, in the header
    block. Continue as the steps above from "Draft": take the next free
    `BUG-<n>`, find the first responder (3a), lint, hand over. Severity and
@@ -231,14 +239,15 @@ The runner starts this skill as `/ba-bug-report --from-report <story> R<n> RD<k>
 
 **Decisions.** Write each decision as one `**Auto decision:**` line in the bug's `## Change log` section when it has one, otherwise directly under `## Open questions`: what you checked, the options, the choice and why.
 
-**Already finished.** The runner re-runs a task after a crash, so check first, and match by content, never by branch name alone: other candidates have their own `auto/BUG-*` branches in flight. Run `git fetch origin main && git switch --detach FETCH_HEAD`, then look for a bug on `main` citing `> From report: <story> R<n> RD<k>` (step 1 of `--from-report`): when one exists, change nothing and end `AUTO-RESULT: done`. Otherwise list `git ls-remote --heads origin 'auto/BUG-*'` and read each branch's bug (`git fetch origin <branch>`, then `git show FETCH_HEAD:tickets/bugs/BUG-<m>.md`, with `<m>` the digits after `auto/BUG-`; skip a branch with a non-numeric `<m>`). A branch whose bug carries this `> From report:` line is this run's: when it has an open PR (`kb pr find --head <branch> --state open --json`), a crashed run: `git switch <branch>`, check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below; with no PR yet, continue at its step 3. Branches that cite another report are not yours: leave them alone. With none of these, draft it.
+**Already finished.** The runner re-runs a task after a crash, so check first, and match by content, never by branch name alone: other candidates have their own `auto/BUG-*` branches in flight. Run `git fetch origin && git fetch origin main` (so `FETCH_HEAD` is `main`), then `git log FETCH_HEAD -S'> From report: <story> R<n> RD<k>' --oneline -- tickets/bugs`: any output means a bug on `main` already cites the report: change nothing and end `AUTO-RESULT: done`. Otherwise list the in-flight branches with `git branch -r --list 'origin/auto/BUG-*'` (`<m>` is the digits after `auto/BUG-`; an `-r<N>` after them is a revision suffix; skip any other name) and run the same `git log` over each as `FETCH_HEAD..<branch>`. A branch with output is this run's: when it has an open PR (`kb pr find --head <branch> --state open --json`), a crashed run: `git switch <branch without origin/>` (git creates it from the remote), check the draft with `kb_ticket_lint`, and continue at the CI step of the branch rule below; with no PR yet, continue at its step 3. Branches without output cite another report: leave them alone. With none of these, draft it.
 
-**The next free `BUG-<n>`** (step 3 of the Workflow) is, in Auto mode, the highest digits-only number among `tickets/bugs/BUG-<n>.md` on `main` and on every remote `auto/BUG-*` branch (as listed above), plus one, so two runs in flight never take the same id. A branch name with a revision suffix (`auto/BUG-<m>-r2`) counts as `<m>`.
+**The next free `BUG-<n>`** (step 3 of the Workflow) is, in Auto mode, the highest digits-only number among the `BUG-<n>.md` names listed by `git log FETCH_HEAD --name-only --format= -- tickets/bugs` and the `<m>` of every `origin/auto/BUG-*` branch (as above; `auto/BUG-<m>-r<N>` counts as `<m>`), plus one, so two runs in flight never take the same id.
 
 - **Intake: "Ask, don't guess"** (severity, type, environment, related ticket) → take them from the report block, as `--from-report` maps them; a value the report lacks is `OPEN(<owner>)` with an `## Open questions` row, or S3 / `bug` as an Auto decision. Never ask.
 - **Step 3a, "the BA accepts the SA's proposal or picks another repo"** → run `/sa-ticket-ground --scope "<symptoms>"` as its own subagent and take its proposal; `Repos: 0` or a tie → write no `> Target repo:` only when the hub has one dev repo, else end `AUTO-RESULT: failed no-target-repo BUG-<n>`. Log an Auto decision line.
+- **`--from-report` step 3, "copy the evidence images into `tickets/bugs/BUG-<n>/`"** (`cp` is not allowed) → once `BUG-<n>` is chosen, run `kb report fetch <story> --round <n> --out tickets/bugs/BUG-<n>`: it writes the report's images to `tickets/bugs/BUG-<n>/assets/<file>`, and a `report-R<n>.md` you do not commit. Reference each as `![caption](BUG-<n>/assets/<file>)`. When the CLI is blocked and only MCP read the report, there are no images: `N/A — evidence images are on the hub with the report` and an `OPEN(tester)` row.
 - **Step 4, Ground** → skip it unless the report cites a standard; then pick the best-matching refs yourself and log the candidates and choice in an Auto decision line.
-- **Step 6, "the BA reviews, commits and publishes"; "Tick NO `## Definition of Ready` box"; "Never commit or push"** → run a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs: the report's `RD<k>` block and the draft) that returns pass or fail with a one-line reason for each of the five boxes. The report's observed failure is the evidence for box 1, "Steps reproduce the actual result on the stated environment": the tester saw it, you do not re-run it. Tick only the boxes that pass; on a fail, fix the draft once and review again. A box still failing: open no PR and end `AUTO-RESULT: failed bug-dor BUG-<n>`. Log the verdicts in an Auto decision line. Then follow the branch rule in ba-ticket-author's Auto mode: branch `auto/BUG-<n>` (the ticket id is `BUG-<n>`), commit `tickets/bugs/BUG-<n>.md` with its `BUG-<n>/` folder, PR titled `BUG-<n>: <short description>`, checks, merge. The merge publishes the bug (`kb-publish-request.yml`), which marks the candidate logged. Skip the Jira step.
+- **Step 6, "the BA reviews, commits and publishes"; "Tick NO `## Definition of Ready` box"; "Never commit or push"; Hard rules "Tick no `## Definition of Ready` box on a bug" and "The agent's output is a draft; the BA publishes it"** → run a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs: the report's `RD<k>` block and the draft) that returns pass or fail with a one-line reason for each of the five boxes. The report's observed failure is the evidence for box 1, "Steps reproduce the actual result on the stated environment": the tester saw it, you do not re-run it. Tick only the boxes that pass; on a fail, fix the draft once and review again. A box still failing: open no PR and end `AUTO-RESULT: failed bug-dor BUG-<n>`. Log the verdicts in an Auto decision line. Then follow the branch rule in ba-ticket-author's Auto mode: branch `auto/BUG-<n>` (the ticket id is `BUG-<n>`), commit `tickets/bugs/BUG-<n>.md` with `tickets/bugs/BUG-<n>/assets/` (not the `report-R<n>.md`), PR titled `BUG-<n>: <short description>`, checks, merge. The merge publishes the bug (`kb-publish-request.yml`), which marks the candidate logged. Skip the Jira step.
 
 ### Result line
 

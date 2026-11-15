@@ -15,6 +15,7 @@ from strata_kb.ticketclaim import ClaimStore, claims_db_path
 from strata_kb.web import planui
 from strata_kb.web.app import create_app
 from tests.test_planstatus import MISSION_ID, US
+from tests.test_testflow import _text, publish_tests
 
 REPO = "ba-one"
 TICKET = US[1]  # the story with a published ticket
@@ -279,12 +280,12 @@ def test_done_ticket_page_closes_its_held_claim(admin_client, plan_hub, store):
     assert store.last_closed(REPO, TICKET).close_reason == "done"
 
 
-def test_reopened_ticket_page_keeps_its_held_claim(
-    admin_client, plan_hub, store, monkeypatch
-):
+def test_reopened_ticket_page_keeps_its_held_claim(admin_client, plan_hub, store):
     _take(store)
     _mark_done(plan_hub)
-    monkeypatch.setattr(planui, "_is_reopened", lambda *_: True)
+    publish_tests(
+        plan_hub.root, "tester-one", TICKET, _text(TICKET, 1, "FAIL", guilty=TICKET)
+    )
     assert admin_client.get(PAGE).status_code == 200
     assert len(store.held(REPO, TICKET)) == 1
 

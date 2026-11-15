@@ -1842,6 +1842,38 @@ def test_runner_ba_other_candidate_read_error_waits(env, monkeypatch):
 BA_PARKED = "ba-bug-report:--from-report S1 R2 RD1 https://github.com/o/r/pull/7"
 
 
+def test_ba_candidates_read_only_this_repos_plan(env, monkeypatch):
+    from strata_kb import bugcandidates
+
+    plans = {"svc": [S("US-mine", "done")], "other": [S("US-theirs", "done")]}
+    monkeypatch.setattr(
+        planstatus,
+        "next_from_hub",
+        lambda h, repo=None, for_repo=None: (plans.get(repo, []), [], []),
+    )
+    seen = []
+
+    def found(hub, plan_stories=None, facts=None):
+        seen.append(plan_stories)
+        return []
+
+    monkeypatch.setattr(bugcandidates, "open_candidates", found)
+    assert runner_mod._ba_candidates(env[2], "svc") == []
+    assert seen == [{"US-mine"}]
+
+
+def test_closed_bug_pr_is_skipped_not_redrafted(env, monkeypatch):
+    _view(monkeypatch, "CLOSED")
+    state = autostate.AutoState(None, 0, (), None, "", waiting_review=(BA_PARKED,))
+    out = runner_mod._review_check(
+        env[0], env[1], state, view_pr=lambda root, ref: {"state": "CLOSED"}
+    )
+    key = "ba-bug-report:--from-report S1 R2 RD1"
+    assert out.waiting_review == ()
+    assert key in out.skipped
+    assert key in runner_mod._skip(out)
+
+
 def test_parked_key_with_spaces_is_skipped_and_kept_whole(env, monkeypatch):
     state = autostate.AutoState(None, 0, (), None, "", waiting_review=(BA_PARKED,))
     assert "ba-bug-report:--from-report S1 R2 RD1" in runner_mod._skip(state)
