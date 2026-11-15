@@ -212,7 +212,7 @@ output. Findings:
 | `coverage` | a testable story (not a bug) matches no row, `last` rows included | warning |
 | `tc-revision` | any `tests/<story>/test-cases.md` `Ticket revision` ≠ the ticket's current revision (the check `testcases.py` already does, run over every spec) | warning |
 
-- Exit code non-zero only on errors.
+- Exit codes as `kb ticket stale`: 0 nothing found, 2 warnings only, 1 any error.
 - Scaffold `.github/workflows/kb-test-stale.yml`: scheduled, keeps one issue
   up to date the way `kb-doctor.yml` does for `kb ticket stale` (reuse that
   issue-keeping code).
