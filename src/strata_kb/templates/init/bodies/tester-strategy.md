@@ -71,10 +71,57 @@ environments point at `.kb/test-env.yaml`.
    - `tc-revision`: not a strategy change. Name it to the Tester and leave it
      for `/tester-test-story`; propose no edit.
    - a rank change, citing the evidence that moved it (trigger `priority`).
-   Auto mode is not available yet: the Tester decides every change.
+   In an unattended run, `## Auto mode` below decides which of these you may make; otherwise the Tester decides every change.
 3. **Revise.** Bump `> Revision:` by one and append one change-log row with the
    trigger set (kb-context, plan, coverage, priority, scope; comma-separated),
    what changed, which sections, and the Review cell.
 4. **Lint, Q1, PR.** `kb strategy lint docs/test-strategy.md --hub` until it
    exits 0; Q1 as in New step 7 (a reorder must state what evidence changed);
    branch `strategy/rev-<N>`, commit, push, `kb pr open`. Never merge.
+
+## Auto mode
+
+Run `kb auto status --json`. When `enabled` is false, this section does not apply. When true, the rules below replace the human gates named in them.
+
+The runner starts this skill as `/tester-strategy --amend`, when `kb test stale` has strategy findings. Nobody answers questions during the run. Auto never writes a new strategy: with no `docs/test-strategy.md`, end `AUTO-RESULT: failed no-strategy`. Every step and every hard rule not named here stays as written, except the manual "Never merge" (the merge rule below replaces it in an unattended run).
+
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin`, then `kb pr find --head auto/strategy --state all --json`, and the same for each `auto/strategy-r<N>` branch `git ls-remote --heads origin 'auto/strategy-r*'` lists (numeric `<N>` only). When `kb test stale --json` has no strategy finding and a merged PR exists, change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git switch auto/strategy` (or the `-r<N>` branch) and continue at step 3 of the merge rule.
+
+**Allowed changes.** Apply these without asking the Tester; one change per finding, as in `--amend` step 2:
+
+- `pin-moved`: re-pin the row.
+- `broken-target`: re-point a renamed or split target. Drop a row only when its target is gone and nothing replaces it.
+- `coverage`: add a row for an uncovered story, or a `last` row for a story you judge not worth a rank, so the finding clears.
+- `kb-context`: refresh the block (trigger `kb-context`).
+- `.kb/test-env.yaml` alignment (trigger `scope`).
+- A rank change, only with cited evidence and an agreeing reviewer (trigger `priority`).
+
+`tc-revision` is not a strategy change: leave it. Nothing else changes.
+
+**Decisions.** Write each change as one `**Auto decision:**` line: the finding, what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row. A change that is only a re-pin needs no reviewer. For a re-point, an added row, a `last` row or a rank change, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the strategy rows, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once:
+
+- a re-point, added row or `last` row then goes ahead as you decide;
+- a rank change that is objected to twice is dropped: leave the ranks as they are and record the proposal (the old and new rank, the evidence) in its Auto decision line for the Tester.
+
+**Revise.** As `--amend` step 3. The Review cell starts with `auto`, for example `auto: reviewer agreed`. A rank change that stands adds the trigger `priority`.
+
+**Branch.** Start from `git fetch origin` and `git switch -c auto/strategy origin/<default>`. When `git ls-remote --heads origin auto/strategy` lists the branch, run `kb pr find --head auto/strategy --state all --json`. No PR ever means a run crashed after its push: switch to the branch and continue at step 3 of the merge rule. Merged or closed PRs mean the branch is spent: never force-push over it and never delete it. Use `auto/strategy-r2` instead (`-r3`, … the first name `git ls-remote` does not list), with the same checks.
+
+**Lint, Q1.** Run `kb strategy lint docs/test-strategy.md --hub` until it exits 0; fix by the rules above, never by skipping a finding. A lint that will not pass ends `AUTO-RESULT: failed lint`. Then Q1 as in New step 7, as a subagent. When you cannot dispatch one, end `AUTO-RESULT: failed test-review no-subagents`. A BLOCKER still standing after round 2 ends `AUTO-RESULT: failed test-review <id>`.
+
+**The merge rule.** In an unattended run, this rule replaces "Never merge". A manual run never merges. Never run `kb publish`.
+
+1. Commit `docs/test-strategy.md` (never `.env`) and push with `git push -u origin HEAD`.
+2. Open the PR with `kb pr open --title "test: strategy rev <N>" --body-file <file>`.
+3. Wait for the checks with `kb pr checks --watch`. If a check is red, read the failure (`gh run view --log-failed`), fix it, commit, `git push origin HEAD`, and watch again: up to 2 fix rounds in all. Still red after the second round: end `AUTO-RESULT: failed ci-red <pr-url>`. Never merge on red or pending checks.
+4. Every check green: `kb pr merge --squash --delete-branch`. When the merge is refused for want of an approving review, do not retry: end `AUTO-RESULT: blocked-review <pr-url>`. A human reviews and merges the PR; the runner counts a merged parked amend as done.
+5. After any merge error, run `kb pr view --json` before you end `failed`: `kb pr merge` can report an error after the merge went through. A merged PR is a success.
+6. After the merge, the `kb-publish-request` workflow on `<default>` publishes the strategy. End `AUTO-RESULT: done`.
+
+### Result line
+
+End the reply with exactly one line, and make it the last line. Nothing follows it: no code fence, no markdown, no closing remark. It has one of three forms:
+
+- `AUTO-RESULT: done`: the PR is merged, or the work was already finished. Write no text after `done`.
+- `AUTO-RESULT: blocked-review <pr-url>`: the merge needs an approving review the agent may not give.
+- `AUTO-RESULT: failed <reason>`: always a reason on the same line: `lint`, `ci-red <pr-url>`, `test-review <id>` or `test-review no-subagents`, or `no-strategy`.

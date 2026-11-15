@@ -103,10 +103,16 @@ def test_env_setup_body_keeps_secrets_out_of_yaml():
     assert t.index("kb test-env check") < t.index("kb test-env verify")
 
 
-@pytest.mark.parametrize("name", ("tester-env-setup", "tester-strategy"))
-def test_bodies_have_no_auto_mode_section(name):
-    # strategy auto is a later task; the settings allowlist test scans these.
-    assert "\n## Auto mode" not in _body(name)
+def test_env_setup_has_no_auto_mode_section():
+    assert "\n## Auto mode" not in _body("tester-env-setup")
+
+
+def test_strategy_body_has_auto_mode():
+    t = _body("tester-strategy")
+    for p in ("\n## Auto mode", "auto/strategy", "**Auto decision:**"):
+        assert p in t, p
+    assert "not available yet" not in t
+    assert "Never merge" in t
 
 
 def test_branch_switch_comes_before_push_and_default_is_refused():
@@ -250,7 +256,6 @@ def test_strategy_body_names_its_commands_and_modes():
         "kb report-ingest",
         "--amend",
         "kb mission next --from-hub --json",
-        "Auto mode is not available yet",
         "`broken-target`",
         "`pin-moved`",
         "`coverage`",

@@ -371,3 +371,29 @@ def test_empty_rows_lists_rows_without_stories():
     ]
     got = teststrategy.empty_rows(S, [_info("M-checkout-US1", "M-checkout")])
     assert [r.target for r in got] == ["M-checkout-US5", "[srs §4]"]
+
+
+def _log(*rows):
+    head = (
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+    )
+    return head + "".join(
+        f"| {rev} | 2026-11-20 | {trig} | x | - | {rv} |\n" for rev, trig, rv in rows
+    )
+
+
+@pytest.mark.parametrize(
+    ("rows", "want"),
+    [
+        ((), None),
+        (((2, "priority", "auto: agreed"),), 2),
+        (((2, "priority", "auto"), (3, "scope", "ok")), None),
+        (((2, "priority", "Auto: x"), (3, "coverage", "auto")), 2),
+        (((2, "coverage", "auto"),), None),
+        (((2, "priority", "auto"), (3, "priority", "auto")), 3),
+        (((2, "priority", "auto"), (3, "priority", "ok"), (4, "scope", "auto")), None),
+    ],
+)
+def test_auto_reordered(rows, want):
+    assert teststrategy.auto_reordered(_log(*rows)) == want
