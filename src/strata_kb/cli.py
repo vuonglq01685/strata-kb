@@ -5089,6 +5089,68 @@ def test_stale(
         raise typer.Exit(2)
 
 
+@test_app.command("next")
+def test_next(
+    file: Path = typer.Option(
+        Path("docs/test-strategy.md"), "--file", help="Test strategy file"
+    ),
+    kb_dir: Path = typer.Option(Path(".kb"), help="KB directory"),
+    hub: str = typer.Option(
+        "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON"),
+    all_: bool = typer.Option(False, "--all", help="Every testable story, not one"),
+) -> None:
+    """The next story to test, by the test strategy. Exit 3 when none is testable."""
+    from strata_kb import strategyhub, teststrategy
+
+    handle = _hub_or_exit(hub, kb_dir)
+    strategy = None
+    try:
+        strategy = teststrategy.parse(file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        typer.echo(f"kb test next: no usable {file}, plan order", err=True)
+    if strategy is not None and not strategy.plan:
+        typer.echo(
+            "kb test next: strategy names no plan, plan order over every plan",
+            err=True,
+        )
+    placed = strategyhub.next_stories(handle, strategy)
+    if not all_:
+        placed = placed[:1]
+
+    def rank(p: teststrategy.Placement) -> int | str | None:
+        if p.row is None:
+            return None
+        return p.row.rank if p.row.rank is not None else "last"
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "story": p.story,
+                        "tier": p.tier,
+                        "rank": rank(p),
+                        "how": p.how,
+                        "target": p.row.target if p.row else None,
+                    }
+                    for p in placed
+                ]
+            )
+        )
+    else:
+        for p in placed:
+            typer.echo(
+                f"{p.story}  tier={p.tier} rank={'-' if rank(p) is None else rank(p)}"
+                f" how={p.how} row={p.row.target if p.row else '-'}"
+            )
+    if not placed:
+        if not json_output:
+            typer.echo("kb test next: nothing testable")
+        raise typer.Exit(3)
+
+
 @report_app.command("fetch")
 def report_fetch(
     story: str = typer.Argument(..., help="Story id"),

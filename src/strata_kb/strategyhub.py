@@ -121,6 +121,18 @@ def plan_view(
     )
 
 
+def next_stories(hub: HubHandle, strategy: Strategy | None) -> list[Placement]:
+    """Testable stories in test order (plan order without a strategy)."""
+    plan = (
+        plan_view(hub, strategy.plan)
+        if strategy and strategy.plan
+        else plan_view(hub, None, all_plans=True)
+    )
+    return teststrategy.order(
+        strategy, [s for s in plan.stories if s.us_id in plan.testable]
+    )
+
+
 def _revision(plan: PlanView, target: str) -> int | None:
     return (
         (planrev.parse_revision(plan.texts[target]) or 1)

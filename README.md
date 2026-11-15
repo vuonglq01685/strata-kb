@@ -258,6 +258,7 @@ daily use.
 | `kb test-env` | Tester repo: the test environment in `.kb/test-env.yaml` — `check`, `verify`, `reset`, `seed`, `version`, `deployed`, `changed`, `lock`, `unlock` |
 | `kb strategy lint` | Check a tester repo's `docs/test-strategy.md` (structure, priority order, KB context, review) |
 | `kb test stale` | Drift of a tester repo's strategy and test cases against the hub (`--md` is the issue body the scheduled workflow keeps) |
+| `kb test next` | Tester repo: the next testable story by the test strategy (`--all` lists every one, `--json`; exit `3` when none is testable) |
 | `kb testcase lint` | Check a story's `tests/<story-id>/test-cases.md` against its ticket |
 | `kb report fetch` | Read a published test report from the hub into `docs/impl/<id>/report-R<n>.md` (`--round`, `--child`, `--out`, `--hub`): Dev fix mode for a reopened ticket |
 | `kb report lint` | Check a test report `reports/<story-id>/R<n>.md` (verdict, defects, evidence, secrets) |
