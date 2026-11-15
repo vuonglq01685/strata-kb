@@ -83,8 +83,11 @@ def test_pick_tester_does_not_resume_parked_claim(env, plan_hub, kw):
     LocalClaims(env[1]).put(US1, 7, "tok")
     run = _fake_run(4)
     pick = _pick(env, plan_hub, Claims([_claim(US1, 7, **kw)]), run=run)
-    # not resumed: it falls through to the normal pick (US1 not deployed here)
-    assert pick.cooled == (US1,)
+    # review/publishing stay held (no duplicate round); stopped is freed
+    if kw.get("state") == "stopped":
+        assert pick.task is None and run.calls and pick.cause == "waiting"
+    else:
+        assert (pick.task, pick.cause) == (None, "waiting") and not run.calls
 
 
 def test_pick_tester_amend_on_coverage_finding(env, plan_hub):
@@ -140,7 +143,7 @@ def test_pick_tester_all_held_is_waiting(env, plan_hub):
 
 def test_pick_tester_waiting_and_skip_are_passed_over(env, plan_hub):
     assert _pick(env, plan_hub, waiting=frozenset({US1})).cause == "waiting"
-    assert _pick(env, plan_hub, skip={f"tester-test-story:{US1}"}).task is None
+    assert _pick(env, plan_hub, skip={f"tester-test-story:{US1}"}).cause == "skipped"
 
 
 def test_pick_tester_claim_read_error_raises(env, plan_hub):
@@ -162,7 +165,7 @@ def test_pick_tester_bad_strategy_no_amend(env, plan_hub, monkeypatch):
 def test_pick_tester_plan_not_on_hub_no_crash(env, plan_hub):
     _strategy(env[0], _doc(GOOD_ROWS).replace("ba-one", "ba-gone"))
     pick = _pick(env, plan_hub, skip={"tester-strategy:--amend"})
-    assert (pick.task, pick.cause) == (None, "waiting")  # amend due but skipped
+    assert (pick.task, pick.cause) == (None, "skipped")  # amend due but skipped
 
 
 def test_pick_tester_unsafe_story_id_is_skipped(env, plan_hub, monkeypatch):
@@ -194,3 +197,21 @@ def test_pick_tester_reads_default_branch_when_remote(env, plan_hub, tmp_path):
     git("remote", "set-head", "origin", "main")
     _strategy(root, CLEAN)  # working tree differs: the remote copy wins
     assert _pick(env, plan_hub).task == Task("tester-strategy", "--amend")
+
+
+def test_pick_tester_one_skipped_one_held_is_waiting(env, plan_hub):
+    _two_done(plan_hub)
+    pick = _pick(
+        env,
+        plan_hub,
+        Claims([_claim(US3, 9)]),
+        skip={f"tester-test-story:{US1}"},
+    )
+    assert (pick.task, pick.cause) == (None, "waiting")
+
+
+def test_pick_tester_unsafe_claim_ticket_not_resumed(env, plan_hub):
+    bad = "../x"
+    LocalClaims(env[1]).put(bad, 7, "tok")
+    pick = _pick(env, plan_hub, Claims([_claim(bad, 7)]))
+    assert pick.task != Task("tester-test-story", bad)

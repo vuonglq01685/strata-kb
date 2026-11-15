@@ -242,11 +242,14 @@ _NOT_DEPLOYED = 4  # `kb test-env deployed` exit: the story is not on the env ye
 
 @dataclass(frozen=True)
 class TesterPick:
-    """`cooled`: stories the deploy check reported not deployed in this pick,
+    """`cause` with no task: "nothing" (no amend due, no testable story),
+    "skipped" (every candidate passed over only for its key in `skip`), else
+    "waiting" (some candidate held, waiting, cooled or unsafe).
+    `cooled`: stories the deploy check reported not deployed in this pick,
     for the runner to park in `waiting`."""
 
     task: Task | None
-    cause: Literal["task", "nothing", "waiting"]
+    cause: Literal["task", "nothing", "waiting", "skipped"]
     cooled: tuple[str, ...] = ()
 
 
@@ -306,6 +309,7 @@ def _resume(kb_dir: Path, claims: list[dict]) -> Task | None:
         if (
             saved
             and saved[0] == c["id"]
+            and planstatus.safe_name(c["ticket"])
             and c.get("state") != "stopped"
             and c.get("phase") not in ("publishing", "review")
         ):
@@ -333,7 +337,9 @@ def pick_tester(
     other = {
         c["ticket"]
         for c in claims
-        if (saved := local.get(c["ticket"])) is None or saved[0] != c["id"]
+        if (saved := local.get(c["ticket"])) is None
+        or saved[0] != c["id"]
+        or c.get("phase") in ("publishing", "review")  # ours, but parked
     }
     text = _strategy_text(root)
     strategy = _parse_strategy(text)
@@ -347,13 +353,16 @@ def pick_tester(
         logger.warning("test order not read: %s", exc)
         stories = []
     cooled: list[str] = []
+    blocked = False  # a candidate passed over for a reason other than `skip`
     for story in stories:
-        if Task("tester-test-story", story).key in skip or story in waiting:
+        if Task("tester-test-story", story).key in skip:
             continue
-        if story in other:
+        if story in waiting or story in other:
+            blocked = True
             continue
         if not planstatus.safe_name(story):
             logger.warning("story id %r is not a safe name, skipped", story)
+            blocked = True
             continue
         proc = run(
             ["kb", "test-env", "deployed", story],
@@ -369,5 +378,7 @@ def pick_tester(
                 f"kb test-env deployed {story} failed: {proc.stderr[:MAX_STDERR]}"
             )
         cooled.append(story)
-    cause = "waiting" if stories or amend else "nothing"
+    if not (stories or amend):
+        return TesterPick(None, "nothing")
+    cause = "waiting" if blocked or cooled else "skipped"
     return TesterPick(None, cause, tuple(cooled))
