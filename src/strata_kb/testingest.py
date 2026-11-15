@@ -22,6 +22,7 @@ from strata_kb import (
     planstatus,
     testcases,
     testreport,
+    teststrategy,
 )
 from strata_kb.codeingest import core
 from strata_kb.codeingest.types import CodeSection
@@ -71,6 +72,29 @@ def _section(sid: str, group: str, text: str, summary: str) -> CodeSection | Non
         l2_md="\n\n".join(extract_tables(l3)),
         l3_md=l3,
     )
+
+
+def _ship_strategy(root: Path, out: TestIngestReport) -> list[CodeSection]:
+    path = root / teststrategy.STRATEGY_FILE
+    if not path.is_file():
+        return []
+    text = _read(path)
+    reason = planingest.lint_reason(teststrategy.lint(text)) or planingest.fence_reason(
+        text
+    )
+    sec = (
+        None
+        if reason
+        else _section(
+            teststrategy.SECTION_ID,
+            teststrategy.SECTION_ID,
+            text,
+            f"{len(teststrategy.parse(text).rows)} priority rows",
+        )
+    )
+    if sec is None:
+        out.skipped.append((teststrategy.STRATEGY_FILE, reason or "no '# ' title line"))
+    return [sec] if sec else []
 
 
 def _ship_report(
@@ -183,11 +207,19 @@ def run(
         )
     root = repo_root.resolve()
     out = TestIngestReport(doc_id=doc_id)
-    sections: list[CodeSection] = []
+    sections = _ship_strategy(root, out)
     assets: dict[str, bytes] = {}
     for story_dir in sorted(p for p in tests_dir.iterdir() if p.is_dir()):
         spec_path = story_dir / CASES_FILE
         if not spec_path.is_file():
+            continue
+        if story_dir.name == teststrategy.SECTION_ID:
+            out.skipped.append(
+                (
+                    planingest.rel_path(spec_path, root),
+                    f"reserved name '{teststrategy.SECTION_ID}'",
+                )
+            )
             continue
         if not planstatus.safe_name(story_dir.name):
             out.skipped.append(
