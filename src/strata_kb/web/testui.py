@@ -101,7 +101,7 @@ def _keep(row: Row, status: str) -> bool:
 def _panel(view: strategyhub.StrategyView) -> dict:
     ranked = sorted(
         ((r, placed) for r, placed in view.rows if r.rank is not None),
-        key=lambda item: item[0].rank,
+        key=lambda item: item[0].rank or 0,  # None filtered above
     )
     log = planrev.parse_change_log(view.text)
     return {

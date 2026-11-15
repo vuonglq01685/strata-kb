@@ -241,7 +241,11 @@ def lint_against_hub(text: str, hub: HubHandle) -> list[Issue]:
     st = teststrategy.parse(text)
     plan = plan_view(hub, st.plan)
     return [
-        Issue(level=f.level, message=f.message, code=f"st-{f.code}")
+        Issue(
+            level="error" if f.level == "error" else "warning",
+            message=f.message,
+            code=f"st-{f.code}",
+        )
         for f in _id_findings(st, plan)
     ]
 
