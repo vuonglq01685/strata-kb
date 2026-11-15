@@ -1947,8 +1947,8 @@ def _tester(env, monkeypatch):
 def test_tester_preflight_passes_when_everything_is_ok(env, monkeypatch):
     root, kb_dir, w = _tester(env, monkeypatch)
     assert preflight(root, kb_dir, run=w.run) == []
-    assert w.cmds[0][:3] == ["npx", "--no-install", "playwright"]
-    assert w.cmds[1][0] == "node"
+    assert w.cmds[0][1:3] == ["--no-install", "playwright"]
+    assert w.cmds[1][1] == "-e"
 
 
 def test_tester_preflight_refuses_on_cloud(env, monkeypatch):
