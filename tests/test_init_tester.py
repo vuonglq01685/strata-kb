@@ -364,9 +364,6 @@ def test_tester_allow_covers_the_strategy_commands():
     for cmd in (
         "kb strategy lint docs/test-strategy.md --hub",
         "kb test stale --json",
+        "kb test next --json",
     ):
         assert _permitted_by_tester(cmd), cmd
-
-
-def test_tester_allow_has_test_next():
-    assert "Bash(kb test next*)" in initcmd.TESTER_ALLOW

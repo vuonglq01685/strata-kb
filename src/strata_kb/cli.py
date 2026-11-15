@@ -5103,7 +5103,7 @@ def test_next(
 ) -> None:
     """The next story to test, by the test strategy (`--all`: every testable one).
     `--json`: `[{story, tier, rank: int|"last"|null, how, target: str|null}]`.
-    Exit 0 found, 3 none testable, 1 the strategy's plan is not on the hub."""
+    Exit 0 found, 3 none testable, 1 error (no hub, or the strategy's plan is not on the hub)."""
     from strata_kb import strategyhub, teststrategy
 
     handle = _hub_or_exit(hub, kb_dir)

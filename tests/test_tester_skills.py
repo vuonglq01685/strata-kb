@@ -1,6 +1,7 @@
 """Key phrases the tester skills must keep (task 12)."""
 
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
@@ -294,7 +295,5 @@ def test_test_story_no_argument_proposes_next_story():
 
 
 def test_changelog_mentions_test_next():
-    from pathlib import Path
-
     log = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "kb test next" in log.split("## 1.37.2", 1)[0]

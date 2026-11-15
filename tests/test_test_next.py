@@ -73,8 +73,14 @@ def test_cli_test_next_json_shape(plan_hub, tmp_path):
     res = _next(plan_hub, tmp_path, "--json", strategy=STRATEGY_FOR_PLAN_HUB)
     assert res.exit_code == 0
     (item,) = json.loads(res.stdout)
-    assert set(item) == {"story", "tier", "rank", "how", "target"}
-    assert item["story"] == US1
+    assert item == {
+        "story": US1,
+        "tier": 1,
+        "rank": 1,
+        "how": item["how"],
+        "target": item["target"],
+    }
+    assert item["how"] and item["target"]
 
 
 def test_cli_test_next_nothing_testable_exits_3(plan_hub, tmp_path):
@@ -102,3 +108,32 @@ def test_cli_test_next_unknown_plan_exits_1(plan_hub, tmp_path):
         plan_hub, tmp_path, strategy=STRATEGY_FOR_PLAN_HUB.replace("ba-one", "nope")
     )
     assert res.exit_code == 1 and "no plan for 'nope'" in res.stderr
+
+
+def test_cli_test_next_json_unmatched_story_has_null_target(plan_hub, tmp_path):
+    _two_done(plan_hub)
+    rows = f"| Rank | Target | Pin | Risk | Why | Types |\n|---|---|---|---|---|---|\n| 1 | {US[0]} | rev 1 | High | one | UI |\n"
+    res = _next(plan_hub, tmp_path, "--json", "--all", strategy=_doc(rows))
+    items = json.loads(res.stdout)
+    assert [i["story"] for i in items] == [US[0], US[2]]
+    assert items[0]["rank"] == 1 and items[0]["target"] == US[0]
+    unmatched = items[1]
+    assert unmatched["rank"] is None and unmatched["target"] is None
+    assert unmatched["how"] == "outside"
+
+
+def _empty_published_plan(monkeypatch):
+    view = strategyhub.PlanView([], {}, frozenset(), {"M-x": "t"}, frozenset({"M-x"}))
+    monkeypatch.setattr(strategyhub, "plan_view", lambda *a, **k: view)
+
+
+def test_published_plan_without_story_rows_is_not_missing(plan_hub, monkeypatch):
+    _empty_published_plan(monkeypatch)
+    strategy = teststrategy.parse(STRATEGY_FOR_PLAN_HUB)
+    assert strategyhub.next_stories(plan_hub, strategy) == []
+
+
+def test_cli_published_plan_without_story_rows_exits_3(plan_hub, tmp_path, monkeypatch):
+    _empty_published_plan(monkeypatch)
+    res = _next(plan_hub, tmp_path, strategy=STRATEGY_FOR_PLAN_HUB)
+    assert res.exit_code == 3
