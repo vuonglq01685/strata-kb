@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.routing import Route
 
-from strata_kb import planrev, planstatus, strategyhub, testflow
+from strata_kb import bugcandidates, planrev, planstatus, strategyhub, testflow
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.serving.config import ServerConfig
@@ -145,11 +145,12 @@ def test_routes(config: ServerConfig) -> list[Route]:
         except (KbError, ValueError, OSError):
             logger.exception("test strategy could not be read")
             unreadable = ["strategy"]
-        candidates = (
-            list(testflow.known_failures(facts).values())
-            if status == "candidates"
-            else []
-        )
+        candidates = []
+        if status == "candidates":
+            open_keys = {c.key for c in bugcandidates.open_candidates(hub)}
+            candidates = [
+                k for k in testflow.known_failures(facts).values() if k.key in open_keys
+            ]
         return _render_page(
             "tests.html",
             config,

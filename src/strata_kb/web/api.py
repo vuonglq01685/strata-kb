@@ -373,12 +373,13 @@ def build_routes(config: ServerConfig) -> list[Route]:
         )
 
     def known_failures(request: Request) -> JSONResponse:
-        from strata_kb import testflow
+        from strata_kb import bugcandidates, testflow
 
         hub = hub_handle(config)
         if hub is None:
             return _error(503, "hub_unreachable", HUB_DOWN_DETAIL)
         found = testflow.known_failures(testflow.load_facts(hub))
+        logged = {c.key: c.logged for c in bugcandidates.candidates(hub)}
         return JSONResponse(
             {
                 key: {
@@ -386,6 +387,7 @@ def build_routes(config: ServerConfig) -> list[Route]:
                     "round": k.round,
                     "rd_id": k.rd_id,
                     "duplicates": list(k.duplicates),
+                    "logged": logged.get(key, False),
                 }
                 for key, k in found.items()
             }

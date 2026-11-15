@@ -208,3 +208,13 @@ def test_hubapi_story_keeps_test_overlay_fields():
         {k: v for k, v in row.items() if not k.startswith(("test_", "regression"))}
     )
     assert (old.test_status, old.test_round, old.regression_bug) == ("", 0, False)
+
+
+def test_hubapi_known_failures(monkeypatch):
+    c = hubapi.HubApi("http://hub:1", "t")
+    seen = []
+    monkeypatch.setattr(
+        c, "_json", lambda m, t, r, **kw: seen.append((m, t)) or {"a/TC-1": {}}
+    )
+    assert c.known_failures() == {"a/TC-1": {}}
+    assert seen == [("GET", "/api/tests/known-failures")]
