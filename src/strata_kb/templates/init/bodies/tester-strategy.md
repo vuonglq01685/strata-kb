@@ -85,12 +85,14 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 The runner starts this skill as `/tester-strategy --amend`, when `kb test stale` has strategy findings. Nobody answers questions during the run. Auto never writes a new strategy: with no `docs/test-strategy.md`, end `AUTO-RESULT: failed no-strategy`. Every step and every hard rule not named here stays as written, except the manual "Never merge" (the merge rule below replaces it in an unattended run).
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin`, then `kb pr find --head auto/strategy --state all --json`, and the same for each `auto/strategy-r<N>` branch `git ls-remote --heads origin 'auto/strategy-r*'` lists (numeric `<N>` only). When `kb test stale --json` has no strategy finding and a merged PR exists, change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git switch auto/strategy` (or the `-r<N>` branch) and continue at step 3 of the merge rule.
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin && git switch --detach origin/<default>` (the working tree may be on an older branch), then `kb pr find --head auto/strategy --state all --json`, and the same for each `auto/strategy-r<N>` branch `git ls-remote --heads origin 'auto/strategy-r*'` lists (numeric `<N>` only). When `kb test stale --json` (run on that fresh default) has no strategy finding and a merged PR exists, change nothing and end `AUTO-RESULT: done`. An open PR means a crashed run: `git switch auto/strategy` (or the `-r<N>` branch) and continue at step 3 of the merge rule.
+
+**Branch.** This replaces `--amend` step 1's `strategy/rev-<N>` and step 4's branch name. Start from the fresh default: `git fetch origin && git switch -c auto/strategy origin/<default>`. When `git ls-remote --heads origin auto/strategy` lists the branch, run `kb pr find --head auto/strategy --state all --json`. No PR ever means a run crashed after its push: switch to the branch and continue at step 2 of the merge rule (open the PR). Merged or closed PRs mean the branch is spent: never force-push over it and never delete it. Use `auto/strategy-r2` instead (`-r3`, … the first name `git ls-remote` does not list), with the same checks.
 
 **Allowed changes.** Apply these without asking the Tester; one change per finding, as in `--amend` step 2:
 
 - `pin-moved`: re-pin the row.
-- `broken-target`: re-point a renamed or split target. Drop a row only when its target is gone and nothing replaces it.
+- `broken-target`: re-point a renamed or split target when the citations show the rename or split. Otherwise leave the row and record an Auto decision line proposing the drop for the Tester. Auto never drops a row.
 - `coverage`: add a row for an uncovered story, or a `last` row for a story you judge not worth a rank, so the finding clears.
 - `kb-context`: refresh the block (trigger `kb-context`).
 - `.kb/test-env.yaml` alignment (trigger `scope`).
@@ -98,14 +100,12 @@ The runner starts this skill as `/tester-strategy --amend`, when `kb test stale`
 
 `tc-revision` is not a strategy change: leave it. Nothing else changes.
 
-**Decisions.** Write each change as one `**Auto decision:**` line: the finding, what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row. A change that is only a re-pin needs no reviewer. For a re-point, an added row, a `last` row or a rank change, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the strategy rows, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once:
+**Decisions.** Write each change as one `**Auto decision:**` line: the finding, what you checked, the options, the choice, and why. Put the line directly under the `## Change log` table, outside any table row. A change that is only a re-pin needs no reviewer. For a re-point, an added row, a `last` row, a `kb-context` refresh, a `scope` alignment or a rank change, give a fresh-context reviewer (a subagent when your runtime can dispatch one, otherwise a separate pass that reads nothing but these inputs) the strategy rows, the evidence and your pick; it answers agree or object with a reason. On an objection, decide again once:
 
 - a re-point, added row or `last` row then goes ahead as you decide;
 - a rank change that is objected to twice is dropped: leave the ranks as they are and record the proposal (the old and new rank, the evidence) in its Auto decision line for the Tester.
 
 **Revise.** As `--amend` step 3. The Review cell starts with `auto`, for example `auto: reviewer agreed`. A rank change that stands adds the trigger `priority`.
-
-**Branch.** Start from `git fetch origin` and `git switch -c auto/strategy origin/<default>`. When `git ls-remote --heads origin auto/strategy` lists the branch, run `kb pr find --head auto/strategy --state all --json`. No PR ever means a run crashed after its push: switch to the branch and continue at step 3 of the merge rule. Merged or closed PRs mean the branch is spent: never force-push over it and never delete it. Use `auto/strategy-r2` instead (`-r3`, … the first name `git ls-remote` does not list), with the same checks.
 
 **Lint, Q1.** Run `kb strategy lint docs/test-strategy.md --hub` until it exits 0; fix by the rules above, never by skipping a finding. A lint that will not pass ends `AUTO-RESULT: failed lint`. Then Q1 as in New step 7, as a subagent. When you cannot dispatch one, end `AUTO-RESULT: failed test-review no-subagents`. A BLOCKER still standing after round 2 ends `AUTO-RESULT: failed test-review <id>`.
 

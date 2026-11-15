@@ -397,3 +397,14 @@ def _log(*rows):
 )
 def test_auto_reordered(rows, want):
     assert teststrategy.auto_reordered(_log(*rows)) == want
+
+
+def test_auto_decision_lines_under_change_log_still_lint_clean():
+    text = STRATEGY + (
+        "\n## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 2 | 2026-11-20 | scope | re-pin | M-checkout | auto: agreed |\n\n"
+        "**Auto decision:** pin-moved; re-pin to rev 3; reviewer agreed.\n"
+    ).replace("> Revision: 1", "> Revision: 2")
+    report = teststrategy.lint(text)
+    assert report.passed, report.issues

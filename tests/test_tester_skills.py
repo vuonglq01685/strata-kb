@@ -112,6 +112,10 @@ def test_strategy_body_has_auto_mode():
     for p in ("\n## Auto mode", "auto/strategy", "**Auto decision:**"):
         assert p in t, p
     assert "not available yet" not in t
+    assert "Auto never drops a row" in t
+    assert t.index("**Branch.**") < t.index("**Allowed changes.**")
+    assert "replaces `--amend` step 1" in t
+    assert "git switch --detach origin/<default>" in t
     assert "Never merge" in t
 
 
