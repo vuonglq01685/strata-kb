@@ -21,7 +21,7 @@ from strata_kb.lintcore import LintReport
 
 SKIP_NOTE = "cross-repo id check skipped — pass repo_id"
 _CONFIG_READ_ERRORS = (yaml.YAMLError, ValidationError, ValueError, OSError)
-CLOSED_SKIP_NOTE = "closed-story check skipped — pass ticket_id"
+CLOSED_SKIP_NOTE = "closed-story check skipped — pass ticket_id or a file path"
 CLAIM_NOTE = "claim check skipped (needs the hub API)"
 
 
@@ -88,8 +88,6 @@ def closed_story_issues(
     story = parent_id or ticket_id
     try:
         repos, _ = planstatus.hub_plans(hub)
-        if not repos:
-            return unchecked
         rows = [s for r in repos for m in r.missions for s in m.stories]
         rows += [s for r in repos for s in r.unparented]
         if not any(s.us_id == story and s.test_status == "closed" for s in rows):

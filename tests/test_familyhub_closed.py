@@ -86,3 +86,9 @@ def test_lint_child_bug_under_closed_parent_bug_is_not_checked(plan_hub):
 def test_lint_without_ticket_id_notes_skip(plan_hub):
     rep = familyhub.lint(_doc(1), plan_hub)
     assert familyhub.CLOSED_SKIP_NOTE in rep.notes
+
+
+def test_planless_hub_has_no_closed_story_issue(fed_hub):
+    from strata_kb.hub import HubHandle
+
+    assert familyhub.closed_story_issues(STORY, "", 2, HubHandle(root=fed_hub)) == []
