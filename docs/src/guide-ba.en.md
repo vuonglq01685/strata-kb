@@ -702,8 +702,8 @@ A non-admin login on classic-only protection is refused: it cannot read the revi
 3. Re-run `kb init --kind ba`. It merges the permission allowlist into
    `.claude/settings.json` (your entries stay) and refreshes the skills.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN` (the values behind `.mcp.json`), and
-   have the `claude` CLI on the `PATH`, **logged in with a Claude subscription**. The
-   runner never uses an API key and inherits whatever login `claude` has.
+   have the `claude` CLI on the `PATH`, **logged in with a Claude subscription**. 
+   `claude -p` runs with the `claude` login on that machine, or with `ANTHROPIC_API_KEY` when it is exported in the runner's environment (that key is then billed).
 
 ## 4.3 Run and stop
 

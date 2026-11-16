@@ -701,8 +701,8 @@ Tài khoản không phải admin mà chỉ có protection classic bị từ ch�
 3. Chạy lại `kb init --kind ba`. Nó gộp allowlist quyền vào `.claude/settings.json` (các mục
    của bạn được giữ) và làm mới skill.
 4. Export `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN` (các giá trị phía sau `.mcp.json`), và
-   có CLI `claude` trong `PATH`, **đăng nhập bằng gói đăng ký Claude**. Runner không bao giờ
-   dùng API key và kế thừa bất cứ đăng nhập nào `claude` đang có.
+   có CLI `claude` trong `PATH`, **đăng nhập bằng gói đăng ký Claude**. 
+   `claude -p` chạy bằng đăng nhập `claude` trên máy đó, hoặc bằng `ANTHROPIC_API_KEY` nếu biến này được export trong môi trường của runner (khi đó key ấy bị tính phí).
 
 ## 4.3 Chạy và dừng
 

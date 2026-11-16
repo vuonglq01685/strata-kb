@@ -349,8 +349,7 @@ allowlist (it does not allow `gh api`) stops the agent from doing so. The harden
    (`kb test-env verify` exits `0`). Auto cannot confirm a deploy without it.
 5. **Refresh the settings** (see below).
 6. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`, and have the `claude` CLI on the
-   `PATH`, **logged in with a Claude subscription**. The runner never uses an API key and
-   inherits whatever login `claude` has. The
+   `PATH`, **logged in with a Claude subscription**. `claude -p` runs with the `claude` login on that machine, or with `ANTHROPIC_API_KEY` when it is exported in the runner's environment (that key is then billed). The
    runner reads other Testers' claims through the hub API, so it must be reachable.
 7. Keep `main` as the default branch; the skills run `git fetch origin`.
 8. Set up the merge policy in 4.1.

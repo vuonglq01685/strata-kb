@@ -348,7 +348,7 @@ ruleset nó không bypass được.
    (`kb test-env verify` thoát `0`). Thiếu nó, auto không xác nhận được việc deploy.
 5. **Làm mới settings** (xem bên dưới).
 6. Export `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`, và có CLI `claude` trong `PATH`,
-   **đăng nhập bằng gói Claude subscription**. Runner không bao giờ dùng API key và kế thừa bất cứ đăng nhập nào `claude` đang có. Runner
+   **đăng nhập bằng gói Claude subscription**. `claude -p` chạy bằng đăng nhập `claude` trên máy đó, hoặc bằng `ANTHROPIC_API_KEY` nếu biến này được export trong môi trường của runner (khi đó key ấy bị tính phí). Runner
    đọc claim của các Tester khác qua API của hub, nên hub phải truy cập được.
 7. Giữ `main` làm nhánh mặc định; các skill chạy `git fetch origin`.
 8. Thiết lập merge policy ở 4.1.
