@@ -1190,7 +1190,7 @@ def auto_on(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
-    """Turn full-auto mode on (ba/dev repos only). Prints the risks first."""
+    """Turn full-auto mode on (ba, dev or tester repos). Prints the risks first."""
     from strata_kb.autorun import switch
 
     _refuse_inside_auto_task("on")
@@ -1199,9 +1199,9 @@ def auto_on(
     path = kb_dir / "config.yaml"
     try:
         kind = load_config(kb_dir).kind
-        if kind not in ("ba", "dev"):
+        if kind not in ("ba", "dev", "tester"):
             typer.secho(
-                f"kb auto works in ba or dev repos only (this repo kind: {kind or 'unset'})",
+                f"kb auto works in ba, dev or tester repos only (this repo kind: {kind or 'unset'})",
                 fg=typer.colors.RED,
             )
             raise typer.Exit(1)
@@ -1328,6 +1328,7 @@ def auto_run(
                     qa=qa,
                     run_task=task_runner,
                     claims=runner.build_claims(root, kb_dir, cfg),
+                    tester_claims=runner.build_tester_claims(cfg),
                 )
                 typer.echo(outcome)
                 code = runner.EXIT_STOPPED if outcome == "stopped" else runner.EXIT_DONE
@@ -2325,7 +2326,7 @@ def guard_stop(
         return
     # Always exit 0, silent on failure: a non-zero Stop hook would trap the session.
     try:
-        decision = guard.stop_decision(json.loads(sys.stdin.read()), os.environ)
+        decision = guard.stop_decision(json.loads(sys.stdin.read()), os.environ, kb_dir)
         if decision is not None:
             typer.echo(json.dumps(decision))
     except Exception as exc:  # noqa: BLE001 -- the hook must absorb every failure
@@ -4057,6 +4058,24 @@ def pr_checks(
         raise typer.Exit(code)
 
 
+def _refuse_tester_merge() -> None:
+    """A tester repo merges only inside `kb auto`. The config is read at the git
+    root, so a subdirectory does not escape; an unreadable one refuses too."""
+    from strata_kb import gitio
+    from strata_kb.config import load_config
+
+    msg = (
+        "kb pr merge in a tester repo runs only inside kb auto; "
+        "merge the report PR on GitHub"
+    )
+    try:
+        kind = load_config(gitio.git_root(Path.cwd()) / ".kb").kind
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        raise _pr_fail(f"{msg} (the repo config cannot be read: {exc})") from exc
+    if kind == "tester":
+        raise _pr_fail(msg)
+
+
 @pr_app.command("merge")
 def pr_merge(
     ref: str | None = typer.Argument(None, help="PR number or branch"),
@@ -4068,8 +4087,13 @@ def pr_merge(
     ),
 ) -> None:
     """Merge a PR (default squash); optionally delete its head branch."""
-    from strata_kb import ghrest
+    import os
 
+    from strata_kb import ghrest
+    from strata_kb.llm import AUTO_TASK_ENV
+
+    if os.environ.get(AUTO_TASK_ENV) != "1":
+        _refuse_tester_merge()
     if squash and merge:
         raise _pr_fail("give --squash or --merge, not both")
     pr = ghrest.merge_pr(Path.cwd(), ref, "merge" if merge else "squash", delete_branch)

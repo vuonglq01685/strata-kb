@@ -378,3 +378,17 @@ def test_test_report_candidates_hide_logged(web_client_logged_in, plan_hub, tmp_
     assert "ST-0/TC-3" in web_client_logged_in.get(url).text
     publish_bug(plan_hub.root, tmp_path, f"{STORY} R1 RD1")
     assert "ST-0/TC-3" not in web_client_logged_in.get(url).text
+
+
+def test_auto_reordered_badge_on_panel_and_page(web_client_logged_in, plan_hub):
+    log = (
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 4 | 2026-11-20 | priority | x | - | auto: agreed |\n"
+    )
+    publish_strategy(plan_hub.root, REPO, CLEAN)
+    assert "auto-reordered" not in web_client_logged_in.get("/ui/tests").text
+    publish_strategy(plan_hub.root, REPO, CLEAN + log)
+    assert "auto-reordered (rev 4)" in web_client_logged_in.get("/ui/tests").text
+    page = web_client_logged_in.get("/ui/tests/strategy?repo=tester-one").text
+    assert "auto-reordered (rev 4)" in page

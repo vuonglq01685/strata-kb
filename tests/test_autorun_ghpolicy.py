@@ -361,3 +361,10 @@ def test_missing_piece_names_the_non_counted_sources():
 def test_odd_classic_shapes_are_refusals_not_crashes(prot):
     out = _run(_routes(admin=True, protection=prot))
     assert any("could not read the branch protection of main" in m for m in out)
+
+
+def test_tester_requires_the_lint_job():
+    assert ghpolicy.REQUIRED_JOBS["tester"] == ("lint",)
+    (msg,) = _run(_routes(rules=_rules(contexts=("other",))), kind="tester")
+    assert "'lint'" in msg and "in the Tester guide" in msg
+    assert _run(_routes(), kind="tester") == []

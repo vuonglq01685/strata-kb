@@ -343,3 +343,14 @@ def order(strategy: Strategy | None, stories: list[StoryInfo]) -> list[Placement
 def empty_rows(strategy: Strategy, stories: list[StoryInfo]) -> list[Row]:
     hit = {id(p.row) for p in (place(strategy, s) for s in stories) if p.row}
     return [r for r in strategy.rows if id(r) not in hit]
+
+
+def auto_reordered(text: str) -> int | None:
+    """Newest `priority` revision made by auto since the last non-auto revision."""
+    since: list[planrev.ChangeRow] = []
+    for row in reversed(planrev.parse_change_log(text)):
+        if not row.review.strip().lower().startswith("auto"):
+            break
+        since.append(row)
+    revs = [r.rev for r in since if "priority" in r.triggers]
+    return max(revs, default=None)

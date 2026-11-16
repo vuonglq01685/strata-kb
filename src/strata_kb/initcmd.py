@@ -659,7 +659,8 @@ def record_asset_store(config_path: Path, mode: str) -> str:
 _SETTINGS_REL = ".claude/settings.json"
 
 # Per-kind additions to the shared auto-mode settings template. The tester
-# also may never merge a PR in phase 1 (denied, not just told).
+# merges only inside `kb auto` (`kb pr merge` refuses a tester repo outside
+# it); `gh pr merge` and `kb publish` stay denied.
 TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb test-env *)",
     "Bash(kb testcase *)",
@@ -677,17 +678,33 @@ TESTER_ALLOW: tuple[str, ...] = (
     'Bash(curl -fsS -H "Authorization: Bearer $STRATA_KB_HTTP_TOKEN" '
     '"$STRATA_KB_HUB_URL/api/tests/known-failures")',
     "Bash(git remote show origin)",
+    # Read-only: the tester auto bodies check out a fresh default and list spent branches.
+    "Bash(git switch --detach origin/*)",
+    "Bash(git ls-remote --heads origin *)",
 )
+# The merge is per mode in the skill body: auto merges under policy C, a
+# manual run leaves it to a human. The tester never publishes by hand.
 TESTER_DENY: tuple[str, ...] = (
-    # Phase 1: a human merges the report PR and its merge publishes it
-    # (kb-publish-request workflow); the Tester never publishes by hand.
     "Bash(kb publish*)",
-    "Bash(kb pr merge*)",
     "Bash(gh pr merge*)",
     "Bash(git switch *--discard-changes*)",
     "Bash(git switch *--force*)",
     "Bash(git switch * -f*)",
 )
+
+# Denies an older `kb init` wrote for a tester; a refresh removes them.
+RETIRED_TESTER_DENY: tuple[str, ...] = ("Bash(kb pr merge*)",)
+
+
+def _without_retired(existing: dict) -> dict:
+    """`existing` minus the retired tester denies; input not mutated."""
+    perms = existing.get("permissions")
+    if not isinstance(perms, dict) or not isinstance(perms.get("deny"), list):
+        return existing
+    deny = perms["deny"]
+    kept = [d for d in deny if d not in RETIRED_TESTER_DENY]
+    return {**existing, "permissions": {**perms, "deny": kept}}
+
 
 # Auto-mode commands per conventions language (test runners, installs, lint and
 # build), appended to `permissions.allow` for a dev repo's languages so a
@@ -855,6 +872,8 @@ def _apply_settings(
         existing = json.loads(current)
         if not isinstance(existing, dict):
             raise ValueError("top level is not an object")
+        if kind == KIND_TESTER:
+            existing = _without_retired(existing)
         text = _dump_settings(merge_settings(existing, template))
         unchanged = current == text
     except (OSError, ValueError) as err:  # JSONDecodeError is a ValueError

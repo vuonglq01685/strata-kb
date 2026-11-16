@@ -371,3 +371,49 @@ def test_empty_rows_lists_rows_without_stories():
     ]
     got = teststrategy.empty_rows(S, [_info("M-checkout-US1", "M-checkout")])
     assert [r.target for r in got] == ["M-checkout-US5", "[srs §4]"]
+
+
+def _log(*rows):
+    head = (
+        "## Change log\n| Rev | Date | Trigger | What changed | Affected | Review |\n"
+        "|---|---|---|---|---|---|\n"
+    )
+    return head + "".join(
+        f"| {rev} | 2026-11-20 | {trig} | x | - | {rv} |\n" for rev, trig, rv in rows
+    )
+
+
+@pytest.mark.parametrize(
+    ("rows", "want"),
+    [
+        ((), None),
+        (((2, "priority", "auto: agreed"),), 2),
+        (((2, "priority", "auto"), (3, "scope", "ok")), None),
+        (((2, "priority", "Auto: x"), (3, "coverage", "auto")), 2),
+        (((2, "coverage", "auto"),), None),
+        (((2, "priority", "auto"), (3, "priority", "auto")), 3),
+        (((2, "priority", "auto"), (3, "priority", "ok"), (4, "scope", "auto")), None),
+    ],
+)
+def test_auto_reordered(rows, want):
+    assert teststrategy.auto_reordered(_log(*rows)) == want
+
+
+_EMPTY_ROW = "|   |   |   |   |   |   |\n"
+_AMENDED = STRATEGY.replace("> Revision: 1", "> Revision: 2").replace(
+    _EMPTY_ROW, "| 2 | 2026-11-20 | scope | re-pin | M-checkout | auto: agreed |\n"
+)
+_DECISION = "\n**Auto decision:** pin-moved; re-pin to rev 3; reviewer agreed.\n"
+
+
+def test_auto_decision_line_under_change_log_table_lints_clean():
+    text = _AMENDED.replace("agreed |\n", "agreed |\n" + _DECISION, 1)
+    assert _DECISION in text
+    report = teststrategy.lint(text)
+    assert report.passed, report.issues
+
+
+def test_auto_change_log_row_control_fails_when_revision_not_bumped():
+    # negative control: the same row without the revision bump must fail lint
+    text = _AMENDED.replace("> Revision: 2", "> Revision: 1")
+    assert not teststrategy.lint(text).passed

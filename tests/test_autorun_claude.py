@@ -339,3 +339,71 @@ def test_timeout_meta_has_log(tmp_path, monkeypatch):
     result = run_task(tmp_path, "/x", log_dir=tmp_path / "logs", timeout=5)
     assert Path(str(result.meta["log"])).exists()
     assert result.meta["session_id"] is None
+
+
+# --- tester result kinds -----------------------------------------------------
+
+_OLD_BA_PROMPT = "/x A1\n\nAuto mode is ON for this ba repo. Follow the \"Auto mode\" section of the skill. Never ask the human anything; a question for the human goes into the hub's Q&A instead.\n\nRun git from the working directory; never use `git -C`. When a rule of this repo (`CLAUDE.md`, `AGENTS.md`, ...) needs a command you are not allowed to run, skip that step and name it in the PR's notes; do not stop or fail for it.\n\nA `kb` command that has a `strata-kb` MCP tool counts as no CLI when it cannot run here (`kb` is missing, the permission system denies it, it refuses in this environment, or it cannot reach the hub): use its MCP tool instead. A blocked CLI is not a reason to fail while the MCP tool works.\n\nEnd your reply with exactly one line, and make it the last line, in one of these five forms:\nAUTO-RESULT: done\nAUTO-RESULT: blocked-qa Q<id>[,Q<id>...]\nAUTO-RESULT: blocked-split <bug-id>\nAUTO-RESULT: blocked-review <pr-url>\nAUTO-RESULT: failed <reason>\n"
+
+
+def test_ba_prompt_is_byte_identical_to_the_old_text():
+    assert prompt_for("x", "A1", "ba") == _OLD_BA_PROMPT
+
+
+def test_dev_prompt_is_byte_identical_to_the_old_text():
+    old = _OLD_BA_PROMPT.replace("this ba repo", "this dev repo")
+    assert prompt_for("x", "A1", "dev") == old
+
+
+def test_tester_prompt_lists_seven_forms():
+    from strata_kb.autorun.claude import TESTER_RESULT_FORMS, result_forms
+
+    prompt = prompt_for("x", "", "tester")
+    assert (
+        len(TESTER_RESULT_FORMS) == 7 and result_forms("tester") is TESTER_RESULT_FORMS
+    )
+    assert result_forms("dev") is RESULT_FORMS
+    assert "one of these seven forms" in prompt
+    for form in TESTER_RESULT_FORMS:
+        assert form in prompt
+
+
+@pytest.mark.parametrize(
+    "reason", ["env-locked", "not-deployed", "env-unhealthy", "claim-taken"]
+)
+def test_parse_blocked_env(reason):
+    got = parse_result(f"x\nAUTO-RESULT: blocked-env M-x-US3 {reason}", "tester")
+    assert got == TaskResult("blocked-env", ("M-x-US3", reason))
+
+
+def test_parse_incomplete():
+    assert parse_result("AUTO-RESULT: incomplete M-x-US3", "tester") == TaskResult(
+        "incomplete", ("M-x-US3",)
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "AUTO-RESULT: blocked-env ../x env-locked",
+        "AUTO-RESULT: blocked-env M-x-US3 sleepy",
+        "AUTO-RESULT: blocked-env M-x-US3",
+        "AUTO-RESULT: blocked-env",
+        "AUTO-RESULT: incomplete",
+        "AUTO-RESULT: incomplete a/b",
+        "AUTO-RESULT: incomplete a b",
+    ],
+)
+def test_parse_bad_tester_lines_fail(line):
+    got = parse_result(line, "tester")
+    assert got.kind == "failed" and got.reason.startswith("bad result line")
+
+
+@pytest.mark.parametrize("kind", ["", "ba", "dev"])
+@pytest.mark.parametrize(
+    "line",
+    ["AUTO-RESULT: blocked-env X not-deployed", "AUTO-RESULT: incomplete X"],
+)
+def test_tester_forms_fail_outside_tester_repos(kind, line):
+    got = parse_result(line, kind)
+    assert got.kind == "failed" and got.reason.startswith("bad result line")

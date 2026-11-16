@@ -16,7 +16,14 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.routing import Route
 
-from strata_kb import bugcandidates, planrev, planstatus, strategyhub, testflow
+from strata_kb import (
+    bugcandidates,
+    planrev,
+    planstatus,
+    strategyhub,
+    testflow,
+    teststrategy,
+)
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.serving.config import ServerConfig
@@ -111,6 +118,7 @@ def _panel(view: strategyhub.StrategyView) -> dict:
         "revision": view.strategy.revision,
         "top": ranked[:TOP_RANKS],
         "regrounding": bool(view.findings),
+        "auto_reordered": teststrategy.auto_reordered(view.text),
     }
 
 
@@ -193,6 +201,7 @@ def test_routes(config: ServerConfig) -> list[Route]:
             title="Test strategy — Test Report",
             view=view,
             story_status={s: st for _, placed in view.rows for s, st in placed},
+            auto_reordered=teststrategy.auto_reordered(view.text),
             text_html=md_render(view.text),
         )
 

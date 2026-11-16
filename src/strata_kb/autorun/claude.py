@@ -19,9 +19,17 @@ from pathlib import Path
 from typing import Literal
 
 from strata_kb.llm import AUTO_TASK_ENV, RunnerError, _extract_reply, envelope_meta
+from strata_kb.planstatus import safe_name
 
 Kind = Literal[
-    "done", "blocked-qa", "blocked-split", "blocked-review", "failed", "usage-limit"
+    "done",
+    "blocked-qa",
+    "blocked-split",
+    "blocked-review",
+    "blocked-env",
+    "incomplete",
+    "failed",
+    "usage-limit",
 ]
 
 RESULT_PREFIX = "AUTO-RESULT: "
@@ -33,6 +41,12 @@ RESULT_FORMS = (
     "AUTO-RESULT: blocked-review <pr-url>",
     "AUTO-RESULT: failed <reason>",
 )
+ENV_REASONS = ("env-locked", "not-deployed", "env-unhealthy", "claim-taken")
+TESTER_RESULT_FORMS = RESULT_FORMS + (
+    f"AUTO-RESULT: blocked-env <story> <{'|'.join(ENV_REASONS)}>",
+    "AUTO-RESULT: incomplete <story>",
+)
+_FORM_COUNT_WORDS = {5: "five", 7: "seven"}
 _PR_URL = re.compile(r"https://\S+/pull/\d+")
 DEFAULT_TIMEOUT = 4 * 3600
 MAX_REASON = 500
@@ -52,8 +66,11 @@ class TaskResult:
     meta: Mapping[str, object] = field(default_factory=dict, compare=False, hash=False)
 
 
-def parse_result(reply: str) -> TaskResult:
-    """The reply's last non-empty line must be the `AUTO-RESULT:` line."""
+def parse_result(reply: str, kind: str = "") -> TaskResult:
+    """The reply's last non-empty line must be the `AUTO-RESULT:` line.
+
+    The tester-only forms parse only when `kind` is "tester".
+    """
     lines = [line.strip() for line in reply.splitlines() if line.strip()]
     if not lines or not lines[-1].startswith(RESULT_PREFIX):
         return TaskResult("failed", (), "no result line")
@@ -72,10 +89,21 @@ def parse_result(reply: str) -> TaskResult:
         return TaskResult("blocked-split", (rest,))
     if word == "blocked-review" and _PR_URL.fullmatch(rest):
         return TaskResult("blocked-review", (rest,))
+    if kind == "tester" and word == "blocked-env":
+        story, _, reason = rest.partition(" ")
+        if safe_name(story) and reason.strip() in ENV_REASONS:
+            return TaskResult("blocked-env", (story, reason.strip()))
+    if kind == "tester" and word == "incomplete" and safe_name(rest):
+        return TaskResult("incomplete", (rest,))
     return TaskResult("failed", (), f"bad result line: {lines[-1][:200]}")
 
 
+def result_forms(kind: str) -> tuple[str, ...]:
+    return TESTER_RESULT_FORMS if kind == "tester" else RESULT_FORMS
+
+
 def prompt_for(skill: str, arg: str, kind: str) -> str:
+    forms = result_forms(kind)
     return (
         f"/{skill} {arg}".strip()
         + f"""
@@ -94,8 +122,8 @@ in this environment, or it cannot reach the hub): use its MCP tool instead. A \
 blocked CLI is not a reason to fail while the MCP tool works.
 
 End your reply with exactly one line, and make it the last line, in one of \
-these five forms:
-{chr(10).join(RESULT_FORMS)}
+these {_FORM_COUNT_WORDS[len(forms)]} forms:
+{chr(10).join(forms)}
 """
     )
 
@@ -149,6 +177,7 @@ def run_task(
     timeout: int = DEFAULT_TIMEOUT,
     model: str = "",
     effort: str = "",
+    kind: str = "",
 ) -> TaskResult:
     cmd = [
         shutil.which(executable) or executable,
@@ -209,4 +238,4 @@ def run_task(
         )
     if problem:
         return _error(problem, meta)
-    return replace(parse_result(reply), meta=meta)
+    return replace(parse_result(reply, kind), meta=meta)

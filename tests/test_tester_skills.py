@@ -41,8 +41,9 @@ def test_test_story_body_orders_the_pipeline():
 
 def test_test_story_body_never_merges():
     t = _body("tester-test-story")
-    assert "never merge" in t
-    assert "kb pr merge" not in t and "gh pr merge" not in t
+    manual = t[: t.index("\n## Auto mode")]
+    assert "Never merge it" in manual  # manual mode: a human merges
+    assert "kb pr merge" not in manual and "gh pr merge" not in manual
 
 
 def test_test_story_body_pins_outcomes_and_rules():
@@ -102,10 +103,21 @@ def test_env_setup_body_keeps_secrets_out_of_yaml():
     assert t.index("kb test-env check") < t.index("kb test-env verify")
 
 
-@pytest.mark.parametrize("name", SKILLS)
-def test_bodies_have_no_auto_mode_section(name):
-    # kb auto for tester is phase 3; the settings allowlist test scans these.
-    assert "\n## Auto mode" not in _body(name)
+def test_env_setup_has_no_auto_mode_section():
+    assert "\n## Auto mode" not in _body("tester-env-setup")
+
+
+def test_strategy_body_has_auto_mode():
+    t = _body("tester-strategy")
+    for p in ("\n## Auto mode", "auto/strategy", "**Auto decision:**"):
+        assert p in t, p
+    assert "not available yet" not in t
+    assert "Auto never drops a row" in t
+    assert "AUTO-RESULT: failed broken-target <target>" in t
+    assert t.index("**Branch.**") < t.index("**Allowed changes.**")
+    assert "replaces `--amend` step 1" in t
+    assert "git switch --detach origin/<default>" in t
+    assert "Never merge" in t
 
 
 def test_branch_switch_comes_before_push_and_default_is_refused():
@@ -249,7 +261,6 @@ def test_strategy_body_names_its_commands_and_modes():
         "kb report-ingest",
         "--amend",
         "kb mission next --from-hub --json",
-        "Auto mode is not available yet",
         "`broken-target`",
         "`pin-moved`",
         "`coverage`",
@@ -297,3 +308,77 @@ def test_test_story_no_argument_proposes_next_story():
 def test_changelog_mentions_test_next():
     log = (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
     assert "kb test next" in log.split("## 1.37.2", 1)[0]
+
+
+def test_test_story_auto_mode_section():
+    from strata_kb.autorun.claude import TESTER_RESULT_FORMS
+
+    t = _body("tester-test-story")
+    assert "\n## Auto mode\n" in t
+    auto = t[t.index("\n## Auto mode\n") :]
+    assert auto.index("### Result line") > auto.index("kb auto status --json")
+    for form in TESTER_RESULT_FORMS:
+        assert f"`{form}`" in auto, form
+    for needle in (
+        "kb pr merge --squash --delete-branch",
+        "kb pr checks --watch",
+        "kb pr view --json",
+        "blocked-env <story> not-deployed",
+        "blocked-env <story> env-locked",
+        "blocked-env <story> claim-taken",
+        "blocked-env <story> env-unhealthy",
+        "failed test-review no-subagents",
+        "failed test-review <id>",
+        "incomplete <story>",
+        "--phase review --pr <pr-url>",
+        "--state all --json",
+        "report-pr-closed <pr-url>",
+        "kb claim take <story>",
+        "do not release the claim after `kb pr open`",
+    ):
+        assert needle in auto, needle
+    assert "reserved for the unattended runner" not in t
+
+
+@pytest.mark.parametrize(
+    "rel",
+    (
+        ".claude/skills/tester-test-story/SKILL.md",
+        ".github/prompts/tester-test-story.prompt.md",
+        ".cursor/commands/tester-test-story.md",
+    ),
+)
+def test_rendered_test_story_skills_carry_the_auto_section(tmp_path, rel):
+    from tests.test_init_tester import init_repo
+
+    init_repo(tmp_path, "tester")
+    text = (tmp_path / rel).read_text(encoding="utf-8")
+    assert "\n## Auto mode\n" in text
+    assert "kb pr merge --squash --delete-branch" in text
+
+
+def test_test_story_crash_check_is_fresh_and_adopts_only_own_prs():
+    auto = _body("tester-test-story").split("\n## Auto mode", 1)[1]
+    check = auto.split("**Deploy check (step 2).**", 1)[0]
+    assert "git switch --detach origin/<default>" in check
+    assert "Let `<n>` be the row's `test_round` plus one" in check
+    assert check.index("Let `<n>`") < check.index("kb pr find")
+    merged = check.index("`origin/<default>` already holds `reports/<story>/R<n>.md`")
+    assert merged < check.index("kb pr find")  # merged, unpublished: done
+    assert "has not published it yet" in check
+    assert "one more than the highest" not in check
+    assert "git rev-parse --verify test/<story>-R<n>" in check
+    assert "AUTO-RESULT: blocked-review <pr-url>" in check  # someone else's PR
+
+
+def test_test_story_not_testable_stop_has_a_result_line():
+    auto = _body("tester-test-story").split("\n## Auto mode", 1)[1]
+    para = auto.split("**Not testable (step 1).**", 1)[1].split("**Deploy", 1)[0]
+    assert "`closed` ends `AUTO-RESULT: done`" in para
+    assert "AUTO-RESULT: blocked-env <story> claim-taken" in para
+
+
+@pytest.mark.parametrize("name", ["tester-test-story", "tester-strategy"])
+def test_intro_merge_ban_is_qualified_for_auto_mode(name):
+    intro = _body(name).split("\n## ", 1)[0]
+    assert "outside Auto mode" in intro

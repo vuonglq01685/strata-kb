@@ -4,7 +4,7 @@
   <div class="page-head">
     <p class="crumbs"><a href="/ui/tests">Test Report</a> <span class="sep">/</span> Strategy</p>
     <h1 style="font-size:26px">Test strategy</h1>
-    <p class="meta-line"><span class="note">rev {{ view.strategy.revision }}{% if view.strategy.plan %} · plan {{ view.strategy.plan }}{% endif %}</span></p>
+    <p class="meta-line"><span class="note">rev {{ view.strategy.revision }}{% if view.strategy.plan %} · plan {{ view.strategy.plan }}{% endif %}</span>{% if auto_reordered %} <span class="badge badge-pending">auto-reordered (rev {{ auto_reordered }})</span>{% endif %}</p>
   </div>
   <article class="reader-body md-body">{{ text_html | safe }}</article>
   <div class="panel">

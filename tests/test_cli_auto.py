@@ -244,3 +244,25 @@ def test_auto_run_writes_trust_on_cloud_only(repo, monkeypatch, kind, extra):
     assert [[p.resolve() for p in c] for c in calls] == [
         [root, *[(root / e).resolve() for e in extra]]
     ]
+
+
+def test_once_supplies_tester_claims_for_a_tester_repo(repo, monkeypatch):
+    monkeypatch.setattr(
+        runner_mod,
+        "build_deps",
+        lambda kb, hub="": (
+            KBConfig(kind="tester"),
+            HubHandle(root=Path(".")),
+            object(),
+        ),
+    )
+    client = object()
+    monkeypatch.setattr(runner_mod.claimclient, "from_env", lambda: client)
+    seen: dict = {}
+    monkeypatch.setattr(
+        runner_mod, "run_once", lambda *a, **kw: seen.update(kw) or "idle"
+    )
+
+    cli.invoke(app, ["auto", "run", "--once"])
+
+    assert seen["tester_claims"] is client and seen["claims"] is None

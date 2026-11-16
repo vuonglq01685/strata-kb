@@ -15,7 +15,7 @@
   {% if strategies %}
   {% for st in strategies %}
   <div class="panel">
-    <div class="panel-head"><h2><a href="/ui/tests/strategy?repo={{ st.repo | urlencode }}">Strategy</a>{% if st.plan %} — {{ st.plan }}{% endif %}</h2><span class="note">rev {{ st.revision }}{% if st.date %} · {{ st.date }}{% endif %}</span>{% if st.regrounding %} <span class="badge badge-pending">needs re-grounding</span>{% endif %}</div>
+    <div class="panel-head"><h2><a href="/ui/tests/strategy?repo={{ st.repo | urlencode }}">Strategy</a>{% if st.plan %} — {{ st.plan }}{% endif %}</h2><span class="note">rev {{ st.revision }}{% if st.date %} · {{ st.date }}{% endif %}</span>{% if st.regrounding %} <span class="badge badge-pending">needs re-grounding</span>{% endif %}{% if st.auto_reordered %} <span class="badge badge-pending">auto-reordered (rev {{ st.auto_reordered }})</span>{% endif %}</div>
     {% for row, placed in st.top %}
     <div class="queue-row">
       <span class="cite">#{{ row.rank }}</span>

@@ -62,10 +62,11 @@ class Script:
     """A `run_task` double: returns the scripted results in order."""
 
     def __init__(self, *results: TaskResult):
-        self.results, self.prompts = list(results), []
+        self.results, self.prompts, self.kinds = list(results), [], []
 
-    def __call__(self, root, prompt, *, log_dir):
+    def __call__(self, root, prompt, *, log_dir, kind=""):
         self.prompts.append(prompt)
+        self.kinds.append(kind)
         return self.results.pop(0)
 
 
@@ -1883,3 +1884,142 @@ def test_parked_key_with_spaces_is_skipped_and_kept_whole(env, monkeypatch):
     )
     assert out.last_done == "ba-bug-report:--from-report S1 R2 RD1"
     assert out.waiting_review == ()
+
+
+TESTER = "kind: tester\nrepo_id: svc\nintake: http://i\nauto:\n  enabled: true\n"
+OK_PROBE = type("P", (), {"returncode": 0, "stderr": ""})()
+
+
+class _TesterWorld:
+    """Fakes for everything a tester preflight reads; defaults = all ok."""
+
+    def __init__(self, root: Path, monkeypatch):
+        from strata_kb import claimclient, cloud, testenv
+
+        self.root, self.cmds = root, []
+        self.probe_fail: dict[int, object] = {}
+        self.apps = [testenv.App(repo="o/fe", version_check={"url": "u", "field": "f"})]
+        self.verify_rc = 0
+        self.load_error = False
+        self.claims_error = ""
+        self.cloud = False
+        monkeypatch.setattr(cloud, "is_cloud", lambda: self.cloud)
+        monkeypatch.setattr(testenv, "load", self._load)
+        monkeypatch.setattr(testenv, "verify", lambda r, **kw: self.verify_rc)
+
+        def from_env():
+            if self.claims_error:
+                raise KbError(self.claims_error)
+
+        monkeypatch.setattr(claimclient, "from_env", from_env)
+
+    def _load(self, root):
+        from strata_kb import testenv
+
+        if self.load_error:
+            raise testenv.TestEnvError("nope")
+        return type("E", (), {"apps": self.apps})()
+
+    def run(self, cmd, **kw):
+        assert kw["timeout"] == 60
+        self.cmds.append(cmd)
+        res = self.probe_fail.get(len(self.cmds))
+        if isinstance(res, BaseException):
+            raise res
+        return res or OK_PROBE
+
+
+def _tester(env, monkeypatch):
+    root, kb_dir, _, _ = env
+    monkeypatch.setattr(runner_mod, "_switch_refusals", lambda r: [])
+    monkeypatch.setattr(
+        runner_mod,
+        "registry_or_reason",
+        lambda kb, hub: (
+            _registry(**{"o/r": RegistryEntry(repo_id="svc", auto_merge=True)}),
+            "",
+        ),
+    )
+    _write_config(kb_dir, TESTER)
+    return root, kb_dir, _TesterWorld(root, monkeypatch)
+
+
+def test_tester_preflight_passes_when_everything_is_ok(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    assert preflight(root, kb_dir, run=w.run) == []
+    assert w.cmds[0][1:3] == ["--no-install", "playwright"]
+    assert w.cmds[1][1] == "-e"
+
+
+def test_tester_preflight_refuses_on_cloud(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    w.cloud = True
+    assert "tester auto runs on the Tester's machine, not on cloud" in preflight(
+        root, kb_dir, run=w.run
+    )
+
+
+@pytest.mark.parametrize("how", ["verify", "load"])
+def test_tester_preflight_refuses_unverified_env(env, monkeypatch, how):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    w.verify_rc, w.load_error = (1, False) if how == "verify" else (0, True)
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert "test environment not verified" in reason and "/tester-env-setup" in reason
+
+
+def test_tester_preflight_refuses_app_without_version_check(env, monkeypatch):
+    from strata_kb import testenv
+
+    root, kb_dir, w = _tester(env, monkeypatch)
+    w.apps = [testenv.App(repo="o/be")]
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert reason == "app `o/be` has no version_check: auto cannot confirm a deploy"
+
+
+@pytest.mark.parametrize("step", [1, 2])
+@pytest.mark.parametrize(
+    "fail",
+    [
+        type("P", (), {"returncode": 1, "stderr": "boom\nmore"})(),
+        FileNotFoundError("npx"),
+        __import__("subprocess").TimeoutExpired("npx", 60),
+    ],
+)
+def test_tester_preflight_refuses_unusable_playwright(env, monkeypatch, step, fail):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    w.probe_fail = {step: fail}
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert reason.startswith("Playwright with Chromium is not usable here: ")
+    if not isinstance(fail, BaseException):
+        assert reason.endswith(": boom")
+
+
+def test_tester_preflight_refuses_retired_merge_deny(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    (root / ".claude").mkdir()
+    (root / ".claude/settings.json").write_text(
+        json.dumps({"permissions": {"deny": ["Bash(kb pr merge*)"]}}), encoding="utf-8"
+    )
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert reason == "run `kb init --kind tester` to refresh the auto-mode settings"
+
+
+def test_tester_preflight_refuses_missing_claim_api(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    w.claims_error = "X is not set"
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert reason == "the hub claim API is not set: X is not set"
+
+
+def test_preflight_kind_message_names_tester(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    _write_config(kb_dir, TESTER.replace("tester", "hub"))
+    (reason,) = preflight(root, kb_dir, run=w.run)
+    assert "auto mode needs 'ba', 'dev' or 'tester'" in reason
+
+
+def test_tester_preflight_runs_the_resolved_npx_and_node(env, monkeypatch):
+    root, kb_dir, w = _tester(env, monkeypatch)
+    monkeypatch.setattr(runner_mod.shutil, "which", lambda name: f"C:\\bin\\{name}.cmd")
+    assert preflight(root, kb_dir, run=w.run) == []
+    assert [c[0] for c in w.cmds] == ["C:\\bin\\npx.cmd", "C:\\bin\\node.cmd"]

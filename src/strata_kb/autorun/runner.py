@@ -7,16 +7,27 @@ run, like `codesync.runner`; only a stop rule, or "every ticket is done", ends i
 
 from __future__ import annotations
 
+import json
 import logging
+import shutil
+import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal, cast
 
 import yaml
 
-from strata_kb import bugcandidates, claimclient, cloud, ghrest, gitio, hubapi
+from strata_kb import (
+    bugcandidates,
+    claimclient,
+    cloud,
+    ghrest,
+    gitio,
+    hubapi,
+    testenv,
+)
 from strata_kb.autorun import claude, ghpolicy, picker, publishwatch, runlog
 from strata_kb.autorun import qa as qa_mod
 from strata_kb.autorun import state as autostate
@@ -28,6 +39,7 @@ from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
 from strata_kb.claimclient import (
+    ClaimLostError,
     ClaimRejectedError,
     ClaimRouteMissing,
     ParentStoryError,
@@ -101,7 +113,81 @@ def _switch_refusals(root: Path) -> list[str]:
     return reasons
 
 
-def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
+PROBE_TIMEOUT = 60
+_CHROMIUM_PROBE = (
+    "const {chromium}=require('@playwright/test');"
+    "(async()=>{const b=await chromium.launch();await b.close();})()"
+    ".catch(e=>{console.error(String(e).split('\\n')[0]);process.exit(1);})"
+)
+_RETIRED_DENY = "Bash(kb pr merge*)"
+
+
+def _playwright_refusal(root: Path, run: Callable) -> str | None:
+    """Why Playwright with headless Chromium is not usable here; None = usable."""
+    for cmd in (
+        ["npx", "--no-install", "playwright", "--version"],
+        ["node", "-e", _CHROMIUM_PROBE],
+    ):
+        cmd = [shutil.which(cmd[0]) or cmd[0], *cmd[1:]]  # Windows: npx.cmd
+        try:
+            done = run(
+                cmd,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=PROBE_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            why = str(exc)
+        else:
+            if done.returncode == 0:
+                continue
+            why = (done.stderr or "").strip().splitlines()[:1]
+            why = why[0] if why else f"exit {done.returncode}"
+        return f"Playwright with Chromium is not usable here: {why}"
+    return None
+
+
+def _tester_refusals(
+    root: Path, kb_dir: Path, run: Callable = subprocess.run
+) -> list[str]:
+    reasons: list[str] = []
+    if cloud.is_cloud():
+        reasons.append("tester auto runs on the Tester's machine, not on cloud")
+    try:
+        env = testenv.load(root)
+        verified = testenv.verify(root, run=run) == 0
+    except testenv.TestEnvError:
+        env, verified = None, False
+    if not verified:
+        reasons.append("test environment not verified -- run `/tester-env-setup`")
+    for app in env.apps if env else ():
+        if app.version_check is None:
+            reasons.append(
+                f"app `{app.repo}` has no version_check: auto cannot confirm a deploy"
+            )
+    if (why := _playwright_refusal(root, run)) is not None:
+        reasons.append(why)
+    try:
+        settings = json.loads(
+            (root / ".claude/settings.json").read_text(encoding="utf-8-sig")
+        )
+        deny = settings["permissions"]["deny"]
+    except (OSError, ValueError, KeyError, TypeError):
+        deny = []
+    if isinstance(deny, list) and _RETIRED_DENY in deny:
+        reasons.append("run `kb init --kind tester` to refresh the auto-mode settings")
+    try:
+        claimclient.from_env()
+    except KbError as exc:
+        reasons.append(f"the hub claim API is not set: {exc}")
+    return reasons
+
+
+def preflight(
+    root: Path, kb_dir: Path, hub: str = "", run: Callable = subprocess.run
+) -> list[str]:
     """Why `kb auto run` must refuse to start; empty = go. `hub` is the
     `--hub` flag (empty = config)."""
     cfg = load_config(kb_dir)
@@ -110,14 +196,17 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
         reasons.append("auto mode is switched off -- run `kb auto on`")
     if cfg.auto.enabled:
         reasons.extend(_switch_refusals(root))
-    if cfg.kind not in ("ba", "dev"):
+    if cfg.kind not in ("ba", "dev", "tester"):
         reasons.append(
-            f"repo kind is '{cfg.kind or 'unset'}', auto mode needs 'ba' or 'dev'"
+            f"repo kind is '{cfg.kind or 'unset'}', "
+            "auto mode needs 'ba', 'dev' or 'tester'"
         )
     if not cfg.intake:
         reasons.append(
             "`intake:` is empty in .kb/config.yaml, so a merged PR would never publish"
         )
+    if cfg.kind == "tester":  # before the registry read, which returns early
+        reasons += _tester_refusals(root, kb_dir, run)
     found, auto_merge, why = _registry_facts(kb_dir, cfg, hub)
     if why:
         reasons.append(f"the hub registry could not be read: {why}")
@@ -130,7 +219,7 @@ def preflight(root: Path, kb_dir: Path, hub: str = "") -> list[str]:
             "so intake would not merge its publish PRs"
         )
     reasons += _old_hub_refusal(cfg)
-    if cfg.kind in ("ba", "dev"):
+    if cfg.kind in ("ba", "dev", "tester"):
         reasons += ghpolicy.refusals(root, cfg.kind)
     return reasons
 
@@ -266,18 +355,53 @@ def _own_pr(root: Path, url: str) -> bool:
     return url.partition("://")[2].partition("/")[2].lower().startswith(f"{slug}/pull/")
 
 
+TESTER_STORY = "tester-test-story:"
+SKIP_ON_CLOSE = ("ba-bug-report:", "tester-strategy:--amend")
+
+
+def _release_report_claim(
+    kb_dir: Path,
+    claims_client: claimclient.ClaimClient | None,
+    story: str,
+    reason: str,
+) -> bool:
+    """Free our hub claim on a story whose report PR a human settled. True when
+    released, lost or never held here; False (entry stays parked) on a release
+    error."""
+    local = claimclient.LocalClaims(kb_dir)
+    held = local.get(story)
+    if held is None:
+        return True
+    try:
+        if claims_client is None:
+            raise KbError("no claim client")
+        claims_client.release(held[0], held[1], reason)
+    except ClaimLostError:
+        pass  # the hub already closed it: nothing left to free
+    except KbError as exc:
+        logger.warning("claim on %s not released: %s", story, exc)
+        return False
+    local.drop(story)
+    return True
+
+
 def _review_check(
     root: Path,
     kb_dir: Path,
     state: autostate.AutoState,
     view_pr=ghrest.view_pr,
+    *,
+    kind: str = "",
+    claims_client: claimclient.ClaimClient | None = None,
 ) -> autostate.AutoState:
     """Drop parked PRs a human dealt with: closed unmerged is forgotten; open,
     or unreadable, stays parked. Merged: a ticket skill (CLAIMED_SKILLS) is
     queued as the current task, because its `done` includes `kb publish`, which
     its "Already finished" path runs; other skills count `done`. A merged ticket
     stays parked while another task is current, and only one is queued per
-    turn; it is queued when the task slot is free."""
+    turn; it is queued when the task slot is free. A tester report key
+    (`tester-test-story:<story>`) also frees its hub claim, merged or closed (a
+    closed one is skipped); a failed release keeps the entry parked."""
     kept, merged, queued = [], None, state.task
     skipped = state.skipped
     for entry in state.waiting_review:
@@ -294,6 +418,18 @@ def _review_check(
             logger.warning("parked PR %s not read: %s", url, exc)
             kept.append(entry)
             continue
+        story = key[len(TESTER_STORY) :] if key.startswith(TESTER_STORY) else ""
+        if kind == "tester" and story and pr_state in ("MERGED", "CLOSED"):
+            merged_pr = pr_state == "MERGED"
+            reason = "report merged" if merged_pr else "report PR closed"
+            if not _release_report_claim(kb_dir, claims_client, story, reason):
+                kept.append(entry)
+            elif merged_pr:
+                merged = key
+            else:
+                logger.warning("parked PR %s of %s closed without merging", url, key)
+                skipped = (*skipped, key) if key not in skipped else skipped
+            continue
         if pr_state == "MERGED":
             if _ticket_of(key) is None:
                 merged = key
@@ -303,8 +439,8 @@ def _review_check(
                 kept.append(entry)
         elif pr_state == "CLOSED":
             logger.warning("parked PR %s of %s closed without merging", url, key)
-            if key.startswith("ba-bug-report:") and key not in skipped:
-                # a rejected bug draft must not be re-drafted every cycle
+            if key.startswith(SKIP_ON_CLOSE) and key not in skipped:
+                # a rejected bug draft or amend must not be redone every cycle
                 skipped = (*skipped, key)
         else:
             kept.append(entry)
@@ -461,6 +597,121 @@ def _task_for(
     return _claim_pick(root, hub, state, claims, cfg.repo_id)
 
 
+def _park(
+    state: autostate.AutoState, stories: Sequence[str], until: float
+) -> tuple[str, ...]:
+    """`state.waiting` with each story held until `until` (a re-park moves it)."""
+    parked = {e.partition(" ")[0]: e for e in state.waiting}
+    parked.update({s: f"{s} {int(until)}" for s in stories})
+    return tuple(parked.values())
+
+
+def _counts(counts: dict[str, int]) -> tuple[str, ...]:
+    return tuple(f"{k} {n}" for k, n in counts.items())
+
+
+def _tester_task(
+    root: Path,
+    kb_dir: Path,
+    cfg: KBConfig,
+    hub: HubHandle | hubapi.HubApi,
+    state: autostate.AutoState,
+    claims_client: claimclient.ClaimClient | None,
+    now,
+) -> tuple[Task | None, autostate.AutoState]:
+    """The tester's next task (no stored one) and the state with the stories the
+    pick found not deployed parked. `_Early` "done" when nothing is testable,
+    "idle" when every candidate is held or cooling. None: all candidates skipped."""
+    if not isinstance(hub, HubHandle) or claims_client is None:
+        raise KbError("a tester repo needs a local hub and a claim client")
+    t = now()
+    pick = picker.pick_tester(
+        root,
+        kb_dir,
+        hub,
+        claims_client=claims_client,
+        skip=_skip(state),
+        waiting=autostate.waiting_stories(state, t),
+    )
+    if pick.cooled:
+        state = replace(
+            state, waiting=_park(state, pick.cooled, t + cfg.auto.idle_interval)
+        )
+        autostate.save(kb_dir, state)
+    if state.last_done and (pick.task is None or pick.task.key != state.last_done):
+        # a story picked again after the pick passed it over is a new round,
+        # not hub lag (the skill's crash check catches a merged, unpublished one)
+        state = replace(state, last_done=None, same_pick=0)
+        autostate.save(kb_dir, state)
+    if pick.cause == "nothing":
+        logger.info("auto mode finished: nothing testable")
+        raise _Early("done")
+    if pick.cause == "waiting":
+        logger.info("every testable story is held or waiting")
+        raise _Early("idle")
+    return pick.task, state
+
+
+def _settle_tester(
+    kb_dir: Path,
+    state: autostate.AutoState,
+    result: claude.TaskResult,
+    now,
+    idle: float,
+) -> Outcome | None:
+    """The tester-only results; None when `_settle` handles `result` as for BA."""
+    until = now() + idle
+    if result.kind == "blocked-env":
+        story, reason = result.ids
+        if reason == "env-locked":  # every story waits for the environment
+            autostate.save(
+                kb_dir, replace(state, task=None, attempts=0, env_wait_until=until)
+            )
+            logger.info("environment locked by another round; waiting")
+            return "idle"
+        waiting = _park(state, [str(story)], until)
+        autostate.save(kb_dir, replace(state, task=None, attempts=0, waiting=waiting))
+        logger.info("%s is blocked (%s); trying the next story", story, reason)
+        return "ran"
+    if result.kind == "incomplete":
+        key = state.task or ""
+        counts = {
+            e.rpartition(" ")[0]: int(e.rpartition(" ")[2]) for e in state.incomplete
+        }
+        count = counts.pop(key, 0) + 1
+        if count >= MAX_ATTEMPTS:
+            skipped = (*state.skipped, key)
+            autostate.save(
+                kb_dir,
+                replace(
+                    state,
+                    task=None,
+                    attempts=0,
+                    skipped=skipped,
+                    incomplete=_counts(counts),
+                ),
+            )
+            logger.warning("%s ended incomplete %d times; skipping it", key, count)
+            return "ran"
+        counts[key] = count
+        waiting = _park(state, [str(result.ids[0])], until)
+        autostate.save(
+            kb_dir,
+            replace(
+                state,
+                task=None,
+                attempts=0,
+                waiting=waiting,
+                incomplete=_counts(counts),
+            ),
+        )
+        logger.info("%s ended incomplete (%d/%d)", key, count, MAX_ATTEMPTS)
+        return "ran"
+    if result.kind == "failed" and result.reason.startswith("test-review"):
+        return _stop(kb_dir, replace(state, attempts=MAX_ATTEMPTS), result.reason)
+    return None
+
+
 def _settle(
     kb_dir: Path,
     state: autostate.AutoState,
@@ -468,16 +719,24 @@ def _settle(
     backoff: Backoff,
     sleep,
     claims: RunnerClaims | None = None,
+    *,
+    tester: tuple | None = None,
 ) -> Outcome:
+    """`tester` is `(now, idle_interval)` for a tester repo, else None."""
     if result.kind == "usage-limit":
         delay = backoff.next()
         logger.warning("usage limit: %s; retrying in %ds", result.reason, delay)
         sleep(delay)
         return "ran"
     backoff.reset()
+    if tester is not None and (early := _settle_tester(kb_dir, state, result, *tester)):
+        return early
     if result.kind == "done":
         done = replace(
             state,
+            incomplete=tuple(
+                e for e in state.incomplete if e.rpartition(" ")[0] != state.task
+            ),
             task=None,
             attempts=0,
             waiting_on=(),
@@ -584,10 +843,12 @@ def run_once(
     backoff: Backoff | None = None,
     qa_thread: QaThread | None = None,
     claims: RunnerClaims | None = None,
+    tester_claims: claimclient.ClaimClient | None = None,
 ) -> Outcome:
     """One step of the loop. `cfg` is the config as just read (rule 1: a switch
     flipped between tasks stops the loop at the boundary). `claims` (dev repos
-    only) makes the step claim its ticket before working it."""
+    only) makes the step claim its ticket before working it. `tester_claims`
+    (tester repos only) is the hub client the pick reads held claims with."""
     if cfg.kind != "dev":
         claims = None
     state = autostate.load(kb_dir)
@@ -601,7 +862,11 @@ def run_once(
             "Run `kb auto on`, then `kb auto run`.",
             claims=claims,
         )
-    finished = _check_done(cfg, hub, qa)
+    tester = cfg.kind == "tester"
+    if tester and state.env_wait_until and state.env_wait_until > now():
+        logger.info("environment locked by another round; waiting")
+        return "idle"
+    finished = None if tester else _check_done(cfg, hub, qa)
     if finished is not None:
         return finished
     if cfg.kind == "ba":
@@ -612,15 +877,27 @@ def run_once(
     if state.waiting_split:
         state = _split_done(kb_dir, hub, qa, state)
     if state.waiting_review:
-        state = _review_check(root, kb_dir, state, ghrest.view_pr)
-    if state.waiting_on:
+        state = _review_check(
+            root,
+            kb_dir,
+            state,
+            ghrest.view_pr,
+            kind=cfg.kind,
+            claims_client=tester_claims,
+        )
+    if state.waiting_on and not tester:
         _beat_waiting(claims, state)
         state, ready = _answered(kb_dir, state, qa)
         if not ready:
             logger.info("waiting on questions %s", list(state.waiting_on))
             return "waiting"
     try:
-        task = _task_for(root, kb_dir, cfg, hub, state, claims)
+        if tester and not state.task:
+            task, state = _tester_task(
+                root, kb_dir, cfg, hub, state, tester_claims, now
+            )
+        else:
+            task = _task_for(root, kb_dir, cfg, hub, state, claims)
     except _Early as early:
         return early.outcome
     except (UnknownTicketError, ParentStoryError) as exc:
@@ -656,12 +933,17 @@ def run_once(
                 + " run `kb auto run` to resume.",
             )
         if state.skipped:
+            why = (
+                "Each was set aside after repeated incomplete rounds, a closed "
+                "report or amend PR, or ended done but stayed picked."
+                if cfg.kind == "tester"
+                else "Each ended done but stayed picked."
+            )
             return _stop(
                 kb_dir,
                 state,
                 "every task left was skipped: " + ", ".join(state.skipped),
-                "Each ended done but stayed picked. Fix them, then run "
-                "`kb auto run` to resume.",
+                f"{why} Fix them, then run `kb auto run` to resume.",
             )
         return "idle"
     if task.key == state.last_done:
@@ -686,6 +968,7 @@ def run_once(
                 root,
                 claude.prompt_for(task.skill, task.arg, cfg.kind),
                 log_dir=autostate.log_dir(kb_dir),
+                **({"kind": "tester"} if cfg.kind == "tester" else {}),
             )
         except Exception as exc:  # noqa: BLE001 -- must count as an attempt, not loop forever
             result = claude.TaskResult("failed", (), f"runner error: {exc}")
@@ -710,7 +993,15 @@ def run_once(
         if beat is not None and beat.lost:
             return _claim_lost(kb_dir, state, claims, ticket)
         _after_task(claims, ticket, result)
-    return _settle(kb_dir, state, result, backoff or Backoff(), sleep, claims)
+    return _settle(
+        kb_dir,
+        state,
+        result,
+        backoff or Backoff(),
+        sleep,
+        claims,
+        tester=(now, cfg.auto.idle_interval) if tester else None,
+    )
 
 
 def _claim_lost(
@@ -752,6 +1043,8 @@ def _resolve_hub(
     cfg: KBConfig, kb_dir: Path, hub_flag: str = ""
 ) -> HubHandle | hubapi.HubApi:
     if cloud.is_cloud():  # read the hub live; nothing is cloned
+        if cfg.kind == "tester":
+            raise KbError("kb auto for a tester repo needs a local hub, not cloud")
         return hubapi.from_env()
     handle = resolve_hub(require_hub(hub_flag or cfg.hub, kb_dir))
     if handle is None:
@@ -772,6 +1065,7 @@ def resume(kb_dir: Path) -> None:
                 attempts=0,
                 same_pick=0,
                 skipped=(),
+                incomplete=(),
                 publish_retry=None,
             ),
         )
@@ -797,6 +1091,12 @@ def build_claims(root: Path, kb_dir: Path, cfg: KBConfig) -> RunnerClaims | None
     )
 
 
+def build_tester_claims(cfg: KBConfig) -> claimclient.ClaimClient | None:
+    """The hub claim client a tester pick reads with; None for other kinds.
+    Raises KbError when the hub env is not set."""
+    return claimclient.from_env() if cfg.kind == "tester" else None
+
+
 def _release_on_exit(
     kb_dir: Path, state: autostate.AutoState, claims: RunnerClaims | None
 ) -> None:
@@ -817,10 +1117,16 @@ def run_loop(
     resume(kb_dir)
     qa = deps.pop("qa", None) or qa_mod.from_env()
     cfg = load_config(kb_dir)
+    if cfg.kind == "tester":  # a story done in an earlier run may be a new round
+        autostate.save(
+            kb_dir, replace(autostate.load(kb_dir), last_done=None, same_pick=0)
+        )
     claims = deps.pop("claims", _BUILD)
     if claims is _BUILD:
         claims = build_claims(root, kb_dir, cfg)
     deps["claims"] = claims
+    if "tester_claims" not in deps:
+        deps["tester_claims"] = build_tester_claims(cfg)
     qa_thread = None
     if cfg.kind == "ba":
         run_task = deps.get("run_task", claude.run_task)

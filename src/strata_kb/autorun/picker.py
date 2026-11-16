@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 from collections.abc import Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
-from strata_kb import gitio, planstatus
+from strata_kb import gitio, planstatus, strategyhub, teststrategy
 from strata_kb.bugcandidates import Candidate
+from strata_kb.claimclient import ClaimClient, LocalClaims
 from strata_kb.errors import KbError
 from strata_kb.hub import HubHandle
 from strata_kb.hubapi import HubApi
 from strata_kb.missionnext import StoryStatus
 
+logger = logging.getLogger(__name__)
 MAX_STDERR = 300
 PLAN_WORKTREE = Path("auto") / "worktrees" / "plan"  # under kb_dir
 TEST_WORKFLOW_MARK = "kb-test"
@@ -229,3 +233,165 @@ def pick_dev(
 ) -> Task | None:
     """The first of `dev_candidates`."""
     return next(iter(dev_candidates(hub, root, repo_id, skip, held)), None)
+
+
+STRATEGY_FILE = Path("docs") / "test-strategy.md"
+_AMEND_CODES = frozenset({"broken-target", "pin-moved", "kb-context", "coverage"})
+_NOT_DEPLOYED = 4  # `kb test-env deployed` exit: the story is not on the env yet
+
+
+@dataclass(frozen=True)
+class TesterPick:
+    """`cause` with no task: "nothing" (no amend due, no testable story),
+    "skipped" (every candidate passed over only for its key in `skip`), else
+    "waiting" (some candidate held, waiting, cooled or unsafe).
+    `cooled`: stories the deploy check reported not deployed in this pick,
+    for the runner to park in `waiting`."""
+
+    task: Task | None
+    cause: Literal["task", "nothing", "waiting", "skipped"]
+    cooled: tuple[str, ...] = ()
+
+
+def _strategy_text(root: Path) -> str | None:
+    """`docs/test-strategy.md` from a just-fetched origin/<default>; the working
+    tree when there is no remote. None when the file is missing."""
+    root = root.resolve()
+    path = root / STRATEGY_FILE
+    if not gitio.has_remote(root):
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except (OSError, UnicodeDecodeError) as exc:
+            raise KbError(f"{path} not read: {exc}") from exc
+    try:
+        gitio.default_branch(root)  # sets origin/HEAD from the remote when missing
+        ref = gitio.origin_head_ref(root)
+        gitio.fetch_branch(root, ref.partition("/")[2])
+        return gitio.read_at(root, ref, path)
+    except gitio.GitError as exc:
+        raise KbError(f"test strategy not read from the default branch: {exc}") from exc
+
+
+def _needs_amend(
+    text: str, hub: HubHandle, strategy: teststrategy.Strategy | None
+) -> bool:
+    if strategy is None:
+        return False
+    try:
+        plan = (
+            strategyhub.plan_view(hub, strategy.plan)
+            if strategy.plan
+            else strategyhub.plan_view(hub, None, all_plans=True)
+        )
+        found = strategyhub.strategy_findings(text, strategy, plan, hub)
+    except KbError as exc:  # incl. PlanNotOnHub
+        logger.warning("test strategy not checked for amend: %s", exc)
+        return False
+    return any(f.code in _AMEND_CODES for f in found)
+
+
+def _parse_strategy(text: str | None) -> teststrategy.Strategy | None:
+    if text is None:
+        return None
+    try:
+        return teststrategy.parse(text)
+    except ValueError as exc:
+        logger.warning("test strategy does not parse: %s", exc)
+        return None
+
+
+def _parked(claim: dict) -> bool:
+    """Waiting on a human merge: the hub keeps such a claim without a TTL
+    (review/publishing with a PR). The Q1 `review` phase has no PR yet."""
+    return claim.get("phase") in ("review", "publishing") and bool(claim.get("pr"))
+
+
+def _resume(
+    kb_dir: Path,
+    claims: list[dict],
+    skip: Collection[str],
+    waiting: frozenset[str],
+) -> Task | None:
+    local = LocalClaims(kb_dir)
+    for c in claims:
+        saved = local.get(c["ticket"])
+        if (
+            saved
+            and saved[0] == c["id"]
+            and planstatus.safe_name(c["ticket"])
+            and c.get("state") != "stopped"
+            and not _parked(c)
+            and Task("tester-test-story", c["ticket"]).key not in skip
+            and c["ticket"] not in waiting
+        ):
+            return Task("tester-test-story", c["ticket"])
+    return None
+
+
+def pick_tester(
+    root: Path,
+    kb_dir: Path,
+    hub: HubHandle,
+    *,
+    claims_client: ClaimClient,
+    skip: Collection[str] = (),
+    waiting: frozenset[str] = frozenset(),
+    run=subprocess.run,
+) -> TesterPick:
+    """Our own working claim, then a strategy amend, then the next testable
+    story that is deployed and not held by another Tester. A hub claim read
+    error raises (the runner goes idle)."""
+    claims = claims_client.held(role="tester")
+    if task := _resume(kb_dir, claims, skip, waiting):
+        return TesterPick(task, "task")
+    local = LocalClaims(kb_dir)
+    other = {
+        c["ticket"]
+        for c in claims
+        if (saved := local.get(c["ticket"])) is None
+        or saved[0] != c["id"]
+        or _parked(c)  # ours, but parked
+    }
+    text = _strategy_text(root)
+    strategy = _parse_strategy(text)
+    amend = text is not None and _needs_amend(text, hub, strategy)
+    amend_task = Task("tester-strategy", "--amend")
+    if amend and amend_task.key not in skip:
+        return TesterPick(amend_task, "task")
+    try:
+        stories = [p.story for p in strategyhub.next_stories(hub, strategy)]
+    except strategyhub.PlanNotOnHub as exc:
+        logger.warning("test order not read: %s", exc)
+        stories = []
+    cooled: list[str] = []
+    blocked = False  # a candidate passed over for a reason other than `skip`
+    for story in stories:
+        if Task("tester-test-story", story).key in skip:
+            continue
+        if story in waiting or story in other:
+            blocked = True
+            continue
+        if not planstatus.safe_name(story):
+            logger.warning("story id %r is not a safe name, skipped", story)
+            blocked = True
+            continue
+        proc = run(
+            ["kb", "test-env", "deployed", story],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        if proc.returncode == 0:
+            return TesterPick(Task("tester-test-story", story), "task", tuple(cooled))
+        if proc.returncode != _NOT_DEPLOYED:
+            raise KbError(
+                f"kb test-env deployed {story} failed: {proc.stderr[:MAX_STDERR]}"
+            )
+        cooled.append(story)
+    if not (stories or amend):
+        return TesterPick(None, "nothing")
+    cause = "waiting" if blocked or cooled else "skipped"
+    return TesterPick(None, cause, tuple(cooled))
