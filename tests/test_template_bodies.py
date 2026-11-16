@@ -1422,6 +1422,7 @@ MERGING_BODIES = (
     "ba-ticket-author",
     "dev-test-workflow",
     "tester-test-story",
+    "tester-strategy",
 )
 
 

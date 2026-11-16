@@ -1,5 +1,8 @@
 # Strata Quickstart (tester repo)
 
+**Full guide:** https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-tester.en.md
+(Tiếng Việt: https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-tester.vi.md)
+
 You test a story end to end: write test cases from its acceptance criteria, script
 them in Playwright, run them against a deployed test environment, and publish a
 report (`<repo_id>-test`, shown as Test Report on the hub). This repo reads the
@@ -25,6 +28,17 @@ knowledge base and tickets; it never changes them.
    `/tester-test-story`: it writes `docs/test-strategy.md` (what to test first
    and why) and opens a PR. When the stale issue opens (`kb test stale`), run
    `/tester-strategy --amend`. The strategy never blocks `/tester-test-story`.
+
+## Run it unattended (optional)
+
+`kb auto run` can test stories on its own, on the Tester's machine (it needs Chromium and
+a `version_check` for every app). An unattended run **merges its own report and strategy
+PRs** once `lint` is green, so set up branch protection on `main` first: `lint` required,
+code-owner review, and a real owner in `.github/CODEOWNERS`. `kb auto run` refuses until
+it is. `kb auto on` does not accept a tester repo yet: set `auto.enabled: true` in
+`.kb/config.yaml` by hand. If the repo was scaffolded earlier, run `kb upgrade` first to refresh the settings.
+Read the guide's Automation section before turning it on:
+https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-tester.en.md#4-automation-modes
 
 ## Layout
 

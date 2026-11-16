@@ -180,15 +180,16 @@ keeps your `.kb/config.yaml` and `.kb/index.yaml`.
 | **`child`** | Authoring repo. Ingest documents → summarize → `kb build` → `kb publish` to the hub. Does not host the shared service. | [Child](docs/src/guide-child.en.md) |
 | **`ba`** | Requirements repo. Drafts Dev-ready tickets and mission plans grounded in the KB, gated by CI Definition-of-Ready checks. Publishes only its own plan (`<repo_id>-plan`). | [BA](docs/src/guide-ba.en.md) |
 | **`dev`** | Product code repo. Implements BA tickets grounded in the KB through an agent workflow. Publishes knowledge about *its own code* (`-code` generated, `-svc` curated), never outside documents. | [Dev](docs/src/guide-dev.en.md) |
-| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Phase 1: run by hand with `/tester-env-setup`, `/tester-strategy` (the test strategy, `docs/test-strategy.md`) and `/tester-test-story`. A FAIL report reopens the story for Dev (`kb report fetch`, fix mode) and a regression becomes a BA bug candidate; `kb auto` for `tester` is not built yet. | — (guide comes later) |
+| **`tester`** | System and integration tests per story. Writes test cases grounded in BA tickets and the KB, runs Playwright scripts against the shared test environment, and files a `PASS`/`FAIL` report per round. Publishes only `<repo_id>-test`. One `tester` repo per BA repo. Run by hand with `/tester-env-setup`, `/tester-strategy` (the test strategy, `docs/test-strategy.md`) and `/tester-test-story`, or unattended with `kb auto run` on the Tester's machine. A FAIL report reopens the story for Dev (`kb report fetch`, fix mode) and a regression becomes a BA bug candidate. | [Tester](docs/src/guide-tester.en.md) |
 
 Slash commands are scaffolded for Claude Code, GitHub Copilot and Cursor, and the
 MCP client is wired in `.mcp.json` and `.cursor/mcp.json`; each guide lists them
 and the few that differ per assistant.
 
-`ba` and `dev` repos can run unattended (`/kb-auto`, `kb auto`). **Read the
-Automation modes section of the [BA](docs/src/guide-ba.en.md) or
-[Dev](docs/src/guide-dev.en.md) guide before turning it on:** an unattended run
+`ba` and `dev` repos can run unattended (`/kb-auto`, `kb auto`), and so can `tester`
+repos (`kb auto run`, on the Tester's machine). **Read the
+Automation modes section of the [BA](docs/src/guide-ba.en.md),
+[Dev](docs/src/guide-dev.en.md) or [Tester](docs/src/guide-tester.en.md) guide before turning it on:** an unattended run
 merges its own pull requests with the rights of your `gh` login and publishes with no
 human review, and it needs branch protection on `main` first (`kb auto run` refuses
 until the merge policy is set up); see Automation modes, Security, Merge policy.
@@ -284,6 +285,7 @@ Vietnamese; the PDFs are rendered from the same sources.
 | Child author | [guide-child.en.md](docs/src/guide-child.en.md) | [guide-child.vi.md](docs/src/guide-child.vi.md) | [PDF](docs/strata-guide-child.en.pdf) | [PDF](docs/strata-guide-child.vi.pdf) |
 | Business analyst | [guide-ba.en.md](docs/src/guide-ba.en.md) | [guide-ba.vi.md](docs/src/guide-ba.vi.md) | [PDF](docs/strata-guide-ba.en.pdf) | [PDF](docs/strata-guide-ba.vi.pdf) |
 | Developer | [guide-dev.en.md](docs/src/guide-dev.en.md) | [guide-dev.vi.md](docs/src/guide-dev.vi.md) | [PDF](docs/strata-guide-dev.en.pdf) | [PDF](docs/strata-guide-dev.vi.pdf) |
+| Tester | [guide-tester.en.md](docs/src/guide-tester.en.md) | [guide-tester.vi.md](docs/src/guide-tester.vi.md) | [PDF](docs/strata-guide-tester.en.pdf) | [PDF](docs/strata-guide-tester.vi.pdf) |
 
 - Architecture — data model, components, federation, trust model, topologies:
   [EN](docs/src/architecture.en.md) · [VI](docs/src/architecture.vi.md) ·

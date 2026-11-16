@@ -50,6 +50,8 @@ TITLES = {
         "Strata — Hướng dẫn Developer",
         "Dành cho kỹ sư triển khai ticket",
     ),
+    "guide-tester.en": ("Strata — Tester Guide", "For testers"),
+    "guide-tester.vi": ("Strata — Hướng dẫn Tester", "Dành cho người kiểm thử"),
 }
 
 CSS = """
