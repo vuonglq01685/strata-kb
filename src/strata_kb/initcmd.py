@@ -659,7 +659,8 @@ def record_asset_store(config_path: Path, mode: str) -> str:
 _SETTINGS_REL = ".claude/settings.json"
 
 # Per-kind additions to the shared auto-mode settings template. The tester
-# also may never merge a PR in phase 1 (denied, not just told).
+# merges only inside `kb auto` (`kb pr merge` refuses a tester repo outside
+# it); `gh pr merge` and `kb publish` stay denied.
 TESTER_ALLOW: tuple[str, ...] = (
     "Bash(kb test-env *)",
     "Bash(kb testcase *)",

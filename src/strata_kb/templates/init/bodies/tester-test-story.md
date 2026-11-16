@@ -1,6 +1,6 @@
 Test one story end to end on the declared test environment, and publish a
 report only when the round ends `PASS` or `FAIL`. You are the Tester. You
-open the report PR; you never merge it in this phase — a human does.
+open the report PR; outside Auto mode you never merge it — a human does.
 
 `<story>` is the story id given to the command (a parent story or an
 unsplit story). Read `.kb/test-env.yaml` first; when it is missing, stop and
@@ -256,16 +256,19 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 The runner starts this skill as `/tester-test-story <story>`. Nobody answers questions during the run: a step above that asks the Tester is yours to settle under the rules below. Every step and every hard rule not named here stays as written. Branch names stay `test/<story>-R<n>`.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin`, then `kb mission next --from-hub --json` and read the story row. Then check, in this order:
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin && git switch --detach origin/<default>` (the default branch of step 4), then `kb mission next --from-hub --json` and read the story row. Let `<n>` be one more than the highest `reports/<story>/R<k>.md` on `origin/<default>` (the rule of step 10; 1 when there is none). Then check, in this order:
 
+- `origin/<default>` already holds `reports/<story>/R<n>.md`: the report is merged but not yet published. Run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
 - The `test_status` is `closed`: end `AUTO-RESULT: done`.
 - The `test_status` is `reopened`, and `origin/<default>` holds a `reports/<story>/R<n>.md` whose round is the latest published round: end `AUTO-RESULT: done`.
 - Look up the report PR with `kb pr find --head test/<story>-R<n> --state all --json`:
   - Merged: run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
   - Closed and not merged: a human closed it, so it is final. Release the claim when this machine holds it (ignore exit 3), never reopen the PR, and end `AUTO-RESULT: failed report-pr-closed <pr-url>`.
-  - Open: a crashed run left it. Run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), then `git switch test/<story>-R<n>` and continue at step 3 of the merge rule below.
-- No PR, but the branch `test/<story>-R<n>` exists on `origin`: the run crashed after its push. Run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), then switch to the branch and continue at step 12 (Publish), at `kb pr open`.
+  - Open: adopt it only when this machine ran the round, that is, `git rev-parse --verify test/<story>-R<n>` succeeds in this clone. Then run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), `git switch test/<story>-R<n>`, and continue at step 3 of the merge rule below. Otherwise the PR is a person's: end `AUTO-RESULT: blocked-review <pr-url>`.
+- No PR, but the branch `test/<story>-R<n>` exists on `origin`: adopt it only when `git rev-parse --verify test/<story>-R<n>` also succeeds in this clone (this machine pushed it); then run `kb claim take <story>` first (exit 3 ends `AUTO-RESULT: blocked-env <story> claim-taken`), switch to the branch and continue at step 12 (Publish), at `kb pr open`. Otherwise end `AUTO-RESULT: blocked-env <story> claim-taken`.
 - None of these: do the work from Step 1.
+
+**Not testable (step 1).** The testable check stops the run with no claim and no lock held. End the result line by the story's `test_status`: `closed` ends `AUTO-RESULT: done`; `testing` (another Tester holds it) ends `AUTO-RESULT: blocked-env <story> claim-taken`; any other stop (`reopened`, a child not `done`) ends `AUTO-RESULT: done`, as there is nothing to test now and the runner will not pick the story until it is testable.
 
 **Deploy check (step 2).** The manual-confirm exception does not apply. Ask nobody. Exit 4 for any reason ends `AUTO-RESULT: blocked-env <story> not-deployed`. Take no lock and no claim first.
 

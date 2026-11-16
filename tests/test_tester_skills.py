@@ -355,3 +355,27 @@ def test_rendered_test_story_skills_carry_the_auto_section(tmp_path, rel):
     text = (tmp_path / rel).read_text(encoding="utf-8")
     assert "\n## Auto mode\n" in text
     assert "kb pr merge --squash --delete-branch" in text
+
+
+def test_test_story_crash_check_is_fresh_and_adopts_only_own_prs():
+    auto = _body("tester-test-story").split("\n## Auto mode", 1)[1]
+    check = auto.split("**Deploy check (step 2).**", 1)[0]
+    assert "git switch --detach origin/<default>" in check
+    assert "Let `<n>` be one more than the highest" in check
+    assert check.index("Let `<n>`") < check.index("kb pr find")
+    assert "not yet published" in check  # R<n>.md already on origin: done
+    assert "git rev-parse --verify test/<story>-R<n>" in check
+    assert "AUTO-RESULT: blocked-review <pr-url>" in check  # someone else's PR
+
+
+def test_test_story_not_testable_stop_has_a_result_line():
+    auto = _body("tester-test-story").split("\n## Auto mode", 1)[1]
+    para = auto.split("**Not testable (step 1).**", 1)[1].split("**Deploy", 1)[0]
+    assert "`closed` ends `AUTO-RESULT: done`" in para
+    assert "AUTO-RESULT: blocked-env <story> claim-taken" in para
+
+
+@pytest.mark.parametrize("name", ["tester-test-story", "tester-strategy"])
+def test_intro_merge_ban_is_qualified_for_auto_mode(name):
+    intro = _body(name).split("\n## ", 1)[0]
+    assert "outside Auto mode" in intro

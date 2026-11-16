@@ -1,6 +1,6 @@
 Write the test strategy of this repo (`docs/test-strategy.md`) or amend it.
 It ranks what to test first and why. You are the Tester; you open the PR and
-never merge it: a human does. The strategy never blocks `/tester-test-story`:
+outside Auto mode never merge it: a human does. The strategy never blocks `/tester-test-story`:
 a story is tested whether or not the strategy has a row for it.
 
 Modes: no argument is **New**; `--amend` is **Amend**. `.kb/test-env.yaml` is optional:
