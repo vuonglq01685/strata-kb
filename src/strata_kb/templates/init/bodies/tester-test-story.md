@@ -256,11 +256,10 @@ Run `kb auto status --json`. When `enabled` is false, this section does not appl
 
 The runner starts this skill as `/tester-test-story <story>`. Nobody answers questions during the run: a step above that asks the Tester is yours to settle under the rules below. Every step and every hard rule not named here stays as written. Branch names stay `test/<story>-R<n>`.
 
-**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin && git switch --detach origin/<default>` (the default branch of step 4), then `kb mission next --from-hub --json` and read the story row. Let `<n>` be one more than the highest `reports/<story>/R<k>.md` on `origin/<default>` (the rule of step 10; 1 when there is none). Then check, in this order:
+**Already finished.** The runner re-runs a task after a crash, so check first. Run `git fetch origin && git switch --detach origin/<default>` (the default branch of step 4), then `kb mission next --from-hub --json` and read the story row. Let `<n>` be the row's `test_round` plus one (`test_round` is the latest published round, 0 when none). Then check, in this order:
 
-- `origin/<default>` already holds `reports/<story>/R<n>.md`: the report is merged but not yet published. Run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
 - The `test_status` is `closed`: end `AUTO-RESULT: done`.
-- The `test_status` is `reopened`, and `origin/<default>` holds a `reports/<story>/R<n>.md` whose round is the latest published round: end `AUTO-RESULT: done`.
+- `origin/<default>` already holds `reports/<story>/R<n>.md`: the report is merged but the hub has not published it yet. Run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
 - Look up the report PR with `kb pr find --head test/<story>-R<n> --state all --json`:
   - Merged: run `kb claim release <story>` when this machine holds the claim (ignore exit 3), then end `AUTO-RESULT: done`.
   - Closed and not merged: a human closed it, so it is final. Release the claim when this machine holds it (ignore exit 3), never reopen the PR, and end `AUTO-RESULT: failed report-pr-closed <pr-url>`.

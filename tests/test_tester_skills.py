@@ -361,9 +361,12 @@ def test_test_story_crash_check_is_fresh_and_adopts_only_own_prs():
     auto = _body("tester-test-story").split("\n## Auto mode", 1)[1]
     check = auto.split("**Deploy check (step 2).**", 1)[0]
     assert "git switch --detach origin/<default>" in check
-    assert "Let `<n>` be one more than the highest" in check
+    assert "Let `<n>` be the row's `test_round` plus one" in check
     assert check.index("Let `<n>`") < check.index("kb pr find")
-    assert "not yet published" in check  # R<n>.md already on origin: done
+    merged = check.index("`origin/<default>` already holds `reports/<story>/R<n>.md`")
+    assert merged < check.index("kb pr find")  # merged, unpublished: done
+    assert "has not published it yet" in check
+    assert "one more than the highest" not in check
     assert "git rev-parse --verify test/<story>-R<n>" in check
     assert "AUTO-RESULT: blocked-review <pr-url>" in check  # someone else's PR
 

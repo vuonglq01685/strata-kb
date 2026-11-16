@@ -4058,6 +4058,24 @@ def pr_checks(
         raise typer.Exit(code)
 
 
+def _refuse_tester_merge() -> None:
+    """A tester repo merges only inside `kb auto`. The config is read at the git
+    root, so a subdirectory does not escape; an unreadable one refuses too."""
+    from strata_kb import gitio
+    from strata_kb.config import load_config
+
+    msg = (
+        "kb pr merge in a tester repo runs only inside kb auto; "
+        "merge the report PR on GitHub"
+    )
+    try:
+        kind = load_config(gitio.git_root(Path.cwd()) / ".kb").kind
+    except (*_CONFIG_READ_ERRORS, OSError) as exc:
+        raise _pr_fail(f"{msg} (the repo config cannot be read: {exc})") from exc
+    if kind == "tester":
+        raise _pr_fail(msg)
+
+
 @pr_app.command("merge")
 def pr_merge(
     ref: str | None = typer.Argument(None, help="PR number or branch"),
@@ -4074,14 +4092,8 @@ def pr_merge(
     from strata_kb import ghrest
     from strata_kb.llm import AUTO_TASK_ENV
 
-    if (
-        _config_kind(Path.cwd() / ".kb") == "tester"
-        and os.environ.get(AUTO_TASK_ENV) != "1"
-    ):
-        raise _pr_fail(
-            "kb pr merge in a tester repo runs only inside kb auto; "
-            "merge the report PR on GitHub"
-        )
+    if os.environ.get(AUTO_TASK_ENV) != "1":
+        _refuse_tester_merge()
     if squash and merge:
         raise _pr_fail("give --squash or --merge, not both")
     pr = ghrest.merge_pr(Path.cwd(), ref, "merge" if merge else "squash", delete_branch)

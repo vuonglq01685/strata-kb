@@ -638,10 +638,13 @@ def _tester_task(
             state, waiting=_park(state, pick.cooled, t + cfg.auto.idle_interval)
         )
         autostate.save(kb_dir, state)
+    if state.last_done and (pick.task is None or pick.task.key != state.last_done):
+        # a story picked again after the pick passed it over is a new round,
+        # not hub lag (the skill's crash check catches a merged, unpublished one)
+        state = replace(state, last_done=None, same_pick=0)
+        autostate.save(kb_dir, state)
     if pick.cause == "nothing":
         logger.info("auto mode finished: nothing testable")
-        # a story the hub lists again later is a new round, not hub lag
-        autostate.save(kb_dir, replace(state, last_done=None, same_pick=0))
         raise _Early("done")
     if pick.cause == "waiting":
         logger.info("every testable story is held or waiting")
@@ -931,8 +934,8 @@ def run_once(
             )
         if state.skipped:
             why = (
-                "Each was set aside after repeated incomplete rounds or a "
-                "closed report PR."
+                "Each was set aside after repeated incomplete rounds, a closed "
+                "report or amend PR, or ended done but stayed picked."
                 if cfg.kind == "tester"
                 else "Each ended done but stayed picked."
             )

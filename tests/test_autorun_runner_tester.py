@@ -436,4 +436,31 @@ def test_tester_skipped_stop_uses_a_neutral_hint(env, caplog):
     autostate.save(env[1], replace(autostate.load(env[1]), skipped=(T1.key,)))
     assert _step(env, Script(), Board(T1)) == "stopped"
     assert "set aside after repeated incomplete rounds" in caplog.text
-    assert "stayed picked" not in caplog.text
+    assert "closed report or amend PR" in caplog.text
+    assert "ended done but stayed picked" in caplog.text
+
+
+def test_story_done_then_passed_over_is_run_again_when_picked(env):
+    """A done; the picks end `waiting` (A reopened, others cooling); A is
+    fix-done and picked: it runs, it is not taken for hub lag."""
+    script = Script(TaskResult("done"), TaskResult("done"))
+    picks = Picks(
+        task_pick(T1),
+        picker.TesterPick(None, "waiting"),
+        picker.TesterPick(None, "waiting"),
+        task_pick(T1),
+    )
+    assert step(env, script, picks) == "ran"
+    assert step(env, script, picks) == "idle"
+    assert step(env, script, picks) == "idle"
+    assert autostate.load(env[1]).last_done is None
+    assert step(env, script, picks) == "ran"
+    assert not script.results and autostate.load(env[1]).skipped == ()
+
+
+def test_same_story_picked_at_once_is_still_hub_lag(env):
+    script = Script(TaskResult("done"))
+    picks = Picks(task_pick(T1), task_pick(T1))
+    assert step(env, script, picks) == "ran"
+    assert step(env, script, picks) == "idle"
+    assert autostate.load(env[1]).same_pick == 1

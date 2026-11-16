@@ -178,6 +178,36 @@ def test_merge_in_a_tester_repo_refuses_outside_kb_auto(fake_gh, tmp_path, monke
     assert not [c for c in fake_gh.calls if c.method == "PUT"]
 
 
+def test_merge_from_a_subdirectory_of_a_tester_repo_refuses(
+    fake_gh, tmp_path, monkeypatch
+):
+    _tester_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    monkeypatch.chdir(tmp_path / "tests")
+    monkeypatch.delenv("STRATA_KB_AUTO_TASK", raising=False)
+    result = runner.invoke(app, ["pr", "merge", "7"])
+    assert result.exit_code == 1 and "runs only inside kb auto" in result.output
+    assert not [c for c in fake_gh.calls if c.method == "PUT"]
+
+
+def test_merge_with_an_unreadable_config_refuses(fake_gh, tmp_path, monkeypatch):
+    (tmp_path / ".kb").mkdir()
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: [oops\n", encoding="utf-8")
+    monkeypatch.delenv("STRATA_KB_AUTO_TASK", raising=False)
+    result = runner.invoke(app, ["pr", "merge", "7"])
+    assert result.exit_code == 1 and "cannot be read" in result.output
+    assert not [c for c in fake_gh.calls if c.method == "PUT"]
+
+
+def test_merge_in_a_non_tester_repo_is_allowed(fake_gh, tmp_path, monkeypatch):
+    (tmp_path / ".kb").mkdir()
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: dev\n", encoding="utf-8")
+    monkeypatch.delenv("STRATA_KB_AUTO_TASK", raising=False)
+    fake_gh.on("GET", "pulls/7", rest_pr())
+    fake_gh.on("PUT", "pulls/7/merge", {"merged": True})
+    assert runner.invoke(app, ["pr", "merge", "7"]).exit_code == 0
+
+
 def test_merge_in_a_tester_repo_runs_inside_kb_auto(fake_gh, tmp_path, monkeypatch):
     _tester_repo(tmp_path)
     monkeypatch.setenv("STRATA_KB_AUTO_TASK", "1")
