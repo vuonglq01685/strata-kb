@@ -245,11 +245,12 @@ and strategy pull requests** once the `lint` check is green, under merge policy 
 sensitive paths. Nobody reads a report before it merges. A defect the agent misjudged goes
 straight to the hub, reopens a ticket for a Dev, or closes a story.
 
-- **`Bash(kb pr merge*)` is no longer denied in tester settings.** Auto mode needs it, so a
-  **manual** session could also run `kb pr merge`. Only the skill text ("never merge it; a
-  human does") stops it there. GitHub is the real gate: set up branch protection **even if
-  you never run auto mode**. The `--admin` forms of `kb pr merge` and `gh pr merge` stay
-  denied, and `gh pr merge*` stays denied.
+- **`Bash(kb pr merge*)` is no longer denied in tester settings.** Auto mode needs it, but
+  in a tester repo `kb pr merge` refuses unless it runs inside `kb auto` (the task process
+  carries `STRATA_KB_AUTO_TASK=1`): a **manual** session gets "kb pr merge in a tester repo
+  runs only inside kb auto; merge the report PR on GitHub". GitHub is the real gate: set up
+  branch protection **even if you never run auto mode**. The `--admin` forms of
+  `kb pr merge` and `gh pr merge` stay denied, and `gh pr merge*` stays denied.
 - **`kb publish` stays denied.** The merge publishes: the `kb-publish-request` workflow
   tags the merged commit and publishes it through the hub's intake.
 - The deny list is defence in depth, not a boundary. The runner never uses
@@ -348,7 +349,8 @@ allowlist (it does not allow `gh api`) stops the agent from doing so. The harden
    (`kb test-env verify` exits `0`). Auto cannot confirm a deploy without it.
 5. **Refresh the settings** (see below).
 6. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`, and have the `claude` CLI on the
-   `PATH`, **logged in with a Claude subscription**. The runner never uses an API key. The
+   `PATH`, **logged in with a Claude subscription**. The runner never uses an API key and
+   inherits whatever login `claude` has. The
    runner reads other Testers' claims through the hub API, so it must be reachable.
 7. Keep `main` as the default branch; the skills run `git fetch origin`.
 8. Set up the merge policy in 4.1.
@@ -450,16 +452,16 @@ A missing or malformed line counts as a failed attempt.
 | candidates exist, but all are held by another Tester, cooling, or not deployed | idle: sleep `idle_interval`, then pick again |
 | `blocked-env ... env-locked` (another round holds the environment) | idle for `idle_interval`, no story is tried meanwhile |
 | any other `blocked-env` | that story waits one `idle_interval`; the next story is tried at once. No attempt is counted |
-| `incomplete` | one attempt counts; the story waits one interval so its scripts get the next round. At `MAX_ATTEMPTS` (2) the story is set aside with a warning, and the loop goes on |
-| every candidate was set aside | stop, naming them |
+| `incomplete` | counted per story (the task's `attempts` stay untouched); the story waits one interval so its scripts get the next round. The second `incomplete` of the same story (`MAX_ATTEMPTS`, 2) sets it aside with a warning, and the loop goes on |
+| every candidate was set aside (after repeated `incomplete` rounds or a closed report PR) | stop, naming them |
 | `failed test-review ...` | stop at once: a BLOCKER stood after round 2 and needs a human |
 | `failed ci-red ...`, or a task that fails `MAX_ATTEMPTS` times | stop |
 | `blocked-review` | the story is parked while a human reviews; the loop carries on |
 
 A flaky story never stops the loop. After a stop, fix the cause and run `kb auto run`
-again: it clears the set-aside stories. A command outside the allowlist ends the task
-`failed command-denied <command>`; add it to `permissions.allow` in
-`.claude/settings.json` by hand. A usage-limit wait is not a failure. A task process
+again: it clears the set-aside stories. When a step needs a command outside the allowlist,
+the task skips that step and names it in the PR notes; add the command to
+`permissions.allow` in `.claude/settings.json` by hand if you want it to run. A usage-limit wait is not a failure. A task process
 carries `STRATA_KB_AUTO_TASK=1`, under which `kb auto on`, `off` and `run` refuse
 (`status` still works).
 
@@ -497,7 +499,7 @@ the browser and the test environment.
 | Key or variable | Meaning |
 |---|---|
 | `kind`, `hub`, `repo_id`, `intake` | see 2.2. Never put a token in `hub:` or `intake:` |
-| `auto.enabled`, `auto.idle_interval`, `auto.claim_heartbeat` | auto mode; `idle_interval` is the seconds to wait when nothing can start now (default `600`); `claim_heartbeat` is seconds between claim refreshes (default `900`) |
+| `auto.enabled`, `auto.idle_interval` | auto mode; `idle_interval` is the seconds to wait when nothing can start now (default `600`). `auto.claim_heartbeat` does nothing in a tester repo: the runner sends no heartbeat, and the skill's `kb claim update` calls keep the claim fresh |
 | `.kb/test-env.yaml` | `name`, `apps` (`repo`, `url`, `api_base`, `version_check`), `db` (`url_env`, `check`, `reset`, `seeds`), `accounts`, `api_auth`, `retries`; names of env vars only |
 | `kb init` re-run | creates missing files and refreshes scaffold files; `.kb/config.yaml` and `.claude/settings.json` are protected (`--force` replaces them; `.claude/settings.json` is merged otherwise); `*.local.md` files are never touched |
 | `STRATA_KB_HUB` | overrides `hub:`; carries a credentialed URL in CI |
@@ -533,7 +535,7 @@ yet (`kb test-env deployed`), `8` `kb pr checks` still pending.
 | One Tester per story; one round per environment | the claim and the environment lock on the hub (exit `3`) |
 | A closed story is never tested again | `/tester-test-story` step 1 and the hub status |
 | A reviewer is a fresh subagent, never the author | the skill text only |
-| A manual session does not merge | the skill text only; GitHub's merge policy is the real gate |
+| A manual session does not merge | `kb pr merge` refuses in a tester repo outside `kb auto`; GitHub's merge policy is the real gate |
 | An auto merge needs green `lint` and a code-owner review on sensitive paths | GitHub branch protection, checked by `kb auto run` |
 | No credential in a case, script, report, log or PR | the login fixture, `kb report lint` and the reviewers |
 
@@ -557,13 +559,13 @@ form: the hub's `/api/tests/known-failures` read with the bearer token.
 `git switch` with `--discard-changes`, `--force` or `-f`; `git reset --hard`;
 `gh repo delete`, `gh run delete`; `rm -rf /*`; editing `.claude/settings.json`,
 `.claude/settings.local.json` and `.git/**`. `Bash(kb pr merge*)` is **not** denied (auto
-mode merges with it); a refresh of an older tester's settings removes it from the deny list.
+mode merges with it, and `kb pr merge` itself refuses outside `kb auto`); a refresh of an older tester's settings removes it from the deny list.
 
 ## 6.5 Hub rules that touch you
 
 Statuses are derived by the hub from published reports and claims, never typed: `testing`
 while a Tester holds the story, `reopened` after a `FAIL`, `fix-done` once the Dev hands
-over, `closed` after a `PASS`. Claims have a heartbeat (`claim_heartbeat`); a claim parked
+over, `closed` after a `PASS`. A claim has a TTL that `kb claim update` refreshes; a claim parked
 in `review` or `publishing` is held without a TTL. The environment lock has a TTL, and
 `kb test-env lock` re-run refreshes it. The tools your skills call: `kb_search`,
 `kb_get_section`, `kb_context_new`, `kb_resolve`, `kb_ticket_fetch`, `kb_report_fetch`.

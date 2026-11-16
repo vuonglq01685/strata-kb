@@ -245,10 +245,12 @@ dẫn nhạy cảm. Không ai đọc báo cáo trước khi nó được merge. 
 đi thẳng lên hub, mở lại ticket của Dev, hoặc đóng một story.
 
 - **`Bash(kb pr merge*)` không còn bị cấm trong settings của tester.** Chế độ auto cần nó,
-  nên một phiên **thủ công** cũng có thể chạy `kb pr merge`. Chỉ có văn bản của skill
-  ("không merge, để người merge") ngăn ở đó. GitHub mới là cổng thật: hãy thiết lập branch
-  protection **ngay cả khi bạn không bao giờ chạy auto**. Dạng `--admin` của `kb pr merge`
-  và `gh pr merge` vẫn bị cấm, và `gh pr merge*` vẫn bị cấm.
+  nhưng trong repo tester `kb pr merge` từ chối trừ khi chạy bên trong `kb auto` (tiến
+  trình task mang `STRATA_KB_AUTO_TASK=1`): một phiên **thủ công** nhận thông báo "kb pr
+  merge in a tester repo runs only inside kb auto; merge the report PR on GitHub". GitHub
+  mới là cổng thật: hãy thiết lập branch protection **ngay cả khi bạn không bao giờ chạy
+  auto**. Dạng `--admin` của `kb pr merge` và `gh pr merge` vẫn bị cấm, và `gh pr merge*`
+  vẫn bị cấm.
 - **`kb publish` vẫn bị cấm.** Chính việc merge sẽ publish: workflow `kb-publish-request`
   gắn tag lên commit đã merge và publish qua intake của hub.
 - Danh sách deny là phòng thủ nhiều lớp, không phải ranh giới. Runner không bao giờ dùng
@@ -346,7 +348,7 @@ ruleset nó không bypass được.
    (`kb test-env verify` thoát `0`). Thiếu nó, auto không xác nhận được việc deploy.
 5. **Làm mới settings** (xem bên dưới).
 6. Export `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`, và có CLI `claude` trong `PATH`,
-   **đăng nhập bằng gói Claude subscription**. Runner không bao giờ dùng API key. Runner
+   **đăng nhập bằng gói Claude subscription**. Runner không bao giờ dùng API key và kế thừa bất cứ đăng nhập nào `claude` đang có. Runner
    đọc claim của các Tester khác qua API của hub, nên hub phải truy cập được.
 7. Giữ `main` làm nhánh mặc định; các skill chạy `git fetch origin`.
 8. Thiết lập merge policy ở 4.1.
@@ -447,16 +449,16 @@ Dòng thiếu hoặc sai định dạng tính là một lần thử thất bại
 | còn ứng viên, nhưng tất cả bị Tester khác giữ, đang nghỉ, hoặc chưa deploy | idle: ngủ `idle_interval` rồi chọn lại |
 | `blocked-env ... env-locked` (vòng khác đang giữ môi trường) | idle `idle_interval`, trong lúc đó không thử story nào |
 | mọi `blocked-env` khác | story đó chờ một `idle_interval`; story kế được thử ngay. Không tính lần thử nào |
-| `incomplete` | tính một lần thử; story chờ một khoảng để script của nó có vòng sau. Đến `MAX_ATTEMPTS` (2) story bị gác lại kèm cảnh báo, và vòng lặp đi tiếp |
-| mọi ứng viên đều bị gác lại | dừng, nêu tên chúng |
+| `incomplete` | tính riêng theo từng story (`attempts` của task không đổi); story chờ một khoảng để script của nó có vòng sau. Lần `incomplete` thứ hai của cùng story (`MAX_ATTEMPTS`, 2) gác nó lại kèm cảnh báo, và vòng lặp đi tiếp |
+| mọi ứng viên đều bị gác lại (sau nhiều vòng `incomplete` hoặc PR báo cáo bị đóng) | dừng, nêu tên chúng |
 | `failed test-review ...` | dừng ngay: một BLOCKER còn đứng sau vòng 2 và cần con người |
 | `failed ci-red ...`, hoặc task thất bại `MAX_ATTEMPTS` lần | dừng |
 | `blocked-review` | story được gác trong lúc người review; vòng lặp đi tiếp |
 
 Story flaky không bao giờ dừng vòng lặp. Sau khi dừng, hãy sửa nguyên nhân rồi chạy lại
-`kb auto run`: nó xóa danh sách story đã gác. Lệnh ngoài allowlist làm task kết thúc
-`failed command-denied <command>`; hãy thêm nó vào `permissions.allow` trong
-`.claude/settings.json` bằng tay. Chờ hết hạn mức sử dụng không phải thất bại. Tiến trình
+`kb auto run`: nó xóa danh sách story đã gác. Khi một bước cần lệnh ngoài allowlist, task
+bỏ qua bước đó và nêu tên lệnh trong ghi chú của PR; muốn nó chạy, hãy thêm lệnh vào
+`permissions.allow` trong `.claude/settings.json` bằng tay. Chờ hết hạn mức sử dụng không phải thất bại. Tiến trình
 task mang `STRATA_KB_AUTO_TASK=1`, dưới biến này `kb auto on`, `off` và `run` từ chối
 (`status` vẫn chạy).
 
@@ -494,7 +496,7 @@ trình duyệt và môi trường test.
 | Khóa hoặc biến | Ý nghĩa |
 |---|---|
 | `kind`, `hub`, `repo_id`, `intake` | xem 2.2. Không bao giờ để token trong `hub:` hay `intake:` |
-| `auto.enabled`, `auto.idle_interval`, `auto.claim_heartbeat` | chế độ auto; `idle_interval` là số giây chờ khi chưa có gì bắt đầu được (mặc định `600`); `claim_heartbeat` là số giây giữa hai lần làm mới claim (mặc định `900`) |
+| `auto.enabled`, `auto.idle_interval` | chế độ auto; `idle_interval` là số giây chờ khi chưa có gì bắt đầu được (mặc định `600`). `auto.claim_heartbeat` không có tác dụng trong repo tester: runner không gửi heartbeat, các lệnh `kb claim update` của skill giữ claim còn mới |
 | `.kb/test-env.yaml` | `name`, `apps` (`repo`, `url`, `api_base`, `version_check`), `db` (`url_env`, `check`, `reset`, `seeds`), `accounts`, `api_auth`, `retries`; chỉ có tên biến môi trường |
 | chạy lại `kb init` | tạo file còn thiếu và làm mới file khung; `.kb/config.yaml` và `.claude/settings.json` được bảo vệ (`--force` ghi đè; `.claude/settings.json` còn lại thì được gộp); file `*.local.md` không bao giờ bị đụng |
 | `STRATA_KB_HUB` | ghi đè `hub:`; mang URL có credential trong CI |
@@ -530,7 +532,7 @@ giữ hoặc đã mất (hoặc môi trường đang bị khóa, hoặc không c
 | Mỗi story một Tester; mỗi môi trường một vòng | claim và khóa môi trường trên hub (mã thoát `3`) |
 | Story đã đóng không bao giờ test lại | bước 1 của `/tester-test-story` và trạng thái trên hub |
 | Reviewer là subagent mới, không bao giờ là tác giả | chỉ văn bản của skill |
-| Phiên thủ công không merge | chỉ văn bản của skill; merge policy của GitHub mới là cổng thật |
+| Phiên thủ công không merge | `kb pr merge` từ chối trong repo tester ngoài `kb auto`; merge policy của GitHub mới là cổng thật |
 | Auto merge cần `lint` xanh và review của code owner trên đường dẫn nhạy cảm | branch protection của GitHub, `kb auto run` kiểm tra |
 | Không credential nào trong test case, script, báo cáo, log hay PR | login fixture, `kb report lint` và các reviewer |
 
@@ -553,14 +555,14 @@ refspec `+` và `:` và `--delete`; các dạng `git switch`, `checkout` và `br
 tạo, đổi tên hay xóa `main` hoặc `master`; `git switch` với `--discard-changes`, `--force`
 hoặc `-f`; `git reset --hard`; `gh repo delete`, `gh run delete`; `rm -rf /*`; sửa
 `.claude/settings.json`, `.claude/settings.local.json` và `.git/**`. `Bash(kb pr merge*)`
-**không** bị cấm (chế độ auto merge bằng nó); lần làm mới settings của tester cũ gỡ nó khỏi
+**không** bị cấm (chế độ auto merge bằng nó, và chính `kb pr merge` từ chối ngoài `kb auto`); lần làm mới settings của tester cũ gỡ nó khỏi
 danh sách deny.
 
 ## 6.5 Quy tắc của hub liên quan tới bạn
 
 Hub suy ra trạng thái từ báo cáo và claim đã publish, không bao giờ gõ tay: `testing` khi
 một Tester đang giữ story, `reopened` sau một `FAIL`, `fix-done` khi Dev bàn giao, `closed`
-sau một `PASS`. Claim có heartbeat (`claim_heartbeat`); claim đang gác ở `review` hoặc
+sau một `PASS`. Claim có TTL được `kb claim update` làm mới; claim đang gác ở `review` hoặc
 `publishing` được giữ không có TTL. Khóa môi trường có TTL, và chạy lại `kb test-env lock`
 sẽ làm mới nó. Các tool mà skill của bạn gọi: `kb_search`, `kb_get_section`,
 `kb_context_new`, `kb_resolve`, `kb_ticket_fetch`, `kb_report_fetch`.

@@ -525,7 +525,7 @@ A non-admin login on classic-only protection is refused: it cannot read the revi
    install, lint and build commands for the `langs:` recorded in `.kb/config.yaml`, into
    `.claude/settings.json`, and refreshes the skills and `/dev-test-workflow`.
 4. Export `STRATA_KB_HUB_URL` and `STRATA_KB_HTTP_TOKEN`, and have the `claude` CLI on
-   the `PATH`, **logged in with a Claude subscription**. The runner never uses an API key.
+   the `PATH`, **logged in with a Claude subscription**. The runner never uses an API key and inherits whatever login `claude` has.
 5. Keep `main` as the default branch; the skills run `git fetch origin main`.
 
 ## 4.3 Run and stop

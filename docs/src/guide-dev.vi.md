@@ -512,7 +512,7 @@ Tài khoản không phải admin mà chỉ có protection classic bị từ ch�
    và build của `langs:` ghi trong `.kb/config.yaml`, vào `.claude/settings.json`, và làm
    mới skill cùng `/dev-test-workflow`.
 4. Export `STRATA_KB_HUB_URL` và `STRATA_KB_HTTP_TOKEN`, và có CLI `claude` trong `PATH`,
-   **đăng nhập bằng gói đăng ký Claude**. Runner không bao giờ dùng API key.
+   **đăng nhập bằng gói đăng ký Claude**. Runner không bao giờ dùng API key và kế thừa bất cứ đăng nhập nào `claude` đang có.
 5. Giữ `main` làm nhánh mặc định; các skill chạy `git fetch origin main`.
 
 ## 4.3 Chạy và dừng
