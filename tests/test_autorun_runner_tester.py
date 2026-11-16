@@ -326,3 +326,114 @@ def test_merged_report_without_local_token_just_counts_done(env, monkeypatch):
     state = _review(env, monkeypatch, "MERGED", client, held=False)
     assert client.calls == [] and state.last_done == REPORT_KEY
     assert state.waiting_review == ()
+
+
+def test_closed_report_with_lost_claim_drops_token_and_counts_released(
+    env, monkeypatch
+):
+    from strata_kb.claimclient import ClaimLostError, LocalClaims
+
+    state = _review(
+        env, monkeypatch, "MERGED", Releases(ClaimLostError("expired", "hub"))
+    )
+    assert LocalClaims(env[1]).get("M-x-US1") is None
+    assert state.waiting_review == () and state.last_done == REPORT_KEY
+
+
+def test_closed_strategy_amend_pr_is_skipped(env, monkeypatch):
+    key = "tester-strategy:--amend"
+    root, kb_dir, _ = env
+    autostate.save(
+        kb_dir, replace(autostate.load(kb_dir), waiting_review=(f"{key} {PR}",))
+    )
+    monkeypatch.setattr(runner_mod, "_own_pr", lambda r, u: True)
+    state = runner_mod._review_check(
+        root,
+        kb_dir,
+        autostate.load(kb_dir),
+        lambda r, n: {"state": "CLOSED"},
+        kind="tester",
+        claims_client=Releases(),
+    )
+    assert state.waiting_review == () and state.skipped == (key,)
+
+
+def test_run_once_frees_a_parked_report_claim_through_the_tester_client(
+    env, monkeypatch
+):
+    """The only path that frees a parked report's hub claim: run_once hands
+    `kind` and the tester claim client to `_review_check`."""
+    from strata_kb.claimclient import LocalClaims
+
+    root, kb_dir, hub = env
+    LocalClaims(kb_dir).put("M-x-US1", 9, "tok")
+    autostate.save(
+        kb_dir,
+        replace(autostate.load(kb_dir), waiting_review=(f"{REPORT_KEY} {PR}",)),
+    )
+    monkeypatch.setattr(runner_mod, "_own_pr", lambda r, u: True)
+    monkeypatch.setattr(runner_mod.ghrest, "view_pr", lambda r, n: {"state": "MERGED"})
+    client = Releases()
+    monkeypatch.setattr(
+        picker, "pick_tester", Picks(picker.TesterPick(None, "nothing"))
+    )
+    out = run_once(
+        root,
+        kb_dir,
+        cfg=cfg(),
+        hub=hub,
+        qa=FakeQa(),
+        run_task=Script(),
+        now=lambda: NOW,
+        sleep=lambda s: None,
+        tester_claims=client,  # type: ignore[arg-type]
+    )
+    assert out == "done"
+    assert client.calls == [(9, "tok", "report merged")]
+    assert LocalClaims(env[1]).get("M-x-US1") is None
+
+
+def test_retest_of_a_story_done_earlier_is_picked_and_run(env):
+    """R1 done, story reopened (nothing testable), fix-done: R2 must run, not
+    be taken for hub lag."""
+    script = Script(TaskResult("done"), TaskResult("done"))
+    picks = Picks(task_pick(T1), picker.TesterPick(None, "nothing"), task_pick(T1))
+    assert step(env, script, picks) == "ran"
+    assert autostate.load(env[1]).last_done == T1.key
+    assert step(env, script, picks) == "done"
+    assert autostate.load(env[1]).last_done is None
+    assert step(env, script, picks) == "ran"
+    assert script.kinds == ["tester", "tester"] and not script.results
+    assert autostate.load(env[1]).skipped == ()
+
+
+def test_run_loop_start_forgets_a_story_done_in_an_earlier_run(env, monkeypatch):
+    root, kb_dir, hub = env
+    (kb_dir / "config.yaml").write_text(
+        "kind: tester\nrepo_id: svc\nintake: http://i\nauto:\n  enabled: true\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    autostate.save(
+        kb_dir, replace(autostate.load(kb_dir), last_done=T1.key, same_pick=3)
+    )
+    picks = Picks(task_pick(T1), picker.TesterPick(None, "nothing"))
+    monkeypatch.setattr(picker, "pick_tester", picks)
+    script = Script(TaskResult("done"))
+    code = run_loop(
+        root,
+        kb_dir,
+        sleep=lambda s: pytest.fail("loop slept"),
+        hub=hub,
+        qa=FakeQa(),
+        run_task=script,
+        tester_claims=object(),
+    )
+    assert code == 0 and not script.results  # T1 ran: it was not "still picked"
+
+
+def test_tester_skipped_stop_uses_a_neutral_hint(env, caplog):
+    autostate.save(env[1], replace(autostate.load(env[1]), skipped=(T1.key,)))
+    assert _step(env, Script(), Board(T1)) == "stopped"
+    assert "set aside after repeated incomplete rounds" in caplog.text
+    assert "stayed picked" not in caplog.text

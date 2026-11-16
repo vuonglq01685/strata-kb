@@ -77,7 +77,12 @@ def test_pick_tester_resumes_own_working_claim(env, plan_hub):
 
 
 @pytest.mark.parametrize(
-    "kw", [{"phase": "publishing"}, {"phase": "review"}, {"state": "stopped"}]
+    "kw",
+    [
+        {"phase": "publishing", "pr": "u"},
+        {"phase": "review", "pr": "u"},
+        {"state": "stopped"},
+    ],
 )
 def test_pick_tester_does_not_resume_parked_claim(env, plan_hub, kw):
     LocalClaims(env[1]).put(US1, 7, "tok")
@@ -88,6 +93,23 @@ def test_pick_tester_does_not_resume_parked_claim(env, plan_hub, kw):
         assert pick.task is None and run.calls and pick.cause == "waiting"
     else:
         assert (pick.task, pick.cause) == (None, "waiting") and not run.calls
+
+
+@pytest.mark.parametrize("phase", ["review", "publishing"])
+def test_pick_tester_resumes_review_phase_claim_without_pr(env, plan_hub, phase):
+    """Q1 sets `review` before any PR exists; only a claim with a PR is parked."""
+    LocalClaims(env[1]).put(US1, 7, "tok")
+    pick = _pick(env, plan_hub, Claims([_claim(US1, 7, phase=phase)]))
+    assert pick.task == Task("tester-test-story", US1)
+
+
+@pytest.mark.parametrize(
+    "kw", [{"skip": {f"tester-test-story:{US1}"}}, {"waiting": frozenset({US1})}]
+)
+def test_pick_tester_resume_honours_skip_and_waiting(env, plan_hub, kw):
+    LocalClaims(env[1]).put(US1, 7, "tok")
+    pick = _pick(env, plan_hub, Claims([_claim(US1, 7, phase="working")]), **kw)
+    assert pick.task != Task("tester-test-story", US1)
 
 
 def test_pick_tester_amend_on_coverage_finding(env, plan_hub):

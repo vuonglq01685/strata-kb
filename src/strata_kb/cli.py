@@ -4069,8 +4069,19 @@ def pr_merge(
     ),
 ) -> None:
     """Merge a PR (default squash); optionally delete its head branch."""
-    from strata_kb import ghrest
+    import os
 
+    from strata_kb import ghrest
+    from strata_kb.llm import AUTO_TASK_ENV
+
+    if (
+        _config_kind(Path.cwd() / ".kb") == "tester"
+        and os.environ.get(AUTO_TASK_ENV) != "1"
+    ):
+        raise _pr_fail(
+            "kb pr merge in a tester repo runs only inside kb auto; "
+            "merge the report PR on GitHub"
+        )
     if squash and merge:
         raise _pr_fail("give --squash or --merge, not both")
     pr = ghrest.merge_pr(Path.cwd(), ref, "merge" if merge else "squash", delete_branch)

@@ -350,6 +350,11 @@ def test_ba_prompt_is_byte_identical_to_the_old_text():
     assert prompt_for("x", "A1", "ba") == _OLD_BA_PROMPT
 
 
+def test_dev_prompt_is_byte_identical_to_the_old_text():
+    old = _OLD_BA_PROMPT.replace("this ba repo", "this dev repo")
+    assert prompt_for("x", "A1", "dev") == old
+
+
 def test_tester_prompt_lists_seven_forms():
     from strata_kb.autorun.claude import TESTER_RESULT_FORMS, result_forms
 

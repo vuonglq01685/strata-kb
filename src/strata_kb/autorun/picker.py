@@ -302,7 +302,18 @@ def _parse_strategy(text: str | None) -> teststrategy.Strategy | None:
         return None
 
 
-def _resume(kb_dir: Path, claims: list[dict]) -> Task | None:
+def _parked(claim: dict) -> bool:
+    """Waiting on a human merge: the hub keeps such a claim without a TTL
+    (review/publishing with a PR). The Q1 `review` phase has no PR yet."""
+    return claim.get("phase") in ("review", "publishing") and bool(claim.get("pr"))
+
+
+def _resume(
+    kb_dir: Path,
+    claims: list[dict],
+    skip: Collection[str],
+    waiting: frozenset[str],
+) -> Task | None:
     local = LocalClaims(kb_dir)
     for c in claims:
         saved = local.get(c["ticket"])
@@ -311,7 +322,9 @@ def _resume(kb_dir: Path, claims: list[dict]) -> Task | None:
             and saved[0] == c["id"]
             and planstatus.safe_name(c["ticket"])
             and c.get("state") != "stopped"
-            and c.get("phase") not in ("publishing", "review")
+            and not _parked(c)
+            and Task("tester-test-story", c["ticket"]).key not in skip
+            and c["ticket"] not in waiting
         ):
             return Task("tester-test-story", c["ticket"])
     return None
@@ -331,7 +344,7 @@ def pick_tester(
     story that is deployed and not held by another Tester. A hub claim read
     error raises (the runner goes idle)."""
     claims = claims_client.held(role="tester")
-    if task := _resume(kb_dir, claims):
+    if task := _resume(kb_dir, claims, skip, waiting):
         return TesterPick(task, "task")
     local = LocalClaims(kb_dir)
     other = {
@@ -339,7 +352,7 @@ def pick_tester(
         for c in claims
         if (saved := local.get(c["ticket"])) is None
         or saved[0] != c["id"]
-        or c.get("phase") in ("publishing", "review")  # ours, but parked
+        or _parked(c)  # ours, but parked
     }
     text = _strategy_text(root)
     strategy = _parse_strategy(text)

@@ -39,6 +39,7 @@ from strata_kb.autorun.picker import Task
 from strata_kb.autorun.qathread import PARKED_PREFIX, QaThread, open_question_count
 from strata_kb.autorun.switch import cloud_entry_or_reason, registry_or_reason
 from strata_kb.claimclient import (
+    ClaimLostError,
     ClaimRejectedError,
     ClaimRouteMissing,
     ParentStoryError,
@@ -355,6 +356,7 @@ def _own_pr(root: Path, url: str) -> bool:
 
 
 TESTER_STORY = "tester-test-story:"
+SKIP_ON_CLOSE = ("ba-bug-report:", "tester-strategy:--amend")
 
 
 def _release_report_claim(
@@ -364,7 +366,8 @@ def _release_report_claim(
     reason: str,
 ) -> bool:
     """Free our hub claim on a story whose report PR a human settled. True when
-    released or never held here; False (entry stays parked) on a release error."""
+    released, lost or never held here; False (entry stays parked) on a release
+    error."""
     local = claimclient.LocalClaims(kb_dir)
     held = local.get(story)
     if held is None:
@@ -373,6 +376,8 @@ def _release_report_claim(
         if claims_client is None:
             raise KbError("no claim client")
         claims_client.release(held[0], held[1], reason)
+    except ClaimLostError:
+        pass  # the hub already closed it: nothing left to free
     except KbError as exc:
         logger.warning("claim on %s not released: %s", story, exc)
         return False
@@ -434,8 +439,8 @@ def _review_check(
                 kept.append(entry)
         elif pr_state == "CLOSED":
             logger.warning("parked PR %s of %s closed without merging", url, key)
-            if key.startswith("ba-bug-report:") and key not in skipped:
-                # a rejected bug draft must not be re-drafted every cycle
+            if key.startswith(SKIP_ON_CLOSE) and key not in skipped:
+                # a rejected bug draft or amend must not be redone every cycle
                 skipped = (*skipped, key)
         else:
             kept.append(entry)
@@ -635,6 +640,8 @@ def _tester_task(
         autostate.save(kb_dir, state)
     if pick.cause == "nothing":
         logger.info("auto mode finished: nothing testable")
+        # a story the hub lists again later is a new round, not hub lag
+        autostate.save(kb_dir, replace(state, last_done=None, same_pick=0))
         raise _Early("done")
     if pick.cause == "waiting":
         logger.info("every testable story is held or waiting")
@@ -923,12 +930,17 @@ def run_once(
                 + " run `kb auto run` to resume.",
             )
         if state.skipped:
+            why = (
+                "Each was set aside after repeated incomplete rounds or a "
+                "closed report PR."
+                if cfg.kind == "tester"
+                else "Each ended done but stayed picked."
+            )
             return _stop(
                 kb_dir,
                 state,
                 "every task left was skipped: " + ", ".join(state.skipped),
-                "Each ended done but stayed picked. Fix them, then run "
-                "`kb auto run` to resume.",
+                f"{why} Fix them, then run `kb auto run` to resume.",
             )
         return "idle"
     if task.key == state.last_done:
@@ -1102,6 +1114,10 @@ def run_loop(
     resume(kb_dir)
     qa = deps.pop("qa", None) or qa_mod.from_env()
     cfg = load_config(kb_dir)
+    if cfg.kind == "tester":  # a story done in an earlier run may be a new round
+        autostate.save(
+            kb_dir, replace(autostate.load(kb_dir), last_done=None, same_pick=0)
+        )
     claims = deps.pop("claims", _BUILD)
     if claims is _BUILD:
         claims = build_claims(root, kb_dir, cfg)

@@ -164,6 +164,28 @@ def test_merge_both_flags_is_an_error(fake_gh):
     )
 
 
+def _tester_repo(tmp_path) -> None:
+    (tmp_path / ".kb").mkdir()
+    (tmp_path / ".kb" / "config.yaml").write_text("kind: tester\n", encoding="utf-8")
+
+
+def test_merge_in_a_tester_repo_refuses_outside_kb_auto(fake_gh, tmp_path, monkeypatch):
+    _tester_repo(tmp_path)
+    monkeypatch.delenv("STRATA_KB_AUTO_TASK", raising=False)
+    result = runner.invoke(app, ["pr", "merge", "7"])
+    assert result.exit_code == 1
+    assert "runs only inside kb auto" in result.output
+    assert not [c for c in fake_gh.calls if c.method == "PUT"]
+
+
+def test_merge_in_a_tester_repo_runs_inside_kb_auto(fake_gh, tmp_path, monkeypatch):
+    _tester_repo(tmp_path)
+    monkeypatch.setenv("STRATA_KB_AUTO_TASK", "1")
+    fake_gh.on("GET", "pulls/7", rest_pr())
+    fake_gh.on("PUT", "pulls/7/merge", {"merged": True})
+    assert runner.invoke(app, ["pr", "merge", "7"]).exit_code == 0
+
+
 def test_edit_title_and_body_file(fake_gh, tmp_path):
     f = tmp_path / "b.md"
     f.write_text("new body", encoding="utf-8")
