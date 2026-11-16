@@ -89,8 +89,20 @@ def _cloud_warnings(kb_dir: Path) -> list[str]:
     return []
 
 
+TESTER_WARNING = (
+    "A tester run merges its own report and strategy pull requests once `lint` is "
+    "green, and runs Playwright against the test environment."
+)
+
+
 def warnings_for_on(kb_dir: Path, hub: str) -> list[str]:
     warnings = [ADMIN_WARNING]
+    try:
+        tester = load_config(kb_dir).kind == "tester"
+    except (OSError, ValueError, yaml.YAMLError):  # the checks below report it
+        tester = False
+    if tester:  # the one-Dev-repo rule is not its concern
+        return [*warnings, TESTER_WARNING]
     if cloud.is_cloud():
         return warnings + _cloud_warnings(kb_dir)
     registry, reason = registry_or_reason(kb_dir, hub)

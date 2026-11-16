@@ -25,7 +25,7 @@ BA](guide-ba.vi.md), phần của Dev ở [hướng dẫn Developer](guide-dev.v
 
 **Slash command.** Repo tester có ba lệnh: `/tester-env-setup`, `/tester-strategy` và
 `/tester-test-story`. Mỗi lệnh có cho Claude Code, GitHub Copilot và Cursor. Repo tester
-không có `/kb-ingest`, `/kb-init` hay `/kb-auto`.
+không có `/kb-ingest`, `/kb-init` hay `/kb-auto`: chế độ auto chạy bằng CLI `kb auto`.
 
 ---
 
@@ -364,17 +364,14 @@ cách nào, mục lỗi thời đó là mục duy nhất mà một lần làm m�
 
 | Việc | Lệnh | Kết quả |
 |---|---|---|
-| Bật công tắc | thêm `auto:` với `enabled: true` vào `.kb/config.yaml` | `kb auto on` từ chối repo tester, nên công tắc được bật bằng tay |
+| Bật công tắc | `kb auto on` | in cảnh báo, bật `auto.enabled` |
 | Commit | commit và push `.kb/config.yaml` và `.claude/settings.json` lên nhánh mặc định | `kb auto run` từ chối cho đến khi bạn làm |
 | Chạy vòng lặp | `kb auto run` (`--once`, `--model`, `--effort`) | log ra terminal; chạy trong một phiên được giữ mở |
 | Xem đang ở đâu | `kb auto status [--json]` | công tắc, task, số lần thử, lý do dừng |
 | Dừng | `kb auto off` | dừng sau task hiện tại |
 
-```yaml
-auto:
-  enabled: true
-  idle_interval: 600   # giây chờ khi chưa có gì bắt đầu được
-```
+`idle_interval` (số giây chờ khi chưa có gì bắt đầu được, mặc định `600`) nằm trong khối
+`auto:` của `.kb/config.yaml`. Repo tester không có lệnh `/kb-auto`: dùng CLI.
 
 `kb auto run` từ chối, và in mọi lý do, khi:
 
@@ -487,7 +484,6 @@ trình duyệt và môi trường test.
 | Một vòng kết thúc `INCOMPLETE` | TC flaky hoặc lỗi script; sửa script ở vòng sau |
 | `kb auto run` từ chối với `see "Merge policy" in the Tester guide` | thiết lập branch protection (4.1) |
 | `kb auto run` từ chối vì settings của chế độ auto | chạy `kb upgrade` (4.2) |
-| `kb auto on` báo chỉ chạy trong repo `ba` hoặc `dev` | đặt `auto.enabled: true` trong `.kb/config.yaml` bằng tay (4.3) |
 
 ---
 

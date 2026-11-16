@@ -35,8 +35,7 @@ knowledge base and tickets; it never changes them.
 a `version_check` for every app). An unattended run **merges its own report and strategy
 PRs** once `lint` is green, so set up branch protection on `main` first: `lint` required,
 code-owner review, and a real owner in `.github/CODEOWNERS`. `kb auto run` refuses until
-it is. `kb auto on` does not accept a tester repo yet: set `auto.enabled: true` in
-`.kb/config.yaml` by hand. If the repo was scaffolded earlier, run `kb upgrade` first to refresh the settings.
+it is. Turn it on with `kb auto on`, commit `.kb/config.yaml`, then `kb auto run`. If the repo was scaffolded earlier, run `kb upgrade` first to refresh the settings.
 Read the guide's Automation section before turning it on:
 https://github.com/vuonglq01685/strata-kb/blob/main/docs/src/guide-tester.en.md#4-automation-modes
 

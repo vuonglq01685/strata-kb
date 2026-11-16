@@ -185,6 +185,18 @@ def test_cli_auto_on_refuses_outside_ba_dev(tmp_path, kind):
     assert load_config(kb).auto.enabled is False
 
 
+def test_cli_auto_on_then_off_in_a_tester_repo(tmp_path):
+    kb = _kb(tmp_path, "kind: tester\n")
+    on = runner.invoke(app, ["auto", "on", "--kb-dir", str(kb)])
+    assert on.exit_code == 0, on.output
+    assert "report and strategy pull requests" in on.output
+    assert "Dev repo" not in on.output
+    assert load_config(kb).auto.enabled is True
+    off = runner.invoke(app, ["auto", "off", "--kb-dir", str(kb)])
+    assert off.exit_code == 0, off.output
+    assert load_config(kb).auto.enabled is False
+
+
 def test_cli_auto_on_then_off(tmp_path, fed_hub):
     _registry(fed_hub, {"o/dev-a": "dev"})
     kb = _kb(tmp_path, "kind: dev\n")

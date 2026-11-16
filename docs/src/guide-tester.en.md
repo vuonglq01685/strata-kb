@@ -366,17 +366,14 @@ branch. Either way the retired entry is the only one a refresh removes.
 
 | Task | Command | Result |
 |---|---|---|
-| Turn the switch on | add `auto:` with `enabled: true` to `.kb/config.yaml` | `kb auto on` refuses a tester repo, so the switch is flipped by hand |
+| Turn the switch on | `kb auto on` | prints the warnings, flips `auto.enabled` |
 | Commit it | commit and push `.kb/config.yaml` and `.claude/settings.json` to the default branch | `kb auto run` refuses until you do |
 | Start the loop | `kb auto run` (`--once`, `--model`, `--effort`) | logs to the terminal; run it in a session that stays open |
 | See where it is | `kb auto status [--json]` | switch, task, attempts, stop reason |
 | Stop it | `kb auto off` | stops after the current task |
 
-```yaml
-auto:
-  enabled: true
-  idle_interval: 600   # seconds to wait when nothing can start now
-```
+`idle_interval` (seconds to wait when nothing can start now, default `600`) lives in the
+`auto:` block of `.kb/config.yaml`. A tester repo has no `/kb-auto` command: use the CLI.
 
 `kb auto run` refuses, and prints every reason, when:
 
@@ -490,7 +487,6 @@ the browser and the test environment.
 | A round ends `INCOMPLETE` | a flaky or script-defect TC; fix the script in the next round |
 | `kb auto run` refuses with `see "Merge policy" in the Tester guide` | set up branch protection (4.1) |
 | `kb auto run` refuses about the auto-mode settings | run `kb upgrade` (4.2) |
-| `kb auto on` says it works in ba or dev repos only | set `auto.enabled: true` in `.kb/config.yaml` by hand (4.3) |
 
 ---
 

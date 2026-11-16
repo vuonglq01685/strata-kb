@@ -1190,7 +1190,7 @@ def auto_on(
         "", "--hub", envvar="STRATA_KB_HUB", help="kb-hub URL/path (empty = config)"
     ),
 ) -> None:
-    """Turn full-auto mode on (ba/dev repos only). Prints the risks first."""
+    """Turn full-auto mode on (ba, dev or tester repos). Prints the risks first."""
     from strata_kb.autorun import switch
 
     _refuse_inside_auto_task("on")
@@ -1199,9 +1199,9 @@ def auto_on(
     path = kb_dir / "config.yaml"
     try:
         kind = load_config(kb_dir).kind
-        if kind not in ("ba", "dev"):
+        if kind not in ("ba", "dev", "tester"):
             typer.secho(
-                f"kb auto works in ba or dev repos only (this repo kind: {kind or 'unset'})",
+                f"kb auto works in ba, dev or tester repos only (this repo kind: {kind or 'unset'})",
                 fg=typer.colors.RED,
             )
             raise typer.Exit(1)
